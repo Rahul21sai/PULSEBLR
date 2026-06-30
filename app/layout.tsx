@@ -1,34 +1,28 @@
 import type { Metadata, Viewport } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Inter } from "next/font/google";
 import "./globals.css";
 import Script from "next/script";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const inter = Inter({
   subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
+  variable: "--font-inter",
+  display: "swap",
 });
 
 export const metadata: Metadata = {
-  title: "PulseBLR - Bangalore Tech Events Tracker",
-  description: "Your personal hub for discovering and tracking tech events in Bangalore. Never miss an AI/ML, fintech, cybersecurity, or hackathon event again.",
+  title: "PulseBLR - Bangalore Tech Events",
+  description: "Your curated pipeline for AI, Fintech, and Networking events in Bangalore.",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
-    statusBarStyle: "default",
+    statusBarStyle: "black-translucent",
     title: "PulseBLR",
   },
-  formatDetection: {
-    telephone: false,
-  },
+  formatDetection: { telephone: false },
 };
 
 export const viewport: Viewport = {
-  themeColor: "#9333ea",
+  themeColor: "#000000",
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
@@ -40,28 +34,23 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html
-      lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
-    >
+    <html lang="en" className={`${inter.variable} h-full`}>
       <head>
         <link rel="icon" href="/icon-192.svg" />
         <link rel="apple-touch-icon" href="/icon-192.svg" />
+        {/* Material Symbols — loaded globally for all pages */}
+        <link
+          rel="stylesheet"
+          href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap"
+        />
       </head>
-      <body className="min-h-full flex flex-col">
+      <body className="min-h-full antialiased">
         {children}
         <Script id="register-sw" strategy="afterInteractive">
           {`
             if ('serviceWorker' in navigator) {
               window.addEventListener('load', function() {
-                navigator.serviceWorker.register('/sw.js').then(
-                  function(registration) {
-                    console.log('Service Worker registered:', registration.scope);
-                  },
-                  function(err) {
-                    console.log('Service Worker registration failed:', err);
-                  }
-                );
+                navigator.serviceWorker.register('/sw.js');
               });
             }
           `}

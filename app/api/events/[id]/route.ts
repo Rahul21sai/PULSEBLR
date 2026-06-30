@@ -6,75 +6,56 @@ import mongoose from 'mongoose';
 // GET /api/events/[id] - Get a single event
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     await connectDB();
-    
-    const { id } = params;
-    
+    const { id } = await params;
+
     if (!mongoose.Types.ObjectId.isValid(id)) {
-      return NextResponse.json(
-        { error: 'Invalid event ID' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'Invalid event ID' }, { status: 400 });
     }
-    
+
     const event = await Event.findById(id);
-    
+
     if (!event) {
-      return NextResponse.json(
-        { error: 'Event not found' },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: 'Event not found' }, { status: 404 });
     }
-    
-    return NextResponse.json(event);
+
+    return NextResponse.json({ event });
   } catch (error) {
     console.error('Error fetching event:', error);
-    return NextResponse.json(
-      { error: 'Failed to fetch event' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to fetch event' }, { status: 500 });
   }
 }
 
 // PUT /api/events/[id] - Update an event
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     await connectDB();
-    
-    const { id } = params;
-    
+    const { id } = await params;
+
     if (!mongoose.Types.ObjectId.isValid(id)) {
-      return NextResponse.json(
-        { error: 'Invalid event ID' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'Invalid event ID' }, { status: 400 });
     }
-    
+
     const body = await request.json();
-    
-    // Don't allow updating dedupHash directly
     delete body.dedupHash;
-    
+
     const event = await Event.findByIdAndUpdate(
       id,
       { $set: body },
       { new: true, runValidators: true }
     );
-    
+
     if (!event) {
-      return NextResponse.json(
-        { error: 'Event not found' },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: 'Event not found' }, { status: 404 });
     }
-    
-    return NextResponse.json(event);
+
+    return NextResponse.json({ event });
   } catch (error: any) {
     console.error('Error updating event:', error);
     return NextResponse.json(
@@ -87,37 +68,25 @@ export async function PUT(
 // DELETE /api/events/[id] - Delete an event
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     await connectDB();
-    
-    const { id } = params;
-    
+    const { id } = await params;
+
     if (!mongoose.Types.ObjectId.isValid(id)) {
-      return NextResponse.json(
-        { error: 'Invalid event ID' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'Invalid event ID' }, { status: 400 });
     }
-    
+
     const event = await Event.findByIdAndDelete(id);
-    
+
     if (!event) {
-      return NextResponse.json(
-        { error: 'Event not found' },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: 'Event not found' }, { status: 404 });
     }
-    
+
     return NextResponse.json({ message: 'Event deleted successfully' });
   } catch (error) {
     console.error('Error deleting event:', error);
-    return NextResponse.json(
-      { error: 'Failed to delete event' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to delete event' }, { status: 500 });
   }
 }
-
-// Made with Bob

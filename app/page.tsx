@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { format } from 'date-fns';
+import { useEffect, useState, useCallback, useMemo } from 'react';
+import { format, isToday, isThisWeek, isWeekend, isFuture, startOfDay } from 'date-fns';
 
 interface Event {
   _id: string;
@@ -25,393 +25,459 @@ interface Event {
   createdAt: string;
 }
 
+const NAV_LINKS = [
+  { href: '/', label: 'Feed', icon: 'rss_feed' },
+  { href: '/calendar', label: 'Calendar', icon: 'calendar_today' },
+  { href: '/tracker', label: 'Tracker', icon: 'analytics' },
+  { href: '/add-event', label: 'Add', icon: 'add_circle' },
+  { href: '/settings', label: 'Settings', icon: 'settings' },
+];
+
+const CATEGORY_FILTERS = [
+  'AI/ML', 'Fintech', 'Cybersecurity', 'Cloud/DevOps',
+  'Web/Mobile', 'Data/Analytics', 'Hackathon', 'Networking/Meetup',
+];
+const TIME_FILTERS = ['Today', 'This Week', 'This Weekend', 'All Upcoming'];
+
+function getCategoryGradientClass(category: string): string {
+  const map: Record<string, string> = {
+    'AI/ML': 'gradient-ai',
+    'Fintech': 'gradient-fintech',
+    'Networking/Meetup': 'gradient-networking',
+    'Cybersecurity': 'gradient-cyber',
+    'Cloud/DevOps': 'gradient-cloud',
+    'Data/Analytics': 'gradient-data',
+    'Hackathon': 'gradient-hackathon',
+  };
+  return map[category] || 'gradient-default';
+}
+
+function getCategoryBadgeStyle(category: string): string {
+  const map: Record<string, string> = {
+    'AI/ML': 'bg-blue-50 text-blue-700',
+    'Fintech': 'bg-green-50 text-green-700',
+    'Networking/Meetup': 'bg-orange-50 text-orange-700',
+    'Cybersecurity': 'bg-red-50 text-red-700',
+    'Cloud/DevOps': 'bg-sky-50 text-sky-700',
+    'Data/Analytics': 'bg-purple-50 text-purple-700',
+    'Hackathon': 'bg-pink-50 text-pink-700',
+    'Web/Mobile': 'bg-yellow-50 text-yellow-700',
+  };
+  return map[category] || 'bg-gray-100 text-gray-600';
+}
+
 export default function Home() {
   const [events, setEvents] = useState<Event[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [showFilters, setShowFilters] = useState(false);
-  
-  // Filter states
-  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
-  const [selectedFormat, setSelectedFormat] = useState<string>('');
-  const [selectedFood, setSelectedFood] = useState<string>('');
-  const [selectedArea, setSelectedArea] = useState<string>('');
+  const [activeCategories, setActiveCategories] = useState<string[]>([]);
+  const [selectedFormat, setSelectedFormat] = useState('');
+  const [selectedFood, setSelectedFood] = useState('');
   const [freeOnly, setFreeOnly] = useState(false);
+  const [showFilterPanel, setShowFilterPanel] = useState(false);
+  const [activeTime, setActiveTime] = useState('All Upcoming');
 
-  useEffect(() => {
-    fetchEvents();
-  }, [selectedCategories, selectedFormat, selectedFood, selectedArea, freeOnly]);
-
-  const fetchEvents = async () => {
+  const fetchEvents = useCallback(async () => {
     try {
       setLoading(true);
-      
-      // Build query params
+      setError(null);
       const params = new URLSearchParams();
-      if (selectedCategories.length > 0) {
-        params.append('category', selectedCategories.join(','));
-      }
+      if (activeCategories.length > 0) params.append('category', activeCategories.join(','));
       if (selectedFormat) params.append('format', selectedFormat);
       if (selectedFood) params.append('hasFood', selectedFood);
-      if (selectedArea) params.append('area', selectedArea);
       if (freeOnly) params.append('isFree', 'true');
-      
-      const response = await fetch(`/api/events?${params.toString()}`);
-      if (!response.ok) throw new Error('Failed to fetch events');
-      const data = await response.json();
-      setEvents(data.events);
+      const res = await fetch(`/api/events?${params.toString()}`);
+      if (!res.ok) throw new Error('Failed to fetch events');
+      const data = await res.json();
+      setEvents(data.events || []);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');
     } finally {
       setLoading(false);
     }
-  };
+  }, [activeCategories, selectedFormat, selectedFood, freeOnly]);
 
-  const toggleCategory = (category: string) => {
-    setSelectedCategories(prev =>
-      prev.includes(category)
-        ? prev.filter(c => c !== category)
-        : [...prev, category]
+  useEffect(() => { fetchEvents(); }, [fetchEvents]);
+
+  const toggleCategory = (cat: string) => {
+    setActiveCategories(prev =>
+      prev.includes(cat) ? prev.filter(c => c !== cat) : [...prev, cat]
     );
   };
 
-  const clearFilters = () => {
-    setSelectedCategories([]);
-    setSelectedFormat('');
-    setSelectedFood('');
-    setSelectedArea('');
-    setFreeOnly(false);
-  };
-
-  const trackEvent = async (eventId: string) => {
+  const trackEvent = async (eventId: string, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
     try {
-      const response = await fetch('/api/tracker', {
+      const res = await fetch('/api/tracker', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          eventId,
-          status: 'Interested',
-        }),
+        body: JSON.stringify({ eventId, status: 'Interested' }),
       });
-
-      if (response.ok) {
-        alert('Event added to tracker!');
-      } else {
-        const data = await response.json();
-        alert(data.error || 'Failed to track event');
+      if (res.ok) {
+        // Subtle feedback — no alert
+        const btn = e.currentTarget as HTMLElement;
+        btn.style.color = '#0071E3';
+        setTimeout(() => { btn.style.color = ''; }, 1200);
       }
-    } catch (err) {
-      alert('Failed to track event');
-    }
+    } catch { /* silent fail */ }
   };
 
-  const getCategoryColor = (category: string) => {
-    const colors: Record<string, string> = {
-      'AI/ML': 'bg-purple-100 text-purple-800',
-      'Fintech': 'bg-green-100 text-green-800',
-      'Cybersecurity': 'bg-red-100 text-red-800',
-      'Cloud/DevOps': 'bg-blue-100 text-blue-800',
-      'Web/Mobile': 'bg-yellow-100 text-yellow-800',
-      'Data/Analytics': 'bg-indigo-100 text-indigo-800',
-      'Hackathon': 'bg-pink-100 text-pink-800',
-      'Government': 'bg-orange-100 text-orange-800',
-      'Corporate': 'bg-gray-100 text-gray-800',
-      'Summit/Conference': 'bg-teal-100 text-teal-800',
-      'Networking/Meetup': 'bg-cyan-100 text-cyan-800',
-      'Career/Job Fair': 'bg-lime-100 text-lime-800',
-    };
-    return colors[category] || 'bg-gray-100 text-gray-800';
-  };
+  const activeFilterCount =
+    activeCategories.length +
+    (selectedFormat ? 1 : 0) +
+    (selectedFood ? 1 : 0) +
+    (freeOnly ? 1 : 0);
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading events...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <p className="text-red-600 text-lg">Error: {error}</p>
-          <button
-            onClick={fetchEvents}
-            className="mt-4 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
-          >
-            Retry
-          </button>
-        </div>
-      </div>
-    );
-  }
+  const filteredByTime = useMemo(() => {
+    if (activeTime === 'All Upcoming') return events;
+    return events.filter(event => {
+      const d = new Date(event.startDateTime);
+      if (activeTime === 'Today') return isToday(d);
+      if (activeTime === 'This Week') return isThisWeek(d, { weekStartsOn: 1 }) && isFuture(startOfDay(d));
+      if (activeTime === 'This Weekend') return isWeekend(d) && isThisWeek(d, { weekStartsOn: 1 }) && isFuture(startOfDay(d));
+      return true;
+    });
+  }, [events, activeTime]);
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white shadow-sm sticky top-0 z-10">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900">PulseBLR</h1>
-              <p className="text-sm text-gray-600">Bangalore Tech Events Tracker</p>
-            </div>
-            <div className="flex gap-2">
+    <div className="min-h-screen bg-[#F5F5F7]">
+
+      {/* ── Desktop Top Nav ── */}
+      <nav className="hidden md:flex fixed top-0 w-full h-14 bg-white/70 glass-nav z-50 border-b border-black/5">
+        <div className="flex justify-between items-center w-full max-w-[1200px] mx-auto px-20">
+          <a href="/" className="text-xl font-bold tracking-tight text-[#1D1D1F] hover:text-[#0071E3] transition-colors">
+            PulseBLR
+          </a>
+          <div className="flex items-center gap-8">
+            {NAV_LINKS.map(link => (
               <a
-                href="/add-event"
-                className="px-4 py-2 text-sm font-medium text-white bg-purple-600 rounded-lg hover:bg-purple-700"
+                key={link.href}
+                href={link.href}
+                className={`text-sm font-medium transition-colors ${
+                  link.href === '/'
+                    ? 'text-[#0071E3] font-semibold border-b-2 border-[#0071E3] pb-0.5'
+                    : 'text-[#86868B] hover:text-[#1D1D1F]'
+                }`}
               >
-                + Add Event
+                {link.label}
               </a>
-              <button className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50">
-                Feed
-              </button>
-              <a
-                href="/calendar"
-                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
-              >
-                Calendar
-              </a>
-              <a
-                href="/tracker"
-                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
-              >
-                Tracker
-              </a>
-              <a
-                href="/dashboard"
-                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
-              >
-                📊
-              </a>
-              <a
-                href="/settings"
-                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
-              >
-                ⚙️
-              </a>
-            </div>
+            ))}
           </div>
+          <a href="/dashboard" className="text-[#86868B] hover:text-[#0071E3] transition-colors">
+            <span className="material-symbols-outlined text-[24px]">account_circle</span>
+          </a>
         </div>
-      {/* Filters */}
-      <div className="bg-white border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <div className="flex items-center justify-between mb-3">
+      </nav>
+
+      {/* ── Mobile Top Bar ── */}
+      <header className="md:hidden fixed top-0 w-full h-14 bg-white/70 glass-nav z-50 border-b border-black/5 flex items-center justify-between px-5">
+        <span className="text-lg font-bold tracking-tight text-[#1D1D1F]">PulseBLR</span>
+        <a href="/dashboard" className="text-[#86868B] hover:text-[#0071E3] transition-colors">
+          <span className="material-symbols-outlined text-[24px]">account_circle</span>
+        </a>
+      </header>
+
+      <main className="pt-14 pb-24 md:pb-0">
+
+        {/* ── Hero ── */}
+        <section className="bg-black text-white pt-16 md:pt-20 pb-14 px-5 md:px-20 relative overflow-hidden">
+          <div
+            className="absolute inset-0 pointer-events-none opacity-20"
+            style={{ background: 'radial-gradient(ellipse at center, #374151 0%, #000 70%)' }}
+          />
+          <div className="max-w-[1200px] mx-auto relative z-10 text-center">
+            <h1 className="text-display-lg-mobile md:text-display-lg mb-3">
+              Today in Bangalore Tech
+            </h1>
+            <p className="text-body-lg text-gray-400 max-w-xl mx-auto">
+              Your curated pipeline for AI, Fintech, and Networking.
+            </p>
+          </div>
+        </section>
+
+        {/* ── Filter chips — overlapping hero ── */}
+        <div className="max-w-[1200px] mx-auto px-5 md:px-20 -mt-6 relative z-20">
+          <div className="flex gap-3 overflow-x-auto no-scrollbar pb-3">
+            {/* Category filter */}
             <button
-              onClick={() => setShowFilters(!showFilters)}
-              className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
+              onClick={() => setShowFilterPanel(!showFilterPanel)}
+              className="shrink-0 bg-white text-[#1D1D1F] px-5 py-2 rounded-full text-label-sm shadow-md border border-black/10 flex items-center gap-1.5 hover:bg-gray-50 transition-colors active:scale-95"
             >
-              🔍 Filters
-              {(selectedCategories.length > 0 || selectedFormat || selectedFood || selectedArea || freeOnly) && (
-                <span className="px-2 py-0.5 text-xs bg-purple-600 text-white rounded-full">
-                  {selectedCategories.length + (selectedFormat ? 1 : 0) + (selectedFood ? 1 : 0) + (selectedArea ? 1 : 0) + (freeOnly ? 1 : 0)}
+              Category
+              {activeFilterCount > 0 && (
+                <span className="bg-[#0071E3] text-white text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center leading-none">
+                  {activeFilterCount}
                 </span>
               )}
+              <span className="material-symbols-outlined text-[16px]">expand_more</span>
             </button>
-            {(selectedCategories.length > 0 || selectedFormat || selectedFood || selectedArea || freeOnly) && (
+
+            {/* Format chips */}
+            {(['offline', 'online', 'hybrid'] as const).map(fmt => (
               <button
-                onClick={clearFilters}
-                className="text-sm text-purple-600 hover:text-purple-700 font-medium"
+                key={fmt}
+                onClick={() => setSelectedFormat(prev => prev === fmt ? '' : fmt)}
+                className={`shrink-0 px-5 py-2 rounded-full text-label-sm shadow-md border transition-colors capitalize active:scale-95 ${
+                  selectedFormat === fmt
+                    ? 'bg-[#0071E3] text-white border-[#0071E3]'
+                    : 'bg-black text-white border-black/20 hover:bg-gray-900'
+                }`}
               >
-                Clear all
+                {fmt}
               </button>
-            )}
+            ))}
+
+            <button
+              onClick={() => setSelectedFood(prev => prev === 'yes' ? '' : 'yes')}
+              className={`shrink-0 px-5 py-2 rounded-full text-label-sm shadow-md border transition-colors active:scale-95 ${
+                selectedFood === 'yes'
+                  ? 'bg-[#0071E3] text-white border-[#0071E3]'
+                  : 'bg-black text-white border-black/20 hover:bg-gray-900'
+              }`}
+            >
+              Food
+            </button>
+
+            <button
+              onClick={() => setFreeOnly(prev => !prev)}
+              className={`shrink-0 px-5 py-2 rounded-full text-label-sm shadow-md border transition-colors active:scale-95 ${
+                freeOnly
+                  ? 'bg-[#0071E3] text-white border-[#0071E3]'
+                  : 'bg-black text-white border-black/20 hover:bg-gray-900'
+              }`}
+            >
+              Free
+            </button>
+
+            {/* Area placeholder */}
+            <button className="shrink-0 bg-black text-white px-5 py-2 rounded-full text-label-sm shadow-md border border-black/20 hover:bg-gray-900 transition-colors active:scale-95">
+              Area
+            </button>
           </div>
 
-          {showFilters && (
-            <div className="space-y-4 pt-4 border-t border-gray-200">
-              {/* Categories */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Categories</label>
-                <div className="flex flex-wrap gap-2">
-                  {['AI/ML', 'Fintech', 'Cybersecurity', 'Cloud/DevOps', 'Web/Mobile', 'Data/Analytics', 'Hackathon', 'Networking/Meetup'].map(cat => (
-                    <button
-                      key={cat}
-                      onClick={() => toggleCategory(cat)}
-                      className={`px-3 py-1 text-sm rounded-full transition-colors ${
-                        selectedCategories.includes(cat)
-                          ? 'bg-purple-600 text-white'
-                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                      }`}
-                    >
-                      {cat}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Format, Food, Area, Price */}
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Format</label>
-                  <select
-                    value={selectedFormat}
-                    onChange={(e) => setSelectedFormat(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500"
+          {/* Expanded category panel */}
+          {showFilterPanel && (
+            <div className="bg-white rounded-2xl shadow-lg p-5 mb-3 border border-black/5">
+              <div className="flex flex-wrap gap-2">
+                {CATEGORY_FILTERS.map(cat => (
+                  <button
+                    key={cat}
+                    onClick={() => toggleCategory(cat)}
+                    className={`px-4 py-1.5 rounded-full text-label-sm transition-colors ${
+                      activeCategories.includes(cat)
+                        ? 'bg-[#0071E3] text-white'
+                        : 'bg-[#f3f3f5] text-[#1D1D1F] hover:bg-[#e8e8ea]'
+                    }`}
                   >
-                    <option value="">All</option>
-                    <option value="online">Online</option>
-                    <option value="offline">Offline</option>
-                    <option value="hybrid">Hybrid</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Food</label>
-                  <select
-                    value={selectedFood}
-                    onChange={(e) => setSelectedFood(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500"
+                    {cat}
+                  </button>
+                ))}
+                {activeCategories.length > 0 && (
+                  <button
+                    onClick={() => setActiveCategories([])}
+                    className="px-4 py-1.5 rounded-full text-label-sm text-red-600 bg-red-50 hover:bg-red-100 transition-colors"
                   >
-                    <option value="">All</option>
-                    <option value="yes">With Food</option>
-                    <option value="no">No Food</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Area</label>
-                  <select
-                    value={selectedArea}
-                    onChange={(e) => setSelectedArea(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500"
-                  >
-                    <option value="">All Areas</option>
-                    <option value="Koramangala">Koramangala</option>
-                    <option value="Indiranagar">Indiranagar</option>
-                    <option value="Whitefield">Whitefield</option>
-                    <option value="HSR Layout">HSR Layout</option>
-                    <option value="Electronic City">Electronic City</option>
-                    <option value="MG Road">MG Road</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Price</label>
-                  <label className="flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50">
-                    <input
-                      type="checkbox"
-                      checked={freeOnly}
-                      onChange={(e) => setFreeOnly(e.target.checked)}
-                      className="rounded text-purple-600 focus:ring-purple-500"
-                    />
-                    <span className="text-sm text-gray-700">Free only</span>
-                  </label>
-                </div>
+                    Clear all
+                  </button>
+                )}
               </div>
             </div>
           )}
         </div>
-      </div>
-      </header>
 
-      {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {events.length === 0 ? (
-          <div className="text-center py-12">
-            <p className="text-gray-600 text-lg">No events found</p>
-            <p className="text-gray-500 text-sm mt-2">Events will appear here once scrapers are running</p>
+        {/* ── Time sub-nav ── */}
+        <div className="sticky top-14 bg-[#F5F5F7]/90 glass-nav z-40 border-b border-black/5 mb-8">
+          <div className="max-w-[1200px] mx-auto px-5 md:px-20">
+            <div className="flex gap-8 overflow-x-auto no-scrollbar py-4 text-label-md">
+              {TIME_FILTERS.map(tf => (
+                <button
+                  key={tf}
+                  onClick={() => setActiveTime(tf)}
+                  className={`shrink-0 pb-0.5 transition-colors ${
+                    activeTime === tf
+                      ? 'text-[#1D1D1F] font-semibold border-b-2 border-[#1D1D1F]'
+                      : 'text-[#86868B] hover:text-[#1D1D1F]'
+                  }`}
+                >
+                  {tf}
+                </button>
+              ))}
+            </div>
           </div>
-        ) : (
-          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-            {events.map((event) => (
-              <div
-                key={event._id}
-                className="bg-white rounded-lg shadow-sm hover:shadow-md transition-shadow p-6 border border-gray-200"
+        </div>
+
+        {/* ── Event grid ── */}
+        <div className="max-w-[1200px] mx-auto px-5 md:px-20 pb-12">
+          {loading ? (
+            <div className="flex justify-center items-center py-24">
+              <div className="spinner" />
+            </div>
+          ) : error ? (
+            <div className="text-center py-24 px-5">
+              <span className="material-symbols-outlined text-[48px] text-[#e5e5e5] block mb-3">wifi_off</span>
+              <p className="text-[#86868B] text-body-md mb-4">{error}</p>
+              <button
+                onClick={fetchEvents}
+                className="px-6 py-2 bg-[#0071E3] text-white rounded-full text-label-md hover:bg-blue-600 transition-colors"
               >
-                {/* Event Header */}
-                <div className="flex items-start justify-between mb-3">
-                  <div className="flex-1">
-                    <h3 className="text-lg font-semibold text-gray-900 line-clamp-2">
-                      {event.title}
-                    </h3>
-                    {event.organizer && (
-                      <p className="text-sm text-gray-600 mt-1">{event.organizer}</p>
-                    )}
-                  </div>
-                </div>
-
-                {/* Categories */}
-                <div className="flex flex-wrap gap-2 mb-3">
-                  {event.category.map((cat) => (
-                    <span
-                      key={cat}
-                      className={`px-2 py-1 text-xs font-medium rounded-full ${getCategoryColor(cat)}`}
-                    >
-                      {cat}
-                    </span>
-                  ))}
-                </div>
-
-                {/* Event Details */}
-                <div className="space-y-2 mb-4">
-                  <div className="flex items-center text-sm text-gray-600">
-                    <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                    </svg>
-                    {format(new Date(event.startDateTime), 'MMM dd, yyyy • h:mm a')}
-                  </div>
-
-                  <div className="flex items-center text-sm text-gray-600">
-                    <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                    </svg>
-                    {event.format === 'online' ? 'Online' : event.format === 'offline' ? `${event.area || event.venue || 'Bangalore'}` : 'Hybrid'}
-                  </div>
-
-                  <div className="flex items-center gap-3 text-sm">
-                    {event.isFree ? (
-                      <span className="text-green-600 font-medium">Free</span>
-                    ) : (
-                      <span className="text-gray-600">₹{event.price}</span>
-                    )}
-                    {event.hasFood === 'yes' && (
-                      <span className="text-orange-600 font-medium">🍕 Food</span>
-                    )}
-                  </div>
-                </div>
-
-                {/* Description */}
-                <p className="text-sm text-gray-600 line-clamp-3 mb-4">
-                  {event.description}
-                </p>
-
-                {/* Actions */}
-                <div className="flex gap-2">
-                  <a
-                    href={event.sourceUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex-1 px-3 py-2 text-sm font-medium text-center text-white bg-purple-600 rounded-lg hover:bg-purple-700"
-                  >
-                    View Details
-                  </a>
+                Retry
+              </button>
+            </div>
+          ) : events.length === 0 ? (
+            <div className="text-center py-24 px-5">
+              <span className="material-symbols-outlined text-[56px] text-[#e5e5e5] block mb-3">rss_feed</span>
+              <p className="text-[#1D1D1F] font-semibold text-body-lg">No events yet</p>
+              <p className="text-[#86868B] text-body-md mt-2">Events appear here once scrapers have run.</p>
+              <a
+                href="/add-event"
+                className="inline-block mt-6 px-6 py-3 bg-black text-white rounded-full text-label-md hover:bg-gray-800 transition-colors"
+              >
+                + Add Event Manually
+              </a>
+            </div>
+          ) : (
+            <>
+              {filteredByTime.length === 0 && (
+                <div className="col-span-full text-center py-20">
+                  <span className="material-symbols-outlined text-[48px] text-[#e5e5e5] block mb-3">calendar_today</span>
+                  <p className="text-[#86868B] text-body-md">
+                    No events for <span className="font-semibold text-[#1D1D1F]">{activeTime}</span>
+                  </p>
                   <button
-                    onClick={() => trackEvent(event._id)}
-                    className="px-3 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
+                    onClick={() => setActiveTime('All Upcoming')}
+                    className="mt-4 text-label-md text-[#0071E3] font-semibold hover:underline"
                   >
-                    Track
+                    Show all upcoming →
                   </button>
                 </div>
+              )}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {filteredByTime.map(event => {
+                  const primaryCat = event.category[0] || 'default';
+                  const gradClass = getCategoryGradientClass(primaryCat);
+                  const isNew = (Date.now() - new Date(event.createdAt).getTime()) < 48 * 3600 * 1000;
 
-                {/* Source Badge */}
-                <div className="mt-3 pt-3 border-t border-gray-100">
-                  <span className="text-xs text-gray-500">
-                    via {event.source}
-                  </span>
-                </div>
+                  return (
+                    <article
+                      key={event._id}
+                      className="bg-white rounded-[20px] card-shadow overflow-hidden hover-lift flex flex-col group"
+                    >
+                      {/* Gradient accent bar */}
+                      <div className={`h-2 w-full ${gradClass}`} />
+
+                      <div className="p-8 flex-1 flex flex-col">
+                        {/* Category + New badge */}
+                        <div className="flex items-start justify-between mb-4">
+                          <span className={`px-3 py-1 rounded-full text-label-sm uppercase tracking-wider ${getCategoryBadgeStyle(primaryCat)}`}>
+                            {primaryCat}
+                          </span>
+                          {isNew && (
+                            <span className="bg-[#0071E3] text-white text-[11px] font-bold px-2 py-0.5 rounded flex items-center gap-1 shrink-0">
+                              <span className="material-symbols-outlined text-[11px]" style={{ fontVariationSettings: "'FILL' 1" }}>auto_awesome</span>
+                              New
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Title */}
+                        <a href={`/events/${event._id}`}>
+                          <h2 className="text-headline-md mb-3 line-clamp-2 group-hover:text-[#0071E3] transition-colors">
+                            {event.title}
+                          </h2>
+                        </a>
+
+                        {/* Date + Location */}
+                        <div className="text-label-md text-[#86868B] flex flex-col gap-1.5 mb-4">
+                          <span className="flex items-center gap-1.5">
+                            <span className="material-symbols-outlined text-[15px]">calendar_month</span>
+                            {format(new Date(event.startDateTime), 'MMM d • h:mm a')}
+                          </span>
+                          <span className="flex items-center gap-1.5">
+                            <span className="material-symbols-outlined text-[15px]">location_on</span>
+                            {event.format === 'online'
+                              ? 'Online'
+                              : event.venue
+                              ? `${event.venue}${event.area ? `, ${event.area}` : ''}`
+                              : event.area || 'Bangalore'}
+                          </span>
+                        </div>
+
+                        {/* Tags row */}
+                        <div className="flex flex-wrap gap-2 mt-auto mb-5 pt-4 border-t border-[#f0f0f0]">
+                          <span className="bg-[#f3f3f5] text-[#86868B] text-label-sm px-3 py-1 rounded-full uppercase">
+                            {event.format === 'online' ? 'Online' : event.format === 'hybrid' ? 'Hybrid' : 'Offline'}
+                          </span>
+                          {event.hasFood === 'yes' && (
+                            <span className="bg-[#f3f3f5] text-[#86868B] text-label-sm px-3 py-1 rounded-full uppercase">Food</span>
+                          )}
+                          {event.isFree ? (
+                            <span className="bg-green-50 text-green-700 text-label-sm px-3 py-1 rounded-full uppercase">Free</span>
+                          ) : (
+                            <span className="bg-[#f3f3f5] text-[#86868B] text-label-sm px-3 py-1 rounded-full uppercase">₹{event.price}</span>
+                          )}
+                        </div>
+
+                        {/* CTA buttons */}
+                        <div className="flex gap-2">
+                          <a
+                            href={event.applyLink || event.sourceUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex-1 bg-black text-white text-label-md py-2.5 rounded-full text-center hover:bg-gray-800 transition-colors active:scale-95"
+                          >
+                            {event.isFree ? 'RSVP Now' : `Register · ₹${event.price}`}
+                          </a>
+                          <a
+                            href={`/events/${event._id}`}
+                            className="w-11 h-11 bg-white border border-[#e5e5e5] rounded-full flex items-center justify-center hover:bg-[#f3f3f5] transition-colors active:scale-95 shrink-0"
+                            title="View details"
+                          >
+                            <span className="material-symbols-outlined text-[16px] text-[#1D1D1F]">open_in_new</span>
+                          </a>
+                          <button
+                            onClick={(e) => trackEvent(event._id, e)}
+                            className="w-11 h-11 bg-white border border-[#e5e5e5] rounded-full flex items-center justify-center hover:bg-[#f3f3f5] transition-colors active:scale-95 shrink-0"
+                            title="Track this event"
+                          >
+                            <span className="material-symbols-outlined text-[16px] text-[#1D1D1F]" style={{ fontVariationSettings: "'FILL' 0" }}>bookmark_border</span>
+                          </button>
+                        </div>
+                      </div>
+                    </article>
+                  );
+                })}
               </div>
-            ))}
-          </div>
-        )}
+            </>
+          )}
+        </div>
       </main>
+
+      {/* ── Mobile Bottom Nav ── */}
+      <nav className="fixed bottom-0 w-full md:hidden bg-white/70 glass-nav border-t border-black/5 flex justify-around items-center px-4 py-2 z-50 rounded-t-2xl">
+        {NAV_LINKS.map(link => {
+          const isActive = link.href === '/';
+          return (
+            <a
+              key={link.href}
+              href={link.href}
+              className={`flex flex-col items-center justify-center px-3 py-1 rounded-full transition-colors ${
+                isActive ? 'bg-[#0071E3]/10' : 'hover:bg-[#f3f3f5]'
+              }`}
+            >
+              <span
+                className={`material-symbols-outlined text-[22px] ${isActive ? 'text-[#0071E3]' : 'text-[#86868B]'}`}
+                style={{ fontVariationSettings: isActive ? "'FILL' 1" : "'FILL' 0" }}
+              >
+                {link.icon}
+              </span>
+              <span className={`text-[10px] font-semibold mt-0.5 ${isActive ? 'text-[#0071E3]' : 'text-[#86868B]'}`}>
+                {link.label}
+              </span>
+            </a>
+          );
+        })}
+      </nav>
     </div>
   );
 }
-
-// Made with Bob

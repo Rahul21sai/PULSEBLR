@@ -35,12 +35,21 @@ interface TrackerEntry {
 }
 
 const STATUS_COLUMNS = [
-  { id: 'New', label: 'New', color: 'bg-gray-100' },
-  { id: 'Interested', label: 'Interested', color: 'bg-blue-100' },
-  { id: 'Applied', label: 'Applied', color: 'bg-yellow-100' },
-  { id: 'Shortlisted', label: 'Shortlisted', color: 'bg-purple-100' },
-  { id: 'Confirmed', label: 'Confirmed', color: 'bg-green-100' },
-  { id: 'Attended', label: 'Attended', color: 'bg-teal-100' },
+  { id: 'New',         label: 'New',         dot: 'bg-gray-400',   accent: 'border-l-gray-400',   headerDot: 'bg-gray-400' },
+  { id: 'Interested',  label: 'Interested',  dot: 'bg-blue-500',   accent: 'border-l-blue-500',   headerDot: 'bg-blue-500' },
+  { id: 'Applied',     label: 'Applied',     dot: 'bg-yellow-500', accent: 'border-l-yellow-500', headerDot: 'bg-yellow-500' },
+  { id: 'Shortlisted', label: 'Shortlisted', dot: 'bg-purple-500', accent: 'border-l-purple-500', headerDot: 'bg-purple-500' },
+  { id: 'Confirmed',   label: 'Confirmed',   dot: 'bg-green-500',  accent: 'border-l-green-500',  headerDot: 'bg-green-500' },
+  { id: 'Attended',    label: 'Attended',    dot: 'bg-teal-500',   accent: 'border-l-teal-500',   headerDot: 'bg-teal-500' },
+  { id: 'Skipped',     label: 'Skipped',     dot: 'bg-gray-300',   accent: 'border-l-gray-300',   headerDot: 'bg-gray-300' },
+];
+
+const NAV_LINKS = [
+  { href: '/', label: 'Feed', icon: 'rss_feed' },
+  { href: '/calendar', label: 'Calendar', icon: 'calendar_today' },
+  { href: '/tracker', label: 'Tracker', icon: 'analytics' },
+  { href: '/add-event', label: 'Add', icon: 'add_circle' },
+  { href: '/settings', label: 'Settings', icon: 'settings' },
 ];
 
 export default function TrackerPage() {
@@ -50,32 +59,23 @@ export default function TrackerPage() {
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
 
-  useEffect(() => {
-    fetchTrackerEntries();
-  }, []);
+  useEffect(() => { fetchTrackerEntries(); }, []);
 
   const fetchTrackerEntries = async () => {
     try {
       setLoading(true);
-      const response = await fetch('/api/tracker');
-      if (!response.ok) throw new Error('Failed to fetch tracker entries');
-      const data = await response.json();
-      
-      // Group by status
+      const res = await fetch('/api/tracker');
+      if (!res.ok) throw new Error('Failed to fetch');
+      const data = await res.json();
       const grouped: Record<string, TrackerEntry[]> = {};
-      STATUS_COLUMNS.forEach(col => {
-        grouped[col.id] = [];
-      });
-      
+      STATUS_COLUMNS.forEach(col => { grouped[col.id] = []; });
       data.entries.forEach((entry: TrackerEntry) => {
-        if (grouped[entry.status]) {
-          grouped[entry.status].push(entry);
-        }
+        if (grouped[entry.status]) grouped[entry.status].push(entry);
+        else grouped['New'] = [...(grouped['New'] || []), entry];
       });
-      
       setEntries(grouped);
     } catch (err) {
-      console.error('Error fetching tracker entries:', err);
+      console.error(err);
     } finally {
       setLoading(false);
     }
@@ -83,258 +83,304 @@ export default function TrackerPage() {
 
   const updateStatus = async (entryId: string, newStatus: string) => {
     try {
-      const response = await fetch(`/api/tracker/${entryId}`, {
+      await fetch(`/api/tracker/${entryId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: newStatus }),
       });
-      
-      if (!response.ok) throw new Error('Failed to update status');
-      
       await fetchTrackerEntries();
     } catch (err) {
-      console.error('Error updating status:', err);
+      console.error(err);
     }
   };
 
-  const openDetailModal = (entry: TrackerEntry) => {
-    setSelectedEntry(entry);
-    setShowDetailModal(true);
-  };
-
-  const openEditModal = (entry: TrackerEntry) => {
-    setSelectedEntry(entry);
-    setShowEditModal(true);
-    setShowDetailModal(false);
-  };
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading tracker...</p>
-        </div>
-      </div>
-    );
-  }
+  const totalTracked = Object.values(entries).reduce((acc, arr) => acc + arr.length, 0);
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white shadow-sm sticky top-0 z-10">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900">Event Tracker</h1>
-              <p className="text-sm text-gray-600">Manage your event pipeline</p>
-            </div>
-            <div className="flex gap-2">
-              <a
-                href="/"
-                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
-              >
-                Feed
+    <div className="min-h-screen bg-[#F5F5F7]">
+
+      {/* Desktop Nav */}
+      <nav className="hidden md:flex fixed top-0 w-full h-14 bg-white/70 glass-nav z-50 border-b border-black/5">
+        <div className="flex justify-between items-center w-full max-w-[1200px] mx-auto px-20">
+          <a href="/" className="text-xl font-bold tracking-tight text-[#1D1D1F] hover:text-[#0071E3] transition-colors">PulseBLR</a>
+          <div className="flex items-center gap-8">
+            {NAV_LINKS.map(link => (
+              <a key={link.href} href={link.href}
+                className={`text-label-md font-medium transition-colors ${
+                  link.href === '/tracker'
+                    ? 'text-[#0071E3] font-semibold border-b-2 border-[#0071E3] pb-0.5'
+                    : 'text-[#86868B] hover:text-[#1D1D1F]'
+                }`}>
+                {link.label}
               </a>
-              <button className="px-4 py-2 text-sm font-medium text-white bg-purple-600 rounded-lg hover:bg-purple-700">
-                Tracker
-              </button>
-              <button className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50">
-                Calendar
-              </button>
-            </div>
+            ))}
           </div>
+          <a href="/dashboard" className="text-[#86868B] hover:text-[#0071E3] transition-colors">
+            <span className="material-symbols-outlined text-[24px]">account_circle</span>
+          </a>
         </div>
+      </nav>
+
+      {/* Mobile Header */}
+      <header className="md:hidden fixed top-0 w-full h-14 bg-white/70 glass-nav z-50 border-b border-black/5 flex items-center justify-between px-5">
+        <a href="/" className="text-lg font-bold tracking-tight text-[#1D1D1F]">PulseBLR</a>
+        <span className="text-[#86868B] text-label-md font-semibold">Tracker</span>
       </header>
 
-      {/* Kanban Board */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="flex gap-4 overflow-x-auto pb-4">
-          {STATUS_COLUMNS.map((column) => (
-            <div key={column.id} className="flex-shrink-0 w-80">
-              <div className={`${column.color} rounded-lg p-3 mb-3`}>
-                <h3 className="font-semibold text-gray-900">
-                  {column.label}
-                  <span className="ml-2 text-sm text-gray-600">
-                    ({entries[column.id]?.length || 0})
-                  </span>
-                </h3>
+      <main className="pt-14 pb-24 md:pb-0">
+
+        {/* Hero */}
+        <section className="bg-black text-white px-5 md:px-20 pt-12 pb-10">
+          <div className="max-w-[1200px] mx-auto flex items-end justify-between">
+            <div>
+              <h1 className="text-display-lg-mobile md:text-display-lg mb-1">My Tracker</h1>
+              <p className="text-body-md text-gray-400">Your personal event pipeline</p>
+            </div>
+            <div className="text-right">
+              <p className="text-[40px] font-bold text-white leading-none">{totalTracked}</p>
+              <p className="text-gray-400 text-label-md mt-1">events tracked</p>
+            </div>
+          </div>
+        </section>
+
+        {loading ? (
+          <div className="flex justify-center items-center py-24">
+            <div className="spinner" />
+          </div>
+        ) : (
+          <>
+            {/* Pipeline summary bar */}
+            <div className="max-w-[1200px] mx-auto px-5 md:px-20 pt-6 pb-2">
+              <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
+                {STATUS_COLUMNS.map(col => (
+                  <div key={col.id} className="flex items-center gap-1.5 shrink-0 bg-white px-4 py-2 rounded-full card-shadow text-label-md text-[#1D1D1F]">
+                    <span className={`w-2 h-2 rounded-full ${col.dot}`} />
+                    {col.label}
+                    <span className="text-[#86868B] ml-0.5">({entries[col.id]?.length || 0})</span>
+                  </div>
+                ))}
               </div>
-              
-              <div className="space-y-3">
-                {entries[column.id]?.map((entry) => (
-                  <div
-                    key={entry._id}
-                    className="bg-white rounded-lg shadow-sm p-4 border border-gray-200 hover:shadow-md transition-shadow cursor-pointer"
-                    onClick={() => openDetailModal(entry)}
-                  >
-                    <h4 className="font-semibold text-gray-900 mb-2 line-clamp-2">
-                      {entry.eventId.title}
-                    </h4>
-                    
-                    <div className="text-sm text-gray-600 mb-2">
-                      {format(new Date(entry.eventId.startDateTime), 'MMM dd, yyyy')}
-                    </div>
-                    
-                    <div className="flex flex-wrap gap-1 mb-2">
-                      {entry.eventId.category.slice(0, 2).map((cat) => (
-                        <span
-                          key={cat}
-                          className="px-2 py-1 text-xs font-medium bg-gray-100 text-gray-700 rounded"
-                        >
-                          {cat}
-                        </span>
-                      ))}
-                    </div>
-                    
-                    {entry.notes && (
-                      <p className="text-xs text-gray-500 line-clamp-2 mb-2">
-                        📝 {entry.notes}
-                      </p>
-                    )}
-                    
-                    {entry.connections.length > 0 && (
-                      <div className="text-xs text-purple-600 font-medium">
-                        👥 {entry.connections.length} connection{entry.connections.length > 1 ? 's' : ''}
+            </div>
+
+            {/* Kanban board — full-width scroll */}
+            <div className="overflow-x-auto no-scrollbar">
+              <div className="flex gap-4 px-5 md:px-20 pt-4 pb-8" style={{ minWidth: 'max-content' }}>
+                {STATUS_COLUMNS.map(col => (
+                  <div key={col.id} className="w-72 flex flex-col flex-shrink-0">
+
+                    {/* Column header */}
+                    <div className="sticky top-14 z-20 bg-[#F5F5F7]/90 backdrop-blur-md px-1 py-3 mb-2 flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className={`w-2.5 h-2.5 rounded-full ${col.dot}`} />
+                        <span className="text-label-md font-bold text-[#1D1D1F]">{col.label}</span>
                       </div>
-                    )}
-                    
-                    {/* Status change buttons */}
-                    <div className="mt-3 flex gap-1">
-                      {column.id !== 'Attended' && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            const nextStatusIndex = STATUS_COLUMNS.findIndex(c => c.id === column.id) + 1;
-                            if (nextStatusIndex < STATUS_COLUMNS.length) {
-                              updateStatus(entry._id, STATUS_COLUMNS[nextStatusIndex].id);
-                            }
-                          }}
-                          className="text-xs px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded"
+                      <span className="text-label-sm text-[#86868B] bg-white px-2 py-0.5 rounded-full border border-[#e5e5e5]">
+                        {entries[col.id]?.length || 0}
+                      </span>
+                    </div>
+
+                    {/* Cards */}
+                    <div className="flex flex-col gap-3 min-h-[200px]">
+                      {entries[col.id]?.map(entry => (
+                        <div
+                          key={entry._id}
+                          onClick={() => { setSelectedEntry(entry); setShowDetailModal(true); }}
+                          className={`bg-white rounded-[20px] card-shadow p-4 cursor-pointer hover-lift border-l-[3px] ${col.accent}`}
                         >
-                          →
-                        </button>
+                          {/* Category tags */}
+                          <div className="flex flex-wrap gap-1 mb-2">
+                            {entry.eventId.category.slice(0, 2).map(cat => (
+                              <span key={cat} className="bg-[#f3f3f5] text-[#86868B] text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase tracking-wide">
+                                {cat}
+                              </span>
+                            ))}
+                          </div>
+
+                          {/* Title */}
+                          <h4 className="text-label-md font-semibold text-[#1D1D1F] line-clamp-2 leading-snug mb-2">
+                            {entry.eventId.title}
+                          </h4>
+
+                          {/* Date */}
+                          <div className="flex items-center gap-1 text-[11px] text-[#86868B] mb-3">
+                            <span className="material-symbols-outlined text-[12px]">calendar_today</span>
+                            {format(new Date(entry.eventId.startDateTime), 'MMM d, yyyy')}
+                          </div>
+
+                          {/* Connections badge */}
+                          {entry.connections.length > 0 && (
+                            <div className="flex items-center gap-1 text-[11px] text-[#0071E3] font-medium mb-3">
+                              <span className="material-symbols-outlined text-[13px]">group</span>
+                              {entry.connections.length} connection{entry.connections.length > 1 ? 's' : ''}
+                            </div>
+                          )}
+
+                          {/* Advance button */}
+                          {col.id !== 'Attended' && col.id !== 'Skipped' && (
+                            <div className="pt-3 border-t border-[#f0f0f0]">
+                              <button
+                                onClick={e => {
+                                  e.stopPropagation();
+                                  const nextIdx = STATUS_COLUMNS.findIndex(c => c.id === col.id) + 1;
+                                  if (nextIdx < STATUS_COLUMNS.length) {
+                                    updateStatus(entry._id, STATUS_COLUMNS[nextIdx].id);
+                                  }
+                                }}
+                                className="w-full text-[11px] font-semibold text-[#0071E3] bg-blue-50 hover:bg-blue-100 py-1.5 rounded-full transition-colors"
+                              >
+                                Move to {STATUS_COLUMNS[STATUS_COLUMNS.findIndex(c => c.id === col.id) + 1]?.label} →
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+
+                      {entries[col.id]?.length === 0 && (
+                        <div className="flex flex-col items-center justify-center h-32 text-[#86868B]">
+                          <span className="material-symbols-outlined text-[28px] text-[#e5e5e5] block mb-1">
+                            {col.id === 'Attended' ? 'history' : col.id === 'Skipped' ? 'block' : 'inbox'}
+                          </span>
+                          <span className="text-label-sm">
+                            {col.id === 'Attended' ? 'No recent events' : col.id === 'Skipped' ? 'Nothing here yet' : 'Empty'}
+                          </span>
+                        </div>
                       )}
                     </div>
                   </div>
                 ))}
-                
-                {entries[column.id]?.length === 0 && (
-                  <div className="text-center text-gray-400 text-sm py-8">
-                    No events
-                  </div>
-                )}
               </div>
             </div>
-          ))}
-        </div>
+          </>
+        )}
       </main>
 
-      {/* Detail Modal */}
+      {/* ── Detail Modal ── */}
       {showDetailModal && selectedEntry && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 bg-black/50 flex items-end md:items-center justify-center z-50 p-0 md:p-4">
+          <div className="bg-white rounded-t-3xl md:rounded-[20px] w-full md:max-w-xl max-h-[90vh] overflow-y-auto">
+            {/* Drag handle (mobile) */}
+            <div className="flex justify-center pt-3 pb-1 md:hidden">
+              <div className="w-10 h-1 bg-[#e5e5e5] rounded-full" />
+            </div>
             <div className="p-6">
-              <div className="flex justify-between items-start mb-4">
-                <h2 className="text-2xl font-bold text-gray-900">
+              <div className="flex items-start justify-between mb-5">
+                <h2 className="text-headline-md text-[#1D1D1F] leading-snug flex-1 pr-4">
                   {selectedEntry.eventId.title}
                 </h2>
                 <button
                   onClick={() => setShowDetailModal(false)}
-                  className="text-gray-400 hover:text-gray-600"
+                  className="w-8 h-8 rounded-full bg-[#f3f3f5] flex items-center justify-center hover:bg-[#e8e8ea] transition-colors shrink-0"
                 >
-                  ✕
+                  <span className="material-symbols-outlined text-[18px]">close</span>
                 </button>
               </div>
-              
-              <div className="space-y-4">
-                <div>
-                  <label className="text-sm font-medium text-gray-700">Status</label>
-                  <select
-                    value={selectedEntry.status}
-                    onChange={(e) => {
-                      updateStatus(selectedEntry._id, e.target.value);
-                      setShowDetailModal(false);
-                    }}
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500"
-                  >
-                    {STATUS_COLUMNS.map(col => (
-                      <option key={col.id} value={col.id}>{col.label}</option>
+
+              {/* Status selector */}
+              <div className="mb-5">
+                <label className="block text-label-sm uppercase tracking-widest text-[#86868B] mb-2">Status</label>
+                <select
+                  value={selectedEntry.status}
+                  onChange={e => { updateStatus(selectedEntry._id, e.target.value); setShowDetailModal(false); }}
+                  className="w-full px-4 py-2.5 border border-[#e5e5e5] rounded-xl text-label-md text-[#1D1D1F] focus:outline-none focus:border-[#0071E3] bg-white"
+                >
+                  {STATUS_COLUMNS.map(col => (
+                    <option key={col.id} value={col.id}>{col.label}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Date + venue */}
+              <div className="bg-[#f7f7f7] rounded-xl p-4 mb-5 space-y-2 text-label-md text-[#86868B]">
+                <div className="flex items-center gap-2">
+                  <span className="material-symbols-outlined text-[16px]">calendar_month</span>
+                  {format(new Date(selectedEntry.eventId.startDateTime), 'PPP p')}
+                </div>
+                {selectedEntry.eventId.venue && (
+                  <div className="flex items-center gap-2">
+                    <span className="material-symbols-outlined text-[16px]">location_on</span>
+                    {selectedEntry.eventId.venue}
+                  </div>
+                )}
+              </div>
+
+              {/* Notes */}
+              {selectedEntry.notes && (
+                <div className="mb-5">
+                  <label className="block text-label-sm uppercase tracking-widest text-[#86868B] mb-2">Notes</label>
+                  <p className="text-label-md text-[#1D1D1F] bg-[#f7f7f7] rounded-xl p-4">{selectedEntry.notes}</p>
+                </div>
+              )}
+
+              {/* Connections */}
+              {selectedEntry.connections.length > 0 && (
+                <div className="mb-5">
+                  <label className="block text-label-sm uppercase tracking-widest text-[#86868B] mb-2">
+                    Connections ({selectedEntry.connections.length})
+                  </label>
+                  <div className="space-y-2">
+                    {selectedEntry.connections.map((conn, idx) => (
+                      <div key={idx} className="bg-[#f7f7f7] rounded-xl p-3">
+                        <p className="text-label-md font-semibold text-[#1D1D1F]">{conn.name}</p>
+                        {conn.role && (
+                          <p className="text-label-sm text-[#86868B]">
+                            {conn.role}{conn.company ? ` @ ${conn.company}` : ''}
+                          </p>
+                        )}
+                        {conn.linkedin && (
+                          <a href={conn.linkedin} target="_blank" rel="noopener noreferrer"
+                            className="text-label-sm text-[#0071E3] mt-1 inline-block">
+                            LinkedIn →
+                          </a>
+                        )}
+                      </div>
                     ))}
-                  </select>
-                </div>
-                
-                <div>
-                  <label className="text-sm font-medium text-gray-700">Event Details</label>
-                  <p className="mt-1 text-sm text-gray-600">{selectedEntry.eventId.description}</p>
-                </div>
-                
-                <div>
-                  <label className="text-sm font-medium text-gray-700">Date & Location</label>
-                  <p className="mt-1 text-sm text-gray-600">
-                    {format(new Date(selectedEntry.eventId.startDateTime), 'PPP p')}
-                    {selectedEntry.eventId.venue && ` • ${selectedEntry.eventId.venue}`}
-                  </p>
-                </div>
-                
-                {selectedEntry.notes && (
-                  <div>
-                    <label className="text-sm font-medium text-gray-700">Notes</label>
-                    <p className="mt-1 text-sm text-gray-600">{selectedEntry.notes}</p>
                   </div>
-                )}
-                
-                {selectedEntry.connections.length > 0 && (
-                  <div>
-                    <label className="text-sm font-medium text-gray-700 mb-2 block">
-                      Connections ({selectedEntry.connections.length})
-                    </label>
-                    <div className="space-y-2">
-                      {selectedEntry.connections.map((conn, idx) => (
-                        <div key={idx} className="p-3 bg-gray-50 rounded-lg">
-                          <div className="font-medium text-gray-900">{conn.name}</div>
-                          {conn.role && <div className="text-sm text-gray-600">{conn.role}</div>}
-                          {conn.company && <div className="text-sm text-gray-600">{conn.company}</div>}
-                          {conn.context && <div className="text-sm text-gray-500 mt-1">{conn.context}</div>}
-                          {conn.linkedin && (
-                            <a
-                              href={conn.linkedin}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-sm text-purple-600 hover:underline mt-1 inline-block"
-                            >
-                              LinkedIn →
-                            </a>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                
-                <div className="flex gap-2 pt-4">
-                  <a
-                    href={selectedEntry.eventId.sourceUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex-1 px-4 py-2 text-center text-white bg-purple-600 rounded-lg hover:bg-purple-700"
-                  >
-                    View Event
-                  </a>
-                  <button
-                    onClick={() => setShowDetailModal(false)}
-                    className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
-                  >
-                    Close
-                  </button>
                 </div>
+              )}
+
+              <div className="flex gap-3">
+                <a href={selectedEntry.eventId.sourceUrl} target="_blank" rel="noopener noreferrer"
+                  className="flex-1 bg-black text-white text-label-md font-semibold py-3 rounded-full text-center hover:bg-gray-800 transition-colors">
+                  View Event
+                </a>
+                <button
+                  onClick={() => { setShowDetailModal(false); setShowEditModal(true); }}
+                  className="px-6 py-3 bg-[#f3f3f5] text-[#1D1D1F] text-label-md font-semibold rounded-full hover:bg-[#e8e8ea] transition-colors">
+                  Edit
+                </button>
               </div>
             </div>
           </div>
         </div>
       )}
+
+      {/* Edit Modal */}
+      {showEditModal && selectedEntry && (
+        <EditTrackerModal
+          entryId={selectedEntry._id}
+          currentNotes={selectedEntry.notes}
+          currentConnections={selectedEntry.connections}
+          onClose={() => setShowEditModal(false)}
+          onSave={() => { setShowEditModal(false); fetchTrackerEntries(); }}
+        />
+      )}
+
+      {/* Mobile Bottom Nav */}
+      <nav className="fixed bottom-0 w-full md:hidden bg-white/70 glass-nav border-t border-black/5 flex justify-around items-center px-4 py-2 z-50 rounded-t-2xl">
+        {NAV_LINKS.map(link => {
+          const isActive = link.href === '/tracker';
+          return (
+            <a key={link.href} href={link.href}
+              className={`flex flex-col items-center justify-center px-3 py-1 rounded-full transition-colors ${isActive ? 'bg-[#0071E3]/10' : 'hover:bg-[#f3f3f5]'}`}>
+              <span className={`material-symbols-outlined text-[22px] ${isActive ? 'text-[#0071E3]' : 'text-[#86868B]'}`}
+                style={{ fontVariationSettings: isActive ? "'FILL' 1" : "'FILL' 0" }}>
+                {link.icon}
+              </span>
+              <span className={`text-[10px] font-semibold mt-0.5 ${isActive ? 'text-[#0071E3]' : 'text-[#86868B]'}`}>{link.label}</span>
+            </a>
+          );
+        })}
+      </nav>
     </div>
   );
 }
-
-// Made with Bob

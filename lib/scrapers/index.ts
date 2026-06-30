@@ -35,8 +35,9 @@ export async function runAllScrapers(): Promise<ScraperRunResult> {
     console.log(`✅ Meetup: ${meetupResult.events.length} events, ${meetupResult.errors.length} errors`);
     
     // Update source records for each Meetup group
-    for (const group of BANGALORE_MEETUP_GROUPS) {
-      await updateSource(group.name, 'rss', group.rssUrl);
+    for (const url of BANGALORE_MEETUP_GROUPS) {
+      const name = url.split('/')[4] || url;
+      await updateSource(name, 'rss', url);
     }
   } catch (error: any) {
     allErrors.push(`Meetup scraper failed: ${error.message}`);
@@ -52,8 +53,9 @@ export async function runAllScrapers(): Promise<ScraperRunResult> {
     console.log(`✅ Luma: ${lumaResult.events.length} events, ${lumaResult.errors.length} errors`);
     
     // Update source records for each Luma calendar
-    for (const calendar of BANGALORE_LUMA_CALENDARS) {
-      await updateSource(calendar.name, 'scrape', calendar.url);
+    for (const url of BANGALORE_LUMA_CALENDARS) {
+      const name = url.split('/').pop() || url;
+      await updateSource(name, 'scrape', url);
     }
   } catch (error: any) {
     allErrors.push(`Luma scraper failed: ${error.message}`);
