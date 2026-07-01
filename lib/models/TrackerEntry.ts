@@ -13,6 +13,7 @@ export interface IConnection {
 
 export interface ITrackerEntry extends Document {
   eventId: mongoose.Types.ObjectId;
+  userId: string;   // Google sub / email — owner of this entry
   status: 'New' | 'Interested' | 'Applied' | 'Shortlisted' | 'Confirmed' | 'Attended' | 'Skipped' | 'Rejected';
   notes?: string;
   appliedAt?: Date;
@@ -66,7 +67,11 @@ const TrackerEntrySchema = new Schema<ITrackerEntry>(
       type: Schema.Types.ObjectId,
       ref: 'Event',
       required: true,
-      unique: true,
+      index: true,
+    },
+    userId: {
+      type: String,
+      required: true,
       index: true,
     },
     status: {
@@ -96,8 +101,10 @@ const TrackerEntrySchema = new Schema<ITrackerEntry>(
   }
 );
 
+// Compound unique: one tracker entry per user per event
+TrackerEntrySchema.index({ userId: 1, eventId: 1 }, { unique: true });
 // Index for efficient querying
-TrackerEntrySchema.index({ status: 1 });
+TrackerEntrySchema.index({ userId: 1, status: 1 });
 TrackerEntrySchema.index({ updatedAt: -1 });
 TrackerEntrySchema.index({ 'connections.followUpAt': 1 });
 

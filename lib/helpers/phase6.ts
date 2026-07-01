@@ -6,12 +6,13 @@ import mongoose from 'mongoose';
 /**
  * Get all connections with pending follow-ups
  */
-export async function getPendingFollowUps() {
+export async function getPendingFollowUps(userId: string) {
   await connectDB();
   
   const now = new Date();
   
   const entries = await TrackerEntry.find({
+    userId,
     'connections.followUpAt': { $lte: now },
     'connections.followedUp': { $ne: true },
   }).populate('eventId');
@@ -43,11 +44,12 @@ export async function getPendingFollowUps() {
  */
 export async function markFollowUpComplete(
   trackerEntryId: string,
-  connectionName: string
+  connectionName: string,
+  userId: string
 ) {
   await connectDB();
   
-  const entry = await TrackerEntry.findById(trackerEntryId);
+  const entry = await TrackerEntry.findOne({ _id: trackerEntryId, userId });
   if (!entry) throw new Error('Tracker entry not found');
   
   const connection = entry.connections.find(c => c.name === connectionName);
@@ -63,10 +65,11 @@ export async function markFollowUpComplete(
  * Detect repeat connections across events
  * Returns connections that appear in multiple events
  */
-export async function detectRepeatConnections() {
+export async function detectRepeatConnections(userId: string) {
   await connectDB();
   
   const entries = await TrackerEntry.find({
+    userId,
     'connections.0': { $exists: true },
   }).populate('eventId');
   
@@ -186,7 +189,7 @@ export function hasRecruiterMention(description: string): boolean {
 /**
  * Get stats for dashboard
  */
-export async function getStats() {
+export async function getStats(userId: string) {
   await connectDB();
   
   const now = new Date();
@@ -203,13 +206,14 @@ export async function getStats() {
   ] = await Promise.all([
     Event.countDocuments(),
     Event.countDocuments({ createdAt: { $gte: thisMonth } }),
-    TrackerEntry.countDocuments(),
-    TrackerEntry.countDocuments({ status: 'Attended' }),
+    TrackerEntry.countDocuments({ userId }),
+    TrackerEntry.countDocuments({ userId, status: 'Attended' }),
     TrackerEntry.aggregate([
+      { $match: { userId } },
       { $unwind: '$connections' },
       { $count: 'total' },
     ]).then(res => res[0]?.total || 0),
-    getPendingFollowUps().then(f => f.length),
+    getPendingFollowUps(userId).then(f => f.length),
     Event.countDocuments({ isTargetCompany: true }),
   ]);
   
