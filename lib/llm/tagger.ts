@@ -1,9 +1,3 @@
-import Anthropic from '@anthropic-ai/sdk';
-
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY || '',
-});
-
 interface TaggingResult {
   categories: string[];
   format: 'online' | 'offline' | 'hybrid';
@@ -47,8 +41,76 @@ Respond ONLY with valid JSON in this exact format:
   "confidence": 0.95
 }`;
 
+// ─────────────────────────────────────────────────────────────────────────────
+// NVIDIA NIM (primary) — OpenAI-compatible endpoint
+// Docs: https://docs.api.nvidia.com/nim/reference/llm-apis
+// ─────────────────────────────────────────────────────────────────────────────
+async function tagWithNvidia(userPrompt: string): Promise<TaggingResult> {
+  const apiKey = process.env.NVIDIA_API_KEY!;
+  const model = process.env.NVIDIA_MODEL || 'meta/llama-3.1-8b-instruct';
+  const baseUrl = process.env.NVIDIA_BASE_URL || 'https://integrate.api.nvidia.com/v1';
+
+  const response = await fetch(`${baseUrl}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model,
+      messages: [
+        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'user', content: userPrompt },
+      ],
+      max_tokens: 500,
+      temperature: 0.3,
+      // Ask for JSON output if the model supports it
+      response_format: { type: 'text' },
+    }),
+    signal: AbortSignal.timeout(15000),
+  });
+
+  if (!response.ok) {
+    const err = await response.text();
+    throw new Error(`NVIDIA NIM error ${response.status}: ${err}`);
+  }
+
+  const data = await response.json();
+  const text: string = data.choices?.[0]?.message?.content ?? '';
+
+  // Extract JSON block from the response (model may wrap it in markdown)
+  const jsonMatch = text.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) throw new Error('No JSON in NVIDIA response');
+  return JSON.parse(jsonMatch[0]) as TaggingResult;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Anthropic Claude (fallback when NVIDIA key not set)
+// ─────────────────────────────────────────────────────────────────────────────
+async function tagWithAnthropic(userPrompt: string): Promise<TaggingResult> {
+  // Dynamic import so the SDK is only loaded when actually needed
+  const { default: Anthropic } = await import('@anthropic-ai/sdk');
+  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
+
+  const message = await anthropic.messages.create({
+    model: 'claude-3-5-sonnet-20241022',
+    max_tokens: 500,
+    temperature: 0.3,
+    system: SYSTEM_PROMPT,
+    messages: [{ role: 'user', content: userPrompt }],
+  });
+
+  const content = message.content[0];
+  if (content.type !== 'text') throw new Error('Unexpected Anthropic response type');
+
+  const jsonMatch = content.text.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) throw new Error('No JSON in Anthropic response');
+  return JSON.parse(jsonMatch[0]) as TaggingResult;
+}
+
 /**
- * Use Claude to intelligently tag an event
+ * Tag an event using NVIDIA NIM (primary) or Anthropic Claude (fallback).
+ * If neither key is set, returns keyword-based tagging.
  */
 export async function tagEventWithLLM(
   title: string,
@@ -56,61 +118,39 @@ export async function tagEventWithLLM(
   venue?: string,
   onlineLink?: string
 ): Promise<TaggingResult> {
-  // Skip if no API key
-  if (!process.env.ANTHROPIC_API_KEY) {
-    console.warn('⚠️  ANTHROPIC_API_KEY not set, using basic tagging');
+  const hasNvidia = !!process.env.NVIDIA_API_KEY;
+  const hasAnthropic = !!process.env.ANTHROPIC_API_KEY;
+
+  if (!hasNvidia && !hasAnthropic) {
+    console.warn('⚠️  No LLM API key set (NVIDIA_API_KEY or ANTHROPIC_API_KEY), using keyword tagging');
     return fallbackTagging(title, description, venue, onlineLink);
   }
 
-  try {
-    const userPrompt = `Event Title: ${title}
+  const userPrompt = `Event Title: ${title}
 
 Event Description: ${description}
-
-${venue ? `Venue: ${venue}` : ''}
-${onlineLink ? `Online Link: ${onlineLink}` : ''}
+${venue ? `\nVenue: ${venue}` : ''}
+${onlineLink ? `\nOnline Link: ${onlineLink}` : ''}
 
 Classify this event.`;
 
-    const message = await anthropic.messages.create({
-      model: 'claude-3-5-sonnet-20241022',
-      max_tokens: 500,
-      temperature: 0.3,
-      system: SYSTEM_PROMPT,
-      messages: [
-        {
-          role: 'user',
-          content: userPrompt,
-        },
-      ],
-    });
-
-    const content = message.content[0];
-    if (content.type !== 'text') {
-      throw new Error('Unexpected response type from Claude');
-    }
-
-    // Parse JSON response
-    const result = JSON.parse(content.text) as TaggingResult;
+  try {
+    const result = hasNvidia
+      ? await tagWithNvidia(userPrompt)
+      : await tagWithAnthropic(userPrompt);
 
     // Validate categories
     const validCategories = [
       'AI/ML', 'Fintech', 'Cybersecurity', 'Cloud/DevOps', 'Web/Mobile',
       'Data/Analytics', 'Hackathon', 'Government', 'Corporate',
-      'Summit/Conference', 'Networking/Meetup', 'Career/Job Fair'
+      'Summit/Conference', 'Networking/Meetup', 'Career/Job Fair',
     ];
+    result.categories = result.categories.filter(c => validCategories.includes(c));
+    if (result.categories.length === 0) result.categories = ['Networking/Meetup'];
 
-    result.categories = result.categories.filter(cat => validCategories.includes(cat));
-
-    // Ensure at least one category
-    if (result.categories.length === 0) {
-      result.categories = ['Networking/Meetup'];
-    }
-
-    console.log(`✅ LLM tagged: ${title} → ${result.categories.join(', ')}`);
-
+    const provider = hasNvidia ? 'NVIDIA NIM' : 'Anthropic';
+    console.log(`✅ [${provider}] tagged: ${title} → ${result.categories.join(', ')}`);
     return result;
-
   } catch (error: any) {
     console.error('❌ LLM tagging error:', error.message);
     return fallbackTagging(title, description, venue, onlineLink);
