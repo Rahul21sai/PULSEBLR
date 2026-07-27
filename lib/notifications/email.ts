@@ -50,7 +50,7 @@ export async function sendDailyDigestEmail(config: EmailConfig): Promise<boolean
     const textContent = formatDigestAsText(digest);
 
     const { data, error } = await getResend().emails.send({
-      from: config.from || 'PulseBLR <digest@pulseblr.app>',
+      from: config.from || process.env.EMAIL_FROM || 'PulseBLR <onboarding@resend.dev>',
       to: config.to,
       subject: `🎯 PulseBLR Daily Digest - ${new Date().toLocaleDateString('en-IN', { month: 'short', day: 'numeric' })}`,
       html: htmlContent,
@@ -86,7 +86,7 @@ export async function sendNotificationEmail(
 
   try {
     const { data, error } = await getResend().emails.send({
-      from: config.from || 'PulseBLR <notifications@pulseblr.app>',
+      from: config.from || process.env.EMAIL_FROM || 'PulseBLR <onboarding@resend.dev>',
       to: config.to,
       subject,
       html,
