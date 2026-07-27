@@ -4,6 +4,7 @@
  * Usage: npm run send-digest
  */
 
+import './load-env'; // MUST be first — populates process.env from .env.local
 import { sendDailyDigestEmail } from '../lib/notifications/email';
 
 async function main() {
