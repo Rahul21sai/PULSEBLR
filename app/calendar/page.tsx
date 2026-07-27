@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, isToday, getDay } from 'date-fns';
+import { DesktopNav, MobileBottomNav } from '../components/NavBar';
 
 interface Event {
   _id: string;
@@ -16,13 +17,7 @@ interface Event {
   sourceUrl: string;
 }
 
-const NAV_LINKS = [
-  { href: '/', label: 'Feed', icon: 'rss_feed' },
-  { href: '/calendar', label: 'Calendar', icon: 'calendar_today' },
-  { href: '/tracker', label: 'Tracker', icon: 'analytics' },
-  { href: '/add-event', label: 'Add', icon: 'add_circle' },
-  { href: '/settings', label: 'Settings', icon: 'settings' },
-];
+
 
 const CAT_DOT: Record<string, string> = {
   'AI/ML': 'bg-blue-500',
@@ -78,30 +73,7 @@ export default function CalendarPage() {
 
   return (
     <div className="min-h-screen bg-[#F5F5F7]">
-
-      {/* Desktop Nav */}
-      <nav className="hidden md:flex fixed top-0 w-full h-14 bg-white/70 glass-nav z-50 border-b border-black/5">
-        <div className="flex justify-between items-center w-full max-w-[1200px] mx-auto px-20">
-          <a href="/" className="text-xl font-bold tracking-tight text-[#1D1D1F] hover:text-[#0071E3] transition-colors">
-            PulseBLR
-          </a>
-          <div className="flex items-center gap-8">
-            {NAV_LINKS.map(link => (
-              <a key={link.href} href={link.href}
-                className={`text-label-md font-medium transition-colors ${
-                  link.href === '/calendar'
-                    ? 'text-[#0071E3] font-semibold border-b-2 border-[#0071E3] pb-0.5'
-                    : 'text-[#86868B] hover:text-[#1D1D1F]'
-                }`}>
-                {link.label}
-              </a>
-            ))}
-          </div>
-          <a href="/dashboard" className="text-[#86868B] hover:text-[#0071E3] transition-colors">
-            <span className="material-symbols-outlined text-[24px]">account_circle</span>
-          </a>
-        </div>
-      </nav>
+      <DesktopNav />
 
       {/* Mobile Header */}
       <header className="md:hidden fixed top-0 w-full h-14 bg-white/70 glass-nav z-50 border-b border-black/5 flex items-center justify-between px-5">
@@ -271,22 +243,7 @@ export default function CalendarPage() {
         </div>
       </main>
 
-      {/* Mobile Bottom Nav */}
-      <nav className="fixed bottom-0 w-full md:hidden bg-white/70 glass-nav border-t border-black/5 flex justify-around items-center px-4 py-2 z-50 rounded-t-2xl">
-        {NAV_LINKS.map(link => {
-          const isActive = link.href === '/calendar';
-          return (
-            <a key={link.href} href={link.href}
-              className={`flex flex-col items-center justify-center px-3 py-1 rounded-full transition-colors ${isActive ? 'bg-[#0071E3]/10' : 'hover:bg-[#f3f3f5]'}`}>
-              <span className={`material-symbols-outlined text-[22px] ${isActive ? 'text-[#0071E3]' : 'text-[#86868B]'}`}
-                style={{ fontVariationSettings: isActive ? "'FILL' 1" : "'FILL' 0" }}>
-                {link.icon}
-              </span>
-              <span className={`text-[10px] font-semibold mt-0.5 ${isActive ? 'text-[#0071E3]' : 'text-[#86868B]'}`}>{link.label}</span>
-            </a>
-          );
-        })}
-      </nav>
+      <MobileBottomNav />
     </div>
   );
 }

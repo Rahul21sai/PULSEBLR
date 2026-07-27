@@ -1,12 +1,17 @@
-import { getNewEventsSince, getEventsWithDeadlineSoon } from '../scrapers/ingestion';
+import { getNewEventsSince, getEventsWithDeadlineSoon, getUnhealthySources } from '../scrapers/ingestion';
 import connectDB from '../mongodb';
 import TrackerEntry from '../models/TrackerEntry';
+
+// Base URL for links in the digest. In production this must be the deployed
+// origin (set NEXTAUTH_URL); falls back to localhost for local runs.
+const APP_URL = (process.env.NEXTAUTH_URL || 'http://localhost:3000').replace(/\/$/, '');
 
 export interface DigestData {
   newEvents: any[];
   upcomingDeadlines: any[];
   trackerUpdates: any[];
   followUpReminders: any[];
+  unhealthySources: any[];
 }
 
 /**
@@ -45,11 +50,16 @@ export async function generateDailyDigest(): Promise<DigestData> {
     .populate('eventId')
     .lean();
 
+  // Sources that have gone quiet or errored — so scraper breakage is visible
+  // instead of silently shrinking the event feed.
+  const unhealthySources = await getUnhealthySources();
+
   return {
     newEvents,
     upcomingDeadlines,
     trackerUpdates,
     followUpReminders,
+    unhealthySources,
   };
 }
 
@@ -150,10 +160,24 @@ export function formatDigestAsText(digest: DigestData): string {
     lines.push('');
   }
 
+  // Source Health Alerts (only shown when something is wrong)
+  if (digest.unhealthySources.length > 0) {
+    lines.push(`⚠️  SOURCE HEALTH (${digest.unhealthySources.length})`);
+    lines.push('─'.repeat(47));
+    digest.unhealthySources.forEach((source: any) => {
+      const reason = source.lastError
+        ? `error: ${String(source.lastError).substring(0, 80)}`
+        : `${source.consecutiveEmptyScrapes} empty scrapes in a row`;
+      lines.push(`  • ${source.name}`);
+      lines.push(`    ${reason}`);
+    });
+    lines.push('');
+  }
+
   // Footer
   lines.push('─'.repeat(47));
-  lines.push('View full details: http://localhost:3000');
-  lines.push('Manage tracker: http://localhost:3000/tracker');
+  lines.push(`View full details: ${APP_URL}`);
+  lines.push(`Manage tracker: ${APP_URL}/tracker`);
   lines.push('');
 
   return lines.join('\n');
@@ -246,11 +270,31 @@ export function formatDigestAsHTML(digest: DigestData): string {
     html.push(`</div>`);
   }
 
+  // Source Health Alerts (only rendered when something is wrong)
+  if (digest.unhealthySources.length > 0) {
+    html.push(`
+  <div class="section">
+    <div class="section-title" style="color: #c05621; border-bottom-color: #c05621;">⚠️ Source Health (${digest.unhealthySources.length})</div>
+`);
+    digest.unhealthySources.forEach((source: any) => {
+      const reason = source.lastError
+        ? `Error: ${escapeHtml(String(source.lastError).substring(0, 120))}`
+        : `${source.consecutiveEmptyScrapes} empty scrapes in a row`;
+      html.push(`
+    <div class="event-card" style="border-left-color: #dd6b20; background: #fffaf0;">
+      <div class="event-title">${escapeHtml(source.name)}</div>
+      <div class="event-meta">${reason}</div>
+    </div>
+`);
+    });
+    html.push(`</div>`);
+  }
+
   // Footer
   html.push(`
   <div class="footer">
-    <a href="http://localhost:3000" class="button">View All Events</a>
-    <a href="http://localhost:3000/tracker" class="button">Manage Tracker</a>
+    <a href="${APP_URL}" class="button">View All Events</a>
+    <a href="${APP_URL}/tracker" class="button">Manage Tracker</a>
     <p>You're receiving this because you're using PulseBLR</p>
   </div>
 </body>
@@ -258,6 +302,20 @@ export function formatDigestAsHTML(digest: DigestData): string {
 `);
 
   return html.join('');
+}
+
+/**
+ * Minimal HTML escaping for values interpolated into the digest email.
+ * Source names and error strings come from external feeds, so escape them to
+ * avoid injecting stray markup into the rendered email.
+ */
+function escapeHtml(input: string): string {
+  return input
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 // Made with Bob

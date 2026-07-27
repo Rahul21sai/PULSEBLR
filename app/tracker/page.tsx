@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { format } from 'date-fns';
 import EditTrackerModal from './components/EditTrackerModal';
+import { DesktopNav, MobileBottomNav } from '../components/NavBar';
 
 interface Connection {
   name: string;
@@ -35,22 +36,24 @@ interface TrackerEntry {
 }
 
 const STATUS_COLUMNS = [
-  { id: 'New',         label: 'New',         dot: 'bg-gray-400',   accent: 'border-l-gray-400',   headerDot: 'bg-gray-400' },
-  { id: 'Interested',  label: 'Interested',  dot: 'bg-blue-500',   accent: 'border-l-blue-500',   headerDot: 'bg-blue-500' },
-  { id: 'Applied',     label: 'Applied',     dot: 'bg-yellow-500', accent: 'border-l-yellow-500', headerDot: 'bg-yellow-500' },
-  { id: 'Shortlisted', label: 'Shortlisted', dot: 'bg-purple-500', accent: 'border-l-purple-500', headerDot: 'bg-purple-500' },
-  { id: 'Confirmed',   label: 'Confirmed',   dot: 'bg-green-500',  accent: 'border-l-green-500',  headerDot: 'bg-green-500' },
-  { id: 'Attended',    label: 'Attended',    dot: 'bg-teal-500',   accent: 'border-l-teal-500',   headerDot: 'bg-teal-500' },
-  { id: 'Skipped',     label: 'Skipped',     dot: 'bg-gray-300',   accent: 'border-l-gray-300',   headerDot: 'bg-gray-300' },
+  { id: 'New',         label: 'New',         accent: 'border-l-gray-400',    headerColor: 'text-gray-500' },
+  { id: 'Interested',  label: 'Interested',  accent: 'border-l-blue-400',    headerColor: 'text-blue-500' },
+  { id: 'Applied',     label: 'Applied',     accent: 'border-l-yellow-400',  headerColor: 'text-yellow-600' },
+  { id: 'Shortlisted', label: 'Shortlisted', accent: 'border-l-purple-400',  headerColor: 'text-purple-500' },
+  { id: 'Confirmed',   label: 'Confirmed',   accent: 'border-l-green-400',   headerColor: 'text-green-500' },
+  { id: 'Attended',    label: 'Attended',    accent: 'border-l-teal-400',    headerColor: 'text-teal-500' },
+  { id: 'Skipped',     label: 'Skipped',     dot: 'bg-gray-300',              accent: 'border-l-gray-300',   headerColor: 'text-gray-400' },
 ];
 
-const NAV_LINKS = [
-  { href: '/', label: 'Feed', icon: 'rss_feed' },
-  { href: '/calendar', label: 'Calendar', icon: 'calendar_today' },
-  { href: '/tracker', label: 'Tracker', icon: 'analytics' },
-  { href: '/add-event', label: 'Add', icon: 'add_circle' },
-  { href: '/settings', label: 'Settings', icon: 'settings' },
-];
+const CAT_PILL: Record<string, string> = {
+  'AI/ML': 'bg-blue-50 text-blue-700',
+  'Fintech': 'bg-green-50 text-green-700',
+  'Networking/Meetup': 'bg-orange-50 text-orange-700',
+  'Cybersecurity': 'bg-red-50 text-red-700',
+  'Cloud/DevOps': 'bg-sky-50 text-sky-700',
+  'Data/Analytics': 'bg-purple-50 text-purple-700',
+  'Hackathon': 'bg-pink-50 text-pink-700',
+};
 
 export default function TrackerPage() {
   const [entries, setEntries] = useState<Record<string, TrackerEntry[]>>({});
@@ -98,28 +101,7 @@ export default function TrackerPage() {
 
   return (
     <div className="min-h-screen bg-[#F5F5F7]">
-
-      {/* Desktop Nav */}
-      <nav className="hidden md:flex fixed top-0 w-full h-14 bg-white/70 glass-nav z-50 border-b border-black/5">
-        <div className="flex justify-between items-center w-full max-w-[1200px] mx-auto px-20">
-          <a href="/" className="text-xl font-bold tracking-tight text-[#1D1D1F] hover:text-[#0071E3] transition-colors">PulseBLR</a>
-          <div className="flex items-center gap-8">
-            {NAV_LINKS.map(link => (
-              <a key={link.href} href={link.href}
-                className={`text-label-md font-medium transition-colors ${
-                  link.href === '/tracker'
-                    ? 'text-[#0071E3] font-semibold border-b-2 border-[#0071E3] pb-0.5'
-                    : 'text-[#86868B] hover:text-[#1D1D1F]'
-                }`}>
-                {link.label}
-              </a>
-            ))}
-          </div>
-          <a href="/dashboard" className="text-[#86868B] hover:text-[#0071E3] transition-colors">
-            <span className="material-symbols-outlined text-[24px]">account_circle</span>
-          </a>
-        </div>
-      </nav>
+      <DesktopNav />
 
       {/* Mobile Header */}
       <header className="md:hidden fixed top-0 w-full h-14 bg-white/70 glass-nav z-50 border-b border-black/5 flex items-center justify-between px-5">
@@ -127,10 +109,9 @@ export default function TrackerPage() {
         <span className="text-[#86868B] text-label-md font-semibold">Tracker</span>
       </header>
 
-      <main className="pt-14 pb-24 md:pb-0">
-
-        {/* Hero */}
-        <section className="bg-black text-white px-5 md:px-20 pt-12 pb-10">
+      {/* Hero */}
+      <div className="pt-14">
+        <section className="bg-black text-white px-5 md:px-20 pt-10 pb-8">
           <div className="max-w-[1200px] mx-auto flex items-end justify-between">
             <div>
               <h1 className="text-display-lg-mobile md:text-display-lg mb-1">My Tracker</h1>
@@ -142,123 +123,117 @@ export default function TrackerPage() {
             </div>
           </div>
         </section>
+      </div>
 
-        {loading ? (
-          <div className="flex justify-center items-center py-24">
-            <div className="spinner" />
+      {loading ? (
+        <div className="flex justify-center items-center py-24">
+          <div className="spinner" />
+        </div>
+      ) : (
+        <>
+          {/* Pipeline summary chips */}
+          <div className="max-w-[1200px] mx-auto px-5 md:px-20 pt-5 pb-2">
+            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
+              {STATUS_COLUMNS.map(col => (
+                <div key={col.id} className="flex items-center gap-1.5 shrink-0 bg-white px-4 py-2 rounded-full card-shadow text-label-md text-[#1D1D1F]">
+                  <span className={`w-2 h-2 rounded-full border-l-4 ${col.accent} inline-block opacity-80`} />
+                  {col.label}
+                  <span className="text-[#86868B] ml-0.5">({entries[col.id]?.length || 0})</span>
+                </div>
+              ))}
+            </div>
           </div>
-        ) : (
-          <>
-            {/* Pipeline summary bar */}
-            <div className="max-w-[1200px] mx-auto px-5 md:px-20 pt-6 pb-2">
-              <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
-                {STATUS_COLUMNS.map(col => (
-                  <div key={col.id} className="flex items-center gap-1.5 shrink-0 bg-white px-4 py-2 rounded-full card-shadow text-label-md text-[#1D1D1F]">
-                    <span className={`w-2 h-2 rounded-full ${col.dot}`} />
-                    {col.label}
-                    <span className="text-[#86868B] ml-0.5">({entries[col.id]?.length || 0})</span>
+
+          {/* Kanban Board — Stitch spec: full height, columns with bg-surface-container-low */}
+          <div className="overflow-x-auto no-scrollbar pb-24 md:pb-8">
+            <div
+              className="flex gap-5 px-5 md:px-20 pt-4 pb-6"
+              style={{ minWidth: 'max-content', minHeight: 'calc(100vh - 280px)' }}
+            >
+              {STATUS_COLUMNS.map(col => (
+                <div key={col.id} className="w-72 flex flex-col flex-shrink-0 bg-[#f3f3f5] rounded-xl overflow-hidden">
+
+                  {/* Column Header — sticky with glassmorphism, Stitch spec */}
+                  <div className="sticky top-14 z-20 bg-[#f3f3f5]/90 backdrop-blur-md px-4 py-3 border-b border-[#e5e5e5] flex items-center justify-between">
+                    <h2 className={`text-label-md font-bold ${col.headerColor}`}>{col.label}</h2>
+                    <span className="bg-white text-[#86868B] font-label-sm text-[11px] px-2 py-0.5 rounded-full border border-[#e5e5e5]">
+                      {entries[col.id]?.length || 0}
+                    </span>
                   </div>
-                ))}
-              </div>
-            </div>
 
-            {/* Kanban board — full-width scroll */}
-            <div className="overflow-x-auto no-scrollbar">
-              <div className="flex gap-4 px-5 md:px-20 pt-4 pb-8" style={{ minWidth: 'max-content' }}>
-                {STATUS_COLUMNS.map(col => (
-                  <div key={col.id} className="w-72 flex flex-col flex-shrink-0">
+                  {/* Cards area */}
+                  <div className="flex flex-col gap-3 p-3 flex-1">
+                    {entries[col.id]?.map(entry => (
+                      <div
+                        key={entry._id}
+                        onClick={() => { setSelectedEntry(entry); setShowDetailModal(true); }}
+                        className={`bg-white rounded-[20px] shadow-[0_4px_30px_rgba(0,0,0,0.04)] p-4 cursor-pointer hover:scale-[1.02] transition-transform duration-200 border-l-[3px] ${col.accent}`}
+                      >
+                        {/* Category tags */}
+                        <div className="flex flex-wrap gap-1 mb-2">
+                          {entry.eventId.category.slice(0, 2).map(cat => (
+                            <span key={cat} className={`text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase tracking-wide ${CAT_PILL[cat] || 'bg-gray-100 text-gray-600'}`}>
+                              {cat}
+                            </span>
+                          ))}
+                        </div>
 
-                    {/* Column header */}
-                    <div className="sticky top-14 z-20 bg-[#F5F5F7]/90 backdrop-blur-md px-1 py-3 mb-2 flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span className={`w-2.5 h-2.5 rounded-full ${col.dot}`} />
-                        <span className="text-label-md font-bold text-[#1D1D1F]">{col.label}</span>
+                        <h4 className="text-label-md font-semibold text-[#1D1D1F] line-clamp-2 leading-snug mb-2">
+                          {entry.eventId.title}
+                        </h4>
+
+                        <div className="flex items-center gap-1 text-[11px] text-[#86868B] mb-3">
+                          <span className="material-symbols-outlined text-[12px]">calendar_today</span>
+                          {format(new Date(entry.eventId.startDateTime), 'MMM d, yyyy')}
+                        </div>
+
+                        {entry.connections.length > 0 && (
+                          <div className="flex items-center gap-1 text-[11px] text-[#0071E3] font-medium mb-3">
+                            <span className="material-symbols-outlined text-[13px]">group</span>
+                            {entry.connections.length} connection{entry.connections.length > 1 ? 's' : ''}
+                          </div>
+                        )}
+
+                        {/* Advance button */}
+                        {col.id !== 'Attended' && col.id !== 'Skipped' && (
+                          <div className="pt-3 border-t border-[#f0f0f0]">
+                            <button
+                              onClick={e => {
+                                e.stopPropagation();
+                                const nextIdx = STATUS_COLUMNS.findIndex(c => c.id === col.id) + 1;
+                                if (nextIdx < STATUS_COLUMNS.length) {
+                                  updateStatus(entry._id, STATUS_COLUMNS[nextIdx].id);
+                                }
+                              }}
+                              className="w-full text-[11px] font-semibold text-[#0071E3] bg-blue-50 hover:bg-blue-100 py-1.5 rounded-full transition-colors"
+                            >
+                              Move to {STATUS_COLUMNS[STATUS_COLUMNS.findIndex(c => c.id === col.id) + 1]?.label} →
+                            </button>
+                          </div>
+                        )}
                       </div>
-                      <span className="text-label-sm text-[#86868B] bg-white px-2 py-0.5 rounded-full border border-[#e5e5e5]">
-                        {entries[col.id]?.length || 0}
-                      </span>
-                    </div>
+                    ))}
 
-                    {/* Cards */}
-                    <div className="flex flex-col gap-3 min-h-[200px]">
-                      {entries[col.id]?.map(entry => (
-                        <div
-                          key={entry._id}
-                          onClick={() => { setSelectedEntry(entry); setShowDetailModal(true); }}
-                          className={`bg-white rounded-[20px] card-shadow p-4 cursor-pointer hover-lift border-l-[3px] ${col.accent}`}
-                        >
-                          {/* Category tags */}
-                          <div className="flex flex-wrap gap-1 mb-2">
-                            {entry.eventId.category.slice(0, 2).map(cat => (
-                              <span key={cat} className="bg-[#f3f3f5] text-[#86868B] text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase tracking-wide">
-                                {cat}
-                              </span>
-                            ))}
-                          </div>
-
-                          {/* Title */}
-                          <h4 className="text-label-md font-semibold text-[#1D1D1F] line-clamp-2 leading-snug mb-2">
-                            {entry.eventId.title}
-                          </h4>
-
-                          {/* Date */}
-                          <div className="flex items-center gap-1 text-[11px] text-[#86868B] mb-3">
-                            <span className="material-symbols-outlined text-[12px]">calendar_today</span>
-                            {format(new Date(entry.eventId.startDateTime), 'MMM d, yyyy')}
-                          </div>
-
-                          {/* Connections badge */}
-                          {entry.connections.length > 0 && (
-                            <div className="flex items-center gap-1 text-[11px] text-[#0071E3] font-medium mb-3">
-                              <span className="material-symbols-outlined text-[13px]">group</span>
-                              {entry.connections.length} connection{entry.connections.length > 1 ? 's' : ''}
-                            </div>
-                          )}
-
-                          {/* Advance button */}
-                          {col.id !== 'Attended' && col.id !== 'Skipped' && (
-                            <div className="pt-3 border-t border-[#f0f0f0]">
-                              <button
-                                onClick={e => {
-                                  e.stopPropagation();
-                                  const nextIdx = STATUS_COLUMNS.findIndex(c => c.id === col.id) + 1;
-                                  if (nextIdx < STATUS_COLUMNS.length) {
-                                    updateStatus(entry._id, STATUS_COLUMNS[nextIdx].id);
-                                  }
-                                }}
-                                className="w-full text-[11px] font-semibold text-[#0071E3] bg-blue-50 hover:bg-blue-100 py-1.5 rounded-full transition-colors"
-                              >
-                                Move to {STATUS_COLUMNS[STATUS_COLUMNS.findIndex(c => c.id === col.id) + 1]?.label} →
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      ))}
-
-                      {entries[col.id]?.length === 0 && (
-                        <div className="flex flex-col items-center justify-center h-32 text-[#86868B]">
-                          <span className="material-symbols-outlined text-[28px] text-[#e5e5e5] block mb-1">
-                            {col.id === 'Attended' ? 'history' : col.id === 'Skipped' ? 'block' : 'inbox'}
-                          </span>
-                          <span className="text-label-sm">
-                            {col.id === 'Attended' ? 'No recent events' : col.id === 'Skipped' ? 'Nothing here yet' : 'Empty'}
-                          </span>
-                        </div>
-                      )}
-                    </div>
+                    {entries[col.id]?.length === 0 && (
+                      <div className="flex flex-col items-center justify-center h-32 text-[#86868B]">
+                        <span className="material-symbols-outlined text-[28px] text-[#d5d5d5] block mb-1">
+                          {col.id === 'Attended' ? 'history' : col.id === 'Skipped' ? 'block' : 'inbox'}
+                        </span>
+                        <span className="text-label-sm text-[#c7c7cc]">Empty</span>
+                      </div>
+                    )}
                   </div>
-                ))}
-              </div>
+                </div>
+              ))}
             </div>
-          </>
-        )}
-      </main>
+          </div>
+        </>
+      )}
 
       {/* ── Detail Modal ── */}
       {showDetailModal && selectedEntry && (
-        <div className="fixed inset-0 bg-black/50 flex items-end md:items-center justify-center z-50 p-0 md:p-4">
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-end md:items-center justify-center z-50 p-0 md:p-4">
           <div className="bg-white rounded-t-3xl md:rounded-[20px] w-full md:max-w-xl max-h-[90vh] overflow-y-auto">
-            {/* Drag handle (mobile) */}
             <div className="flex justify-center pt-3 pb-1 md:hidden">
               <div className="w-10 h-1 bg-[#e5e5e5] rounded-full" />
             </div>
@@ -275,7 +250,6 @@ export default function TrackerPage() {
                 </button>
               </div>
 
-              {/* Status selector */}
               <div className="mb-5">
                 <label className="block text-label-sm uppercase tracking-widest text-[#86868B] mb-2">Status</label>
                 <select
@@ -289,7 +263,6 @@ export default function TrackerPage() {
                 </select>
               </div>
 
-              {/* Date + venue */}
               <div className="bg-[#f7f7f7] rounded-xl p-4 mb-5 space-y-2 text-label-md text-[#86868B]">
                 <div className="flex items-center gap-2">
                   <span className="material-symbols-outlined text-[16px]">calendar_month</span>
@@ -303,7 +276,6 @@ export default function TrackerPage() {
                 )}
               </div>
 
-              {/* Notes */}
               {selectedEntry.notes && (
                 <div className="mb-5">
                   <label className="block text-label-sm uppercase tracking-widest text-[#86868B] mb-2">Notes</label>
@@ -311,7 +283,6 @@ export default function TrackerPage() {
                 </div>
               )}
 
-              {/* Connections */}
               {selectedEntry.connections.length > 0 && (
                 <div className="mb-5">
                   <label className="block text-label-sm uppercase tracking-widest text-[#86868B] mb-2">
@@ -354,7 +325,6 @@ export default function TrackerPage() {
         </div>
       )}
 
-      {/* Edit Modal */}
       {showEditModal && selectedEntry && (
         <EditTrackerModal
           entryId={selectedEntry._id}
@@ -365,22 +335,7 @@ export default function TrackerPage() {
         />
       )}
 
-      {/* Mobile Bottom Nav */}
-      <nav className="fixed bottom-0 w-full md:hidden bg-white/70 glass-nav border-t border-black/5 flex justify-around items-center px-4 py-2 z-50 rounded-t-2xl">
-        {NAV_LINKS.map(link => {
-          const isActive = link.href === '/tracker';
-          return (
-            <a key={link.href} href={link.href}
-              className={`flex flex-col items-center justify-center px-3 py-1 rounded-full transition-colors ${isActive ? 'bg-[#0071E3]/10' : 'hover:bg-[#f3f3f5]'}`}>
-              <span className={`material-symbols-outlined text-[22px] ${isActive ? 'text-[#0071E3]' : 'text-[#86868B]'}`}
-                style={{ fontVariationSettings: isActive ? "'FILL' 1" : "'FILL' 0" }}>
-                {link.icon}
-              </span>
-              <span className={`text-[10px] font-semibold mt-0.5 ${isActive ? 'text-[#0071E3]' : 'text-[#86868B]'}`}>{link.label}</span>
-            </a>
-          );
-        })}
-      </nav>
+      <MobileBottomNav />
     </div>
   );
 }

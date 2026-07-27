@@ -19,8 +19,13 @@ const parser = new Parser({
  * 
  * Example groups:
  * - AWS User Group Bangalore: https://www.meetup.com/awsugblr/events/rss/
- * - GDG Cloud Bangalore: https://www.meetup.com/gdgcloudbangalore/events/rss/
  * - Bangalore Python User Group: https://www.meetup.com/bangpypers/events/rss/
+ * - Data Science Bangalore: https://www.meetup.com/data-science-bangalore/events/rss/
+ *
+ * NOTE: Meetup still serves public RSS (verified 2026-07-26). A group that has
+ * no upcoming events returns HTTP 200 with an empty <channel> — that's normal,
+ * not an error. A 404 means the slug is wrong/renamed; such feeds must be fixed
+ * or removed, never left in the list (they just log errors every scrape).
  */
 export async function scrapeMeetupRSS(feedUrl: string): Promise<ScraperResult> {
   const result: ScraperResult = {
@@ -107,15 +112,30 @@ export async function scrapeMeetupGroups(groupUrls: string[]): Promise<ScraperRe
   return combinedResult;
 }
 
-// Default Bangalore tech Meetup groups
+// Default Bangalore tech Meetup groups.
+// Every slug below was verified HTTP 200 with a valid RSS feed on 2026-07-26.
+// Two previously-listed slugs were REMOVED as dead (404): 'gdgcloudbangalore'
+// (no working replacement found) and 'OWASP-Bangalore' (renamed — re-added
+// below as 'owasp-bangalore-chapter').
 export const BANGALORE_MEETUP_GROUPS = [
-  'https://www.meetup.com/awsugblr/events/rss/',           // AWS User Group
-  'https://www.meetup.com/gdgcloudbangalore/events/rss/',  // GDG Cloud
-  'https://www.meetup.com/bangpypers/events/rss/',         // Python User Group
-  'https://www.meetup.com/PyData-Bangalore/events/rss/',   // PyData
+  // — Original set (kept; verified still alive) —
+  'https://www.meetup.com/awsugblr/events/rss/',                  // AWS User Group
+  'https://www.meetup.com/bangpypers/events/rss/',               // Python User Group
+  'https://www.meetup.com/PyData-Bangalore/events/rss/',         // PyData (AI/ML)
   'https://www.meetup.com/Women-Who-Code-Bangalore/events/rss/', // Women Who Code
-  'https://www.meetup.com/OWASP-Bangalore/events/rss/',    // OWASP (Cybersecurity)
   'https://www.meetup.com/Bangalore-Java-User-Group/events/rss/', // Java User Group
+
+  // — Tier-1 additions (verified alive 2026-07-26) —
+  'https://www.meetup.com/owasp-bangalore-chapter/events/rss/',  // OWASP (Cybersecurity)
+  'https://www.meetup.com/data-science-bangalore/events/rss/',   // Data Science (AI/ML)
+  'https://www.meetup.com/the-fifth-elephant/events/rss/',       // Big Data / AI/ML
+  'https://www.meetup.com/DataKind-Bangalore/events/rss/',       // Data-for-good (AI/ML)
+  'https://www.meetup.com/reactjs-bangalore/events/rss/',        // Web
+  'https://www.meetup.com/cloudops-meetup-bangalore/events/rss/', // Cloud & DevOps
+  'https://www.meetup.com/golang-bangalore/events/rss/',         // Dev (Go)
+  'https://www.meetup.com/flutter-bangalore/events/rss/',        // Mobile
+  'https://www.meetup.com/reactplay-bengaluru/events/rss/',      // Web (verified alive 2026-07-26)
+  'https://www.meetup.com/techinsider-bangalore/events/rss/',    // Web/Cloud/DevOps (verified alive 2026-07-26)
 ];
 
 // Made with Bob

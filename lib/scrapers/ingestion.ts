@@ -11,23 +11,59 @@ export interface IngestionResult {
   errorDetails: string[];
 }
 
+export interface SourceHealth {
+  eventCount: number;   // events this source returned on this scrape
+  error?: string;       // fetch/parse error message, if the scrape failed
+}
+
 /**
- * Update or create a source record
+ * Update or create a source record.
+ *
+ * When `health` is supplied we also record the scrape outcome so silent
+ * breakage becomes observable (surfaced in the daily digest):
+ *  - lastEventCount: how many events this source returned this run
+ *  - consecutiveEmptyScrapes: incremented when a scrape returns 0 events,
+ *    reset to 0 the moment it returns any — a rising count flags a dead feed
+ *  - lastError / lastErrorAt: the most recent failure, cleared on success
+ *
+ * consecutiveEmptyScrapes must be computed relative to the stored value, so we
+ * read the existing doc first, then upsert. Fail-open: any DB hiccup here is
+ * logged but never aborts the scrape.
  */
-export async function updateSource(name: string, type: string, url: string): Promise<void> {
+export async function updateSource(
+  name: string,
+  type: string,
+  url: string,
+  health?: SourceHealth
+): Promise<void> {
   await connectDB();
-  
-  await Source.findOneAndUpdate(
-    { name, url },
-    {
-      name,
-      type,
-      url,
-      lastScrapedAt: new Date(),
-      $setOnInsert: { enabled: true, scrapeFrequency: 'daily' },
-    },
-    { upsert: true, new: true }
-  );
+
+  const update: Record<string, any> = {
+    name,
+    type,
+    url,
+    lastScrapedAt: new Date(),
+    $setOnInsert: { enabled: true, scrapeFrequency: 'daily' },
+  };
+
+  if (health) {
+    const existing = await Source.findOne({ name, url }).select('consecutiveEmptyScrapes').lean() as { consecutiveEmptyScrapes?: number } | null;
+    const prevEmpty = existing?.consecutiveEmptyScrapes ?? 0;
+
+    update.lastEventCount = health.eventCount;
+    update.consecutiveEmptyScrapes = health.eventCount > 0 ? 0 : prevEmpty + 1;
+
+    if (health.error) {
+      update.lastError = health.error;
+      update.lastErrorAt = new Date();
+    } else {
+      // A clean scrape clears any stale error so the digest doesn't nag forever.
+      update.lastError = undefined;
+      update.lastErrorAt = undefined;
+    }
+  }
+
+  await Source.findOneAndUpdate({ name, url }, update, { upsert: true, new: true });
 }
 
 /**
@@ -111,6 +147,27 @@ export async function getEventsWithDeadlineSoon(daysAhead: number = 3): Promise<
     },
   })
     .sort({ registrationDeadline: 1 })
+    .lean();
+}
+
+/**
+ * Get sources that look unhealthy, for surfacing in the daily digest.
+ *
+ * A source is "unhealthy" if it has produced no events for `emptyThreshold`+
+ * consecutive scrapes, or recorded an error on its last run. Disabled sources
+ * are excluded — the user turned those off on purpose, so silence is expected.
+ */
+export async function getUnhealthySources(emptyThreshold: number = 3): Promise<any[]> {
+  await connectDB();
+
+  return Source.find({
+    enabled: true,
+    $or: [
+      { consecutiveEmptyScrapes: { $gte: emptyThreshold } },
+      { lastError: { $exists: true, $ne: null } },
+    ],
+  })
+    .sort({ consecutiveEmptyScrapes: -1 })
     .lean();
 }
 

@@ -1,7 +1,18 @@
 import { Resend } from 'resend';
 import { generateDailyDigest, formatDigestAsText, formatDigestAsHTML } from './digest';
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+// Lazily construct the Resend client. The constructor throws "Missing API key"
+// when RESEND_API_KEY is unset — instantiating at module load would crash the
+// production build's page-data collection for any route that imports this file.
+// RESEND_API_KEY is optional by design (email degrades gracefully), so defer
+// construction until a send actually happens (guarded by the key checks below).
+let resendClient: Resend | null = null;
+function getResend(): Resend {
+  if (!resendClient) {
+    resendClient = new Resend(process.env.RESEND_API_KEY);
+  }
+  return resendClient;
+}
 
 export interface EmailConfig {
   to: string;
@@ -21,12 +32,14 @@ export async function sendDailyDigestEmail(config: EmailConfig): Promise<boolean
     console.log('📧 Generating daily digest...');
     const digest = await generateDailyDigest();
 
-    // Check if there's anything to send
+    // Check if there's anything to send. A source-health problem alone is worth
+    // an email — it means the event feed is silently breaking.
     const hasContent =
       digest.newEvents.length > 0 ||
       digest.upcomingDeadlines.length > 0 ||
       digest.trackerUpdates.length > 0 ||
-      digest.followUpReminders.length > 0;
+      digest.followUpReminders.length > 0 ||
+      digest.unhealthySources.length > 0;
 
     if (!hasContent) {
       console.log('📭 No updates to send today');
@@ -36,7 +49,7 @@ export async function sendDailyDigestEmail(config: EmailConfig): Promise<boolean
     const htmlContent = formatDigestAsHTML(digest);
     const textContent = formatDigestAsText(digest);
 
-    const { data, error } = await resend.emails.send({
+    const { data, error } = await getResend().emails.send({
       from: config.from || 'PulseBLR <digest@pulseblr.app>',
       to: config.to,
       subject: `🎯 PulseBLR Daily Digest - ${new Date().toLocaleDateString('en-IN', { month: 'short', day: 'numeric' })}`,
@@ -72,7 +85,7 @@ export async function sendNotificationEmail(
   }
 
   try {
-    const { data, error } = await resend.emails.send({
+    const { data, error } = await getResend().emails.send({
       from: config.from || 'PulseBLR <notifications@pulseblr.app>',
       to: config.to,
       subject,

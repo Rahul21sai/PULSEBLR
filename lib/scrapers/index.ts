@@ -1,8 +1,11 @@
-import { scrapeMeetupGroups, BANGALORE_MEETUP_GROUPS } from './meetup-rss';
-import { scrapeLumaCalendars, BANGALORE_LUMA_CALENDARS } from './luma';
+import { scrapeMeetupRSS, scrapeMeetupGroups, BANGALORE_MEETUP_GROUPS } from './meetup-rss';
+import { scrapeLumaCalendar, scrapeLumaCalendars, BANGALORE_LUMA_CALENDARS } from './luma';
+import { scrapeDevfolio, DEVFOLIO_SOURCE } from './devfolio';
 import { normalizeEvents, normalizeEventWithLLM } from './normalizer';
 import { ingestEvents, IngestionResult, updateSource } from './ingestion';
 import { ScraperResult } from './types';
+import connectDB from '../mongodb';
+import Source from '../models/Source';
 
 export interface ScraperRunResult {
   totalScraped: number;
@@ -11,6 +14,30 @@ export interface ScraperRunResult {
   errors: string[];
   duration: number;
   timestamp: Date;
+}
+
+/**
+ * Load the URLs of sources the user has explicitly disabled in Settings.
+ *
+ * The hardcoded BANGALORE_* arrays are canonical — they define which sources
+ * exist. The Source collection is a mirror populated as a side-effect of
+ * scraping, but its `enabled` flag is the ONE piece of state the user controls
+ * from the Settings UI. Honoring it here is what makes the toggle real.
+ *
+ * Fail-open by design: if the DB is unreachable or empty (e.g. first-ever run),
+ * we return an empty set so every source is scraped. A user must have
+ * deliberately toggled a source off for it to be skipped — we never silently
+ * drop a source because of an infra hiccup.
+ */
+async function getDisabledSourceUrls(): Promise<Set<string>> {
+  try {
+    await connectDB();
+    const disabled = await Source.find({ enabled: false }).select('url').lean();
+    return new Set(disabled.map((s: any) => s.url));
+  } catch (error: any) {
+    console.warn(`⚠️  Could not load disabled sources (scraping all): ${error.message}`);
+    return new Set();
+  }
 }
 
 /**
@@ -25,44 +52,85 @@ export async function runAllScrapers(): Promise<ScraperRunResult> {
   
   const allErrors: string[] = [];
   const allRawEvents: any[] = [];
-  
-  // 1. Scrape Meetup RSS feeds
-  try {
-    console.log('📡 Scraping Meetup groups...');
-    const meetupResult = await scrapeMeetupGroups(BANGALORE_MEETUP_GROUPS);
-    allRawEvents.push(...meetupResult.events);
-    allErrors.push(...meetupResult.errors);
-    console.log(`✅ Meetup: ${meetupResult.events.length} events, ${meetupResult.errors.length} errors`);
-    
-    // Update source records for each Meetup group
-    for (const url of BANGALORE_MEETUP_GROUPS) {
-      const name = url.split('/')[4] || url;
-      await updateSource(name, 'rss', url);
+
+  // Respect the Settings enable/disable toggle: drop any source the user has
+  // turned off. Defaults stay canonical; the DB can only subtract (fail-open).
+  const disabledUrls = await getDisabledSourceUrls();
+  const meetupGroups = BANGALORE_MEETUP_GROUPS.filter(u => !disabledUrls.has(u));
+  const lumaCalendars = BANGALORE_LUMA_CALENDARS.filter(u => !disabledUrls.has(u));
+  if (disabledUrls.size > 0) {
+    console.log(`🔕 ${disabledUrls.size} source(s) disabled in Settings — skipping them.`);
+  }
+
+  // 1. Scrape Meetup RSS feeds — per-source so we can record each feed's health.
+  // Scraping one URL at a time (vs the combined scrapeMeetupGroups) lets us
+  // attribute event counts and errors to the exact source that produced them,
+  // which is what makes the digest's "dead source" alert meaningful.
+  console.log('📡 Scraping Meetup groups...');
+  for (const url of meetupGroups) {
+    const name = url.split('/')[4] || url;
+    try {
+      const result = await scrapeMeetupRSS(url);
+      allRawEvents.push(...result.events);
+      allErrors.push(...result.errors);
+      await updateSource(name, 'rss', url, {
+        eventCount: result.events.length,
+        error: result.errors.length > 0 ? result.errors.join('; ') : undefined,
+      });
+    } catch (error: any) {
+      allErrors.push(`Meetup scraper failed (${name}): ${error.message}`);
+      console.error(`❌ Meetup scraper error (${name}):`, error);
+      await updateSource(name, 'rss', url, { eventCount: 0, error: error.message });
     }
-  } catch (error: any) {
-    allErrors.push(`Meetup scraper failed: ${error.message}`);
-    console.error('❌ Meetup scraper error:', error);
+  }
+
+  // 2. Scrape Luma calendars — same per-source health recording.
+  console.log('📡 Scraping Luma calendars...');
+  for (const url of lumaCalendars) {
+    const name = url.split('/').pop() || url;
+    try {
+      const result = await scrapeLumaCalendar(url);
+      allRawEvents.push(...result.events);
+      allErrors.push(...result.errors);
+      await updateSource(name, 'scrape', url, {
+        eventCount: result.events.length,
+        error: result.errors.length > 0 ? result.errors.join('; ') : undefined,
+      });
+      // Rate limiting — match the spacing scrapeLumaCalendars used.
+      await new Promise(resolve => setTimeout(resolve, 2000));
+    } catch (error: any) {
+      allErrors.push(`Luma scraper failed (${name}): ${error.message}`);
+      console.error(`❌ Luma scraper error (${name}):`, error);
+      await updateSource(name, 'scrape', url, { eventCount: 0, error: error.message });
+    }
   }
   
-  // 2. Scrape Luma calendars
-  try {
-    console.log('📡 Scraping Luma calendars...');
-    const lumaResult = await scrapeLumaCalendars(BANGALORE_LUMA_CALENDARS);
-    allRawEvents.push(...lumaResult.events);
-    allErrors.push(...lumaResult.errors);
-    console.log(`✅ Luma: ${lumaResult.events.length} events, ${lumaResult.errors.length} errors`);
-    
-    // Update source records for each Luma calendar
-    for (const url of BANGALORE_LUMA_CALENDARS) {
-      const name = url.split('/').pop() || url;
-      await updateSource(name, 'scrape', url);
+  // 3. Scrape Devfolio hackathons — a single public JSON API call, so no
+  // per-URL loop. Same fail-open disable toggle and per-source health recording
+  // as the feeds above. (Devfolio is the only Tier-3 platform with a usable
+  // public feed; AllEvents.in / 10times / KonfHub were investigated and
+  // rejected — see the comment block in devfolio.ts.)
+  if (!disabledUrls.has(DEVFOLIO_SOURCE.url)) {
+    console.log('📡 Scraping Devfolio hackathons...');
+    try {
+      const result = await scrapeDevfolio();
+      allRawEvents.push(...result.events);
+      allErrors.push(...result.errors);
+      await updateSource(DEVFOLIO_SOURCE.name, DEVFOLIO_SOURCE.type, DEVFOLIO_SOURCE.url, {
+        eventCount: result.events.length,
+        error: result.errors.length > 0 ? result.errors.join('; ') : undefined,
+      });
+    } catch (error: any) {
+      allErrors.push(`Devfolio scraper failed: ${error.message}`);
+      console.error('❌ Devfolio scraper error:', error);
+      await updateSource(DEVFOLIO_SOURCE.name, DEVFOLIO_SOURCE.type, DEVFOLIO_SOURCE.url, {
+        eventCount: 0,
+        error: error.message,
+      });
     }
-  } catch (error: any) {
-    allErrors.push(`Luma scraper failed: ${error.message}`);
-    console.error('❌ Luma scraper error:', error);
   }
-  
-  // 3. Normalize events with LLM tagging
+
+  // 4. Normalize events with LLM tagging
   console.log('🔄 Normalizing events with LLM tagging...');
   const normalizedEvents = [];
   
@@ -79,7 +147,7 @@ export async function runAllScrapers(): Promise<ScraperRunResult> {
   
   console.log(`✅ Normalized ${normalizedEvents.length} events`);
   
-  // 4. Ingest into database
+  // 5. Ingest into database
   console.log('💾 Ingesting events into database...');
   const ingestionResult = await ingestEvents(normalizedEvents);
   
@@ -119,5 +187,6 @@ export * from './normalizer';
 export * from './ingestion';
 export * from './meetup-rss';
 export * from './luma';
+export * from './devfolio';
 
 // Made with Bob

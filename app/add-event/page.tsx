@@ -2,14 +2,9 @@
 
 import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { DesktopNav, MobileBottomNav } from '../components/NavBar';
 
-const NAV_LINKS = [
-  { href: '/', label: 'Feed', icon: 'rss_feed' },
-  { href: '/calendar', label: 'Calendar', icon: 'calendar_today' },
-  { href: '/tracker', label: 'Tracker', icon: 'analytics' },
-  { href: '/add-event', label: 'Add', icon: 'add_circle' },
-  { href: '/settings', label: 'Settings', icon: 'settings' },
-];
+
 
 const CATEGORIES = [
   'AI/ML', 'Fintech', 'Cybersecurity', 'Cloud/DevOps', 'Web/Mobile',
@@ -418,26 +413,7 @@ function AddEventForm() {
 export default function AddEventPage() {
   return (
     <div className="min-h-screen bg-[#F5F5F7]">
-
-      {/* Desktop Nav */}
-      <nav className="hidden md:flex fixed top-0 w-full h-14 bg-white/70 glass-nav z-50 border-b border-black/5">
-        <div className="flex justify-between items-center w-full max-w-[1200px] mx-auto px-20">
-          <a href="/" className="text-xl font-bold tracking-tight text-[#1D1D1F] hover:text-[#0071E3] transition-colors">PulseBLR</a>
-          <div className="flex items-center gap-8">
-            {NAV_LINKS.map(link => (
-              <a key={link.href} href={link.href}
-                className={`text-label-md font-medium transition-colors ${
-                  link.href === '/add-event'
-                    ? 'text-[#0071E3] font-semibold border-b-2 border-[#0071E3] pb-0.5'
-                    : 'text-[#86868B] hover:text-[#1D1D1F]'
-                }`}>
-                {link.label}
-              </a>
-            ))}
-          </div>
-          <span className="text-[#86868B] text-label-md">Add Event</span>
-        </div>
-      </nav>
+      <DesktopNav />
 
       {/* Mobile Header */}
       <header className="md:hidden fixed top-0 w-full h-14 bg-white/70 glass-nav z-50 border-b border-black/5 flex items-center justify-center">
@@ -459,22 +435,7 @@ export default function AddEventPage() {
         </div>
       </main>
 
-      {/* Mobile Bottom Nav */}
-      <nav className="fixed bottom-0 w-full md:hidden bg-white/70 glass-nav border-t border-black/5 flex justify-around items-center px-4 py-2 z-50 rounded-t-2xl">
-        {NAV_LINKS.map(link => {
-          const isActive = link.href === '/add-event';
-          return (
-            <a key={link.href} href={link.href}
-              className={`flex flex-col items-center justify-center px-3 py-1 rounded-full transition-colors ${isActive ? 'bg-[#0071E3]/10' : 'hover:bg-[#f3f3f5]'}`}>
-              <span className={`material-symbols-outlined text-[22px] ${isActive ? 'text-[#0071E3]' : 'text-[#86868B]'}`}
-                style={{ fontVariationSettings: isActive ? "'FILL' 1" : "'FILL' 0" }}>
-                {link.icon}
-              </span>
-              <span className={`text-[10px] font-semibold mt-0.5 ${isActive ? 'text-[#0071E3]' : 'text-[#86868B]'}`}>{link.label}</span>
-            </a>
-          );
-        })}
-      </nav>
+      <MobileBottomNav />
     </div>
   );
 }
