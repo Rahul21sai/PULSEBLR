@@ -50,6 +50,13 @@ Respond ONLY with valid JSON in this exact format:
 // single place means a fix (timeout, JSON extraction, error surfacing) applies
 // to every OpenAI-compatible provider at once.
 // ─────────────────────────────────────────────────────────────────────────────
+// Some gateway/model combos reject temperature != 1 (e.g. ICA/litellm for
+// claude-opus-4-8 returns HTTP 400 "Only temperature=1 is supported"). We prefer
+// 0.3 for deterministic classification, but when a model refuses it we retry at
+// 1 and remember the model here so every later event in the run skips straight
+// to temperature=1 — no repeated failed calls.
+const MODELS_REQUIRING_TEMP_1 = new Set<string>();
+
 async function tagWithOpenAICompatible(
   userPrompt: string,
   opts: { apiKey: string; baseUrl: string; model: string; provider: string; timeoutMs?: number }
@@ -58,23 +65,39 @@ async function tagWithOpenAICompatible(
   // Trim any trailing slash so `${baseUrl}/chat/completions` never doubles up.
   const url = `${baseUrl.replace(/\/+$/, '')}/chat/completions`;
 
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model,
-      messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
-        { role: 'user', content: userPrompt },
-      ],
-      max_tokens: 500,
-      temperature: 0.3,
-    }),
-    signal: AbortSignal.timeout(timeoutMs),
-  });
+  const call = (temperature: number) =>
+    fetch(url, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: 'system', content: SYSTEM_PROMPT },
+          { role: 'user', content: userPrompt },
+        ],
+        max_tokens: 500,
+        temperature,
+      }),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+
+  let response = await call(MODELS_REQUIRING_TEMP_1.has(model) ? 1 : 0.3);
+
+  // Adaptive retry: if the model rejects temperature=0.3, retry once at 1 and
+  // cache that so the rest of the batch goes direct. Non-temperature 400s throw.
+  if (response.status === 400 && !MODELS_REQUIRING_TEMP_1.has(model)) {
+    const errText = await response.text();
+    if (/temperature/i.test(errText)) {
+      MODELS_REQUIRING_TEMP_1.add(model);
+      console.warn(`⚠️  [${provider}] ${model} rejected temperature=0.3 — retrying at 1`);
+      response = await call(1);
+    } else {
+      throw new Error(`${provider} error 400: ${errText}`);
+    }
+  }
 
   if (!response.ok) {
     const err = await response.text();
