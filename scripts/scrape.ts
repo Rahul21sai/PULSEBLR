@@ -4,6 +4,7 @@
  * Usage: npm run scrape
  */
 
+import './load-env'; // MUST be first — populates process.env before lib/mongodb reads it
 import { runAllScrapers } from '../lib/scrapers';
 
 async function main() {

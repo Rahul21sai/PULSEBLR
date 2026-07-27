@@ -71,6 +71,11 @@ export async function runAllScrapers(): Promise<ScraperRunResult> {
     const name = url.split('/')[4] || url;
     try {
       const result = await scrapeMeetupRSS(url);
+      // Stamp the scraper's source onto each event. RawEvent carries no `source`
+      // field, so the source→event association lives only on ScraperResult.
+      // Without this the normalizer receives 'unknown', which fails the Event
+      // `source` enum and silently drops every event on insert.
+      result.events.forEach((e: any) => { e.source = result.source; });
       allRawEvents.push(...result.events);
       allErrors.push(...result.errors);
       await updateSource(name, 'rss', url, {
@@ -90,6 +95,7 @@ export async function runAllScrapers(): Promise<ScraperRunResult> {
     const name = url.split('/').pop() || url;
     try {
       const result = await scrapeLumaCalendar(url);
+      result.events.forEach((e: any) => { e.source = result.source; });
       allRawEvents.push(...result.events);
       allErrors.push(...result.errors);
       await updateSource(name, 'scrape', url, {
@@ -114,6 +120,7 @@ export async function runAllScrapers(): Promise<ScraperRunResult> {
     console.log('📡 Scraping Devfolio hackathons...');
     try {
       const result = await scrapeDevfolio();
+      result.events.forEach((e: any) => { e.source = result.source; });
       allRawEvents.push(...result.events);
       allErrors.push(...result.errors);
       await updateSource(DEVFOLIO_SOURCE.name, DEVFOLIO_SOURCE.type, DEVFOLIO_SOURCE.url, {
@@ -136,7 +143,11 @@ export async function runAllScrapers(): Promise<ScraperRunResult> {
   
   for (const event of allRawEvents) {
     try {
-      const source = event.source || 'unknown';
+      // Fall back to 'other' (a valid Event.source enum value) rather than
+      // 'unknown', which fails validation and drops the event. In practice every
+      // scraper block now stamps result.source, so this only guards a source
+      // that forgot to.
+      const source = event.source || 'other';
       const normalized = await normalizeEventWithLLM(event, source);
       normalizedEvents.push(normalized);
     } catch (error: any) {

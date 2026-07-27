@@ -42,15 +42,23 @@ Respond ONLY with valid JSON in this exact format:
 }`;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// NVIDIA NIM (primary) — OpenAI-compatible endpoint
-// Docs: https://docs.api.nvidia.com/nim/reference/llm-apis
+// Generic OpenAI-compatible chat-completions tagger.
+//
+// NVIDIA NIM and IBM Consulting Advantage (ICA) both expose the standard
+// OpenAI `/chat/completions` protocol, so they share this one call path — only
+// the base URL, model, API key, and timeout differ. Keeping the transport in a
+// single place means a fix (timeout, JSON extraction, error surfacing) applies
+// to every OpenAI-compatible provider at once.
 // ─────────────────────────────────────────────────────────────────────────────
-async function tagWithNvidia(userPrompt: string): Promise<TaggingResult> {
-  const apiKey = process.env.NVIDIA_API_KEY!;
-  const model = process.env.NVIDIA_MODEL || 'meta/llama-3.1-8b-instruct';
-  const baseUrl = process.env.NVIDIA_BASE_URL || 'https://integrate.api.nvidia.com/v1';
+async function tagWithOpenAICompatible(
+  userPrompt: string,
+  opts: { apiKey: string; baseUrl: string; model: string; provider: string; timeoutMs?: number }
+): Promise<TaggingResult> {
+  const { apiKey, baseUrl, model, provider, timeoutMs = 20000 } = opts;
+  // Trim any trailing slash so `${baseUrl}/chat/completions` never doubles up.
+  const url = `${baseUrl.replace(/\/+$/, '')}/chat/completions`;
 
-  const response = await fetch(`${baseUrl}/chat/completions`, {
+  const response = await fetch(url, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${apiKey}`,
@@ -64,24 +72,54 @@ async function tagWithNvidia(userPrompt: string): Promise<TaggingResult> {
       ],
       max_tokens: 500,
       temperature: 0.3,
-      // Ask for JSON output if the model supports it
-      response_format: { type: 'text' },
     }),
-    signal: AbortSignal.timeout(15000),
+    signal: AbortSignal.timeout(timeoutMs),
   });
 
   if (!response.ok) {
     const err = await response.text();
-    throw new Error(`NVIDIA NIM error ${response.status}: ${err}`);
+    throw new Error(`${provider} error ${response.status}: ${err}`);
   }
 
   const data = await response.json();
   const text: string = data.choices?.[0]?.message?.content ?? '';
 
-  // Extract JSON block from the response (model may wrap it in markdown)
+  // Extract JSON block from the response (model may wrap it in markdown).
   const jsonMatch = text.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) throw new Error('No JSON in NVIDIA response');
+  if (!jsonMatch) throw new Error(`No JSON in ${provider} response`);
   return JSON.parse(jsonMatch[0]) as TaggingResult;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// IBM Consulting Advantage (ICA) — OpenAI-compatible gateway (primary when set)
+//
+// Endpoint and model are NOT guessed: ICA is only activated when ICA_API_KEY,
+// ICA_BASE_URL, and ICA_MODEL are ALL present in the environment. Set them in
+// .env.local (never in code). Until then this provider is skipped and NVIDIA
+// stays primary, so an incomplete config never changes behavior.
+// ─────────────────────────────────────────────────────────────────────────────
+async function tagWithICA(userPrompt: string): Promise<TaggingResult> {
+  return tagWithOpenAICompatible(userPrompt, {
+    apiKey: process.env.ICA_API_KEY!,
+    baseUrl: process.env.ICA_BASE_URL!,
+    model: process.env.ICA_MODEL!,
+    provider: 'IBM ICA',
+    timeoutMs: 20000,
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// NVIDIA NIM — OpenAI-compatible endpoint
+// Docs: https://docs.api.nvidia.com/nim/reference/llm-apis
+// ─────────────────────────────────────────────────────────────────────────────
+async function tagWithNvidia(userPrompt: string): Promise<TaggingResult> {
+  return tagWithOpenAICompatible(userPrompt, {
+    apiKey: process.env.NVIDIA_API_KEY!,
+    baseUrl: process.env.NVIDIA_BASE_URL || 'https://integrate.api.nvidia.com/v1',
+    model: process.env.NVIDIA_MODEL || 'meta/llama-3.1-8b-instruct',
+    provider: 'NVIDIA NIM',
+    timeoutMs: 15000,
+  });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -108,9 +146,31 @@ async function tagWithAnthropic(userPrompt: string): Promise<TaggingResult> {
   return JSON.parse(jsonMatch[0]) as TaggingResult;
 }
 
+// The 12 canonical Event categories (must stay in sync with the enum in
+// lib/models/Event.ts). Any category the LLM invents outside this set is
+// dropped; if nothing survives we default to the most generic bucket.
+const VALID_CATEGORIES = [
+  'AI/ML', 'Fintech', 'Cybersecurity', 'Cloud/DevOps', 'Web/Mobile',
+  'Data/Analytics', 'Hackathon', 'Government', 'Corporate',
+  'Summit/Conference', 'Networking/Meetup', 'Career/Job Fair',
+];
+
+// The only values the Event schema accepts for these fields (lib/models/Event.ts).
+// LLMs go off-script — e.g. Llama-3.1-8b returned "format":"unknown" for an event
+// whose venue it couldn't classify — and an out-of-enum value makes Mongoose reject
+// the whole document at insert. So we coerce to a safe default rather than trust the
+// model's string. 'offline' is the schema default intent for format (most Bangalore
+// meetups are in-person); 'unknown' is already a valid hasFood value.
+const VALID_FORMATS: TaggingResult['format'][] = ['online', 'offline', 'hybrid'];
+const VALID_FOOD: TaggingResult['hasFood'][] = ['yes', 'no', 'unknown'];
+
 /**
- * Tag an event using NVIDIA NIM (primary) or Anthropic Claude (fallback).
- * If neither key is set, returns keyword-based tagging.
+ * Tag an event through a provider cascade: IBM ICA (primary) → NVIDIA NIM →
+ * Anthropic Claude → keyword heuristics. Each provider is attempted only if its
+ * env is configured; on error we log ❌ and fall through to the next tier, so a
+ * slow/failing provider never drops the event — worst case we still get
+ * keyword-based tags. This is what fixed the "0 new" runs where a single
+ * NVIDIA timeout aborted every event.
  */
 export async function tagEventWithLLM(
   title: string,
@@ -118,14 +178,6 @@ export async function tagEventWithLLM(
   venue?: string,
   onlineLink?: string
 ): Promise<TaggingResult> {
-  const hasNvidia = !!process.env.NVIDIA_API_KEY;
-  const hasAnthropic = !!process.env.ANTHROPIC_API_KEY;
-
-  if (!hasNvidia && !hasAnthropic) {
-    console.warn('⚠️  No LLM API key set (NVIDIA_API_KEY or ANTHROPIC_API_KEY), using keyword tagging');
-    return fallbackTagging(title, description, venue, onlineLink);
-  }
-
   const userPrompt = `Event Title: ${title}
 
 Event Description: ${description}
@@ -134,27 +186,50 @@ ${onlineLink ? `\nOnline Link: ${onlineLink}` : ''}
 
 Classify this event.`;
 
-  try {
-    const result = hasNvidia
-      ? await tagWithNvidia(userPrompt)
-      : await tagWithAnthropic(userPrompt);
+  // Build the provider chain in priority order, skipping any that lack config.
+  // ICA requires all three vars (key/base/model) so an incomplete config never
+  // silently hijacks tagging.
+  const providers: Array<{ name: string; run: () => Promise<TaggingResult> }> = [];
+  if (process.env.ICA_API_KEY && process.env.ICA_BASE_URL && process.env.ICA_MODEL) {
+    providers.push({ name: 'IBM ICA', run: () => tagWithICA(userPrompt) });
+  }
+  if (process.env.NVIDIA_API_KEY) {
+    providers.push({ name: 'NVIDIA NIM', run: () => tagWithNvidia(userPrompt) });
+  }
+  if (process.env.ANTHROPIC_API_KEY) {
+    providers.push({ name: 'Anthropic', run: () => tagWithAnthropic(userPrompt) });
+  }
 
-    // Validate categories
-    const validCategories = [
-      'AI/ML', 'Fintech', 'Cybersecurity', 'Cloud/DevOps', 'Web/Mobile',
-      'Data/Analytics', 'Hackathon', 'Government', 'Corporate',
-      'Summit/Conference', 'Networking/Meetup', 'Career/Job Fair',
-    ];
-    result.categories = result.categories.filter(c => validCategories.includes(c));
-    if (result.categories.length === 0) result.categories = ['Networking/Meetup'];
-
-    const provider = hasNvidia ? 'NVIDIA NIM' : 'Anthropic';
-    console.log(`✅ [${provider}] tagged: ${title} → ${result.categories.join(', ')}`);
-    return result;
-  } catch (error: any) {
-    console.error('❌ LLM tagging error:', error.message);
+  if (providers.length === 0) {
+    console.warn('⚠️  No LLM API key set (ICA / NVIDIA / Anthropic), using keyword tagging');
     return fallbackTagging(title, description, venue, onlineLink);
   }
+
+  for (const provider of providers) {
+    try {
+      const result = await provider.run();
+
+      // Validate categories against the canonical enum.
+      result.categories = (result.categories || []).filter(c => VALID_CATEGORIES.includes(c));
+      if (result.categories.length === 0) result.categories = ['Networking/Meetup'];
+
+      // Coerce format/hasFood to schema-valid values — the model sometimes emits
+      // strings outside the enum (e.g. "unknown" for format), which would otherwise
+      // fail Mongoose validation and silently drop the event at ingest.
+      if (!VALID_FORMATS.includes(result.format)) result.format = 'offline';
+      if (!VALID_FOOD.includes(result.hasFood)) result.hasFood = 'unknown';
+
+      console.log(`✅ [${provider.name}] tagged: ${title} → ${result.categories.join(', ')}`);
+      return result;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`❌ [${provider.name}] tagging error: ${message} — falling through`);
+      // Try the next provider in the cascade.
+    }
+  }
+
+  console.warn(`⚠️  All LLM providers failed for "${title}", using keyword tagging`);
+  return fallbackTagging(title, description, venue, onlineLink);
 }
 
 /**

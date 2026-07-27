@@ -1,0 +1,110 @@
+==========================================================================
+ PulseBLR — BUILD STATUS REPORT (as of 2026-07-25)
+ "How far is it actually built?"  —  for idea validation
+==========================================================================
+
+WHAT IT IS
+----------
+A PWA that aggregates Bengaluru tech events from public sources, auto-tags
+them with an LLM into 12 categories, and layers a PER-USER career/networking
+tracker on top (job-application-style pipeline + people-you-met follow-ups +
+analytics). Stack: Next.js 16 (App Router) + MongoDB Atlas + NextAuth (Google)
++ NVIDIA/Anthropic LLM + Resend email.
+
+Overall maturity: ADVANCED PROTOTYPE / near-MVP. Core loop works end-to-end.
+Rough completeness: ~80-85% of a v1. Gaps are polish, config-hardening, and
+zero automated tests — not missing pillars.
+
+==========================================================================
+ BUILD STATUS BY AREA
+==========================================================================
+
+[DONE] 1. INGESTION PIPELINE  ................................  ~90%
+   - Real scrapers, not stubs: Meetup RSS (7 real BLR groups: AWS UG, GDG,
+     BangPypers, PyData, Women Who Code, OWASP, Java UG) + Luma calendars
+     (AI Tinkerers, Build Club, GenAI Builders).
+   - Full flow: scrape -> normalize (area/format/food heuristics, BLR
+     neighborhood detection) -> LLM-tag -> dedup-ingest.
+   - Dedup is solid: SHA-256 hash on (title, date, venue, source), unique
+     index => re-scraping is idempotent. This is the hard part and it's done.
+   - Runnable via `npm run scrape`.
+   RISK: scrapers depend on Meetup/Luma HTML/RSS staying stable; Luma is
+   HTML-parsed so it can break if they redesign.
+
+[DONE] 2. LLM AUTO-TAGGING  .................................  ~90%
+   - 3-tier fallback: NVIDIA NIM (primary) -> Anthropic Claude (fallback)
+     -> keyword heuristics (no API key needed). Degrades gracefully.
+   - Classifies into 12 categories + format/food/free-vs-paid.
+   - Works even with zero API keys (heuristic mode).
+
+[DONE] 3. AUTH & PER-USER SCOPING  ..........................  ~90%
+   - NextAuth v5, Google OAuth, JWT strategy (no DB sessions).
+   - User upserted on first sign-in. Route protection via proxy.ts +
+     API-level userId filtering. Tracker data is correctly scoped per user
+     (compound-unique {userId, eventId}).
+   CAVEAT: OAuth callback pinned to localhost:3000 — needs prod URL config
+   before deploy.
+
+[DONE] 4. DATA MODEL  .......................................  ~95%
+   - 4 Mongoose models: Event (shared corpus), TrackerEntry (per-user
+     pipeline + embedded connections[]), Source, User. Cached connection
+     singleton. Enums for source/category/area/format/food. Well-structured.
+
+[DONE] 5. FRONTEND PAGES (8)  ...............................  ~85%
+   - Home feed (428 ln), Dashboard (265), Tracker (341), Calendar (249),
+     Settings (300), Add-Event (441), Event detail (322), Login (75).
+   - "Stitch" design system, PWA (service worker + manifest + share-target).
+   - Substantial, real UIs — not placeholders.
+   NOTE: only ONE shared component (NavBar.tsx) is extracted; most UI logic
+   lives inline per page. Fine for a prototype, some duplication.
+
+[DONE] 6. REST API (13 routes)  .............................  ~85%
+   - events (list + detail), tracker (CRUD + detail), sources (CRUD),
+     scrape, scrape-url (add event from a pasted URL), notifications,
+     and phase6/* analytics (stats, follow-ups, repeat-connections).
+
+[PARTIAL] 7. PHASE-6 CAREER ANALYTICS  ......................  ~70%
+   - Pending follow-ups, repeat-connection detection (same person across
+     2+ events), target-company/recruiter detection, dashboard stats.
+   GAP: target-company list (DEFAULT_TARGET_COMPANIES) is HARDCODED in
+   code, not user-configurable / DB-backed yet.
+
+[PARTIAL] 8. DIGEST / EMAIL  ................................  ~70%
+   - Daily digest assembles new events (24h), deadlines, tracker updates,
+     follow-up reminders; renders text + HTML; sends via Resend.
+   GAPS: footer links hardcoded to http://localhost:3000; Resend key
+   optional so email silently no-ops without it.
+
+[DONE] 9. AUTOMATION  .......................................  ~80%
+   - GitHub Actions: daily-scrape + daily-digest on schedule (8 AM IST).
+   NEEDS: secrets configured in GitHub for these to run.
+
+==========================================================================
+ WHAT IS *NOT* DONE / KNOWN GAPS
+==========================================================================
+   - ZERO automated tests. No test runner configured at all.
+   - Target-company list not user-editable (hardcoded).
+   - Several hardcoded localhost:3000 references (OAuth, digest footer) —
+     blocks production deploy until parameterized.
+   - README is outdated (describes old Anthropic-only tagging).
+   - Only 1 reusable component extracted; rest is inline.
+   - No payment/ticketing, no RSVP-through-app, no mobile-native build
+     (it's a PWA, which is intentional).
+   - Was fighting a dev-only service-worker bug (now fixed) — signals the
+     PWA/offline layer is newer/less battle-tested.
+
+==========================================================================
+ BOTTOM LINE FOR IDEA VALIDATION
+==========================================================================
+   The RISKY, HARD parts are already built and working:
+     * automated multi-source scraping with idempotent dedup
+     * LLM categorization with graceful no-key fallback
+     * multi-user auth + strict per-user data scoping
+     * a real career-tracker data model + analytics
+   What remains is mostly PRODUCTIZATION: tests, config-hardening for
+   deploy, making hardcoded lists user-configurable, and UI polish.
+
+   => The concept is already demonstrable end-to-end today on localhost.
+      It is validate-ready as a working prototype, NOT yet a hardened
+      production product.
+==========================================================================
