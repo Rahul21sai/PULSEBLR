@@ -14,16 +14,18 @@ async function main() {
 
   const userEmail = process.env.USER_EMAIL;
 
-  if (!userEmail) {
-    console.error('❌ USER_EMAIL environment variable not set');
-    console.error('Please set USER_EMAIL in .env.local');
-    process.exit(1);
-  }
-
-  if (!process.env.RESEND_API_KEY) {
-    console.error('❌ RESEND_API_KEY environment variable not set');
-    console.error('Please set RESEND_API_KEY in .env.local');
-    process.exit(1);
+  // Email digests are OPTIONAL (see lib/notifications/email.ts — it degrades
+  // gracefully). When Resend isn't configured we SKIP with exit 0 rather than
+  // failing: a hard exit(1) here turns the scheduled GitHub Action red and
+  // emails a failure every single day. Set RESEND_API_KEY + USER_EMAIL (locally
+  // in .env.local, or as GitHub Actions secrets) to actually send the digest.
+  if (!process.env.RESEND_API_KEY || !userEmail) {
+    const missing = [
+      !process.env.RESEND_API_KEY ? 'RESEND_API_KEY' : null,
+      !userEmail ? 'USER_EMAIL' : null,
+    ].filter(Boolean).join(', ');
+    console.log(`ℹ️  Digest not configured (${missing} unset) — skipping, no email sent.`);
+    process.exit(0);
   }
 
   try {

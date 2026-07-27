@@ -24,13 +24,33 @@ jobs:
       
       - name: Install dependencies
         run: npm ci
-      
-      - name: Install Playwright browsers
-        run: npx playwright install chromium --with-deps
-      
+
+      # Fail fast with a CLEAR message if the DB secret is missing. Without this,
+      # the scraper falls back to mongodb://localhost:27017 (no server in CI) and
+      # dies with a confusing ~30s connection timeout deep in the run.
+      - name: Verify MONGODB_URI secret is set
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+        run: |
+          if [ -z "$MONGODB_URI" ]; then
+            echo "::error::MONGODB_URI repository secret is not set. Add it under"
+            echo "::error::Settings → Secrets and variables → Actions → New repository secret."
+            exit 1
+          fi
+          echo "MONGODB_URI is set ✓"
+
       - name: Run scrapers
         env:
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          # Optional LLM tagging — the tagger cascades ICA → NVIDIA → Anthropic →
+          # keyword fallback, so any unset key is simply skipped (no failure).
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+          NVIDIA_BASE_URL: ${{ secrets.NVIDIA_BASE_URL }}
+          NVIDIA_MODEL: ${{ secrets.NVIDIA_MODEL }}
+          ICA_API_KEY: ${{ secrets.ICA_API_KEY }}
+          ICA_BASE_URL: ${{ secrets.ICA_BASE_URL }}
+          ICA_MODEL: ${{ secrets.ICA_MODEL }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: npm run scrape
       
       - name: Upload scraper logs
