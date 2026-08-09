@@ -1,66 +1,61 @@
 #!/usr/bin/env tsx
 /**
- * Manual scraper runner
- * Usage: npm run scrape
+ * Scraper runner.
+ *
+ * Usage:
+ *   npm run scrape                  full run (LLM tagging, all sources)
+ *   npx tsx scripts/scrape.ts --no-llm        keyword tagging only (fast)
+ *   npx tsx scripts/scrape.ts --fast          skip Eventbrite + company sweep
+ *   npx tsx scripts/scrape.ts --no-prune      keep stale past events
  */
 
 import './load-env'; // MUST be first — populates process.env before lib/mongodb reads it
-import { runAllScrapers } from '../lib/scrapers';
+import { runPipeline, PipelineOptions } from '../lib/scrapers/pipeline';
+
+function parseArgs(): PipelineOptions {
+  const argv = process.argv.slice(2);
+  const fast = argv.includes('--fast');
+  return {
+    skipLlm: argv.includes('--no-llm'),
+    includeEventbrite: !fast,
+    includeCompanyPages: !fast,
+    prune: !argv.includes('--no-prune'),
+    ...(fast ? { lumaEnrichBudget: 20, meetupEnrichBudget: 20 } : {}),
+  };
+}
 
 async function main() {
   console.log('='.repeat(60));
   console.log('PulseBLR Event Scraper');
   console.log('='.repeat(60));
-  console.log('');
-  
+
   try {
-    const result = await runAllScrapers();
-    
-    console.log('');
-    console.log('='.repeat(60));
-    console.log('SCRAPER RUN SUMMARY');
-    console.log('='.repeat(60));
-    console.log(`Timestamp: ${result.timestamp.toISOString()}`);
-    console.log(`Duration: ${(result.duration / 1000).toFixed(2)}s`);
-    console.log('');
-    console.log(`Total Scraped: ${result.totalScraped}`);
-    console.log(`Total Normalized: ${result.totalNormalized}`);
-    console.log('');
-    console.log('Ingestion Results:');
-    console.log(`  ✅ Inserted: ${result.ingestion.inserted}`);
-    console.log(`  ⏭️  Duplicates: ${result.ingestion.duplicates}`);
-    console.log(`  ❌ Errors: ${result.ingestion.errors}`);
-    console.log('');
-    
+    const result = await runPipeline(parseArgs());
+
     if (result.errors.length > 0) {
-      console.log('Errors encountered:');
-      result.errors.forEach((error, i) => {
-        console.log(`  ${i + 1}. ${error}`);
-      });
+      console.log(`Warnings/errors (${result.errors.length}):`);
+      result.errors.slice(0, 25).forEach((error, i) => console.log(`  ${i + 1}. ${error}`));
+      if (result.errors.length > 25) console.log(`  … and ${result.errors.length - 25} more`);
       console.log('');
     }
-    
+
     if (result.ingestion.errorDetails.length > 0) {
       console.log('Ingestion errors:');
-      result.ingestion.errorDetails.forEach((error, i) => {
-        console.log(`  ${i + 1}. ${error}`);
-      });
+      result.ingestion.errorDetails
+        .slice(0, 15)
+        .forEach((error, i) => console.log(`  ${i + 1}. ${error}`));
       console.log('');
     }
-    
-    console.log('='.repeat(60));
-    
+
+    // Only a genuine ingestion failure is a non-zero exit. Per-source warnings are
+    // expected in normal operation (a group with no upcoming events, a company page
+    // that publishes no structured data) and must not fail the scheduled workflow.
     process.exit(result.ingestion.errors > 0 ? 1 : 0);
-    
   } catch (error) {
-    console.error('');
-    console.error('❌ Fatal error running scrapers:');
+    console.error('\nFatal error running scrapers:');
     console.error(error);
-    console.error('');
     process.exit(1);
   }
 }
 
 main();
-
-// Made with Bob

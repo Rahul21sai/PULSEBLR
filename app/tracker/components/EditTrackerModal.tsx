@@ -74,7 +74,7 @@ export default function EditTrackerModal({
 
       onSave();
       onClose();
-    } catch (err) {
+    } catch {
       alert('Failed to save changes');
     } finally {
       setSaving(false);

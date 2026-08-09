@@ -20,7 +20,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         token.sub = profile.sub ?? token.sub;
         token.email = profile.email ?? token.email;
         token.name = profile.name ?? token.name;
-        token.picture = (profile as any).picture ?? token.picture;
+        token.picture = (profile as { picture?: string }).picture ?? token.picture;
 
         // Upsert user in MongoDB on first sign-in
         try {

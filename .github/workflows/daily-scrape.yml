@@ -11,7 +11,11 @@ on:
 jobs:
   scrape:
     runs-on: ubuntu-latest
-    
+    # A full run fans out to ~700 upstream requests plus batched LLM tagging and
+    # takes roughly 5-10 minutes. The cap stops a hung upstream host from holding
+    # a runner for the default six hours.
+    timeout-minutes: 45
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4

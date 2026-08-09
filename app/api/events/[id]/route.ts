@@ -16,13 +16,25 @@ export async function GET(
       return NextResponse.json({ error: 'Invalid event ID' }, { status: 400 });
     }
 
-    const event = await Event.findById(id);
+    const event = await Event.findById(id).lean();
 
     if (!event) {
       return NextResponse.json({ error: 'Event not found' }, { status: 404 });
     }
 
-    return NextResponse.json({ event });
+    // "Similar events" for the detail page: same categories, still upcoming,
+    // soonest first. Excludes this event and anything already finished.
+    const related = await Event.find({
+      _id: { $ne: event._id },
+      startDateTime: { $gte: new Date() },
+      category: { $in: event.category?.length ? event.category : ['Networking/Meetup'] },
+    })
+      .select('title startDateTime venue area format imageUrl category isFree price organizer')
+      .sort({ startDateTime: 1 })
+      .limit(6)
+      .lean();
+
+    return NextResponse.json({ event, related });
   } catch (error) {
     console.error('Error fetching event:', error);
     return NextResponse.json({ error: 'Failed to fetch event' }, { status: 500 });
@@ -56,10 +68,11 @@ export async function PUT(
     }
 
     return NextResponse.json({ event });
-  } catch (error: any) {
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
     console.error('Error updating event:', error);
     return NextResponse.json(
-      { error: 'Failed to update event', details: error.message },
+      { error: 'Failed to update event', details: message },
       { status: 500 }
     );
   }

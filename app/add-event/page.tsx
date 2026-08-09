@@ -1,4 +1,5 @@
 'use client';
+import Link from 'next/link';
 
 import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -43,18 +44,22 @@ function AddEventForm() {
     registrationDeadline: '',
   });
 
-  // Handle PWA share target
+  // Handle PWA share target. Deferred by a tick so the effect doesn't set state
+  // synchronously, which triggers a cascading render.
   useEffect(() => {
     const title = searchParams.get('title');
     const text = searchParams.get('text');
     const url = searchParams.get('url');
     if (title || text || url) {
-      setFormData(prev => ({
-        ...prev,
-        title: title || prev.title,
-        description: text || prev.description,
-        sourceUrl: url || prev.sourceUrl,
-      }));
+      const timer = setTimeout(() => {
+        setFormData(prev => ({
+          ...prev,
+          title: title || prev.title,
+          description: text || prev.description,
+          sourceUrl: url || prev.sourceUrl,
+        }));
+      }, 0);
+      return () => clearTimeout(timer);
     }
   }, [searchParams]);
 
@@ -399,12 +404,12 @@ function AddEventForm() {
           <span className="material-symbols-outlined text-[18px]">save</span>
           {saving ? 'Adding Event…' : 'Save Event'}
         </button>
-        <a
+        <Link
           href="/"
           className="px-8 py-4 bg-[#f3f3f5] text-[#1D1D1F] text-label-md font-semibold rounded-full hover:bg-[#e8e8ea] transition-colors text-center"
         >
           Cancel
-        </a>
+        </Link>
       </div>
     </form>
   );

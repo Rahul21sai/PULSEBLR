@@ -1,7 +1,23 @@
 import connectDB from '../mongodb';
 import TrackerEntry from '../models/TrackerEntry';
 import Event from '../models/Event';
-import mongoose from 'mongoose';
+import type { IConnection } from '../models/TrackerEntry';
+
+/** A connection whose follow-up date has arrived. */
+export interface PendingFollowUp {
+  eventId: unknown;
+  eventTitle: string;
+  connection: IConnection;
+  trackerEntryId: unknown;
+}
+
+/** Someone seen at two or more tracked events. */
+export interface RepeatConnection {
+  name: string;
+  details?: IConnection;
+  eventCount: number;
+  eventIds: string[];
+}
 
 /**
  * Get all connections with pending follow-ups
@@ -17,7 +33,7 @@ export async function getPendingFollowUps(userId: string) {
     'connections.followedUp': { $ne: true },
   }).populate('eventId');
   
-  const pendingFollowUps: any[] = [];
+  const pendingFollowUps: PendingFollowUp[] = [];
   
   for (const entry of entries) {
     for (const connection of entry.connections) {
@@ -28,7 +44,7 @@ export async function getPendingFollowUps(userId: string) {
       ) {
         pendingFollowUps.push({
           eventId: entry.eventId,
-          eventTitle: (entry.eventId as any).title,
+          eventTitle: (entry.eventId as unknown as { title: string }).title,
           connection,
           trackerEntryId: entry._id,
         });
@@ -75,7 +91,7 @@ export async function detectRepeatConnections(userId: string) {
   
   // Build a map of connection names to events they appeared at
   const connectionMap = new Map<string, Set<string>>();
-  const connectionDetails = new Map<string, any>();
+  const connectionDetails = new Map<string, IConnection>();
   
   for (const entry of entries) {
     for (const connection of entry.connections) {
@@ -91,7 +107,7 @@ export async function detectRepeatConnections(userId: string) {
   }
   
   // Filter to only repeat connections (appeared at 2+ events)
-  const repeatConnections: any[] = [];
+  const repeatConnections: RepeatConnection[] = [];
   
   for (const [name, eventIds] of connectionMap.entries()) {
     if (eventIds.size >= 2) {

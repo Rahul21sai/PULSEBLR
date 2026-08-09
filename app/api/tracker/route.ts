@@ -12,7 +12,8 @@ export async function GET(request: NextRequest) {
   try {
     await connectDB();
 
-    const filter: any = { userId };
+    // Assembled from query params, so a plain record is the honest type.
+    const filter: Record<string, unknown> = { userId };
     const status = request.nextUrl.searchParams.get('status');
     if (status) filter.status = { $in: status.split(',') };
 
@@ -54,11 +55,15 @@ export async function POST(request: NextRequest) {
     const populated = await TrackerEntry.findById(entry._id).populate('eventId');
 
     return NextResponse.json(populated, { status: 201 });
-  } catch (error: any) {
+  } catch (error) {
+    const err = error as { code?: number; message?: string };
     console.error('Error creating tracker entry:', error);
-    if (error.code === 11000) {
+    if (err.code === 11000) {
       return NextResponse.json({ error: 'Already tracking this event' }, { status: 409 });
     }
-    return NextResponse.json({ error: 'Failed to create tracker entry', details: error.message }, { status: 500 });
+    return NextResponse.json(
+      { error: 'Failed to create tracker entry', details: err.message ?? String(error) },
+      { status: 500 }
+    );
   }
 }

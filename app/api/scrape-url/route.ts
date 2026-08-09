@@ -166,8 +166,9 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json({ event: null });
-  } catch (error: any) {
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
     console.error('scrape-url error:', error);
-    return NextResponse.json({ event: null, error: error.message }, { status: 200 });
+    return NextResponse.json({ event: null, error: message }, { status: 200 });
   }
 }

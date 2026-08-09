@@ -1,252 +1,207 @@
+// RawEvent → NormalizedEvent.
+//
+// The normalizer's job is to turn whatever an adapter could scrape into a
+// schema-valid document, and to do so WITHOUT inventing facts. The guiding rule
+// throughout: a value the adapter actually observed always beats a value we could
+// guess. Luma tells us `is_free` and the exact ticket price — that must never be
+// overwritten by a keyword scan for the word "free" in the description, which was
+// the old behaviour and mislabelled paid events as free.
+
 import Event from '../models/Event';
-import { RawEvent, NormalizedEvent } from './types';
-import { tagEventWithLLM } from '../llm/tagger';
+import { RawEvent } from './core/types';
+import { resolveArea } from './core/geo';
+import { slugify, truncate, stripHtml } from './core/text';
+import { tagEvents, TaggingInput, TaggingResult } from '../llm/tagger';
 import { isTargetCompanyEvent, hasRecruiterMention } from '../helpers/phase6';
 
-// Bangalore area mapping - extract from venue/address
-const BANGALORE_AREAS = [
-  'Koramangala',
-  'Indiranagar',
-  'Whitefield',
-  'HSR Layout',
-  'Electronic City',
-  'MG Road',
-  'Marathahalli',
-  'Jayanagar',
-  'BTM Layout',
-  'Bannerghatta Road',
-  'Sarjapur Road',
-  'Outer Ring Road',
-  'Hebbal',
-  'Yelahanka',
-  'JP Nagar',
-];
-
-// Extract area from venue string
-function extractArea(venue?: string): string | undefined {
-  if (!venue) return undefined;
-  
-  const venueLower = venue.toLowerCase();
-  for (const area of BANGALORE_AREAS) {
-    if (venueLower.includes(area.toLowerCase())) {
-      return area;
-    }
-  }
-  
-  return 'Other';
+export interface NormalizedEvent {
+  title: string;
+  description: string;
+  source: string;
+  sourceUrl: string;
+  sourceEventId?: string;
+  slug: string;
+  organizer?: string;
+  hostAvatarUrl?: string;
+  category: string[];
+  tags: string[];
+  format: 'online' | 'offline' | 'hybrid';
+  hasFood: 'yes' | 'no' | 'unknown';
+  isFree: boolean;
+  price?: number;
+  priceMax?: number;
+  currency?: string;
+  soldOut?: boolean;
+  venue?: string;
+  address?: string;
+  area?: string;
+  city?: string;
+  lat?: number;
+  lng?: number;
+  onlineLink?: string;
+  imageUrl?: string;
+  startDateTime: Date;
+  endDateTime?: Date;
+  timezone?: string;
+  applyLink?: string;
+  registrationDeadline?: Date;
+  attendeeCount?: number;
+  capacity?: number;
+  dedupHash: string;
+  clusterKey: string;
+  lastSeenAt: Date;
+  seenInSources: string[];
+  isTechEvent: boolean;
+  tagConfidence: number;
+  isTargetCompany?: boolean;
+  recruiterMentioned?: boolean;
 }
 
-// Detect if event is free from description/title
-function detectIsFree(description: string, title: string): boolean {
-  const text = `${title} ${description}`.toLowerCase();
-  
-  if (text.includes('free') || text.includes('no cost') || text.includes('complimentary')) {
-    return true;
-  }
-  
-  if (text.includes('₹') || text.includes('rs.') || text.includes('paid') || text.includes('ticket')) {
-    return false;
-  }
-  
-  return true; // Default to free for tech events
+/** Price extracted from free text — used ONLY when the adapter gave us nothing. */
+function extractPriceFromText(text: string): number | undefined {
+  const match = text.match(/(?:₹|Rs\.?\s*|INR\s*)(\d[\d,]*)/i);
+  if (!match) return undefined;
+  const value = Number(match[1].replace(/,/g, ''));
+  return Number.isFinite(value) && value > 0 ? value : undefined;
 }
 
-// Extract price from description
-function extractPrice(description: string, title: string): number | undefined {
-  const text = `${title} ${description}`;
-  
-  // Match ₹500, Rs. 500, Rs 500, etc.
-  const priceMatch = text.match(/(?:₹|Rs\.?\s*)(\d+(?:,\d+)*)/i);
-  if (priceMatch) {
-    return parseInt(priceMatch[1].replace(/,/g, ''));
+/** Decide free/paid, trusting adapter data first. */
+function resolvePricing(raw: RawEvent): {
+  isFree: boolean;
+  price?: number;
+  priceMax?: number;
+  currency?: string;
+} {
+  // 1. The adapter observed it. Believe it.
+  if (raw.isFree === true) return { isFree: true, currency: raw.currency };
+  if (raw.isFree === false || raw.price !== undefined) {
+    return {
+      isFree: false,
+      price: raw.price,
+      priceMax: raw.priceMax,
+      currency: raw.currency || (raw.price ? 'INR' : undefined),
+    };
   }
-  
-  return undefined;
+
+  // 2. Nothing observed — fall back to text, but only on an explicit price token.
+  const text = `${raw.title} ${raw.description}`;
+  const price = extractPriceFromText(text);
+  if (price !== undefined) return { isFree: false, price, currency: 'INR' };
+
+  // 3. Genuinely unknown. Community tech events in Bengaluru are overwhelmingly
+  // free, so default to free rather than showing a misleading price-unknown state.
+  return { isFree: true, currency: undefined };
 }
 
-// Detect food from description
-function detectFood(description: string, title: string): 'yes' | 'no' | 'unknown' {
-  const text = `${title} ${description}`.toLowerCase();
-  
-  const foodKeywords = [
-    'food', 'snacks', 'refreshments', 'lunch', 'dinner', 'breakfast',
-    'pizza', 'beverages', 'drinks', 'meal', 'catering'
-  ];
-  
-  for (const keyword of foodKeywords) {
-    if (text.includes(keyword)) {
-      return 'yes';
-    }
+/** Resolve format, preferring the adapter's structured signal. */
+function resolveFormat(raw: RawEvent, tagged: TaggingResult): 'online' | 'offline' | 'hybrid' {
+  if (raw.rawFormat === 'online' || raw.rawFormat === 'offline' || raw.rawFormat === 'hybrid') {
+    // Trust the adapter unless it said "offline" while giving us no venue at all
+    // and the LLM saw clear online signals in the text.
+    if (raw.rawFormat === 'offline' && !raw.venue && tagged.format === 'online') return 'online';
+    return raw.rawFormat;
   }
-  
-  return 'unknown';
+  return tagged.format;
 }
 
-// Detect format from venue/description
-function detectFormat(venue?: string, onlineLink?: string, description?: string): 'online' | 'offline' | 'hybrid' {
-  const hasVenue = !!venue && venue.trim().length > 0;
-  const hasOnlineLink = !!onlineLink && onlineLink.trim().length > 0;
-  
-  if (hasVenue && hasOnlineLink) {
-    return 'hybrid';
-  }
-  
-  if (hasOnlineLink) {
-    return 'online';
-  }
-  
-  if (hasVenue) {
-    return 'offline';
-  }
-  
-  // Check description for clues
-  const text = description?.toLowerCase() || '';
-  if (text.includes('zoom') || text.includes('teams') || text.includes('meet') || text.includes('virtual')) {
-    return 'online';
-  }
-  
-  return 'offline'; // Default
-}
-
-// Basic category detection (will be enhanced by LLM in Phase 3)
-function detectCategories(title: string, description: string): string[] {
-  const text = `${title} ${description}`.toLowerCase();
-  const categories: string[] = [];
-  
-  const categoryKeywords: Record<string, string[]> = {
-    'AI/ML': ['ai', 'artificial intelligence', 'machine learning', 'ml', 'deep learning', 'neural', 'llm', 'gpt', 'genai'],
-    'Fintech': ['fintech', 'finance', 'banking', 'payment', 'blockchain', 'crypto'],
-    'Cybersecurity': ['security', 'cyber', 'hacking', 'penetration', 'infosec', 'vulnerability'],
-    'Cloud/DevOps': ['cloud', 'devops', 'aws', 'azure', 'gcp', 'kubernetes', 'docker', 'ci/cd'],
-    'Web/Mobile': ['web', 'mobile', 'react', 'angular', 'vue', 'flutter', 'ios', 'android'],
-    'Data/Analytics': ['data', 'analytics', 'big data', 'data science', 'visualization'],
-    'Hackathon': ['hackathon', 'hack', 'coding competition'],
-  };
-  
-  for (const [category, keywords] of Object.entries(categoryKeywords)) {
-    for (const keyword of keywords) {
-      if (text.includes(keyword)) {
-        categories.push(category);
-        break;
-      }
-    }
-  }
-  
-  // Default category if none detected
-  if (categories.length === 0) {
-    categories.push('Networking/Meetup');
-  }
-  
-  return [...new Set(categories)]; // Remove duplicates
-}
-
-// Main normalizer function
-export function normalizeEvent(raw: RawEvent, source: string): NormalizedEvent {
-  const isFree = detectIsFree(raw.description, raw.title);
-  const price = isFree ? undefined : extractPrice(raw.description, raw.title);
-  
-  // Use basic detection as fallback (LLM tagging happens in async version)
-  const format = detectFormat(raw.venue, raw.onlineLink, raw.description);
-  const area = format === 'offline' ? extractArea(raw.venue) : undefined;
-  const hasFood = detectFood(raw.description, raw.title);
-  const category = detectCategories(raw.title, raw.description);
-  
-  // Generate dedup hash
-  const dedupHash = (Event as any).generateDedupHash(
-    raw.title,
-    raw.startDateTime,
-    raw.venue,
-    source
-  );
-  
+/** Build the tagger input for one raw event. */
+function toTaggingInput(raw: RawEvent): TaggingInput {
   return {
-    title: raw.title.trim(),
-    description: raw.description.trim(),
-    source,
+    title: raw.title,
+    description: raw.description,
+    venue: raw.venue,
+    onlineLink: raw.onlineLink,
+    hints: [...(raw.rawCategory || []), ...(raw.tags || [])].filter(
+      // Internal marker tags (kw:*, __cancelled) are plumbing, not signal.
+      t => !t.startsWith('kw:') && !t.startsWith('__')
+    ),
+  };
+}
+
+/** Apply a tagging result to a raw event, producing a storable document. */
+function assemble(raw: RawEvent, tagged: TaggingResult): NormalizedEvent {
+  const format = resolveFormat(raw, tagged);
+  const pricing = resolvePricing(raw);
+
+  const area =
+    format === 'online'
+      ? undefined
+      : resolveArea({
+          venue: raw.venue,
+          address: raw.address,
+          city: raw.city,
+          lat: raw.lat,
+          lng: raw.lng,
+        });
+
+  const title = raw.title.trim();
+  const description = truncate(stripHtml(raw.description || title), 6000) || title;
+
+  const dedupHash = Event.generateDedupHash(title, raw.startDateTime, raw.venue, raw.source);
+  const clusterKey = Event.generateClusterKey(title, raw.startDateTime);
+
+  // Public tags: drop the internal markers, keep organiser-supplied topics.
+  const tags = [...new Set((raw.tags || []).filter(t => !t.startsWith('__') && !t.startsWith('kw:')))]
+    .slice(0, 12);
+
+  return {
+    title,
+    description,
+    source: raw.source,
     sourceUrl: raw.sourceUrl,
+    sourceEventId: raw.sourceEventId,
+    slug: slugify(title) || 'event',
     organizer: raw.organizer?.trim(),
-    category,
+    hostAvatarUrl: raw.hostAvatarUrl,
+    category: tagged.categories,
+    tags,
     format,
-    hasFood,
-    isFree,
-    price,
+    hasFood: raw.rawHasFood === 'yes' ? 'yes' : tagged.hasFood,
+    isFree: pricing.isFree,
+    price: pricing.price,
+    priceMax: pricing.priceMax,
+    currency: pricing.currency,
+    soldOut: raw.soldOut ?? false,
     venue: raw.venue?.trim(),
+    address: raw.address?.trim(),
     area,
+    city: raw.city?.trim() || (area ? 'Bengaluru' : undefined),
+    lat: raw.lat,
+    lng: raw.lng,
     onlineLink: raw.onlineLink?.trim(),
+    imageUrl: raw.imageUrl,
     startDateTime: raw.startDateTime,
     endDateTime: raw.endDateTime,
-    applyLink: raw.applyLink?.trim(),
+    timezone: raw.timezone,
+    applyLink: raw.applyLink?.trim() || raw.sourceUrl,
     registrationDeadline: raw.registrationDeadline,
+    attendeeCount: raw.attendeeCount,
+    capacity: raw.capacity,
     dedupHash,
+    clusterKey,
+    lastSeenAt: new Date(),
+    seenInSources: [raw.source],
+    isTechEvent: tagged.isTechEvent,
+    tagConfidence: tagged.confidence,
+    isTargetCompany: isTargetCompanyEvent(raw.organizer, raw.description),
+    recruiterMentioned: hasRecruiterMention(raw.description),
   };
 }
 
-// Batch normalize
-export function normalizeEvents(rawEvents: RawEvent[], source: string): NormalizedEvent[] {
-  return rawEvents.map(raw => normalizeEvent(raw, source));
+/**
+ * Normalize a batch of raw events, tagging them in bulk.
+ *
+ * Bulk tagging is the point: it turns N LLM round-trips into N/8, which is what
+ * makes a 400-event run finish in minutes rather than tens of minutes.
+ */
+export async function normalizeEvents(rawEvents: RawEvent[]): Promise<NormalizedEvent[]> {
+  if (rawEvents.length === 0) return [];
+  const tagged = await tagEvents(rawEvents.map(toTaggingInput));
+  return rawEvents.map((raw, index) => assemble(raw, tagged[index]));
 }
 
-// Async normalizer with LLM tagging
-export async function normalizeEventWithLLM(raw: RawEvent, source: string): Promise<NormalizedEvent> {
-  const isFree = detectIsFree(raw.description, raw.title);
-  const price = isFree ? undefined : extractPrice(raw.description, raw.title);
-  const area = raw.venue ? extractArea(raw.venue) : undefined;
-  
-  // Use LLM for intelligent tagging
-  const llmResult = await tagEventWithLLM(
-    raw.title,
-    raw.description,
-    raw.venue,
-    raw.onlineLink
-  );
-  
-  // Generate dedup hash
-  const dedupHash = (Event as any).generateDedupHash(
-    raw.title,
-    raw.startDateTime,
-    raw.venue,
-    source
-  );
-  
-  // Phase 6: Detect target company and recruiter mentions
-  const isTargetCompany = isTargetCompanyEvent(raw.organizer, raw.description);
-  const recruiterMentioned = hasRecruiterMention(raw.description);
-  
-  return {
-    title: raw.title.trim(),
-    description: raw.description.trim(),
-    source,
-    sourceUrl: raw.sourceUrl,
-    organizer: raw.organizer?.trim(),
-    category: llmResult.categories,
-    format: llmResult.format,
-    hasFood: llmResult.hasFood,
-    isFree,
-    price,
-    venue: raw.venue?.trim(),
-    area,
-    onlineLink: raw.onlineLink?.trim(),
-    startDateTime: raw.startDateTime,
-    endDateTime: raw.endDateTime,
-    applyLink: raw.applyLink?.trim(),
-    registrationDeadline: raw.registrationDeadline,
-    dedupHash,
-    // Phase 6 fields
-    isTargetCompany,
-    recruiterMentioned,
-  };
-}
-
-// Batch normalize with LLM
-export async function normalizeEventsWithLLM(rawEvents: RawEvent[], source: string): Promise<NormalizedEvent[]> {
-  const normalized: NormalizedEvent[] = [];
-  
-  for (const raw of rawEvents) {
-    const event = await normalizeEventWithLLM(raw, source);
-    normalized.push(event);
-  }
-  
+/** Normalize one event (used by the manual add-event path). */
+export async function normalizeEvent(raw: RawEvent): Promise<NormalizedEvent> {
+  const [normalized] = await normalizeEvents([raw]);
   return normalized;
 }
-
-// Made with Bob

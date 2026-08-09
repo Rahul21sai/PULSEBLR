@@ -1,17 +1,41 @@
-import { getNewEventsSince, getEventsWithDeadlineSoon, getUnhealthySources } from '../scrapers/ingestion';
+import {
+  getNewEventsSince,
+  getEventsWithDeadlineSoon,
+  getUnhealthySources,
+  UnhealthySource,
+} from '../scrapers/ingestion';
 import connectDB from '../mongodb';
 import TrackerEntry from '../models/TrackerEntry';
+import { IEvent } from '../models/Event';
+
+/** A connection as stored on a tracker entry. */
+interface DigestConnection {
+  name: string;
+  company?: string;
+  role?: string;
+  followUpAt?: Date | string;
+  followedUp?: boolean;
+}
+
+/** A tracker entry with its event populated, as the digest queries it. */
+interface DigestTrackerEntry {
+  status: string;
+  notes?: string;
+  updatedAt?: Date | string;
+  eventId: { title: string };
+  connections: DigestConnection[];
+}
 
 // Base URL for links in the digest. In production this must be the deployed
 // origin (set NEXTAUTH_URL); falls back to localhost for local runs.
 const APP_URL = (process.env.NEXTAUTH_URL || 'http://localhost:3000').replace(/\/$/, '');
 
 export interface DigestData {
-  newEvents: any[];
-  upcomingDeadlines: any[];
-  trackerUpdates: any[];
-  followUpReminders: any[];
-  unhealthySources: any[];
+  newEvents: IEvent[];
+  upcomingDeadlines: IEvent[];
+  trackerUpdates: DigestTrackerEntry[];
+  followUpReminders: DigestTrackerEntry[];
+  unhealthySources: UnhealthySource[];
 }
 
 /**
@@ -57,8 +81,10 @@ export async function generateDailyDigest(): Promise<DigestData> {
   return {
     newEvents,
     upcomingDeadlines,
-    trackerUpdates,
-    followUpReminders,
+    // Both queries .populate('eventId'), so at runtime eventId is the full event
+    // document even though the schema types the field as an ObjectId reference.
+    trackerUpdates: trackerUpdates as unknown as DigestTrackerEntry[],
+    followUpReminders: followUpReminders as unknown as DigestTrackerEntry[],
     unhealthySources,
   };
 }
@@ -86,7 +112,7 @@ export function formatDigestAsText(digest: DigestData): string {
     lines.push('─'.repeat(47));
     
     // Group by category
-    const byCategory: Record<string, any[]> = {};
+    const byCategory: Record<string, IEvent[]> = {};
     digest.newEvents.forEach(event => {
       event.category.forEach((cat: string) => {
         if (!byCategory[cat]) byCategory[cat] = [];
@@ -116,7 +142,8 @@ export function formatDigestAsText(digest: DigestData): string {
     lines.push(`⏰ REGISTRATION DEADLINES (${digest.upcomingDeadlines.length})`);
     lines.push('─'.repeat(47));
     digest.upcomingDeadlines.forEach(event => {
-      const deadline = new Date(event.registrationDeadline).toLocaleDateString('en-IN', {
+      // The query filters on registrationDeadline existing, so this is always set.
+      const deadline = new Date(event.registrationDeadline!).toLocaleDateString('en-IN', {
         month: 'short',
         day: 'numeric',
       });
@@ -130,7 +157,7 @@ export function formatDigestAsText(digest: DigestData): string {
   if (digest.trackerUpdates.length > 0) {
     lines.push(`📊 YOUR TRACKER UPDATES (${digest.trackerUpdates.length})`);
     lines.push('─'.repeat(47));
-    digest.trackerUpdates.forEach((entry: any) => {
+    digest.trackerUpdates.forEach((entry: DigestTrackerEntry) => {
       lines.push(`  • ${entry.eventId.title}`);
       lines.push(`    Status: ${entry.status}`);
       if (entry.notes) {
@@ -144,8 +171,8 @@ export function formatDigestAsText(digest: DigestData): string {
   if (digest.followUpReminders.length > 0) {
     lines.push(`👥 FOLLOW-UP REMINDERS (${digest.followUpReminders.length})`);
     lines.push('─'.repeat(47));
-    digest.followUpReminders.forEach((entry: any) => {
-      entry.connections.forEach((conn: any) => {
+    digest.followUpReminders.forEach((entry: DigestTrackerEntry) => {
+      entry.connections.forEach((conn: DigestConnection) => {
         if (conn.followUpAt) {
           const followUpDate = new Date(conn.followUpAt);
           const today = new Date();
@@ -164,7 +191,7 @@ export function formatDigestAsText(digest: DigestData): string {
   if (digest.unhealthySources.length > 0) {
     lines.push(`⚠️  SOURCE HEALTH (${digest.unhealthySources.length})`);
     lines.push('─'.repeat(47));
-    digest.unhealthySources.forEach((source: any) => {
+    digest.unhealthySources.forEach((source: UnhealthySource) => {
       const reason = source.lastError
         ? `error: ${String(source.lastError).substring(0, 80)}`
         : `${source.consecutiveEmptyScrapes} empty scrapes in a row`;
@@ -225,7 +252,7 @@ export function formatDigestAsHTML(digest: DigestData): string {
     <div class="section-title">🆕 New Events (${digest.newEvents.length})</div>
 `);
 
-    const byCategory: Record<string, any[]> = {};
+    const byCategory: Record<string, IEvent[]> = {};
     digest.newEvents.forEach(event => {
       event.category.forEach((cat: string) => {
         if (!byCategory[cat]) byCategory[cat] = [];
@@ -259,7 +286,8 @@ export function formatDigestAsHTML(digest: DigestData): string {
     <div class="section-title">⏰ Registration Deadlines (${digest.upcomingDeadlines.length})</div>
 `);
     digest.upcomingDeadlines.forEach(event => {
-      const deadline = new Date(event.registrationDeadline).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' });
+      // The query filters on registrationDeadline existing, so this is always set.
+      const deadline = new Date(event.registrationDeadline!).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' });
       html.push(`
     <div class="event-card">
       <div class="event-title">${event.title}</div>
@@ -276,7 +304,7 @@ export function formatDigestAsHTML(digest: DigestData): string {
   <div class="section">
     <div class="section-title" style="color: #c05621; border-bottom-color: #c05621;">⚠️ Source Health (${digest.unhealthySources.length})</div>
 `);
-    digest.unhealthySources.forEach((source: any) => {
+    digest.unhealthySources.forEach((source: UnhealthySource) => {
       const reason = source.lastError
         ? `Error: ${escapeHtml(String(source.lastError).substring(0, 120))}`
         : `${source.consecutiveEmptyScrapes} empty scrapes in a row`;

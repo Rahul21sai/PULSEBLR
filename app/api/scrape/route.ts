@@ -1,48 +1,67 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { runAllScrapers } from '@/lib/scrapers';
+import { runPipeline, PipelineOptions } from '@/lib/scrapers/pipeline';
 
 /**
- * POST /api/scrape - Manually trigger scraper run
- * This endpoint can be called by:
- * - Manual trigger from UI
- * - GitHub Actions cron job
- * - External scheduler
+ * POST /api/scrape — trigger a scraper run.
+ *
+ * Callable from the Settings UI, a GitHub Actions cron, or any scheduler.
+ * Body (all optional): { fast?: boolean, skipLlm?: boolean, prune?: boolean }
+ *
+ * A full run fans out to hundreds of upstream requests and does batched LLM
+ * tagging, so it takes minutes. `fast: true` skips the Eventbrite crawl and the
+ * company-page sweep and shrinks the enrichment budgets, which is what the UI
+ * button should use; the scheduled workflow runs the full pipeline via
+ * `npm run scrape` where there is no request timeout at all.
  */
+export const maxDuration = 300;
+
 export async function POST(request: NextRequest) {
   try {
-    console.log('🚀 Scraper triggered via API');
-    
-    const result = await runAllScrapers();
-    
+    let body: Record<string, unknown> = {};
+    try {
+      body = await request.json();
+    } catch {
+      // No body is fine — run with defaults.
+    }
+
+    const fast = body.fast === true;
+    const options: PipelineOptions = {
+      skipLlm: body.skipLlm === true,
+      prune: body.prune !== false,
+      includeEventbrite: !fast,
+      includeCompanyPages: !fast,
+      ...(fast ? { lumaEnrichBudget: 25, meetupEnrichBudget: 25, maxMeetupGroups: 40 } : {}),
+    };
+
+    console.log(`Scraper triggered via API (fast=${fast})`);
+    const result = await runPipeline(options);
+
     return NextResponse.json({
       success: true,
-      result,
-    });
-    
-  } catch (error: any) {
-    console.error('❌ Scraper API error:', error);
-    
-    return NextResponse.json(
-      {
-        success: false,
-        error: error.message,
+      summary: {
+        scraped: result.totalScraped,
+        unique: result.uniqueRaw,
+        inserted: result.ingestion.inserted,
+        updated: result.ingestion.updated,
+        merged: result.ingestion.crossSourceMerged,
+        duplicates: result.ingestion.duplicates,
+        pruned: result.pruned,
+        durationMs: result.durationMs,
       },
-      { status: 500 }
-    );
+      sources: result.sources,
+      errorCount: result.errors.length,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error('Scraper API error:', error);
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }
 
-/**
- * GET /api/scrape - Get last scraper run status
- * (For future: store run history in database)
- */
-export async function GET(request: NextRequest) {
+/** GET /api/scrape — describe the endpoint. */
+export async function GET() {
   return NextResponse.json({
-    message: 'Scraper endpoint ready. Use POST to trigger a scraper run.',
-    endpoints: {
-      trigger: 'POST /api/scrape',
-    },
+    message: 'Use POST to trigger a scraper run.',
+    body: { fast: 'boolean — skip slow sources', skipLlm: 'boolean', prune: 'boolean' },
   });
 }
-
-// Made with Bob

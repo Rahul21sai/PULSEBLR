@@ -13,44 +13,118 @@ npm run dev          # start dev server (http://localhost:3000)
 npm run build        # production build
 npm run start        # serve the production build
 npm run lint         # eslint (flat config: eslint.config.mjs)
-npm run scrape       # run all scrapers → normalize → LLM-tag → dedup-ingest into MongoDB
+npm run scrape       # full pipeline → MongoDB (~5-10 min, ~700 upstream requests)
 npm run send-digest  # generate + email the daily digest via Resend
 ```
 
-There is **no test runner** configured — no `test` script and no test files exist. Do not assume a testing framework; if asked to add tests, choose and wire one up explicitly.
+`npm run scrape` flags: `--no-llm` (keyword tagging only, fast), `--fast` (skip Eventbrite + the company-page sweep), `--no-prune`.
 
-Scripts under `scripts/` run through `tsx`, not `node` (except `generate-icons.js`, which is plain JS run with `node scripts/generate-icons.js`). Useful ad-hoc scripts: `npx tsx scripts/seed.ts` (seed data), `npx tsx scripts/scrape.ts` (same as `npm run scrape`).
+There is **no test runner** configured — no `test` script and no test files exist. Do not assume a testing framework; if asked to add tests, choose and wire one up explicitly. What exists instead is a set of read-only diagnostic scripts (below), which is how every claim in this document was verified.
+
+### Diagnostics and maintenance (`scripts/`, run with `tsx`)
+
+| Script | Purpose |
+| --- | --- |
+| `probe-sources.ts` | Probes ~38 candidate event endpoints, reports which return machine-readable data. Read-only. |
+| `probe-round2.ts` / `probe-round3.ts` | Drill into viable sources: pagination, detail endpoints, auto-discovery. Read-only. |
+| `test-adapters.ts` | Live smoke test of every adapter with field-coverage percentages. No DB writes. `--all` for the slow sources. |
+| `diag-events.ts` | What the feed actually contains: counts by source/category/area, field coverage, duplicate clusters. |
+| `diag-search.ts` | Text-index health and search-term hit counts. |
+| `check-llm.ts` | Which LLM providers are configured, whether their credentials work, and end-to-end tagging latency. |
+| `check-nvidia-models.ts` | Times candidate NVIDIA models so `NVIDIA_MODEL` is chosen from evidence. |
+| `retag-events.ts` | Re-tag stored events with the LLM, **replacing** categories. `--ongoing`, `--all`, `--limit N`, `--dry`. |
+| `migrate-events.ts` | Backfill documents written before `clusterKey` / `lastSeenAt` / `isTechEvent` existed. |
+| `cleanup-implausible.ts` | Delete evergreen adverts and impossible date ranges. |
+
+`generate-icons.js` is plain JS: `node scripts/generate-icons.js`.
 
 ## Environment
 
-Copy `.env.example` → `.env.local`. Required: `MONGODB_URI` (defaults to `mongodb://localhost:27017/pulseblr` if unset), `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`, `NEXTAUTH_SECRET`, `NEXTAUTH_URL`. LLM tagging degrades gracefully: `NVIDIA_API_KEY` (primary) → `ANTHROPIC_API_KEY` (fallback) → keyword heuristics (no key needed). `RESEND_API_KEY` is optional (email digests).
+Copy `.env.example` → `.env.local`. Required: `MONGODB_URI` (defaults to `mongodb://localhost:27017/pulseblr`), `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`, `NEXTAUTH_SECRET`, `NEXTAUTH_URL`. `RESEND_API_KEY` is optional (email digests).
 
-> Note: `README.md` predates the current LLM setup and describes Anthropic Claude as *the* tagging engine. The code now uses **NVIDIA NIM as primary and Anthropic as fallback** (see commit `5d527c8`). Trust the code / this file over the README where they disagree.
+LLM tagging cascades **IBM ICA → NVIDIA NIM → Anthropic → keyword heuristics**, and every tier is optional — with no key at all the pipeline still runs on keywords.
+
+> **`NVIDIA_MODEL` matters more than it looks.** Verified 2026-08-09: `z-ai/glm-5.2` and `meta/llama-3.3-70b-instruct` are both listed by `GET /models` on a valid key but never respond (>25 s timeout), while `meta/llama-3.1-8b-instruct` answers in ~376 ms. Classification is a small task, so the 8B model is the right fit. Run `scripts/check-nvidia-models.ts` before changing it. The tagger also fails over to a known-good model on its own and trips a circuit breaker after 3 consecutive provider failures, so a bad config degrades to keywords in seconds rather than adding ~46 s per batch.
+
+> `README.md` predates the current architecture. Trust the code and this file where they disagree.
 
 ## Architecture
 
-PulseBLR aggregates Bengaluru tech events and layers a per-user career/networking tracker on top. It's a PWA (service worker + `manifest.json`, share-target support). Several concerns interlock:
+PulseBLR aggregates Bengaluru events city-wide (not only tech) and layers a per-user career/networking tracker on top. It's a PWA (service worker + `manifest.json`, share-target support).
 
-### 1. Ingestion pipeline (`lib/scrapers/`)
-`runAllScrapers()` (`lib/scrapers/index.ts`) orchestrates: **scrape** (Meetup RSS + Luma calendars → `RawEvent`) → **normalize** (`normalizer.ts`: area/format/food heuristics, Bengaluru neighborhood detection) → **LLM-tag** → **dedup-ingest** (`ingestion.ts`). Dedup is the linchpin: `Event.generateDedupHash(title, startDateTime, venue, source)` produces a SHA-256 hash stored in the unique-indexed `dedupHash` field, so re-scraping is idempotent (duplicates are counted, not inserted). Types flow `RawEvent` → `NormalizedEvent` (adds `dedupHash` + tags) in `lib/scrapers/types.ts`.
+### 1. Scraping (`lib/scrapers/`)
 
-### 2. LLM tagging (`lib/llm/tagger.ts`)
-`tagEventWithLLM` classifies each event into one of 12 categories (see the `category` enum in `lib/models/Event.ts`) plus format/food/etc. Three-tier fallback: **NVIDIA NIM** (`tagWithNvidia`, OpenAI-compatible REST) → **Anthropic Claude** (`tagWithAnthropic`, `claude-3-5-sonnet-20241022`) → **keyword `fallbackTagging`**. The SYSTEM_PROMPT enumerates the exact category taxonomy — keep it in sync with the schema enum if you change categories.
+```
+core/       http (retry + concurrency pool), jsonld, ics, geo, text, types
+adapters/   one module per platform, each returns ScrapeResult
+pipeline.ts orchestrator: discover → scrape → enrich → tag → ingest → prune
+```
 
-### 3. Auth & per-user scoping
-NextAuth v5 (Auth.js) config lives in the root `auth.ts`, imported everywhere as `@/auth` (exports `handlers`, `signIn`, `signOut`, `auth`). Strategy is **JWT** (no DB session): the `jwt` callback stashes the Google `sub`/email/name/picture into the token *and* upserts the `User` doc by `googleId` on first sign-in; the `session` callback surfaces `token.sub` as `session.user.id`. Server code gets the current user via `getCurrentUserId()` (`lib/auth-helpers.ts`). Route protection is two-layered: `proxy.ts` redirects unauthenticated requests to `/dashboard`, `/tracker`, `/add-event` → `/login`, and API routes filter by `userId` themselves. **Everything user-owned must be scoped by `userId`** — `TrackerEntry` has a compound-unique index `{ userId, eventId }`.
+**Every adapter is isolated**: it runs in its own try/catch, records its own health, and on failure contributes zero events. One dead feed can never fail a run.
 
-### 4. Data model (`lib/models/`)
-Mongoose models with a cached global connection singleton (`connectDB` in `lib/mongodb.ts`, `bufferCommands: false`). `Event` is the shared, deduped event corpus (source enum, 12-category enum, area/format/food enums, Phase 6 fields `isTargetCompany`/`recruiterMentioned`/`guestCount`). `TrackerEntry` is per-user application/networking state (status pipeline `New→…→Attended/Rejected`, embedded `connections[]` subdocs with follow-up dates). `Source` tracks scraper configs; `User` mirrors the Google identity.
+**Coverage compounds through auto-discovery** — this is the central design idea, and it is what covers company events without a hand-maintained list of company websites:
 
-### Phase 6 analytics (`lib/helpers/phase6.ts`)
-Career-intelligence layer over `TrackerEntry`: pending follow-ups, repeat-connection detection (same person across 2+ events), target-company/recruiter detection (`DEFAULT_TARGET_COMPANIES` is a hardcoded list — **not yet DB-backed**), and `getStats(userId)` for the dashboard. Surfaced via `app/api/phase6/*` routes.
+- **Luma**: the public city discover feed (`api.lu.ma/discover/get-paginated-events`) returns fully structured events *and* names each event's host `calendar`. Those calendar ids are harvested and each host's own feed is scraped, which yields far more (recon: *The Product Folks* appeared once in the city feed but had 18 events on its own calendar). Hosts include company calendars like *Razorpay Rize* and *Lyzr Community Events*.
+- **Meetup**: city find pages are fanned out across ~45 keywords (pagination is a no-op — pages 1/2/3 return byte-identical payloads, but different keywords return different events). Group slugs are harvested from those pages, then each group's ICS feed is read in one request.
 
-### Digest (`lib/notifications/`)
-`generateDailyDigest()` (`digest.ts`) assembles new events (24h), upcoming deadlines, tracker updates, and follow-up reminders, then `formatDigestAsText`/`formatDigestAsHTML` render it. Footer links are hardcoded to `http://localhost:3000` — update for production.
+Discovered sources are **persisted to the `Source` collection** (`kind` + `handle`, unique-sparse index), so every run starts from everything ever found. A first run discovered ~110 Meetup groups and 18 Luma calendars from a seed list of 24.
 
-### App layer
-App Router pages in `app/` follow a "Stitch" design system (`app/components/`). REST API under `app/api/**/route.ts` (`events`, `tracker`, `sources`, `scrape`, `scrape-url`, `notifications`, `phase6/*`, and the `auth` catch-all). Path alias `@/*` maps to the repo root.
+Adapters and their measured quirks — read the file header before changing one, each documents what was tried and rejected:
 
-### Automation
-`.github/workflows/daily-scrape.yml` and `daily-digest.yml` run the scraper and digest on a schedule (8 AM IST). They need `MONGODB_URI`, `NVIDIA_API_KEY`/`ANTHROPIC_API_KEY`, and `RESEND_API_KEY` set as GitHub secrets.
+| Adapter | Mechanism | Notes |
+| --- | --- | --- |
+| `luma.ts` | Discover + per-host calendar JSON | Best source: cover images, coords, guest counts, ticket prices. Descriptions need enrichment. |
+| `meetup.ts` | Keyword fan-out (JSON-LD) + per-group ICS | **ICS emits no `LOCATION`** — venue/image come from `enrichMeetupEvents`. |
+| `eventbrite.ts` | Category browse pages (JSON-LD), real pagination | Main source of paid events. The private search API is CSRF-gated (401). |
+| `bevy.ts` | `gdg.community.dev/api/search/event` | GDG + CNCF chapters. |
+| `devfolio.ts` | Public hackathons API | Filters out the vendor's own `(Demo)`/`Fake` sandbox rows. |
+| `unstop.ts` | Public opportunity search | Listings are **deadlines, not events**; in-person Bengaluru only. |
+| `allevents.ts` | City page JSON-LD | Category pages are NOT category-scoped — `/technology` and `/music` return identical sets. Culture/concerts only. |
+| `universal.ts` | JSON-LD → ICS → RSS → embedded JSON, for any URL | Adding a company page is a one-line registry entry. Deliberately has **no** LLM-on-HTML or selector-guessing fallback. |
+
+### 2. Dedup — two keys, two jobs (`lib/models/Event.ts`)
+
+- `dedupHash` — strict, per-source (title + instant + venue + source), unique-indexed. Makes re-scraping idempotent.
+- `clusterKey` — fuzzy, cross-source: normalized title + **IST calendar day**. Collapses the same event announced on both Luma and Meetup, while keeping "React Meetup #107" and "#108" distinct (digits are preserved). IST rather than UTC because a 9 PM IST event would otherwise straddle two UTC days.
+
+Ingestion **upserts and merges** rather than skipping duplicates (`mergeInto`): a later sighting may only fill gaps or improve values, never blank them. That is what makes multi-source coverage additive.
+
+> **Consequence to remember:** because merging *unions* categories, a bad tag can never be removed by re-scraping. Fixing tags requires `scripts/retag-events.ts`, which replaces them.
+
+### 3. LLM tagging (`lib/llm/tagger.ts`)
+
+`tagEvents(inputs)` classifies in **batches of 5** (measured: batch-of-8 with 600-char descriptions caused enough wrong-length responses that only 8 of 840 events got LLM tags). Parsing is deliberately lenient — a short array is applied positionally and the remainder keeps keyword tags, rather than discarding the whole batch. `keywordTagging` is the floor, so an event is never dropped for want of a classification.
+
+The category taxonomy (`EVENT_CATEGORIES`, 32 values) lives in `lib/models/Event.ts` and the system prompt is generated from it, so they cannot drift.
+
+> Keyword regexes are load-bearing when the LLM is unavailable, and loose ones do real damage: a bare `\bpm\b` matched the "PM" in "6 PM" and tagged a fifth of the corpus `Product/Design`. Keep them specific.
+
+### 4. Query layer (`lib/events/query.ts`)
+
+Shared by `/api/events` and `/api/events/facets` so the list and the counts beside the filters can never disagree. Time windows (`when=today|tomorrow|weekend|week|month`) resolve in **IST**. Search uses `$text` for multi-word queries (weighted relevance) and a substring regex for single words, because `$text` only matches whole words and a search box must work mid-typing — **both paths search `description`**.
+
+"Upcoming" includes in-progress events, but an event only counts as ongoing if it *also started recently*; without that floor an Eventbrite evergreen listing dated 2015→2030 sat at the top of the feed permanently. `pipeline.ts` rejects such listings at the source.
+
+### 5. Auth & per-user scoping
+
+NextAuth v5 (Auth.js) config lives in the root `auth.ts`, imported as `@/auth`. Strategy is **JWT** (no DB session): the `jwt` callback stashes the Google `sub`/email/name/picture into the token *and* upserts the `User` doc by `googleId` on first sign-in; `session` surfaces `token.sub` as `session.user.id`. Server code uses `getCurrentUserId()` (`lib/auth-helpers.ts`). Protection is two-layered: `proxy.ts` redirects `/dashboard`, `/tracker`, `/add-event` to `/login`, and API routes filter by `userId`. **Everything user-owned must be scoped by `userId`** — `TrackerEntry` has a compound-unique index `{ userId, eventId }`.
+
+### 6. App layer
+
+- `lib/format.ts` — all date/label formatting, **pinned to Asia/Kolkata**. Never format event times with the ambient locale; a server in UTC would put a 9 PM IST event on the wrong day.
+- `lib/event-types.ts` — the client-side event shape (dates are ISO **strings** over JSON, not `Date`).
+- Feed (`app/page.tsx`) is a date-grouped **time rail** with a "Happening now" bucket pinned above the day groups, plus a grid view, faceted filters with live counts, debounced search, and infinite scroll.
+- Event covers use a plain `<img>`, not `next/image`, on purpose: covers come from a long and growing list of third-party CDNs, and `remotePatterns` would break every time a source changes host. The fallback is a category-tinted monogram.
+- Tracker (`app/tracker/page.tsx`) is a drag-and-drop kanban with optimistic updates and rollback, a list view, and a "follow-ups due" strip on top.
+
+### 7. Career intelligence (`lib/helpers/phase6.ts`)
+
+Pending follow-ups, repeat-connection detection (same person across 2+ events), target-company/recruiter detection (`DEFAULT_TARGET_COMPANIES` is hardcoded — **not yet DB-backed**), and `getStats(userId)`. Surfaced via `app/api/phase6/*`.
+
+### 8. Digest (`lib/notifications/`)
+
+`generateDailyDigest()` assembles new events (24 h), upcoming deadlines, tracker updates, follow-up reminders, and **unhealthy sources** — a source that silently stops producing events is reported rather than quietly shrinking the feed.
+
+### 9. Automation
+
+`.github/workflows/daily-scrape.yml` and `daily-digest.yml` run at 8 AM IST. Secrets: `MONGODB_URI`, optionally `NVIDIA_API_KEY`/`NVIDIA_MODEL`/`ICA_*`/`ANTHROPIC_API_KEY`, and `RESEND_API_KEY`.

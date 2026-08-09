@@ -1,4 +1,5 @@
 'use client';
+import Link from 'next/link';
 
 import { useEffect, useState } from 'react';
 import { format } from 'date-fns';
@@ -55,8 +56,6 @@ export default function DashboardPage() {
   const [repeatConnections, setRepeatConnections] = useState<RepeatConnection[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => { fetchData(); }, []);
-
   const fetchData = async () => {
     try {
       setLoading(true);
@@ -75,6 +74,13 @@ export default function DashboardPage() {
     }
   };
 
+  // Deferred by a tick — see the note in app/calendar/page.tsx.
+  useEffect(() => {
+    const timer = setTimeout(() => { void fetchData(); }, 0);
+    return () => clearTimeout(timer);
+  }, []);
+
+
   const markFollowUpComplete = async (trackerEntryId: string, connectionName: string) => {
     await fetch('/api/phase6/follow-ups', {
       method: 'POST',
@@ -86,12 +92,13 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-[#F5F5F7]">
-      <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
+      {/* Material Symbols is loaded once in app/layout.tsx — a per-page <link>
+          here duplicated the request on every dashboard visit. */}
 
       {/* Desktop Nav */}
       <nav className="hidden md:flex fixed top-0 w-full h-14 bg-white/70 glass-nav z-50 border-b border-black/5">
         <div className="flex justify-between items-center w-full max-w-[1200px] mx-auto px-20">
-          <a href="/" className="text-xl font-bold tracking-tight text-[#1D1D1F]">PulseBLR</a>
+          <Link href="/" className="text-xl font-bold tracking-tight text-[#1D1D1F]">PulseBLR</Link>
           <div className="flex items-center gap-8">
             {NAV_LINKS.map(link => (
               <a key={link.href} href={link.href}
@@ -106,7 +113,7 @@ export default function DashboardPage() {
 
       {/* Mobile Header */}
       <header className="md:hidden fixed top-0 w-full h-14 bg-white/70 glass-nav z-50 border-b border-black/5 flex items-center justify-between px-5">
-        <a href="/" className="text-lg font-bold tracking-tight text-[#1D1D1F]">PulseBLR</a>
+        <Link href="/" className="text-lg font-bold tracking-tight text-[#1D1D1F]">PulseBLR</Link>
         <span className="text-[#86868B] text-sm font-medium">Dashboard</span>
       </header>
 

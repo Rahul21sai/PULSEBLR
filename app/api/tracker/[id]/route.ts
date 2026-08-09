@@ -53,9 +53,15 @@ export async function PUT(
 
     if (!entry) return NextResponse.json({ error: 'Not found' }, { status: 404 });
     return NextResponse.json(entry);
-  } catch (error: any) {
+  } catch (error) {
     console.error(error);
-    return NextResponse.json({ error: 'Failed to update tracker entry', details: error.message }, { status: 500 });
+    return NextResponse.json(
+      {
+        error: 'Failed to update tracker entry',
+        details: error instanceof Error ? error.message : String(error),
+      },
+      { status: 500 }
+    );
   }
 }
 

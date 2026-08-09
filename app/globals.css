@@ -55,6 +55,9 @@
   --error-container: #ffdad6;
   --on-error: #ffffff;
   --on-error-container: #93000a;
+  /* Feed additions */
+  --hairline: #e5e5ea;
+  --live: #ff3b30;
 }
 
 @theme inline {
@@ -218,6 +221,155 @@ body {
   border-radius: 9999px;
   color: #0071E3;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   FEED — the time rail
+   The signature element: a vertical spine down the feed with the event's clock
+   time as the anchor for each row. Times use tabular figures so the column is
+   optically aligned; without that, "19:30" and "11:00" wander by a few pixels
+   and the rail stops reading as a rail.
+   ═══════════════════════════════════════════════════════════════════════════ */
+.tnum { font-variant-numeric: tabular-nums; font-feature-settings: 'tnum' 1; }
+
+.rail {
+  --rail-x: 58px;
+  position: relative;
+}
+.rail::before {
+  content: '';
+  position: absolute;
+  left: var(--rail-x);
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--hairline);
+}
+@media (min-width: 768px) {
+  .rail { --rail-x: 74px; }
+}
+
+/* The dot where a row meets the spine. */
+.rail-node {
+  position: relative;
+  z-index: 1;
+  width: 9px;
+  height: 9px;
+  border-radius: 9999px;
+  background: #fff;
+  box-shadow: 0 0 0 2px var(--hairline) inset, 0 0 0 3px #F5F5F7;
+}
+.rail-node[data-live='true'] {
+  background: var(--live);
+  box-shadow: 0 0 0 3px #F5F5F7, 0 0 0 5px color-mix(in srgb, var(--live) 22%, transparent);
+}
+
+/* Live pulse for an event that is happening right now. */
+@keyframes live-pulse {
+  0%   { transform: scale(1);   opacity: 0.55; }
+  70%  { transform: scale(2.1); opacity: 0; }
+  100% { transform: scale(2.1); opacity: 0; }
+}
+.live-dot { position: relative; display: inline-flex; }
+.live-dot::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  background: var(--live);
+  animation: live-pulse 1.8s ease-out infinite;
+}
+
+/* ─── Sticky day heading ─────────────────────────────────────────────────── */
+.day-heading {
+  position: sticky;
+  top: 106px;
+  z-index: 20;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  background: color-mix(in srgb, #F5F5F7 88%, transparent);
+}
+@media (min-width: 768px) {
+  .day-heading { top: 112px; }
+}
+
+/* ─── Pills ──────────────────────────────────────────────────────────────── */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 9px;
+  border-radius: 9999px;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+.pill-quiet  { background: var(--surface-container-low); color: var(--text-secondary); }
+.pill-free   { background: rgba(52,199,89,0.12);  color: #1B7F3B; }
+.pill-live   { background: rgba(255,59,48,0.12);  color: #C7362D; }
+.pill-online { background: rgba(0,113,227,0.10);  color: #0060C0; }
+.pill-sold   { background: var(--surface-container); color: var(--text-secondary); text-decoration: line-through; }
+
+/* ─── Cover images ───────────────────────────────────────────────────────── */
+.cover {
+  background: var(--surface-container-low);
+  object-fit: cover;
+  /* Many event covers are wide banners; a neutral tint prevents a jarring flash
+     of white before the image decodes. */
+}
+.cover-fallback {
+  display: grid;
+  place-items: center;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: #fff;
+}
+
+/* ─── Skeleton shimmer ───────────────────────────────────────────────────── */
+@keyframes shimmer { 100% { transform: translateX(100%); } }
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  background: var(--surface-container-low);
+}
+.skeleton::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.65), transparent);
+  animation: shimmer 1.4s infinite;
+}
+
+/* ─── Focus visibility ───────────────────────────────────────────────────── */
+/* Keyboard users must always be able to see where they are. Applied via
+   :focus-visible so pointer clicks don't paint a ring. */
+:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* ─── Reduced motion ─────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ─── Kanban drag affordances ────────────────────────────────────────────── */
+.kanban-col[data-over='true'] {
+  background: rgba(0,113,227,0.06);
+  outline: 2px dashed rgba(0,113,227,0.35);
+  outline-offset: -4px;
+}
+.kanban-card { cursor: grab; touch-action: manipulation; }
+.kanban-card:active { cursor: grabbing; }
+.kanban-card[data-dragging='true'] { opacity: 0.4; }
 
 /* ─── Event card accent bars ─────────────────────────────────────────────── */
 .card-bar-ai         { background: linear-gradient(90deg, #0071E3 0%, #00C6FF 100%); }

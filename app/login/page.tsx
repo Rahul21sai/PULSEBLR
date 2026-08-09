@@ -17,7 +17,7 @@ export default function LoginPage() {
         {/* Brand */}
         <div className="text-center mb-12">
           <h1 className="text-3xl font-bold tracking-tight text-[#1D1D1F] mb-2">PulseBLR</h1>
-          <p className="text-[#86868B] text-[17px]">Bangalore's tech event pulse</p>
+          <p className="text-[#86868B] text-[17px]">Bangalore&rsquo;s tech event pulse</p>
         </div>
 
         {/* Card */}

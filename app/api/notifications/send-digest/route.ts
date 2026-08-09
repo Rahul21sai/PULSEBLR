@@ -1,11 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { sendDailyDigestEmail } from '@/lib/notifications/email';
 
 /**
  * POST /api/notifications/send-digest
  * Manually trigger daily digest email
  */
-export async function POST(request: NextRequest) {
+export async function POST() {
   try {
     const userEmail = process.env.USER_EMAIL;
 
@@ -34,13 +34,14 @@ export async function POST(request: NextRequest) {
         { status: 500 }
       );
     }
-  } catch (error: any) {
-    console.error('❌ Digest API error:', error);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error('Digest API error:', error);
 
     return NextResponse.json(
       {
         success: false,
-        error: error.message,
+        error: message,
       },
       { status: 500 }
     );
@@ -51,7 +52,7 @@ export async function POST(request: NextRequest) {
  * GET /api/notifications/send-digest
  * Get digest preview (without sending)
  */
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
     const { generateDailyDigest, formatDigestAsText } = await import('@/lib/notifications/digest');
     
@@ -68,13 +69,11 @@ export async function GET(request: NextRequest) {
         followUpReminders: digest.followUpReminders.length,
       },
     });
-  } catch (error: any) {
-    console.error('❌ Digest preview error:', error);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error('Digest preview error:', error);
 
-    return NextResponse.json(
-      { error: error.message },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
 

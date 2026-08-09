@@ -57,3 +57,13 @@ next-env.d.ts
 Thumbs.db
 
 # Made with Bob
+
+# Local tooling output
+lint-out.txt
+lint2.txt
+
+# Claude Code local launch config (machine-specific ports/commands)
+.claude/launch.json
+
+# Security-scan working directories
+CLAUDE-SECURITY-*/

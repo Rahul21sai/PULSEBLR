@@ -1,348 +1,549 @@
-interface TaggingResult {
+import { EVENT_CATEGORIES } from '../models/Event';
+
+export interface TaggingResult {
   categories: string[];
   format: 'online' | 'offline' | 'hybrid';
   hasFood: 'yes' | 'no' | 'unknown';
+  /** True for a software/data/hardware/product-engineering event. */
+  isTechEvent: boolean;
   confidence: number;
 }
 
-const SYSTEM_PROMPT = `You are an expert at categorizing tech events in Bangalore, India.
-
-Given an event title and description, classify it into the following:
-
-1. Categories (select all that apply):
-   - AI/ML: Artificial Intelligence, Machine Learning, Deep Learning, LLMs, GenAI
-   - Fintech: Financial technology, banking, payments, blockchain
-   - Cybersecurity: Security, hacking, penetration testing, InfoSec
-   - Cloud/DevOps: AWS, Azure, GCP, Kubernetes, Docker, CI/CD
-   - Web/Mobile: Web development, mobile apps, React, Flutter, iOS, Android
-   - Data/Analytics: Data science, big data, analytics, visualization
-   - Hackathon: Coding competitions, hackathons
-   - Government: Government-sponsored events, Smart India Hackathon
-   - Corporate: Company-hosted tech talks, recruitment events
-   - Summit/Conference: Large conferences, summits
-   - Networking/Meetup: Community meetups, networking events
-   - Career/Job Fair: Job fairs, career events, recruitment drives
-
-2. Format:
-   - online: Virtual event (Zoom, Teams, Meet)
-   - offline: In-person event at a physical venue
-   - hybrid: Both online and offline options
-
-3. Food availability:
-   - yes: Food/snacks/refreshments explicitly mentioned
-   - no: Explicitly states no food
-   - unknown: Not mentioned
-
-Respond ONLY with valid JSON in this exact format:
-{
-  "categories": ["Category1", "Category2"],
-  "format": "online|offline|hybrid",
-  "hasFood": "yes|no|unknown",
-  "confidence": 0.95
-}`;
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Generic OpenAI-compatible chat-completions tagger.
-//
-// NVIDIA NIM and IBM Consulting Advantage (ICA) both expose the standard
-// OpenAI `/chat/completions` protocol, so they share this one call path — only
-// the base URL, model, API key, and timeout differ. Keeping the transport in a
-// single place means a fix (timeout, JSON extraction, error surfacing) applies
-// to every OpenAI-compatible provider at once.
-// ─────────────────────────────────────────────────────────────────────────────
-// Some gateway/model combos reject temperature != 1 (e.g. ICA/litellm for
-// claude-opus-4-8 returns HTTP 400 "Only temperature=1 is supported"). We prefer
-// 0.3 for deterministic classification, but when a model refuses it we retry at
-// 1 and remember the model here so every later event in the run skips straight
-// to temperature=1 — no repeated failed calls.
-const MODELS_REQUIRING_TEMP_1 = new Set<string>();
-
-async function tagWithOpenAICompatible(
-  userPrompt: string,
-  opts: { apiKey: string; baseUrl: string; model: string; provider: string; timeoutMs?: number }
-): Promise<TaggingResult> {
-  const { apiKey, baseUrl, model, provider, timeoutMs = 20000 } = opts;
-  // Trim any trailing slash so `${baseUrl}/chat/completions` never doubles up.
-  const url = `${baseUrl.replace(/\/+$/, '')}/chat/completions`;
-
-  const call = (temperature: number) =>
-    fetch(url, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model,
-        messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
-          { role: 'user', content: userPrompt },
-        ],
-        max_tokens: 500,
-        temperature,
-      }),
-      signal: AbortSignal.timeout(timeoutMs),
-    });
-
-  let response = await call(MODELS_REQUIRING_TEMP_1.has(model) ? 1 : 0.3);
-
-  // Adaptive retry: if the model rejects temperature=0.3, retry once at 1 and
-  // cache that so the rest of the batch goes direct. Non-temperature 400s throw.
-  if (response.status === 400 && !MODELS_REQUIRING_TEMP_1.has(model)) {
-    const errText = await response.text();
-    if (/temperature/i.test(errText)) {
-      MODELS_REQUIRING_TEMP_1.add(model);
-      console.warn(`⚠️  [${provider}] ${model} rejected temperature=0.3 — retrying at 1`);
-      response = await call(1);
-    } else {
-      throw new Error(`${provider} error 400: ${errText}`);
-    }
-  }
-
-  if (!response.ok) {
-    const err = await response.text();
-    throw new Error(`${provider} error ${response.status}: ${err}`);
-  }
-
-  const data = await response.json();
-  const text: string = data.choices?.[0]?.message?.content ?? '';
-
-  // Extract JSON block from the response (model may wrap it in markdown).
-  const jsonMatch = text.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) throw new Error(`No JSON in ${provider} response`);
-  return JSON.parse(jsonMatch[0]) as TaggingResult;
+export interface TaggingInput {
+  title: string;
+  description: string;
+  venue?: string;
+  onlineLink?: string;
+  /** Adapter-supplied hints (Devfolio themes, Bevy event types, Meetup keywords). */
+  hints?: string[];
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// IBM Consulting Advantage (ICA) — OpenAI-compatible gateway (primary when set)
-//
-// Endpoint and model are NOT guessed: ICA is only activated when ICA_API_KEY,
-// ICA_BASE_URL, and ICA_MODEL are ALL present in the environment. Set them in
-// .env.local (never in code). Until then this provider is skipped and NVIDIA
-// stays primary, so an incomplete config never changes behavior.
-// ─────────────────────────────────────────────────────────────────────────────
-async function tagWithICA(userPrompt: string): Promise<TaggingResult> {
-  return tagWithOpenAICompatible(userPrompt, {
-    apiKey: process.env.ICA_API_KEY!,
-    baseUrl: process.env.ICA_BASE_URL!,
-    model: process.env.ICA_MODEL!,
-    provider: 'IBM ICA',
-    timeoutMs: 20000,
-  });
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// NVIDIA NIM — OpenAI-compatible endpoint
-// Docs: https://docs.api.nvidia.com/nim/reference/llm-apis
-// ─────────────────────────────────────────────────────────────────────────────
-async function tagWithNvidia(userPrompt: string): Promise<TaggingResult> {
-  return tagWithOpenAICompatible(userPrompt, {
-    apiKey: process.env.NVIDIA_API_KEY!,
-    baseUrl: process.env.NVIDIA_BASE_URL || 'https://integrate.api.nvidia.com/v1',
-    model: process.env.NVIDIA_MODEL || 'meta/llama-3.1-8b-instruct',
-    provider: 'NVIDIA NIM',
-    timeoutMs: 15000,
-  });
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Anthropic Claude (fallback when NVIDIA key not set)
-// ─────────────────────────────────────────────────────────────────────────────
-async function tagWithAnthropic(userPrompt: string): Promise<TaggingResult> {
-  // Dynamic import so the SDK is only loaded when actually needed
-  const { default: Anthropic } = await import('@anthropic-ai/sdk');
-  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
-
-  const message = await anthropic.messages.create({
-    model: 'claude-3-5-sonnet-20241022',
-    max_tokens: 500,
-    temperature: 0.3,
-    system: SYSTEM_PROMPT,
-    messages: [{ role: 'user', content: userPrompt }],
-  });
-
-  const content = message.content[0];
-  if (content.type !== 'text') throw new Error('Unexpected Anthropic response type');
-
-  const jsonMatch = content.text.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) throw new Error('No JSON in Anthropic response');
-  return JSON.parse(jsonMatch[0]) as TaggingResult;
-}
-
-// The 12 canonical Event categories (must stay in sync with the enum in
-// lib/models/Event.ts). Any category the LLM invents outside this set is
-// dropped; if nothing survives we default to the most generic bucket.
-const VALID_CATEGORIES = [
-  'AI/ML', 'Fintech', 'Cybersecurity', 'Cloud/DevOps', 'Web/Mobile',
-  'Data/Analytics', 'Hackathon', 'Government', 'Corporate',
-  'Summit/Conference', 'Networking/Meetup', 'Career/Job Fair',
-];
-
-// The only values the Event schema accepts for these fields (lib/models/Event.ts).
-// LLMs go off-script — e.g. Llama-3.1-8b returned "format":"unknown" for an event
-// whose venue it couldn't classify — and an out-of-enum value makes Mongoose reject
-// the whole document at insert. So we coerce to a safe default rather than trust the
-// model's string. 'offline' is the schema default intent for format (most Bangalore
-// meetups are in-person); 'unknown' is already a valid hasFood value.
+const VALID_CATEGORIES = new Set<string>(EVENT_CATEGORIES);
 const VALID_FORMATS: TaggingResult['format'][] = ['online', 'offline', 'hybrid'];
 const VALID_FOOD: TaggingResult['hasFood'][] = ['yes', 'no', 'unknown'];
 
+// ─────────────────────────────────────────────────────────────────────────────
+// BATCHING
+//
+// The scraper now surfaces 300–900 events per run instead of a handful. One LLM
+// call per event would dominate runtime and cost, so we classify in batches: the
+// model receives a numbered list and returns one object per item.
+//
+// Sizing came from measurement, not taste. At batch size 8 with full 600-character
+// descriptions, llama-3.1-8b returned an array the wrong length often enough that
+// only 8 of 840 events got LLM tags — everything else silently fell back to
+// keywords. The same model handled 8 short items perfectly, which pointed at
+// output length rather than capability. So: smaller batches, more output headroom,
+// shorter per-event excerpts, and lenient parsing that keeps however many items
+// DID come back instead of throwing the whole batch away.
+// ─────────────────────────────────────────────────────────────────────────────
+const BATCH_SIZE = 5;
+
+/** Characters of description sent per event. Enough to classify, short enough to batch. */
+const DESCRIPTION_BUDGET = 400;
+
+const SYSTEM_PROMPT = `You classify events happening in Bengaluru (Bangalore), India.
+
+For EACH numbered event you receive, return one JSON object with these fields:
+
+"categories": 1-3 values chosen ONLY from this exact list:
+${EVENT_CATEGORIES.map(c => `  - ${c}`).join('\n')}
+
+"format": "online" | "offline" | "hybrid"
+  online = purely virtual. offline = physical venue. hybrid = both.
+
+"hasFood": "yes" | "no" | "unknown"
+  yes only when food/snacks/refreshments/dinner/lunch are actually mentioned.
+
+"isTechEvent": true | false
+  true for software, data, AI, hardware, security, devops, product-engineering
+  and developer-community events. false for concerts, comedy, sports, generic
+  business networking, festivals and social gatherings.
+
+"confidence": 0.0-1.0
+
+Respond with ONLY a JSON array, one object per input event, in the SAME ORDER.
+No prose, no markdown fences.`;
+
 /**
- * Tag an event through a provider cascade: IBM ICA (primary) → NVIDIA NIM →
- * Anthropic Claude → keyword heuristics. Each provider is attempted only if its
- * env is configured; on error we log ❌ and fall through to the next tier, so a
- * slow/failing provider never drops the event — worst case we still get
- * keyword-based tags. This is what fixed the "0 new" runs where a single
- * NVIDIA timeout aborted every event.
+ * Strip characters that break the provider's JSON parser.
+ *
+ * Observed live: NVIDIA rejected a batch with
+ *   "Failed to deserialize the JSON body … unexpected end of hex escape".
+ * The cause is a LONE SURROGATE in scraped copy — an emoji whose pair got split
+ * by an upstream truncation. `JSON.stringify` happily emits `\ud83d` on its own,
+ * which is valid JS but not valid JSON for a strict deserializer. Scraped text is
+ * full of emoji, so this has to be handled rather than hoped away.
  */
+function sanitizeForJson(text: string): string {
+  return text
+    // Unpaired high surrogate (not followed by a low one) and vice versa.
+    .replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/g, '')
+    .replace(/(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, '')
+    // Control characters that add nothing to a classification prompt.
+    .replace(/\p{Cc}/gu, ' ');
+}
+
+function buildBatchPrompt(inputs: TaggingInput[]): string {
+  return inputs
+    .map((input, index) => {
+      const parts = [`Event ${index + 1}:`, `Title: ${sanitizeForJson(input.title)}`];
+      // Descriptions can be thousands of characters; the opening lines carry the
+      // classifying signal and keep the batch inside a sane token budget.
+      if (input.description && input.description !== input.title) {
+        parts.push(`Description: ${sanitizeForJson(input.description.slice(0, DESCRIPTION_BUDGET))}`);
+      }
+      if (input.venue) parts.push(`Venue: ${sanitizeForJson(input.venue)}`);
+      if (input.onlineLink) parts.push('Has online link: yes');
+      if (input.hints?.length) parts.push(`Hints: ${sanitizeForJson(input.hints.slice(0, 8).join(', '))}`);
+      return parts.join('\n');
+    })
+    .join('\n\n');
+}
+
+// Some gateway/model combos reject temperature != 1 (ICA/litellm returns HTTP 400
+// "Only temperature=1 is supported" for claude-opus-4-8). We prefer 0.2 for
+// deterministic classification, but remember any model that refuses so the rest
+// of the run skips straight to 1 instead of burning a failed call per batch.
+const MODELS_REQUIRING_TEMP_1 = new Set<string>();
+
+interface ProviderConfig {
+  apiKey: string;
+  baseUrl: string;
+  model: string;
+  provider: string;
+  timeoutMs?: number;
+  /**
+   * Model to retry with when `model` times out or 404s.
+   *
+   * Why this exists: a valid NVIDIA key configured with `z-ai/glm-5.2` produced a
+   * hard timeout on every request (measured: >25 s, repeatedly), while
+   * `meta/llama-3.1-8b-instruct` answered in 376 ms on the SAME key. The failure
+   * was a model choice, not a credentials problem, so failing over to another
+   * model on the same provider recovers tagging instead of dropping to keywords.
+   */
+  fallbackModel?: string;
+}
+
+/** Models proven unusable this run — skipped immediately afterwards. */
+const DEAD_MODELS = new Set<string>();
+
+/** NVIDIA NIM model measured as fast and reliable for this classification task. */
+const NVIDIA_FAST_MODEL = 'meta/llama-3.1-8b-instruct';
+
+async function callOpenAICompatible(userPrompt: string, opts: ProviderConfig): Promise<string> {
+  const { apiKey, baseUrl, provider, timeoutMs = 45000, fallbackModel } = opts;
+  const url = `${baseUrl.replace(/\/+$/, '')}/chat/completions`;
+
+  // Try the configured model, then the provider's known-good fallback.
+  const chain = [opts.model, fallbackModel]
+    .filter((m): m is string => Boolean(m))
+    .filter(m => !DEAD_MODELS.has(m));
+
+  if (chain.length === 0) {
+    throw new Error(`${provider}: no usable model (all marked dead this run)`);
+  }
+
+  let lastError: Error | undefined;
+
+  for (const model of chain) {
+    const call = (temperature: number) =>
+      fetch(url, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: 'system', content: SYSTEM_PROMPT },
+            { role: 'user', content: userPrompt },
+          ],
+          // Generous headroom: a truncated response (finish_reason "length") is
+          // indistinguishable from a malformed one at the parse layer, and was the
+          // suspected cause of near-total fallback to keyword tagging.
+          max_tokens: 3000,
+          temperature,
+        }),
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+
+    try {
+      let response = await call(MODELS_REQUIRING_TEMP_1.has(model) ? 1 : 0.2);
+
+      if (response.status === 400 && !MODELS_REQUIRING_TEMP_1.has(model)) {
+        const errText = await response.text();
+        if (/temperature/i.test(errText)) {
+          MODELS_REQUIRING_TEMP_1.add(model);
+          console.warn(`[${provider}] ${model} rejected temperature=0.2 — retrying at 1`);
+          response = await call(1);
+        } else {
+          throw new Error(`${provider} error 400: ${errText.slice(0, 300)}`);
+        }
+      }
+
+      if (response.status === 404) {
+        // The model isn't available to this account — it will never be, so stop
+        // paying for it and move to the fallback.
+        DEAD_MODELS.add(model);
+        lastError = new Error(`${provider}: model "${model}" not available (404)`);
+        console.warn(`[${provider}] model "${model}" unavailable — trying next model`);
+        continue;
+      }
+
+      if (!response.ok) {
+        throw new Error(
+          `${provider} error ${response.status}: ${(await response.text()).slice(0, 300)}`
+        );
+      }
+
+      const data = await response.json();
+      return data.choices?.[0]?.message?.content ?? '';
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      lastError = error instanceof Error ? error : new Error(message);
+      // A timeout means this model is too slow for batch work, whatever the cause.
+      if (/abort|timeout/i.test(message)) {
+        DEAD_MODELS.add(model);
+        console.warn(`[${provider}] model "${model}" timed out — trying next model`);
+        continue;
+      }
+      // Auth/other errors are provider-level; no other model will help.
+      throw lastError;
+    }
+  }
+
+  throw lastError ?? new Error(`${provider}: all models failed`);
+}
+
+async function callAnthropic(userPrompt: string): Promise<string> {
+  const { default: Anthropic } = await import('@anthropic-ai/sdk');
+  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
+  const message = await anthropic.messages.create({
+    model: 'claude-3-5-sonnet-20241022',
+    max_tokens: 2000,
+    temperature: 0.2,
+    system: SYSTEM_PROMPT,
+    messages: [{ role: 'user', content: userPrompt }],
+  });
+  const content = message.content[0];
+  if (content.type !== 'text') throw new Error('Unexpected Anthropic response type');
+  return content.text;
+}
+
+/**
+ * Extract the classification objects from a model response.
+ *
+ * Lenient on purpose. Requiring `length === expected` threw away batches where the
+ * model returned 4 good objects out of 5, which is how a run ended up with 832 of
+ * 840 events on keyword tags. Now we take whatever valid objects came back and let
+ * the caller fill any gap from keywords, so partial output still helps.
+ *
+ * Handles: a bare array, a `{ "results": [...] }` / `{ "events": [...] }` wrapper,
+ * markdown fences, trailing prose, and a truncated final object.
+ */
+function parseBatchResponse(text: string, expected: number): unknown[] | null {
+  const cleaned = text.replace(/```(?:json)?\s*/gi, '').replace(/```/g, '').trim();
+
+  const attempts: string[] = [];
+  const start = cleaned.indexOf('[');
+  const end = cleaned.lastIndexOf(']');
+  if (start !== -1 && end > start) attempts.push(cleaned.slice(start, end + 1));
+
+  // Wrapper object form.
+  const objStart = cleaned.indexOf('{');
+  const objEnd = cleaned.lastIndexOf('}');
+  if (objStart !== -1 && objEnd > objStart) attempts.push(cleaned.slice(objStart, objEnd + 1));
+
+  for (const candidate of attempts) {
+    try {
+      const parsed = JSON.parse(candidate);
+      const array = Array.isArray(parsed)
+        ? parsed
+        : (parsed?.results ?? parsed?.events ?? parsed?.classifications);
+      if (Array.isArray(array) && array.length > 0) return array.slice(0, expected);
+    } catch {
+      /* try the next shape */
+    }
+  }
+
+  // Truncated output: salvage every complete top-level object in the stream. A
+  // response cut off mid-object still contains usable earlier ones.
+  const salvaged: unknown[] = [];
+  for (const match of cleaned.matchAll(/\{[^{}]*"categories"[\s\S]*?\}\s*(?=,|\]|$)/g)) {
+    try {
+      salvaged.push(JSON.parse(match[0]));
+    } catch {
+      /* incomplete tail — ignore */
+    }
+    if (salvaged.length >= expected) break;
+  }
+  return salvaged.length > 0 ? salvaged : null;
+}
+
+/** Coerce one model object into a schema-valid TaggingResult. */
+function coerce(raw: unknown, fallback: TaggingResult): TaggingResult {
+  if (!raw || typeof raw !== 'object') return fallback;
+  const obj = raw as Record<string, unknown>;
+
+  const categories = Array.isArray(obj.categories)
+    ? obj.categories.filter((c): c is string => typeof c === 'string' && VALID_CATEGORIES.has(c))
+    : [];
+
+  const format = VALID_FORMATS.includes(obj.format as TaggingResult['format'])
+    ? (obj.format as TaggingResult['format'])
+    : fallback.format;
+
+  const hasFood = VALID_FOOD.includes(obj.hasFood as TaggingResult['hasFood'])
+    ? (obj.hasFood as TaggingResult['hasFood'])
+    : fallback.hasFood;
+
+  return {
+    categories: categories.length > 0 ? [...new Set(categories)].slice(0, 3) : fallback.categories,
+    format,
+    hasFood,
+    isTechEvent: typeof obj.isTechEvent === 'boolean' ? obj.isTechEvent : fallback.isTechEvent,
+    confidence: typeof obj.confidence === 'number' ? obj.confidence : 0.8,
+  };
+}
+
+/** Providers configured in this environment, in priority order. */
+function activeProviders(): Array<{ name: string; run: (prompt: string) => Promise<string> }> {
+  const providers: Array<{ name: string; run: (prompt: string) => Promise<string> }> = [];
+
+  // The pipeline's --no-llm flag sets this so local runs finish in seconds on
+  // keyword tagging alone, without anyone having to unset real API keys.
+  if (process.env.PULSEBLR_SKIP_LLM === '1') return providers;
+
+  if (process.env.ICA_API_KEY && process.env.ICA_BASE_URL && process.env.ICA_MODEL) {
+    providers.push({
+      name: 'IBM ICA',
+      run: prompt =>
+        callOpenAICompatible(prompt, {
+          apiKey: process.env.ICA_API_KEY!,
+          baseUrl: process.env.ICA_BASE_URL!,
+          model: process.env.ICA_MODEL!,
+          provider: 'IBM ICA',
+        }),
+    });
+  }
+  if (process.env.NVIDIA_API_KEY) {
+    providers.push({
+      name: 'NVIDIA NIM',
+      run: prompt =>
+        callOpenAICompatible(prompt, {
+          apiKey: process.env.NVIDIA_API_KEY!,
+          baseUrl: process.env.NVIDIA_BASE_URL || 'https://integrate.api.nvidia.com/v1',
+          model: process.env.NVIDIA_MODEL || NVIDIA_FAST_MODEL,
+          // Verified 376 ms on this endpoint while the larger listed models
+          // (z-ai/glm-5.2, llama-3.3-70b) never returned. Classification is a
+          // small, well-specified task, so the 8B model is the right tool anyway.
+          fallbackModel: NVIDIA_FAST_MODEL,
+          provider: 'NVIDIA NIM',
+          // Deliberately tight: a batch that takes longer than this is slower than
+          // just using keyword tagging for it.
+          timeoutMs: 25000,
+        }),
+    });
+  }
+  if (process.env.ANTHROPIC_API_KEY) {
+    providers.push({ name: 'Anthropic', run: callAnthropic });
+  }
+
+  return providers;
+}
+
+/**
+ * Tag many events. Batched, with a provider cascade per batch and keyword
+ * fallback as the floor — an event is never dropped for want of a classification.
+ */
+export async function tagEvents(inputs: TaggingInput[]): Promise<TaggingResult[]> {
+  const fallbacks = inputs.map(keywordTagging);
+  const providers = activeProviders();
+
+  if (providers.length === 0) {
+    console.warn('No LLM provider configured (ICA / NVIDIA / Anthropic) — using keyword tagging');
+    return fallbacks;
+  }
+
+  const results: TaggingResult[] = [...fallbacks];
+  let llmTagged = 0;
+  let batchFailures = 0;
+
+  // ── Circuit breaker ───────────────────────────────────────────────────────
+  // Measured failure mode: with an expired ICA key (instant 401) and a NVIDIA
+  // endpoint that timed out at 45 s, EVERY batch paid ~46 s before falling back
+  // to keywords. Across 105 batches that is 80 minutes of waiting to produce
+  // exactly the keyword tagging we'd have got for free. So a provider that fails
+  // this many times consecutively is dropped for the rest of the run.
+  const TRIP_AFTER = 3;
+  const strikes = new Map<string, number>();
+  const tripped = new Set<string>();
+  let loggedSample = false;
+  let partialBatches = 0;
+
+  for (let offset = 0; offset < inputs.length; offset += BATCH_SIZE) {
+    const batch = inputs.slice(offset, offset + BATCH_SIZE);
+    const available = providers.filter(p => !tripped.has(p.name));
+
+    if (available.length === 0) {
+      // All providers are out. Keyword fallbacks are already in `results`, so
+      // stop calling out entirely rather than re-failing for every remaining batch.
+      batchFailures += Math.ceil((inputs.length - offset) / BATCH_SIZE);
+      break;
+    }
+
+    const prompt = buildBatchPrompt(batch);
+    let parsed: unknown[] | null = null;
+
+    for (const provider of available) {
+      try {
+        const text = await provider.run(prompt);
+        parsed = parseBatchResponse(text, batch.length);
+        if (parsed) {
+          strikes.set(provider.name, 0); // a success clears the record
+          break;
+        }
+        // Show what actually came back the first time this happens. A bare
+        // "unusable" line gave no way to tell truncation from malformed JSON.
+        if (!loggedSample) {
+          loggedSample = true;
+          console.warn(
+            `[${provider.name}] unparseable batch response (first 240 chars): ${text.slice(0, 240).replace(/\s+/g, ' ')}`
+          );
+        }
+        recordStrike(provider.name);
+      } catch (error) {
+        console.warn(
+          `[${provider.name}] batch failed: ${error instanceof Error ? error.message : String(error)}`
+        );
+        recordStrike(provider.name);
+      }
+    }
+
+    if (parsed) {
+      // Apply positionally. A short array leaves the tail on keyword tags rather
+      // than mis-assigning another event's classification to it.
+      parsed.forEach((item, index) => {
+        results[offset + index] = coerce(item, fallbacks[offset + index]);
+      });
+      llmTagged += Math.min(parsed.length, batch.length);
+      if (parsed.length < batch.length) partialBatches++;
+    } else {
+      batchFailures++;
+    }
+  }
+
+  function recordStrike(name: string): void {
+    const next = (strikes.get(name) ?? 0) + 1;
+    strikes.set(name, next);
+    if (next >= TRIP_AFTER && !tripped.has(name)) {
+      tripped.add(name);
+      console.warn(
+        `[${name}] disabled for this run after ${next} consecutive failures — using the next provider`
+      );
+    }
+  }
+
+  const summary =
+    `Tagging: ${llmTagged}/${inputs.length} via LLM, ${inputs.length - llmTagged} via keywords` +
+    (batchFailures > 0 ? ` (${batchFailures} batch(es) fell back` : '') +
+    (partialBatches > 0 ? `${batchFailures > 0 ? ', ' : ' ('}${partialBatches} partial` : '') +
+    (batchFailures > 0 || partialBatches > 0 ? ')' : '');
+  if (tripped.size > 0) {
+    console.warn(`${summary} — providers disabled: ${[...tripped].join(', ')}`);
+  } else {
+    console.log(summary);
+  }
+  return results;
+}
+
+/** Single-event convenience wrapper. */
 export async function tagEventWithLLM(
   title: string,
   description: string,
   venue?: string,
   onlineLink?: string
 ): Promise<TaggingResult> {
-  const userPrompt = `Event Title: ${title}
-
-Event Description: ${description}
-${venue ? `\nVenue: ${venue}` : ''}
-${onlineLink ? `\nOnline Link: ${onlineLink}` : ''}
-
-Classify this event.`;
-
-  // Build the provider chain in priority order, skipping any that lack config.
-  // ICA requires all three vars (key/base/model) so an incomplete config never
-  // silently hijacks tagging.
-  const providers: Array<{ name: string; run: () => Promise<TaggingResult> }> = [];
-  if (process.env.ICA_API_KEY && process.env.ICA_BASE_URL && process.env.ICA_MODEL) {
-    providers.push({ name: 'IBM ICA', run: () => tagWithICA(userPrompt) });
-  }
-  if (process.env.NVIDIA_API_KEY) {
-    providers.push({ name: 'NVIDIA NIM', run: () => tagWithNvidia(userPrompt) });
-  }
-  if (process.env.ANTHROPIC_API_KEY) {
-    providers.push({ name: 'Anthropic', run: () => tagWithAnthropic(userPrompt) });
-  }
-
-  if (providers.length === 0) {
-    console.warn('⚠️  No LLM API key set (ICA / NVIDIA / Anthropic), using keyword tagging');
-    return fallbackTagging(title, description, venue, onlineLink);
-  }
-
-  for (const provider of providers) {
-    try {
-      const result = await provider.run();
-
-      // Validate categories against the canonical enum.
-      result.categories = (result.categories || []).filter(c => VALID_CATEGORIES.includes(c));
-      if (result.categories.length === 0) result.categories = ['Networking/Meetup'];
-
-      // Coerce format/hasFood to schema-valid values — the model sometimes emits
-      // strings outside the enum (e.g. "unknown" for format), which would otherwise
-      // fail Mongoose validation and silently drop the event at ingest.
-      if (!VALID_FORMATS.includes(result.format)) result.format = 'offline';
-      if (!VALID_FOOD.includes(result.hasFood)) result.hasFood = 'unknown';
-
-      console.log(`✅ [${provider.name}] tagged: ${title} → ${result.categories.join(', ')}`);
-      return result;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      console.error(`❌ [${provider.name}] tagging error: ${message} — falling through`);
-      // Try the next provider in the cascade.
-    }
-  }
-
-  console.warn(`⚠️  All LLM providers failed for "${title}", using keyword tagging`);
-  return fallbackTagging(title, description, venue, onlineLink);
+  const [result] = await tagEvents([{ title, description, venue, onlineLink }]);
+  return result;
 }
 
-/**
- * Fallback tagging when LLM is unavailable
- * Uses the basic keyword matching from normalizer
- */
-function fallbackTagging(
-  title: string,
-  description: string,
-  venue?: string,
-  onlineLink?: string
-): TaggingResult {
-  const text = `${title} ${description}`.toLowerCase();
+// ─────────────────────────────────────────────────────────────────────────────
+// Keyword fallback — also the baseline every LLM result is validated against.
+// ─────────────────────────────────────────────────────────────────────────────
+const CATEGORY_KEYWORDS: Array<[string, RegExp]> = [
+  ['AI/ML', /\b(ai|a\.i\.|artificial intelligence|machine learning|\bml\b|deep learning|neural|llm|gpt|genai|generative|transformer|nlp|computer vision|agentic|rag)\b/i],
+  ['Fintech', /\b(fintech|payments?|upi|banking|lending|insurtech|neobank)\b/i],
+  ['Cybersecurity', /\b(security|cyber|infosec|pentest|penetration testing|owasp|ctf|capture the flag|vulnerabilit|appsec|devsecops)\b/i],
+  ['Cloud/DevOps', /\b(cloud|devops|aws|azure|gcp|kubernetes|k8s|docker|terraform|ci\/cd|sre|platform engineering|observability)\b/i],
+  ['Web/Mobile', /\b(web|frontend|front-end|backend|react|next\.?js|angular|vue|svelte|flutter|android|ios|react native|wordpress|javascript|typescript)\b/i],
+  ['Data/Analytics', /\b(data|analytics|big data|data science|data engineering|warehouse|spark|iceberg|dbt|visualization|bi\b|sql)\b/i],
+  ['Blockchain/Web3', /\b(blockchain|web3|crypto|ethereum|solana|nft|defi|smart contract)\b/i],
+  ['Robotics/Hardware', /\b(robotics|hardware|embedded|iot|drone|semiconductor|chip design|fpga|arduino|raspberry pi)\b/i],
+  ['Open Source', /\b(open source|oss\b|foss|linux|apache|cncf|contributor)\b/i],
+  ['Gaming/XR', /\b(gaming|game dev|gamedev|unity|unreal|\bvr\b|\bxr\b|metaverse|esports)\b/i],
+  ['Hackathon', /\b(hackathon|hack day|buildathon|code sprint|datathon|devsprint)\b/i],
+  ['Startup/Founders', /\b(startup|founder|entrepreneur|venture|\bvc\b|pitch|demo day|incubat|accelerat|fundrais|seed round)\b/i],
+  // NB: no bare `\bpm\b` or `\bui\b` here. `pm` matched the time in "6 PM", which
+  // tagged a fifth of the entire corpus as Product/Design on the first real run.
+  ['Product/Design', /\b(product manage|product management|product manager|\bux\b|ui\/ux|design system|figma|user research|design thinking|producttank|product design)\b/i],
+  ['Marketing/Growth', /\b(marketing|growth|\bseo\b|content strategy|brand|advertis|social media)\b/i],
+  ['Career/Job Fair', /\b(job fair|career fair|hiring|recruit|resume|interview prep|placement)\b/i],
+  ['Summit/Conference', /\b(summit|conference|convention|expo|symposium|congress)\b/i],
+  ['Workshop/Training', /\b(workshop|bootcamp|training|masterclass|certification|hands-on|tutorial|course)\b/i],
+  ['Business/Finance', /\b(business|finance|investing|equity|consult|\bb2b\b|sales|leadership|mba)\b/i],
+  ['Health/Biotech', /\b(health|medical|biotech|pharma|wellness|mental health|ultrasound|clinical)\b/i],
+  ['Science/Research', /\b(science|research|physics|space|astronomy|paper reading|academia|lecture)\b/i],
+  ['Climate/Sustainability', /\b(climate|sustainab|renewable|solar|\bev\b|environment|carbon)\b/i],
+  ['Music/Nightlife', /\b(music|concert|\bdj\b|\bedm\b|live band|gig|nightlife|party|festival|tour)\b/i],
+  ['Arts/Culture', /\b(art|gallery|exhibition|film|screening|photograph|dance|craft|museum|poetry)\b/i],
+  ['Comedy/Theatre', /\b(comedy|stand-?up|improv|theatre|theater|open mic|play\b)\b/i],
+  ['Sports/Fitness', /\b(sport|fitness|run(ning)?|marathon|yoga|cricket|football|padel|badminton|cycling|hik(e|ing)|trek)\b/i],
+  // Deliberately narrow: bare "food"/"coffee"/"beer" appear in "snacks provided"
+  // and "post-event beers", which describe catering at a TECH meetup rather than a
+  // food event. Those words feed hasFood detection instead (see FOOD_RE).
+  ['Food/Drink', /\b(food festival|food walk|dining|brunch|coffee tasting|beer tasting|wine tasting|whisky tasting|cocktail|culinary|potluck|supper club|brewery|bake)\b/i],
+  ['Books/Writing', /\b(book club|reading|writing|author|literature|poetry slam|storytell)\b/i],
+  ['Social/Community', /\b(social|mixer|networking|community|volunteer|board games|mafia|quiz|meet ?up)\b/i],
+];
+
+/** Categories that make an event "tech" for the isTechEvent flag. */
+const TECH_CATEGORIES = new Set([
+  'AI/ML', 'Fintech', 'Cybersecurity', 'Cloud/DevOps', 'Web/Mobile', 'Data/Analytics',
+  'Blockchain/Web3', 'Robotics/Hardware', 'Open Source', 'Gaming/XR', 'Hackathon',
+  'Product/Design',
+]);
+
+const FOOD_RE =
+  /\b(food|snacks?|refreshments?|lunch|dinner|breakfast|pizza|beverages?|drinks?|meal|catering|high tea|buffet)\b/i;
+
+export function keywordTagging(input: TaggingInput): TaggingResult {
+  const text = `${input.title} ${input.description} ${(input.hints || []).join(' ')}`;
+
   const categories: string[] = [];
-
-  const categoryKeywords: Record<string, string[]> = {
-    'AI/ML': ['ai', 'artificial intelligence', 'machine learning', 'ml', 'deep learning', 'neural', 'llm', 'gpt', 'genai'],
-    'Fintech': ['fintech', 'finance', 'banking', 'payment', 'blockchain', 'crypto'],
-    'Cybersecurity': ['security', 'cyber', 'hacking', 'penetration', 'infosec', 'vulnerability'],
-    'Cloud/DevOps': ['cloud', 'devops', 'aws', 'azure', 'gcp', 'kubernetes', 'docker', 'ci/cd'],
-    'Web/Mobile': ['web', 'mobile', 'react', 'angular', 'vue', 'flutter', 'ios', 'android'],
-    'Data/Analytics': ['data', 'analytics', 'big data', 'data science', 'visualization'],
-    'Hackathon': ['hackathon', 'hack', 'coding competition'],
-  };
-
-  for (const [category, keywords] of Object.entries(categoryKeywords)) {
-    for (const keyword of keywords) {
-      if (text.includes(keyword)) {
-        categories.push(category);
-        break;
-      }
-    }
+  for (const [category, pattern] of CATEGORY_KEYWORDS) {
+    if (pattern.test(text)) categories.push(category);
   }
 
-  if (categories.length === 0) {
-    categories.push('Networking/Meetup');
-  }
+  // Keep the three strongest signals; the list is ordered most-specific first.
+  const chosen = categories.slice(0, 3);
+  if (chosen.length === 0) chosen.push('Networking/Meetup');
 
-  // Detect format
-  const hasVenue = !!venue && venue.trim().length > 0;
-  const hasOnlineLink = !!onlineLink && onlineLink.trim().length > 0;
-  let format: 'online' | 'offline' | 'hybrid' = 'offline';
-
-  if (hasVenue && hasOnlineLink) {
-    format = 'hybrid';
-  } else if (hasOnlineLink || text.includes('zoom') || text.includes('meet') || text.includes('virtual')) {
+  const hasVenue = Boolean(input.venue?.trim());
+  const hasOnlineLink = Boolean(input.onlineLink?.trim());
+  let format: TaggingResult['format'] = 'offline';
+  if (hasVenue && hasOnlineLink) format = 'hybrid';
+  else if (hasOnlineLink || /\b(zoom|google meet|ms teams|virtual|webinar|online only)\b/i.test(text)) {
     format = 'online';
   }
 
-  // Detect food
-  const foodKeywords = ['food', 'snacks', 'refreshments', 'lunch', 'dinner', 'pizza', 'beverages'];
-  let hasFood: 'yes' | 'no' | 'unknown' = 'unknown';
-
-  for (const keyword of foodKeywords) {
-    if (text.includes(keyword)) {
-      hasFood = 'yes';
-      break;
-    }
-  }
-
   return {
-    categories: [...new Set(categories)],
+    categories: chosen,
     format,
-    hasFood,
-    confidence: 0.7, // Lower confidence for fallback
+    hasFood: FOOD_RE.test(text) ? 'yes' : 'unknown',
+    isTechEvent: chosen.some(c => TECH_CATEGORIES.has(c)),
+    confidence: 0.6,
   };
 }
 
-/**
- * Batch tag multiple events
- */
-export async function tagEventsWithLLM(
-  events: Array<{ title: string; description: string; venue?: string; onlineLink?: string }>
-): Promise<TaggingResult[]> {
-  const results: TaggingResult[] = [];
-
-  for (const event of events) {
-    const result = await tagEventWithLLM(
-      event.title,
-      event.description,
-      event.venue,
-      event.onlineLink
-    );
-    results.push(result);
-
-    // Rate limiting - wait 1 second between API calls
-    await new Promise(resolve => setTimeout(resolve, 1000));
-  }
-
-  return results;
-}
-
-// Made with Bob
+/** Back-compat alias for the previous export name. */
+export const tagEventsWithLLM = tagEvents;

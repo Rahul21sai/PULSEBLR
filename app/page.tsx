@@ -1,428 +1,525 @@
 'use client';
+import Link from 'next/link';
 
-import { useEffect, useState, useCallback, useMemo } from 'react';
-import { format, isToday, isThisWeek, isWeekend, isFuture, startOfDay } from 'date-fns';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { DesktopNav, MobileBottomNav } from './components/NavBar';
+import EventRow from './components/EventRow';
+import EventGridCard from './components/EventGridCard';
+import FilterRail, { FilterState, EMPTY_FILTERS, countActive } from './components/FilterRail';
+import { FeedEvent, Facets, Pagination } from '@/lib/event-types';
+import { dayKeyIST, dayHeading, fullDateIST, isHappeningNow, NOW_GROUP_KEY } from '@/lib/format';
 
-interface Event {
-  _id: string;
-  title: string;
-  description: string;
-  source: string;
-  sourceUrl: string;
-  organizer?: string;
-  category: string[];
-  format: 'online' | 'offline' | 'hybrid';
-  hasFood: 'yes' | 'no' | 'unknown';
-  isFree: boolean;
-  price?: number;
-  venue?: string;
-  area?: string;
-  onlineLink?: string;
-  startDateTime: string;
-  endDateTime?: string;
-  applyLink?: string;
-  registrationDeadline?: string;
-  createdAt: string;
-}
+const WHEN_TABS = [
+  { id: 'today', label: 'Today' },
+  { id: 'tomorrow', label: 'Tomorrow' },
+  { id: 'weekend', label: 'This weekend' },
+  { id: 'week', label: 'Next 7 days' },
+  { id: '', label: 'All upcoming' },
+] as const;
 
+const SORTS = [
+  { id: 'soonest', label: 'Soonest' },
+  { id: 'popular', label: 'Most popular' },
+  { id: 'newest', label: 'Just added' },
+] as const;
 
-
-const CATEGORY_FILTERS = [
-  'AI/ML', 'Fintech', 'Cybersecurity', 'Cloud/DevOps',
-  'Web/Mobile', 'Data/Analytics', 'Hackathon', 'Networking/Meetup',
-];
-const TIME_FILTERS = ['Today', 'This Week', 'This Weekend', 'All Upcoming'];
-
-function getCategoryGradientClass(category: string): string {
-  const map: Record<string, string> = {
-    'AI/ML': 'gradient-ai',
-    'Fintech': 'gradient-fintech',
-    'Networking/Meetup': 'gradient-networking',
-    'Cybersecurity': 'gradient-cyber',
-    'Cloud/DevOps': 'gradient-cloud',
-    'Data/Analytics': 'gradient-data',
-    'Hackathon': 'gradient-hackathon',
-  };
-  return map[category] || 'gradient-default';
-}
-
-function getCategoryBadgeStyle(category: string): string {
-  const map: Record<string, string> = {
-    'AI/ML': 'bg-blue-50 text-blue-700',
-    'Fintech': 'bg-green-50 text-green-700',
-    'Networking/Meetup': 'bg-orange-50 text-orange-700',
-    'Cybersecurity': 'bg-red-50 text-red-700',
-    'Cloud/DevOps': 'bg-sky-50 text-sky-700',
-    'Data/Analytics': 'bg-purple-50 text-purple-700',
-    'Hackathon': 'bg-pink-50 text-pink-700',
-    'Web/Mobile': 'bg-yellow-50 text-yellow-700',
-  };
-  return map[category] || 'bg-gray-100 text-gray-600';
-}
+type ViewMode = 'rail' | 'grid';
 
 export default function Home() {
-  const [events, setEvents] = useState<Event[]>([]);
+  const [events, setEvents] = useState<FeedEvent[]>([]);
+  const [facets, setFacets] = useState<Facets | null>(null);
+  const [pagination, setPagination] = useState<Pagination | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [activeCategories, setActiveCategories] = useState<string[]>([]);
-  const [selectedFormat, setSelectedFormat] = useState('');
-  const [selectedFood, setSelectedFood] = useState('');
-  const [freeOnly, setFreeOnly] = useState(false);
-  const [showFilterPanel, setShowFilterPanel] = useState(false);
-  const [activeTime, setActiveTime] = useState('All Upcoming');
 
-  const fetchEvents = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError(null);
+  const [searchInput, setSearchInput] = useState('');
+  const [query, setQuery] = useState('');
+  const [when, setWhen] = useState<string>('');
+  const [sort, setSort] = useState<string>('soonest');
+  const [filters, setFilters] = useState<FilterState>(EMPTY_FILTERS);
+  const [view, setView] = useState<ViewMode>('rail');
+  const [sheetOpen, setSheetOpen] = useState(false);
+
+  // Debounce the search box so typing doesn't fire a request per keystroke.
+  useEffect(() => {
+    const timer = setTimeout(() => setQuery(searchInput.trim()), 280);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
+
+  const buildParams = useCallback(
+    (page: number) => {
       const params = new URLSearchParams();
-      if (activeCategories.length > 0) params.append('category', activeCategories.join(','));
-      if (selectedFormat) params.append('format', selectedFormat);
-      if (selectedFood) params.append('hasFood', selectedFood);
-      if (freeOnly) params.append('isFree', 'true');
-      const res = await fetch(`/api/events?${params.toString()}`);
-      if (!res.ok) throw new Error('Failed to fetch events');
-      const data = await res.json();
-      setEvents(data.events || []);
+      if (query) params.set('q', query);
+      if (when) params.set('when', when);
+      if (filters.categories.length) params.set('category', filters.categories.join(','));
+      if (filters.areas.length) params.set('area', filters.areas.join(','));
+      if (filters.format) params.set('format', filters.format);
+      if (filters.freeOnly) params.set('isFree', 'true');
+      if (filters.foodOnly) params.set('hasFood', 'yes');
+      if (filters.techOnly) params.set('techOnly', 'true');
+      params.set('sort', sort);
+      params.set('page', String(page));
+      params.set('limit', '30');
+      return params;
+    },
+    [query, when, filters, sort]
+  );
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const params = buildParams(1);
+      const [listRes, facetRes] = await Promise.all([
+        fetch(`/api/events?${params.toString()}`),
+        fetch(`/api/events/facets?${params.toString()}`),
+      ]);
+      if (!listRes.ok) throw new Error('Could not load events');
+
+      const list = await listRes.json();
+      setEvents(list.events || []);
+      setPagination(list.pagination || null);
+
+      // Facets are decoration, not content — a facet failure must not blank the feed.
+      if (facetRes.ok) setFacets(await facetRes.json());
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred');
+      setError(err instanceof Error ? err.message : 'Something went wrong');
+      setEvents([]);
     } finally {
       setLoading(false);
     }
-  }, [activeCategories, selectedFormat, selectedFood, freeOnly]);
+  }, [buildParams]);
 
-  useEffect(() => { fetchEvents(); }, [fetchEvents]);
+  // Deferred by a tick rather than called synchronously. Two reasons: React's
+  // compiler rules (correctly) reject a synchronous setState inside an effect, and
+  // deferring naturally coalesces rapid filter toggling into one request instead of
+  // firing a fetch per click.
+  useEffect(() => {
+    const timer = setTimeout(load, 0);
+    return () => clearTimeout(timer);
+  }, [load]);
 
-  const toggleCategory = (cat: string) => {
-    setActiveCategories(prev =>
-      prev.includes(cat) ? prev.filter(c => c !== cat) : [...prev, cat]
-    );
-  };
-
-  const trackEvent = async (eventId: string, e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
+  const loadMore = useCallback(async () => {
+    if (!pagination?.hasMore || loadingMore) return;
+    setLoadingMore(true);
     try {
-      const res = await fetch('/api/tracker', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ eventId, status: 'Interested' }),
-      });
+      const res = await fetch(`/api/events?${buildParams(pagination.page + 1).toString()}`);
       if (res.ok) {
-        // Subtle feedback — no alert
-        const btn = e.currentTarget as HTMLElement;
-        btn.style.color = '#0071E3';
-        setTimeout(() => { btn.style.color = ''; }, 1200);
+        const data = await res.json();
+        // Guard against a duplicate page if the user scrolls fast.
+        setEvents(prev => {
+          const seen = new Set(prev.map(e => e._id));
+          return [...prev, ...(data.events || []).filter((e: FeedEvent) => !seen.has(e._id))];
+        });
+        setPagination(data.pagination || null);
       }
-    } catch { /* silent fail */ }
-  };
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [pagination, loadingMore, buildParams]);
 
-  const activeFilterCount =
-    activeCategories.length +
-    (selectedFormat ? 1 : 0) +
-    (selectedFood ? 1 : 0) +
-    (freeOnly ? 1 : 0);
+  // Infinite scroll via a sentinel element.
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const node = sentinelRef.current;
+    if (!node) return;
+    const observer = new IntersectionObserver(
+      entries => {
+        if (entries[0]?.isIntersecting) loadMore();
+      },
+      { rootMargin: '600px' }
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [loadMore]);
 
-  const filteredByTime = useMemo(() => {
-    if (activeTime === 'All Upcoming') return events;
-    return events.filter(event => {
-      const d = new Date(event.startDateTime);
-      if (activeTime === 'Today') return isToday(d);
-      if (activeTime === 'This Week') return isThisWeek(d, { weekStartsOn: 1 }) && isFuture(startOfDay(d));
-      if (activeTime === 'This Weekend') return isWeekend(d) && isThisWeek(d, { weekStartsOn: 1 }) && isFuture(startOfDay(d));
-      return true;
-    });
-  }, [events, activeTime]);
+  /**
+   * Group events into IST calendar days for the rail, with one exception:
+   * anything in progress goes into a "Happening now" bucket pinned to the top.
+   *
+   * Why: a multi-day trek that started two days ago is still attendable, but
+   * grouping it under its START date meant the feed opened on a heading dated in
+   * the past ("Fri, 7 Aug" when today is the 9th), which reads as a bug.
+   */
+  const days = useMemo(() => {
+    const groups = new Map<string, FeedEvent[]>();
+    const push = (key: string, event: FeedEvent) => {
+      const bucket = groups.get(key);
+      if (bucket) bucket.push(event);
+      else groups.set(key, [event]);
+    };
+
+    for (const event of events) {
+      const live = isHappeningNow(event.startDateTime, event.endDateTime);
+      push(live ? NOW_GROUP_KEY : dayKeyIST(event.startDateTime), event);
+    }
+
+    // The sentinel key sorts first lexicographically, which is exactly the intent.
+    return [...groups.entries()].sort(([a], [b]) => a.localeCompare(b));
+  }, [events]);
+
+  const activeCount = countActive(filters);
+  const total = pagination?.total ?? 0;
 
   return (
     <div className="min-h-screen bg-[#F5F5F7]">
       <DesktopNav />
 
-      {/* ── Mobile Top Bar ── */}
       <header className="md:hidden fixed top-0 w-full h-14 bg-white/70 glass-nav z-50 border-b border-black/5 flex items-center justify-between px-5">
         <span className="text-lg font-bold tracking-tight text-[#1D1D1F]">PulseBLR</span>
-        <a href="/login" className="text-[#86868B] hover:text-[#0071E3] transition-colors">
-          <span className="material-symbols-outlined text-[24px]">account_circle</span>
-        </a>
+        <Link
+          href="/tracker"
+          aria-label="Open your tracker"
+          className="text-[#86868B] hover:text-[#0071E3] transition-colors"
+        >
+          <span className="material-symbols-outlined text-[24px]">bookmarks</span>
+        </Link>
       </header>
 
-      <main className="pt-14 pb-24 md:pb-0">
+      {/* ── Command bar: search, time window, sort, view ─────────────────── */}
+      <div className="fixed top-14 left-0 right-0 z-40 bg-[#F5F5F7]/92 glass-nav border-b border-black/5">
+        <div className="max-w-[1240px] mx-auto px-4 md:px-8">
+          <div className="flex items-center gap-2 py-2.5">
+            <div className="relative flex-1 min-w-0">
+              <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-[19px] text-[#86868B] pointer-events-none">
+                search
+              </span>
+              <input
+                type="search"
+                value={searchInput}
+                onChange={e => setSearchInput(e.target.value)}
+                placeholder="Search events, hosts, venues"
+                aria-label="Search events"
+                className="w-full h-10 pl-10 pr-9 rounded-full bg-white border border-[#e5e5ea] text-[14px] text-[#1D1D1F] placeholder:text-[#a1a1a6] focus:outline-none focus:border-[#0071E3] transition-colors"
+              />
+              {searchInput && (
+                <button
+                  type="button"
+                  onClick={() => setSearchInput('')}
+                  aria-label="Clear search"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-[#86868B] hover:text-[#1D1D1F]"
+                >
+                  <span className="material-symbols-outlined text-[18px]">close</span>
+                </button>
+              )}
+            </div>
 
-        {/* ── Hero ── */}
-        <section className="bg-black text-white pt-16 md:pt-20 pb-14 px-5 md:px-20 relative overflow-hidden">
-          <div
-            className="absolute inset-0 pointer-events-none opacity-20"
-            style={{ background: 'radial-gradient(ellipse at center, #374151 0%, #000 70%)' }}
-          />
-          <div className="max-w-[1200px] mx-auto relative z-10 text-center">
-            <h1 className="text-display-lg-mobile md:text-display-lg mb-3">
-              Today in Bangalore Tech
-            </h1>
-            <p className="text-body-lg text-gray-400 max-w-xl mx-auto">
-              Your curated pipeline for AI, Fintech, and Networking.
-            </p>
-          </div>
-        </section>
-
-        {/* ── Filter chips — overlapping hero ── */}
-        <div className="max-w-[1200px] mx-auto px-5 md:px-20 -mt-6 relative z-20">
-          <div className="flex gap-3 overflow-x-auto no-scrollbar pb-3">
-            {/* Category filter */}
+            {/* Filters: a sheet on mobile, always-on rail on desktop */}
             <button
-              onClick={() => setShowFilterPanel(!showFilterPanel)}
-              className="shrink-0 bg-white text-[#1D1D1F] px-5 py-2 rounded-full text-label-sm shadow-md border border-black/10 flex items-center gap-1.5 hover:bg-gray-50 transition-colors active:scale-95"
+              type="button"
+              onClick={() => setSheetOpen(true)}
+              className="lg:hidden shrink-0 h-10 px-4 rounded-full bg-white border border-[#e5e5ea] text-[13px] font-semibold text-[#1D1D1F] flex items-center gap-1.5 hover:bg-[#f3f3f5] transition-colors"
             >
-              Category
-              {activeFilterCount > 0 && (
-                <span className="bg-[#0071E3] text-white text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center leading-none">
-                  {activeFilterCount}
+              <span className="material-symbols-outlined text-[18px]">tune</span>
+              Filters
+              {activeCount > 0 && (
+                <span className="bg-[#0071E3] text-white text-[10px] font-bold rounded-full min-w-4 h-4 px-1 flex items-center justify-center tnum">
+                  {activeCount}
                 </span>
               )}
-              <span className="material-symbols-outlined text-[16px]">expand_more</span>
             </button>
 
-            {/* Format chips */}
-            {(['offline', 'online', 'hybrid'] as const).map(fmt => (
-              <button
-                key={fmt}
-                onClick={() => setSelectedFormat(prev => prev === fmt ? '' : fmt)}
-                className={`shrink-0 px-5 py-2 rounded-full text-label-sm shadow-md border transition-colors capitalize active:scale-95 ${
-                  selectedFormat === fmt
-                    ? 'bg-[#0071E3] text-white border-[#0071E3]'
-                    : 'bg-black text-white border-black/20 hover:bg-gray-900'
-                }`}
-              >
-                {fmt}
-              </button>
-            ))}
-
-            <button
-              onClick={() => setSelectedFood(prev => prev === 'yes' ? '' : 'yes')}
-              className={`shrink-0 px-5 py-2 rounded-full text-label-sm shadow-md border transition-colors active:scale-95 ${
-                selectedFood === 'yes'
-                  ? 'bg-[#0071E3] text-white border-[#0071E3]'
-                  : 'bg-black text-white border-black/20 hover:bg-gray-900'
-              }`}
-            >
-              Food
-            </button>
-
-            <button
-              onClick={() => setFreeOnly(prev => !prev)}
-              className={`shrink-0 px-5 py-2 rounded-full text-label-sm shadow-md border transition-colors active:scale-95 ${
-                freeOnly
-                  ? 'bg-[#0071E3] text-white border-[#0071E3]'
-                  : 'bg-black text-white border-black/20 hover:bg-gray-900'
-              }`}
-            >
-              Free
-            </button>
-
-            {/* Area placeholder */}
-            <button className="shrink-0 bg-black text-white px-5 py-2 rounded-full text-label-sm shadow-md border border-black/20 hover:bg-gray-900 transition-colors active:scale-95">
-              Area
-            </button>
-          </div>
-
-          {/* Expanded category panel */}
-          {showFilterPanel && (
-            <div className="bg-white rounded-2xl shadow-lg p-5 mb-3 border border-black/5">
-              <div className="flex flex-wrap gap-2">
-                {CATEGORY_FILTERS.map(cat => (
-                  <button
-                    key={cat}
-                    onClick={() => toggleCategory(cat)}
-                    className={`px-4 py-1.5 rounded-full text-label-sm transition-colors ${
-                      activeCategories.includes(cat)
-                        ? 'bg-[#0071E3] text-white'
-                        : 'bg-[#f3f3f5] text-[#1D1D1F] hover:bg-[#e8e8ea]'
-                    }`}
-                  >
-                    {cat}
-                  </button>
-                ))}
-                {activeCategories.length > 0 && (
-                  <button
-                    onClick={() => setActiveCategories([])}
-                    className="px-4 py-1.5 rounded-full text-label-sm text-red-600 bg-red-50 hover:bg-red-100 transition-colors"
-                  >
-                    Clear all
-                  </button>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* ── Time sub-nav ── */}
-        <div className="sticky top-14 bg-[#F5F5F7]/90 glass-nav z-40 border-b border-black/5 mb-8">
-          <div className="max-w-[1200px] mx-auto px-5 md:px-20">
-            <div className="flex gap-8 overflow-x-auto no-scrollbar py-4 text-label-md">
-              {TIME_FILTERS.map(tf => (
+            <div className="hidden sm:flex shrink-0 items-center gap-1 bg-white border border-[#e5e5ea] rounded-full p-0.5">
+              {(['rail', 'grid'] as const).map(mode => (
                 <button
-                  key={tf}
-                  onClick={() => setActiveTime(tf)}
-                  className={`shrink-0 pb-0.5 transition-colors ${
-                    activeTime === tf
-                      ? 'text-[#1D1D1F] font-semibold border-b-2 border-[#1D1D1F]'
-                      : 'text-[#86868B] hover:text-[#1D1D1F]'
+                  key={mode}
+                  type="button"
+                  onClick={() => setView(mode)}
+                  aria-pressed={view === mode}
+                  aria-label={mode === 'rail' ? 'Schedule view' : 'Grid view'}
+                  className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${
+                    view === mode ? 'bg-[#f3f3f5] text-[#1D1D1F]' : 'text-[#86868B] hover:text-[#1D1D1F]'
                   }`}
                 >
-                  {tf}
+                  <span className="material-symbols-outlined text-[18px]">
+                    {mode === 'rail' ? 'view_agenda' : 'grid_view'}
+                  </span>
                 </button>
               ))}
             </div>
           </div>
+
+          {/* Time window tabs + sort */}
+          <div className="flex items-center justify-between gap-4 pb-1">
+            <div className="flex gap-1 overflow-x-auto no-scrollbar -mx-1 px-1">
+              {WHEN_TABS.map(tab => (
+                <button
+                  key={tab.id || 'all'}
+                  type="button"
+                  onClick={() => setWhen(tab.id)}
+                  className={`shrink-0 px-3.5 py-1.5 rounded-full text-[13px] font-semibold transition-colors ${
+                    when === tab.id
+                      ? 'bg-[#1D1D1F] text-white'
+                      : 'text-[#6E6E73] hover:bg-white hover:text-[#1D1D1F]'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+
+            <label className="hidden md:flex shrink-0 items-center gap-1.5 text-[12.5px] text-[#86868B]">
+              Sort
+              <select
+                value={sort}
+                onChange={e => setSort(e.target.value)}
+                className="bg-transparent font-semibold text-[#1D1D1F] focus:outline-none cursor-pointer"
+              >
+                {SORTS.map(option => (
+                  <option key={option.id} value={option.id}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
         </div>
+      </div>
 
-        {/* ── Event grid ── */}
-        <div className="max-w-[1200px] mx-auto px-5 md:px-20 pb-12">
-          {loading ? (
-            <div className="flex justify-center items-center py-24">
-              <div className="spinner" />
+      {/* ── Body ─────────────────────────────────────────────────────────── */}
+      <main className="pt-[132px] md:pt-[138px] pb-24 md:pb-16">
+        <div className="max-w-[1240px] mx-auto px-4 md:px-8 flex gap-8">
+          {/* Desktop filter rail */}
+          <aside className="hidden lg:block w-[248px] shrink-0">
+            <div className="sticky top-[152px] max-h-[calc(100vh-176px)] overflow-y-auto pr-1 pb-8">
+              <FilterRail
+                facets={facets}
+                filters={filters}
+                onChange={setFilters}
+                loading={loading}
+              />
             </div>
-          ) : error ? (
-            <div className="text-center py-24 px-5">
-              <span className="material-symbols-outlined text-[48px] text-[#e5e5e5] block mb-3">wifi_off</span>
-              <p className="text-[#86868B] text-body-md mb-4">{error}</p>
-              <button
-                onClick={fetchEvents}
-                className="px-6 py-2 bg-[#0071E3] text-white rounded-full text-label-md hover:bg-blue-600 transition-colors"
-              >
-                Retry
-              </button>
-            </div>
-          ) : events.length === 0 ? (
-            <div className="text-center py-24 px-5">
-              <span className="material-symbols-outlined text-[56px] text-[#e5e5e5] block mb-3">rss_feed</span>
-              <p className="text-[#1D1D1F] font-semibold text-body-lg">No events yet</p>
-              <p className="text-[#86868B] text-body-md mt-2">Events appear here once scrapers have run.</p>
-              <a
-                href="/add-event"
-                className="inline-block mt-6 px-6 py-3 bg-black text-white rounded-full text-label-md hover:bg-gray-800 transition-colors"
-              >
-                + Add Event Manually
-              </a>
-            </div>
-          ) : (
-            <>
-              {filteredByTime.length === 0 && (
-                <div className="col-span-full text-center py-20">
-                  <span className="material-symbols-outlined text-[48px] text-[#e5e5e5] block mb-3">calendar_today</span>
-                  <p className="text-[#86868B] text-body-md">
-                    No events for <span className="font-semibold text-[#1D1D1F]">{activeTime}</span>
-                  </p>
-                  <button
-                    onClick={() => setActiveTime('All Upcoming')}
-                    className="mt-4 text-label-md text-[#0071E3] font-semibold hover:underline"
-                  >
-                    Show all upcoming →
-                  </button>
-                </div>
+          </aside>
+
+          <div className="flex-1 min-w-0">
+            {/* Result count — the honest header. No hero: the events ARE the hero. */}
+            <div className="flex items-baseline justify-between gap-3 mb-4">
+              <h1 className="text-[19px] md:text-[22px] font-bold tracking-[-0.02em] text-[#1D1D1F]">
+                {loading
+                  ? 'Loading events…'
+                  : total === 0
+                    ? 'No events match'
+                    : `${total.toLocaleString('en-IN')} event${total === 1 ? '' : 's'} in Bengaluru`}
+              </h1>
+              {!loading && query && (
+                <span className="text-[12.5px] text-[#86868B] shrink-0">for “{query}”</span>
               )}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {filteredByTime.map(event => {
-                  const primaryCat = event.category[0] || 'default';
-                  const gradClass = getCategoryGradientClass(primaryCat);
-                  const isNew = (Date.now() - new Date(event.createdAt).getTime()) < 48 * 3600 * 1000;
+            </div>
 
-                  return (
-                    <article
-                      key={event._id}
-                      className="bg-white rounded-[20px] card-shadow overflow-hidden hover-lift flex flex-col group"
-                    >
-                      {/* Gradient accent bar */}
-                      <div className={`h-2 w-full ${gradClass}`} />
-
-                      <div className="p-8 flex-1 flex flex-col">
-                        {/* Category + New badge */}
-                        <div className="flex items-start justify-between mb-4">
-                          <span className={`px-3 py-1 rounded-full text-label-sm uppercase tracking-wider ${getCategoryBadgeStyle(primaryCat)}`}>
-                            {primaryCat}
-                          </span>
-                          {isNew && (
-                            <span className="bg-[#0071E3] text-white text-[11px] font-bold px-2 py-0.5 rounded flex items-center gap-1 shrink-0">
-                              <span className="material-symbols-outlined text-[11px]" style={{ fontVariationSettings: "'FILL' 1" }}>auto_awesome</span>
-                              New
-                            </span>
-                          )}
-                        </div>
-
-                        {/* Title */}
-                        <a href={`/events/${event._id}`}>
-                          <h2 className="text-headline-md mb-3 line-clamp-2 group-hover:text-[#0071E3] transition-colors">
-                            {event.title}
-                          </h2>
-                        </a>
-
-                        {/* Date + Location */}
-                        <div className="text-label-md text-[#86868B] flex flex-col gap-1.5 mb-4">
-                          <span className="flex items-center gap-1.5">
-                            <span className="material-symbols-outlined text-[15px]">calendar_month</span>
-                            {format(new Date(event.startDateTime), 'MMM d • h:mm a')}
-                          </span>
-                          <span className="flex items-center gap-1.5">
-                            <span className="material-symbols-outlined text-[15px]">location_on</span>
-                            {event.format === 'online'
-                              ? 'Online'
-                              : event.venue
-                              ? `${event.venue}${event.area ? `, ${event.area}` : ''}`
-                              : event.area || 'Bangalore'}
-                          </span>
-                        </div>
-
-                        {/* Tags row */}
-                        <div className="flex flex-wrap gap-2 mt-auto mb-5 pt-4 border-t border-[#f0f0f0]">
-                          <span className="bg-[#f3f3f5] text-[#86868B] text-label-sm px-3 py-1 rounded-full uppercase">
-                            {event.format === 'online' ? 'Online' : event.format === 'hybrid' ? 'Hybrid' : 'Offline'}
-                          </span>
-                          {event.hasFood === 'yes' && (
-                            <span className="bg-[#f3f3f5] text-[#86868B] text-label-sm px-3 py-1 rounded-full uppercase">Food</span>
-                          )}
-                          {event.isFree ? (
-                            <span className="bg-green-50 text-green-700 text-label-sm px-3 py-1 rounded-full uppercase">Free</span>
-                          ) : (
-                            <span className="bg-[#f3f3f5] text-[#86868B] text-label-sm px-3 py-1 rounded-full uppercase">₹{event.price}</span>
-                          )}
-                        </div>
-
-                        {/* CTA buttons */}
-                        <div className="flex gap-2">
-                          <a
-                            href={event.applyLink || event.sourceUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="flex-1 bg-black text-white text-label-md py-2.5 rounded-full text-center hover:bg-gray-800 transition-colors active:scale-95"
-                          >
-                            {event.isFree ? 'RSVP Now' : `Register · ₹${event.price}`}
-                          </a>
-                          <a
-                            href={`/events/${event._id}`}
-                            className="w-11 h-11 bg-white border border-[#e5e5e5] rounded-full flex items-center justify-center hover:bg-[#f3f3f5] transition-colors active:scale-95 shrink-0"
-                            title="View details"
-                          >
-                            <span className="material-symbols-outlined text-[16px] text-[#1D1D1F]">open_in_new</span>
-                          </a>
-                          <button
-                            onClick={(e) => trackEvent(event._id, e)}
-                            className="w-11 h-11 bg-white border border-[#e5e5e5] rounded-full flex items-center justify-center hover:bg-[#f3f3f5] transition-colors active:scale-95 shrink-0"
-                            title="Track this event"
-                          >
-                            <span className="material-symbols-outlined text-[16px] text-[#1D1D1F]" style={{ fontVariationSettings: "'FILL' 0" }}>bookmark_border</span>
-                          </button>
-                        </div>
-                      </div>
-                    </article>
-                  );
-                })}
+            {loading ? (
+              <FeedSkeleton view={view} />
+            ) : error ? (
+              <EmptyState
+                icon="cloud_off"
+                title="Couldn’t load events"
+                body={error}
+                action={{ label: 'Try again', onClick: load }}
+              />
+            ) : events.length === 0 ? (
+              <EmptyState
+                icon="event_busy"
+                title="Nothing here yet"
+                body={
+                  activeCount > 0 || query
+                    ? 'Try widening the time window or clearing a filter.'
+                    : 'Run the scraper to pull in this week’s Bengaluru events.'
+                }
+                action={
+                  activeCount > 0 || query
+                    ? {
+                        label: 'Clear filters',
+                        onClick: () => {
+                          setFilters(EMPTY_FILTERS);
+                          setSearchInput('');
+                          setWhen('');
+                        },
+                      }
+                    : { label: 'Add an event', href: '/add-event' }
+                }
+              />
+            ) : view === 'grid' ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5">
+                {events.map(event => (
+                  <EventGridCard key={event._id} event={event} />
+                ))}
               </div>
-            </>
-          )}
+            ) : (
+              <div className="rail">
+                {days.map(([dayKey, dayEvents]) => (
+                  <section key={dayKey} className="mb-2">
+                    <div className="day-heading py-2 mb-1">
+                      <div className="flex items-baseline gap-2">
+                        <h2 className="text-[15px] font-bold tracking-[-0.01em] text-[#1D1D1F] flex items-center gap-1.5">
+                          {dayKey === NOW_GROUP_KEY ? (
+                            <>
+                              <span className="live-dot w-1.5 h-1.5 rounded-full bg-[#FF3B30]" />
+                              Happening now
+                            </>
+                          ) : (
+                            dayHeading(dayEvents[0].startDateTime)
+                          )}
+                        </h2>
+                        {dayKey !== NOW_GROUP_KEY && (
+                          <span className="text-[12px] text-[#86868B]">
+                            {fullDateIST(dayEvents[0].startDateTime)}
+                          </span>
+                        )}
+                        <span className="text-[12px] text-[#a1a1a6] tnum ml-auto">
+                          {dayEvents.length}
+                        </span>
+                      </div>
+                    </div>
+                    {dayEvents.map(event => (
+                      <EventRow key={event._id} event={event} />
+                    ))}
+                  </section>
+                ))}
+              </div>
+            )}
+
+            {/* Infinite-scroll sentinel */}
+            {pagination?.hasMore && (
+              <div ref={sentinelRef} className="py-8 flex justify-center">
+                {loadingMore ? (
+                  <div className="spinner" />
+                ) : (
+                  <button
+                    type="button"
+                    onClick={loadMore}
+                    className="px-6 py-2.5 rounded-full bg-white border border-[#e5e5ea] text-label-md font-semibold text-[#1D1D1F] hover:bg-[#f3f3f5] transition-colors"
+                  >
+                    Load more
+                  </button>
+                )}
+              </div>
+            )}
+
+            {!loading && events.length > 0 && !pagination?.hasMore && (
+              <p className="py-8 text-center text-[12.5px] text-[#a1a1a6]">
+                That’s everything we have for now.
+              </p>
+            )}
+          </div>
         </div>
       </main>
 
+      {/* ── Mobile filter sheet ──────────────────────────────────────────── */}
+      {sheetOpen && (
+        <div className="lg:hidden fixed inset-0 z-[60] flex items-end">
+          <button
+            type="button"
+            aria-label="Close filters"
+            onClick={() => setSheetOpen(false)}
+            className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+          />
+          <div className="relative w-full max-h-[85vh] bg-[#F5F5F7] rounded-t-3xl overflow-y-auto">
+            <div className="sticky top-0 bg-[#F5F5F7]/95 glass-nav px-5 pt-3 pb-3 flex items-center justify-between border-b border-black/5">
+              <span className="text-[17px] font-bold text-[#1D1D1F]">Filters</span>
+              <button
+                type="button"
+                onClick={() => setSheetOpen(false)}
+                className="w-8 h-8 rounded-full bg-white flex items-center justify-center"
+                aria-label="Close filters"
+              >
+                <span className="material-symbols-outlined text-[18px]">close</span>
+              </button>
+            </div>
+            <div className="p-5">
+              <FilterRail facets={facets} filters={filters} onChange={setFilters} loading={loading} />
+            </div>
+            <div className="sticky bottom-0 bg-[#F5F5F7]/95 glass-nav p-4 border-t border-black/5">
+              <button
+                type="button"
+                onClick={() => setSheetOpen(false)}
+                className="w-full py-3 rounded-full bg-[#1D1D1F] text-white text-label-md font-semibold"
+              >
+                Show {total.toLocaleString('en-IN')} event{total === 1 ? '' : 's'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <MobileBottomNav />
+    </div>
+  );
+}
+
+function FeedSkeleton({ view }: { view: ViewMode }) {
+  if (view === 'grid') {
+    return (
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5">
+        {Array.from({ length: 6 }, (_, i) => (
+          <div key={i} className="bg-white rounded-2xl overflow-hidden card-shadow">
+            <div className="skeleton aspect-[16/9]" />
+            <div className="p-4 flex flex-col gap-2">
+              <div className="skeleton h-3 w-24 rounded" />
+              <div className="skeleton h-4 w-full rounded" />
+              <div className="skeleton h-4 w-2/3 rounded" />
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  }
+  return (
+    <div className="rail">
+      {Array.from({ length: 6 }, (_, i) => (
+        <div key={i} className="flex items-stretch gap-3 md:gap-4">
+          <div className="w-[42px] md:w-[58px] shrink-0 pt-4 flex justify-end">
+            <div className="skeleton h-3.5 w-9 rounded" />
+          </div>
+          <div className="w-[9px] shrink-0 flex justify-center pt-[22px]">
+            <span className="rail-node" />
+          </div>
+          <div className="flex-1 mb-3 bg-white rounded-2xl card-shadow p-3 md:p-4 flex gap-4">
+            <div className="skeleton w-[76px] h-[76px] md:w-[104px] md:h-[104px] rounded-xl shrink-0" />
+            <div className="flex-1 flex flex-col gap-2 py-1">
+              <div className="skeleton h-4 w-3/4 rounded" />
+              <div className="skeleton h-3 w-1/2 rounded" />
+              <div className="skeleton h-5 w-40 rounded-full mt-auto" />
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function EmptyState({
+  icon,
+  title,
+  body,
+  action,
+}: {
+  icon: string;
+  title: string;
+  body: string;
+  action?: { label: string; onClick?: () => void; href?: string };
+}) {
+  return (
+    <div className="bg-white rounded-2xl card-shadow py-16 px-6 text-center">
+      <span className="material-symbols-outlined text-[44px] text-[#d5d5da] block mb-3">{icon}</span>
+      <p className="text-[17px] font-semibold text-[#1D1D1F]">{title}</p>
+      <p className="text-[14px] text-[#6E6E73] mt-1.5 max-w-sm mx-auto">{body}</p>
+      {action &&
+        (action.href ? (
+          <Link
+            href={action.href}
+            className="inline-block mt-6 px-6 py-2.5 rounded-full bg-[#1D1D1F] text-white text-label-md font-semibold hover:bg-black transition-colors"
+          >
+            {action.label}
+          </Link>
+        ) : (
+          <button
+            type="button"
+            onClick={action.onClick}
+            className="mt-6 px-6 py-2.5 rounded-full bg-[#0071E3] text-white text-label-md font-semibold hover:bg-blue-600 transition-colors"
+          >
+            {action.label}
+          </button>
+        ))}
     </div>
   );
 }

@@ -64,8 +64,8 @@ export async function sendDailyDigestEmail(config: EmailConfig): Promise<boolean
 
     console.log('✅ Daily digest email sent:', data?.id);
     return true;
-  } catch (error: any) {
-    console.error('❌ Failed to send daily digest:', error.message);
+  } catch (error) {
+    console.error('Failed to send daily digest:', error instanceof Error ? error.message : error);
     return false;
   }
 }
@@ -100,8 +100,8 @@ export async function sendNotificationEmail(
 
     console.log('✅ Notification email sent:', data?.id);
     return true;
-  } catch (error: any) {
-    console.error('❌ Failed to send notification:', error.message);
+  } catch (error) {
+    console.error('Failed to send notification:', error instanceof Error ? error.message : error);
     return false;
   }
 }

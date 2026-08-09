@@ -1,4 +1,5 @@
 'use client';
+import Link from 'next/link';
 
 import { useEffect, useState } from 'react';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, isToday, getDay } from 'date-fns';
@@ -45,8 +46,6 @@ export default function CalendarPage() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<Date | null>(new Date());
 
-  useEffect(() => { fetchEvents(); }, []);
-
   const fetchEvents = async () => {
     try {
       setLoading(true);
@@ -60,6 +59,14 @@ export default function CalendarPage() {
       setLoading(false);
     }
   };
+
+  // Deferred by a tick: calling fetchEvents synchronously here both reads it
+  // before its declaration below and sets state synchronously inside an effect.
+  useEffect(() => {
+    const timer = setTimeout(() => { void fetchEvents(); }, 0);
+    return () => clearTimeout(timer);
+  }, []);
+
 
   const monthStart = startOfMonth(currentDate);
   const monthEnd = endOfMonth(currentDate);
@@ -77,7 +84,7 @@ export default function CalendarPage() {
 
       {/* Mobile Header */}
       <header className="md:hidden fixed top-0 w-full h-14 bg-white/70 glass-nav z-50 border-b border-black/5 flex items-center justify-between px-5">
-        <a href="/" className="text-lg font-bold tracking-tight text-[#1D1D1F]">PulseBLR</a>
+        <Link href="/" className="text-lg font-bold tracking-tight text-[#1D1D1F]">PulseBLR</Link>
         <span className="text-[#86868B] text-label-md font-semibold">Calendar</span>
       </header>
 
@@ -195,7 +202,7 @@ export default function CalendarPage() {
               ) : (
                 <div className="flex flex-col gap-3">
                   {selectedDateEvents.map(event => (
-                    <a
+                    <Link
                       key={event._id}
                       href={`/events/${event._id}`}
                       className="flex items-stretch gap-3 group"
@@ -233,7 +240,7 @@ export default function CalendarPage() {
                           </div>
                         </div>
                       </div>
-                    </a>
+                    </Link>
                   ))}
                 </div>
               )}

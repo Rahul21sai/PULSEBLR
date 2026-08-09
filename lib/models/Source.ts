@@ -5,6 +5,19 @@ export interface ISource {
   type: 'ical' | 'rss' | 'api' | 'scrape';
   url: string;
   enabled: boolean;
+  /**
+   * Which adapter can scrape this source ('luma-calendar', 'meetup-group',
+   * 'universal', …). Set for sources DISCOVERED at runtime; absent for the
+   * built-in registry entries, which the pipeline defines in code.
+   */
+  kind?: string;
+  /**
+   * Adapter-specific handle — a Luma calendar api_id, a Meetup group slug, a URL.
+   * Together with `kind` this is everything the pipeline needs to re-run a source
+   * it found on a previous day, which is what makes coverage compound.
+   */
+  handle?: string;
+  discoveredAt?: Date;
   lastScrapedAt?: Date;
   scrapeFrequency: string;
   // Health tracking — populated on every scrape so silent breakage is visible.
@@ -38,6 +51,17 @@ const SourceSchema = new mongoose.Schema<ISource>(
       type: Boolean,
       default: true,
     },
+    kind: {
+      type: String,
+      trim: true,
+    },
+    handle: {
+      type: String,
+      trim: true,
+    },
+    discoveredAt: {
+      type: Date,
+    },
     lastScrapedAt: {
       type: Date,
     },
@@ -69,6 +93,9 @@ SourceSchema.index({ name: 1 });
 SourceSchema.index({ enabled: 1 });
 // Surface unhealthy sources cheaply in the digest query.
 SourceSchema.index({ consecutiveEmptyScrapes: -1 });
+// One record per discovered source, and the pipeline's "what did we find before?"
+// lookup. Sparse so the many built-in sources (no kind/handle) don't collide on null.
+SourceSchema.index({ kind: 1, handle: 1 }, { unique: true, sparse: true });
 
 export default mongoose.models.Source || mongoose.model<ISource>('Source', SourceSchema);
 
