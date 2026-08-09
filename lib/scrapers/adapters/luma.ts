@@ -332,6 +332,40 @@ export async function scrapeLumaCalendar(
   return result;
 }
 
+/**
+ * Company / community calendars verified to exist, seeded so they're scraped from
+ * the first run.
+ *
+ * WHY SEEDING IS NEEDED ALONGSIDE DISCOVERY: the city discover feed only surfaces
+ * hosts that have an event in the *current* window. A company whose next event is
+ * two months out is invisible to it. These handles were each confirmed by resolving
+ * `luma.com/<handle>` to a real calendar api_id (scripts/probe-luma-handles.ts —
+ * 18 of 107 candidates resolved; the rest 404 and are not listed).
+ *
+ * Every event still passes the Bengaluru gate in scrapeLumaCalendar, so a calendar
+ * that turns out to be run from another city contributes nothing rather than noise.
+ */
+export const LUMA_SEED_CALENDARS: Array<{ handle: string; label: string }> = [
+  { handle: 'cal-W1a1JagbP7BFFnE', label: 'Postman Meetups' },
+  { handle: 'cal-skHyTNF1BS9afOF', label: 'Slice' },
+  { handle: 'cal-sa2bowyF5saW6io', label: 'Zluri' },
+  { handle: 'cal-SCofCLGEvS5hdXd', label: 'Krutrim' },
+  { handle: 'cal-0hx7kc7MBVsNwKv', label: 'Navi — Navigate' },
+  { handle: 'cal-0MOQYFxupITToZL', label: 'Zoho' },
+  { handle: 'cal-7aoBpXgZExyngdJ', label: 'Hasura' },
+  { handle: 'cal-QNexM3g6ZZE38vy', label: 'Fractal' },
+  { handle: 'cal-exEBzAxvfF9G4Qa', label: 'AWS User Group Bengaluru' },
+  { handle: 'cal-fezWOB9c8umyWuD', label: 'Bengaluru Tech Week' },
+  { handle: 'cal-NjGPenzVSf9PFOG', label: 'Surge (Peak XV)' },
+  { handle: 'cal-ImHiaA1uaq2YMkM', label: 'GrowthX' },
+  { handle: 'cal-DEgVFs3fB8MmpKT', label: 'Startup House' },
+  { handle: 'cal-4hkkAGBIvZ29zPW', label: 'Groww' },
+  { handle: 'cal-zZ3L4ejebSZmwOq', label: 'Juspay' },
+  { handle: 'cal-fEGIAmlfowdozHG', label: 'Zeta' },
+  { handle: 'cal-bBzYKgrZdjYZyKQ', label: 'Rippling' },
+  { handle: 'cal-qP8i8yj42XnYWCs', label: 'Y Combinator' },
+];
+
 // ── Enrichment ──────────────────────────────────────────────────────────────
 
 /** Pull the best available description text out of a Luma event page. */

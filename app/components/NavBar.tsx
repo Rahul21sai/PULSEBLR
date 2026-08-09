@@ -6,6 +6,7 @@ import { useSession } from 'next-auth/react';
 
 const NAV_LINKS = [
   { href: '/', label: 'Events', icon: 'explore' },
+  { href: '/companies', label: 'Companies', icon: 'domain' },
   { href: '/calendar', label: 'Calendar', icon: 'calendar_today' },
   { href: '/tracker', label: 'Tracker', icon: 'bookmarks' },
   { href: '/add-event', label: 'Add', icon: 'add_circle' },

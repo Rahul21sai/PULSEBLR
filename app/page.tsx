@@ -41,6 +41,21 @@ export default function Home() {
   const [view, setView] = useState<ViewMode>('rail');
   const [sheetOpen, setSheetOpen] = useState(false);
 
+  // Deep links from the companies page arrive as ?company=Google. Read once on
+  // mount rather than holding the URL as state, so the filter model stays
+  // single-source while company pages remain linkable and shareable.
+  //
+  // Deferred by a tick for the same two reasons as the load effect below: React's
+  // compiler rules reject a synchronous setState inside an effect, and reading the
+  // URL after hydration avoids a server/client mismatch on the checkbox state.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const company = new URLSearchParams(window.location.search).get('company');
+      if (company) setFilters(prev => ({ ...prev, companies: [company] }));
+    }, 0);
+    return () => clearTimeout(timer);
+  }, []);
+
   // Debounce the search box so typing doesn't fire a request per keystroke.
   useEffect(() => {
     const timer = setTimeout(() => setQuery(searchInput.trim()), 280);
@@ -54,6 +69,7 @@ export default function Home() {
       if (when) params.set('when', when);
       if (filters.categories.length) params.set('category', filters.categories.join(','));
       if (filters.areas.length) params.set('area', filters.areas.join(','));
+      if (filters.companies.length) params.set('company', filters.companies.join(','));
       if (filters.format) params.set('format', filters.format);
       if (filters.freeOnly) params.set('isFree', 'true');
       if (filters.foodOnly) params.set('hasFood', 'yes');

@@ -203,6 +203,16 @@ function mergeInto(existing: IEvent, incoming: NormalizedEvent): boolean {
     changed = true;
   }
 
+  // Companies union freely: a second source naming a co-host is new information,
+  // and the resolver only emits names it could actually justify.
+  const mergedCompanies = [
+    ...new Set([...(existing.companies || []), ...incoming.companies]),
+  ].slice(0, 6);
+  if (mergedCompanies.length !== (existing.companies || []).length) {
+    existing.companies = mergedCompanies;
+    changed = true;
+  }
+
   const mergedTags = [...new Set([...(existing.tags || []), ...incoming.tags])].slice(0, 12);
   if (mergedTags.length !== (existing.tags || []).length) {
     existing.tags = mergedTags;

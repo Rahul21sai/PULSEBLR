@@ -39,6 +39,25 @@ const VALID_FOOD: TaggingResult['hasFood'][] = ['yes', 'no', 'unknown'];
 // ─────────────────────────────────────────────────────────────────────────────
 const BATCH_SIZE = 5;
 
+/**
+ * Batch size per provider.
+ *
+ * 5 was sized for llama-3.1-8b, whose failure mode is returning the wrong number of
+ * objects once the prompt grows. A frontier model does not have that problem, and
+ * with ~975 events per run the round-trip count dominates wall clock: at 5 items
+ * that is 195 sequential calls. Larger batches for the stronger models cut that
+ * roughly threefold. Lenient parsing still covers a short response either way.
+ */
+const PROVIDER_BATCH_SIZE: Record<string, number> = {
+  'IBM ICA': 15,
+  Anthropic: 15,
+  'NVIDIA NIM': 5,
+};
+
+function batchSizeFor(providerName: string | undefined): number {
+  return (providerName && PROVIDER_BATCH_SIZE[providerName]) || BATCH_SIZE;
+}
+
 /** Characters of description sent per event. Enough to classify, short enough to batch. */
 const DESCRIPTION_BUDGET = 400;
 
@@ -160,7 +179,8 @@ async function callOpenAICompatible(userPrompt: string, opts: ProviderConfig): P
           // Generous headroom: a truncated response (finish_reason "length") is
           // indistinguishable from a malformed one at the parse layer, and was the
           // suspected cause of near-total fallback to keyword tagging.
-          max_tokens: 3000,
+          // Scaled for the largest batch a provider may receive (~200 tokens/event).
+          max_tokens: 4000,
           temperature,
         }),
         signal: AbortSignal.timeout(timeoutMs),
@@ -368,6 +388,11 @@ export async function tagEvents(inputs: TaggingInput[]): Promise<TaggingResult[]
   let llmTagged = 0;
   let batchFailures = 0;
 
+  // Sized from the provider we expect to serve most batches. If it trips the
+  // breaker mid-run the next provider simply receives larger batches than its
+  // ideal — which lenient parsing already tolerates.
+  const batchSize = batchSizeFor(providers[0]?.name);
+
   // ── Circuit breaker ───────────────────────────────────────────────────────
   // Measured failure mode: with an expired ICA key (instant 401) and a NVIDIA
   // endpoint that timed out at 45 s, EVERY batch paid ~46 s before falling back
@@ -380,14 +405,14 @@ export async function tagEvents(inputs: TaggingInput[]): Promise<TaggingResult[]
   let loggedSample = false;
   let partialBatches = 0;
 
-  for (let offset = 0; offset < inputs.length; offset += BATCH_SIZE) {
-    const batch = inputs.slice(offset, offset + BATCH_SIZE);
+  for (let offset = 0; offset < inputs.length; offset += batchSize) {
+    const batch = inputs.slice(offset, offset + batchSize);
     const available = providers.filter(p => !tripped.has(p.name));
 
     if (available.length === 0) {
       // All providers are out. Keyword fallbacks are already in `results`, so
       // stop calling out entirely rather than re-failing for every remaining batch.
-      batchFailures += Math.ceil((inputs.length - offset) / BATCH_SIZE);
+      batchFailures += Math.ceil((inputs.length - offset) / batchSize);
       break;
     }
 

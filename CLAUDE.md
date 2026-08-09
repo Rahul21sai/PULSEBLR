@@ -35,6 +35,11 @@ There is **no test runner** configured — no `test` script and no test files ex
 | `retag-events.ts` | Re-tag stored events with the LLM, **replacing** categories. `--ongoing`, `--all`, `--limit N`, `--dry`. |
 | `migrate-events.ts` | Backfill documents written before `clusterKey` / `lastSeenAt` / `isTechEvent` existed. |
 | `cleanup-implausible.ts` | Delete evergreen adverts and impossible date ranges. |
+| `backfill-companies.ts` | Recompute `Event.companies` from the registry. Run after editing it. |
+| `diag-organizers.ts` | Which hosts and known companies appear in the corpus. |
+| `diag-overtagged.ts` | Documents with more categories than the tagger emits. `--fix` / `--trim`. |
+| `probe-company-discovery.ts` / `probe-company-overlap.ts` | Prove whether a platform's company search is real or a generic fallback. |
+| `probe-luma-handles.ts` | Verify which `luma.com/<handle>` calendars exist, to seed them. |
 
 `generate-icons.js` is plain JS: `node scripts/generate-icons.js`.
 
@@ -99,17 +104,51 @@ The category taxonomy (`EVENT_CATEGORIES`, 32 values) lives in `lib/models/Event
 
 > Keyword regexes are load-bearing when the LLM is unavailable, and loose ones do real damage: a bare `\bpm\b` matched the "PM" in "6 PM" and tagged a fifth of the corpus `Product/Design`. Keep them specific.
 
-### 4. Query layer (`lib/events/query.ts`)
+### 4. Company attribution (`lib/companies/`)
+
+The product goal is "every Bengaluru company that runs events is listed". Platform
+search cannot deliver that, and recon proved it: on Meetup a **nonsense keyword
+returns the same 12 results as "Google"** (12 is the page size, not a match count),
+and only 5 of those 12 even mention Google. Eventbrite's company URLs return 0.
+
+So the question is inverted. Rather than asking each platform "what are Google's
+events", we resolve the host strings we ALREADY scrape — 86% of events name their
+organiser — into canonical companies:
+
+- `registry.ts` — ~109 companies with a Bengaluru presence, each tagged with a
+  `sector` and a **`strength`**.
+- `resolve.ts` — matches text to companies and writes `Event.companies[]`.
+
+> **`strength` is the load-bearing field.** A naive substring match is actively
+> harmful: measured against the live corpus it reported "Intel" 37 times (matching
+> *intel*ligence), "CRED" 31 (*cred*entials, in*cred*ible) and "SAP" 157. So
+> `distinctive` names (Razorpay, BrowserStack) may be matched anywhere including
+> descriptions, while `ambiguous` ones (Intel, Meta, Target, CRED, SAP, Apple,
+> Docker, Redis) are matched **only against the organiser field**, where a bare
+> mention really does mean the company is hosting. When in doubt, choose `ambiguous`.
+
+Attribution is derived data — `scripts/backfill-companies.ts` recomputes it from
+stored fields after any registry change, with no re-scraping.
+
+Company names are also fed into the Meetup keyword fan-out. That is a *discovery*
+lever only (it surfaces real events like "Building AI Agents with Microsoft Foundry"
+and harvests more group slugs); the irrelevant remainder collapses at ingest.
+
+`/companies` browses every company with events, and deliberately also shows the
+companies with **nothing** scheduled and the hosts the registry does **not** yet
+recognise — so the coverage gap is visible rather than hidden.
+
+### 5. Query layer (`lib/events/query.ts`)
 
 Shared by `/api/events` and `/api/events/facets` so the list and the counts beside the filters can never disagree. Time windows (`when=today|tomorrow|weekend|week|month`) resolve in **IST**. Search uses `$text` for multi-word queries (weighted relevance) and a substring regex for single words, because `$text` only matches whole words and a search box must work mid-typing — **both paths search `description`**.
 
 "Upcoming" includes in-progress events, but an event only counts as ongoing if it *also started recently*; without that floor an Eventbrite evergreen listing dated 2015→2030 sat at the top of the feed permanently. `pipeline.ts` rejects such listings at the source.
 
-### 5. Auth & per-user scoping
+### 6. Auth & per-user scoping
 
 NextAuth v5 (Auth.js) config lives in the root `auth.ts`, imported as `@/auth`. Strategy is **JWT** (no DB session): the `jwt` callback stashes the Google `sub`/email/name/picture into the token *and* upserts the `User` doc by `googleId` on first sign-in; `session` surfaces `token.sub` as `session.user.id`. Server code uses `getCurrentUserId()` (`lib/auth-helpers.ts`). Protection is two-layered: `proxy.ts` redirects `/dashboard`, `/tracker`, `/add-event` to `/login`, and API routes filter by `userId`. **Everything user-owned must be scoped by `userId`** — `TrackerEntry` has a compound-unique index `{ userId, eventId }`.
 
-### 6. App layer
+### 7. App layer
 
 - `lib/format.ts` — all date/label formatting, **pinned to Asia/Kolkata**. Never format event times with the ambient locale; a server in UTC would put a 9 PM IST event on the wrong day.
 - `lib/event-types.ts` — the client-side event shape (dates are ISO **strings** over JSON, not `Date`).
@@ -117,14 +156,14 @@ NextAuth v5 (Auth.js) config lives in the root `auth.ts`, imported as `@/auth`. 
 - Event covers use a plain `<img>`, not `next/image`, on purpose: covers come from a long and growing list of third-party CDNs, and `remotePatterns` would break every time a source changes host. The fallback is a category-tinted monogram.
 - Tracker (`app/tracker/page.tsx`) is a drag-and-drop kanban with optimistic updates and rollback, a list view, and a "follow-ups due" strip on top.
 
-### 7. Career intelligence (`lib/helpers/phase6.ts`)
+### 8. Career intelligence (`lib/helpers/phase6.ts`)
 
 Pending follow-ups, repeat-connection detection (same person across 2+ events), target-company/recruiter detection (`DEFAULT_TARGET_COMPANIES` is hardcoded — **not yet DB-backed**), and `getStats(userId)`. Surfaced via `app/api/phase6/*`.
 
-### 8. Digest (`lib/notifications/`)
+### 9. Digest (`lib/notifications/`)
 
 `generateDailyDigest()` assembles new events (24 h), upcoming deadlines, tracker updates, follow-up reminders, and **unhealthy sources** — a source that silently stops producing events is reported rather than quietly shrinking the feed.
 
-### 9. Automation
+### 10. Automation
 
 `.github/workflows/daily-scrape.yml` and `daily-digest.yml` run at 8 AM IST. Secrets: `MONGODB_URI`, optionally `NVIDIA_API_KEY`/`NVIDIA_MODEL`/`ICA_*`/`ANTHROPIC_API_KEY`, and `RESEND_API_KEY`.

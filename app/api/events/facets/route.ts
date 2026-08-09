@@ -27,9 +27,10 @@ export async function GET(request: NextRequest) {
     const areaFilter = buildEventFilter({ ...params, area: undefined });
     const sourceFilter = buildEventFilter({ ...params, source: undefined });
     const formatFilter = buildEventFilter({ ...params, format: undefined });
+    const companyFilter = buildEventFilter({ ...params, company: undefined });
     const baseFilter = buildEventFilter(params);
 
-    const [categories, areas, sources, formats, totals] = await Promise.all([
+    const [categories, areas, sources, formats, companies, totals] = await Promise.all([
       Event.aggregate([
         { $match: categoryFilter },
         { $unwind: '$category' },
@@ -49,6 +50,12 @@ export async function GET(request: NextRequest) {
       Event.aggregate([
         { $match: formatFilter },
         { $group: { _id: '$format', count: { $sum: 1 } } },
+        { $sort: { count: -1 } },
+      ]),
+      Event.aggregate([
+        { $match: { ...companyFilter, companies: { $ne: [] } } },
+        { $unwind: '$companies' },
+        { $group: { _id: '$companies', count: { $sum: 1 } } },
         { $sort: { count: -1 } },
       ]),
       Event.aggregate([
@@ -73,6 +80,7 @@ export async function GET(request: NextRequest) {
       areas: toMap(areas),
       sources: toMap(sources),
       formats: toMap(formats),
+      companies: toMap(companies),
       totals: totals[0]
         ? {
             total: totals[0].total,

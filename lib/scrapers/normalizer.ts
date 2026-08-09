@@ -13,6 +13,7 @@ import { resolveArea } from './core/geo';
 import { slugify, truncate, stripHtml } from './core/text';
 import { tagEvents, TaggingInput, TaggingResult } from '../llm/tagger';
 import { isTargetCompanyEvent, hasRecruiterMention } from '../helpers/phase6';
+import { resolveCompanies } from '../companies/resolve';
 
 export interface NormalizedEvent {
   title: string;
@@ -52,6 +53,7 @@ export interface NormalizedEvent {
   lastSeenAt: Date;
   seenInSources: string[];
   isTechEvent: boolean;
+  companies: string[];
   tagConfidence: number;
   isTargetCompany?: boolean;
   recruiterMentioned?: boolean;
@@ -182,6 +184,12 @@ function assemble(raw: RawEvent, tagged: TaggingResult): NormalizedEvent {
     lastSeenAt: new Date(),
     seenInSources: [raw.source],
     isTechEvent: tagged.isTechEvent,
+    companies: resolveCompanies({
+      organizer: raw.organizer,
+      title,
+      description,
+      tags,
+    }),
     tagConfidence: tagged.confidence,
     isTargetCompany: isTargetCompanyEvent(raw.organizer, raw.description),
     recruiterMentioned: hasRecruiterMention(raw.description),

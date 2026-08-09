@@ -37,6 +37,7 @@ export interface FeedEvent {
   registrationDeadline?: string;
   attendeeCount?: number;
   capacity?: number;
+  companies?: string[];
   isTechEvent?: boolean;
   isTargetCompany?: boolean;
   recruiterMentioned?: boolean;
@@ -57,5 +58,6 @@ export interface Facets {
   areas: Record<string, number>;
   sources: Record<string, number>;
   formats: Record<string, number>;
+  companies: Record<string, number>;
   totals: { total: number; free: number; withFood: number; tech: number };
 }

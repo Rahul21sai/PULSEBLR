@@ -24,6 +24,7 @@ import {
   scrapeLumaCity,
   scrapeLumaCalendar,
   enrichLumaDescriptions,
+  LUMA_SEED_CALENDARS,
 } from './adapters/luma';
 import {
   scrapeMeetupCity,
@@ -263,6 +264,11 @@ export async function runPipeline(options: PipelineOptions = {}): Promise<Pipeli
 
   // Persist what discovery just found, then load the FULL historical set so this
   // run benefits from every calendar/group ever discovered.
+  // Seed the verified company/community calendars before loading, so they persist
+  // and get scraped even when they have nothing in the current city window.
+  await persistDiscovered(
+    LUMA_SEED_CALENDARS.map(c => ({ kind: 'luma-calendar', handle: c.handle, label: c.label }))
+  );
   const newlyDiscovered = await persistDiscovered(collector.discovered);
   const lumaCalendars = (await loadDiscovered('luma-calendar')).slice(0, opts.maxLumaCalendars);
   const meetupGroupsFromDb = await loadDiscovered('meetup-group');

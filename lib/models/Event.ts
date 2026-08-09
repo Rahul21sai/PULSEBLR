@@ -118,6 +118,12 @@ export interface IEvent extends Document {
   seenInSources: string[];
   isTechEvent: boolean;
   /**
+   * Canonical company names this event is attributable to, resolved from the
+   * host/title/tags by lib/companies/resolve.ts. Empty for the many community
+   * events no company runs — that absence is meaningful, not missing data.
+   */
+  companies: string[];
+  /**
    * Confidence of the tagging that produced `category` / `isTechEvent`.
    * ~0.6 = keyword heuristics, 0.8-1.0 = LLM. Merging uses this to stop a
    * low-confidence pass from degrading a high-confidence one.
@@ -177,6 +183,7 @@ const EventSchema = new Schema<IEvent>(
     lastSeenAt: { type: Date, default: Date.now },
     seenInSources: { type: [String], default: [] },
     isTechEvent: { type: Boolean, default: true },
+    companies: { type: [String], default: [], index: true },
     tagConfidence: { type: Number, default: 0.6, min: 0, max: 1 },
     isTargetCompany: { type: Boolean, default: false },
     recruiterMentioned: { type: Boolean, default: false },
@@ -193,6 +200,8 @@ EventSchema.index({ startDateTime: 1, category: 1 });
 EventSchema.index({ startDateTime: 1, format: 1 });
 EventSchema.index({ startDateTime: 1, area: 1 });
 EventSchema.index({ startDateTime: 1, isTechEvent: 1 });
+// Powers the companies browse page and the feed's company filter.
+EventSchema.index({ startDateTime: 1, companies: 1 });
 EventSchema.index({ source: 1 });
 EventSchema.index({ createdAt: -1 });
 EventSchema.index({ isTargetCompany: 1 });

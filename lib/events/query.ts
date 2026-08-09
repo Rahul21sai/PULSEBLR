@@ -18,6 +18,8 @@ export interface EventQueryParams {
   category?: string[];
   area?: string[];
   source?: string[];
+  /** Canonical company names (see lib/companies/registry.ts). */
+  company?: string[];
   format?: string;
   hasFood?: string;
   isFree?: boolean;
@@ -45,6 +47,7 @@ export function parseEventParams(searchParams: URLSearchParams): EventQueryParam
     category: list('category'),
     area: list('area'),
     source: list('source'),
+    company: list('company'),
     format: searchParams.get('format') || undefined,
     hasFood: searchParams.get('hasFood') || undefined,
     techOnly: searchParams.get('techOnly') === 'true',
@@ -131,6 +134,7 @@ export function buildEventFilter(params: EventQueryParams): EventFilter {
   if (params.category?.length) filter.category = { $in: params.category };
   if (params.area?.length) filter.area = { $in: params.area };
   if (params.source?.length) filter.source = { $in: params.source };
+  if (params.company?.length) filter.companies = { $in: params.company };
   if (params.format) filter.format = params.format;
   if (params.hasFood) filter.hasFood = params.hasFood;
   if (params.isFree !== undefined) filter.isFree = params.isFree;

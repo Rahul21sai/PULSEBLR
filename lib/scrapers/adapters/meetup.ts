@@ -32,6 +32,7 @@ import { fetchText, mapPool } from '../core/http';
 import { rawEventsFromHtml } from '../core/jsonld';
 import { rawEventsFromIcs } from '../core/ics';
 import { isBengaluru } from '../core/geo';
+import { COMPANIES } from '../../companies/registry';
 
 const MEETUP_SOURCE = 'meetup';
 
@@ -54,6 +55,23 @@ export const MEETUP_KEYWORDS = [
   'networking', 'workshop', 'hackathon', 'meetup', 'music', 'photography',
   'writing', 'book club', 'language', 'fitness', 'running', 'hiking', 'board games',
 ];
+
+/**
+ * Company names used as additional search keywords.
+ *
+ * Measured behaviour: Meetup's search is fuzzy RELEVANCE, not a filter — a nonsense
+ * keyword returns the same 12 results as "Google", and only 5 of those 12 mention
+ * Google. So these keywords are a DISCOVERY tool, not an attribution one: they
+ * surface genuine company events ("Google Agents in Production for Enterprises",
+ * "Building AI Agents with Microsoft Foundry") and harvest more group slugs, while
+ * the irrelevant remainder collapses at ingest as duplicates of events other
+ * keywords already found. Attribution is done separately and properly by
+ * lib/companies/resolve.ts against the host field.
+ *
+ * Only distinctive names are used: querying "Intel" or "Target" would return
+ * results about intelligence and targets.
+ */
+const COMPANY_KEYWORDS = COMPANIES.filter(c => c.strength === 'distinctive').map(c => c.name);
 
 function findUrl(keyword: string): string {
   const params = new URLSearchParams({
@@ -84,7 +102,10 @@ function harvestGroupSlugs(html: string): string[] {
  * Scrape Meetup's Bengaluru city search across every keyword.
  * Returns the events found plus the group slugs discovered along the way.
  */
-export async function scrapeMeetupCity(concurrency = 4): Promise<ScrapeResult> {
+export async function scrapeMeetupCity(
+  concurrency = 4,
+  includeCompanyKeywords = true
+): Promise<ScrapeResult> {
   const startedAt = new Date();
   const result: ScrapeResult = {
     sourceId: 'meetup-city',
@@ -99,7 +120,11 @@ export async function scrapeMeetupCity(concurrency = 4): Promise<ScrapeResult> {
   const groups = new Set<string>();
   const byUrl = new Map<string, RawEvent>();
 
-  await mapPool(MEETUP_KEYWORDS, concurrency, async keyword => {
+  const keywords = includeCompanyKeywords
+    ? [...MEETUP_KEYWORDS, ...COMPANY_KEYWORDS]
+    : MEETUP_KEYWORDS;
+
+  await mapPool(keywords, concurrency, async keyword => {
     const url = findUrl(keyword);
     try {
       const html = await fetchText(url, { timeoutMs: 25000, retries: 2 });

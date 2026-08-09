@@ -5,6 +5,7 @@ import { Facets } from '@/lib/event-types';
 export interface FilterState {
   categories: string[];
   areas: string[];
+  companies: string[];
   format: string;
   freeOnly: boolean;
   foodOnly: boolean;
@@ -14,6 +15,7 @@ export interface FilterState {
 export const EMPTY_FILTERS: FilterState = {
   categories: [],
   areas: [],
+  companies: [],
   format: '',
   freeOnly: false,
   foodOnly: false,
@@ -24,6 +26,7 @@ export function countActive(filters: FilterState): number {
   return (
     filters.categories.length +
     filters.areas.length +
+    filters.companies.length +
     (filters.format ? 1 : 0) +
     (filters.freeOnly ? 1 : 0) +
     (filters.foodOnly ? 1 : 0) +
@@ -54,6 +57,7 @@ export default function FilterRail({
     list.includes(value) ? list.filter(v => v !== value) : [...list, value];
 
   const categories = Object.entries(facets?.categories || {}).sort((a, b) => b[1] - a[1]);
+  const companies = Object.entries(facets?.companies || {}).sort((a, b) => b[1] - a[1]);
   const areas = Object.entries(facets?.areas || {}).sort((a, b) => b[1] - a[1]);
   const formats = facets?.formats || {};
   const totals = facets?.totals;
@@ -137,6 +141,37 @@ export default function FilterRail({
           </div>
         )}
       </section>
+
+      {/* Companies — the "whose event is this" axis */}
+      {companies.length > 0 && (
+        <section>
+          <div className="flex items-center justify-between mb-2.5">
+            <h3 className="text-label-sm uppercase tracking-widest text-[#86868B]">Company</h3>
+            {filters.companies.length > 0 && (
+              <button
+                type="button"
+                onClick={() => onChange({ ...filters, companies: [] })}
+                className="text-[11px] font-semibold text-[#0071E3] hover:underline"
+              >
+                Clear
+              </button>
+            )}
+          </div>
+          <div className="flex flex-col gap-0.5 max-h-[240px] overflow-y-auto pr-1">
+            {companies.map(([name, count]) => (
+              <CheckRow
+                key={name}
+                label={name}
+                count={count}
+                checked={filters.companies.includes(name)}
+                onToggle={() =>
+                  onChange({ ...filters, companies: toggleIn(filters.companies, name) })
+                }
+              />
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* Areas */}
       <section>
