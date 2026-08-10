@@ -537,33 +537,33 @@ export async function tagEventWithLLM(
 // ─────────────────────────────────────────────────────────────────────────────
 const CATEGORY_KEYWORDS: Array<[string, RegExp]> = [
   // ── Tech topics ──
-  ['AI/ML', /(ai|a\.i\.|artificial intelligence|machine learning|ml|deep learning|neural|llm|gpt|genai|generative|transformer|nlp|computer vision|agentic|rag|mlops)/i],
-  ['Data/Analytics', /(data|analytics|big data|data science|data engineering|warehouse|spark|iceberg|dbt|kafka|airflow|visualization|bi|sql|postgres|mysql|clickhouse)/i],
-  ['Cloud/DevOps', /(cloud|devops|aws|azure|gcp|kubernetes|k8s|docker|terraform|ci\/cd|sre|platform engineering|observability|serverless|helm)/i],
-  ['Web/Mobile', /(web|frontend|front-end|backend|react|next\.?js|angular|vue|svelte|flutter|android|ios|react native|wordpress|javascript|typescript|node\.?js|django|rails|laravel|php)/i],
-  ['Cybersecurity', /(security|cyber|infosec|pentest|penetration testing|owasp|ctf|capture the flag|vulnerabilit|appsec|devsecops|threat|malware)/i],
-  ['Open Source', /(open source|open-source|oss|foss|linux|apache|cncf|contributor|upstream|maintainer|hacktoberfest|gsoc|copyleft|licen[cs]e)/i],
-  ['Hardware/Robotics', /(hardware|embedded|robotics|iot|drone|semiconductor|chip design|silicon|fpga|arduino|raspberry pi|firmware|rtos|pcb|electronics)/i],
-  ['Blockchain/Web3', /(blockchain|web3|crypto|ethereum|solana|bitcoin|nft|defi|smart contract|zk|zero.?knowledge)/i],
-  ['Gaming/XR', /(gaming|game dev|gamedev|unity|unreal|godot|vr|xr|metaverse|esports)/i],
-  // NB: no bare `pm` or `ui` — `pm` matched the time in "6 PM" and tagged a
+  ['AI/ML', /\b(ai|a\.i\.|artificial intelligence|machine learning|\bml\b|deep learning|neural|llm|gpt|genai|generative|transformer|nlp|computer vision|agentic|rag|mlops)\b/i],
+  ['Data/Analytics', /\b(data|analytics|big data|data science|data engineering|warehouse|spark|iceberg|dbt|kafka|airflow|visualization|\bbi\b|sql|postgres|mysql|clickhouse)\b/i],
+  ['Cloud/DevOps', /\b(cloud|devops|aws|azure|gcp|kubernetes|k8s|docker|terraform|ci\/cd|sre|platform engineering|observability|serverless|helm)\b/i],
+  ['Web/Mobile', /\b(web|frontend|front-end|backend|react|next\.?js|angular|vue|svelte|flutter|android|ios|react native|wordpress|javascript|typescript|node\.?js|django|rails|laravel|php)\b/i],
+  ['Cybersecurity', /\b(security|cyber|infosec|pentest|penetration testing|owasp|ctf|capture the flag|vulnerabilit|appsec|devsecops|threat|malware)\b/i],
+  ['Open Source', /\b(open source|open-source|oss\b|foss|linux|apache|cncf|contributor|upstream|maintainer|hacktoberfest|gsoc|copyleft|licen[cs]e)\b/i],
+  ['Hardware/Robotics', /\b(hardware|embedded|robotics|iot|drone|semiconductor|chip design|silicon|fpga|arduino|raspberry pi|firmware|rtos|pcb|electronics)\b/i],
+  ['Blockchain/Web3', /\b(blockchain|web3|crypto|ethereum|solana|bitcoin|nft|defi|smart contract|zk\b|zero.?knowledge)\b/i],
+  ['Gaming/XR', /\b(gaming|game dev|gamedev|unity|unreal|godot|\bvr\b|\bxr\b|metaverse|esports)\b/i],
+  // NB: no bare `\bpm\b` or `\bui\b` — `pm` matched the time in "6 PM" and tagged a
   // fifth of the corpus Product/Design.
-  ['Product/Design', /(product manage|product management|product manager|ux|ui\/ux|design system|figma|user research|design thinking|producttank|product design)/i],
+  ['Product/Design', /\b(product manage|product management|product manager|\bux\b|ui\/ux|design system|figma|user research|design thinking|producttank|product design)\b/i],
 
   // ── Kind of gathering ──
-  ['Hackathon', /(hackathon|hack day|hack night|buildathon|code sprint|datathon|devsprint|game jam)/i],
-  ['Conference', /(conference|summit|convention|expo|symposium|congress|devfest|kubecon|con\s?20\d\d)/i],
-  ['Meetup', /(meetup|meet ?up|user group|community meet|lightning talks?|unconference|mixer|roundtable)/i],
-  ['Workshop', /(workshop|bootcamp|training|masterclass|certification|hands-on|tutorial|course|lab session)/i],
-  ['Career/Hiring', /(job fair|career fair|hiring|recruit|resume|interview prep|placement|open roles)/i],
-  ['Startup/Founders', /(startup|founder|entrepreneur|venture|vc|pitch|demo day|incubat|accelerat|fundrais|seed round|angel invest)/i],
+  ['Hackathon', /\b(hackathon|hack day|hack night|buildathon|code sprint|datathon|devsprint|game jam)\b/i],
+  ['Conference', /\b(conference|summit|convention|expo|symposium|congress|devfest|kubecon|\bcon\s?20\d\d\b)\b/i],
+  ['Meetup', /\b(meetup|meet ?up|user group|community meet|lightning talks?|unconference|mixer|roundtable)\b/i],
+  ['Workshop', /\b(workshop|bootcamp|training|masterclass|certification|hands-on|tutorial|course|lab session)\b/i],
+  ['Career/Hiring', /\b(job fair|career fair|hiring|recruit|resume|interview prep|placement|open roles)\b/i],
+  ['Startup/Founders', /\b(startup|founder|entrepreneur|venture|\bvc\b|pitch|demo day|incubat|accelerat|fundrais|seed round|angel invest)\b/i],
 
   // ── Non-tech tail ──
-  ['Business/Finance', /(business|finance|fintech|payments?|banking|investing|equity|consult|b2b|sales|marketing|growth|seo|leadership|mba|insurtech)/i],
-  ['Science/Research', /(science|research|physics|space|astronomy|paper reading|academia|lecture|climate|sustainab|renewable|biotech|pharma)/i],
-  ['Arts/Culture', /(art|gallery|exhibition|film|screening|photograph|dance|craft|museum|poetry|music|concert|dj|edm|comedy|stand-?up|theatre|theater|open mic|book club|reading|author|literature)/i],
-  ['Health/Fitness', /(health|medical|wellness|mental health|yoga|meditation|fitness|run(ning)?|marathon|cricket|football|badminton|cycling|hik(e|ing)|trek|sport)/i],
-  ['Community/Social', /(social|community|volunteer|board games|mafia|quiz|potluck|food|dining|brunch|networking)/i],
+  ['Business/Finance', /\b(business|finance|fintech|payments?|banking|investing|equity|consult|\bb2b\b|sales|marketing|growth|\bseo\b|leadership|mba|insurtech)\b/i],
+  ['Science/Research', /\b(science|research|physics|space|astronomy|paper reading|academia|lecture|climate|sustainab|renewable|biotech|pharma)\b/i],
+  ['Arts/Culture', /\b(art|gallery|exhibition|film|screening|photograph|dance|craft|museum|poetry|music|concert|\bdj\b|\bedm\b|comedy|stand-?up|theatre|theater|open mic|book club|reading|author|literature)\b/i],
+  ['Health/Fitness', /\b(health|medical|wellness|mental health|yoga|meditation|fitness|run(ning)?|marathon|cricket|football|badminton|cycling|hik(e|ing)|trek|sport)\b/i],
+  ['Community/Social', /\b(social|community|volunteer|board games|mafia|quiz|potluck|food|dining|brunch|networking)\b/i],
 ];
 
 /**
