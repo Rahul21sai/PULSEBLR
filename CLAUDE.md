@@ -40,8 +40,21 @@ There is **no test runner** configured — no `test` script and no test files ex
 | `diag-overtagged.ts` | Documents with more categories than the tagger emits. `--fix` / `--trim`. |
 | `probe-company-discovery.ts` / `probe-company-overlap.ts` | Prove whether a platform's company search is real or a generic fallback. |
 | `probe-luma-handles.ts` | Verify which `luma.com/<handle>` calendars exist, to seed them. |
+| `probe-bevy-tenants.ts` | Test candidate Bevy hosts for a real `/api/search/event`. Run before adding to `BEVY_HOSTS` — 36 candidates yielded only 5. Read-only. |
+| `probe-event-microsites.ts` / `probe-microsites-round2.ts` | Why per-event company microsites (aws-experience.com and friends) cannot be scraped. Read-only. |
+| `test-new-adapters.ts` | Smoke test for `devevents` and the expanded Bevy tenant list. No DB writes. |
+| `test-tagging.ts` / `test-ica.ts` | Tagger and IBM ICA credential checks in isolation. |
+| `migrate-categories.ts` | Map stored events from the retired 32-category taxonomy onto the current 22 via `CATEGORY_MIGRATION`. `--dry`. |
+| `backfill-connection-score.ts` | Recompute `Event.connectionScore`. Run after editing the weights. |
+| `cleanup-sources.ts` | Delete stale legacy `Source` rows that no adapter can ever scrape again. |
+| `diag-clusterkey.ts` | Find documents missing `clusterKey` and show what the generator produces for them. Read-only. |
+| `diag-clusterkey-selfheal.ts` | Assert that a document stripped of `clusterKey` repairs itself on save. |
+| `diag-hook-order.ts` | Proves `pre('validate')` runs before required-field validation and `pre('save')` does not. Scratch collection only. |
+| `diag-dupe.ts` / `diag-tagquality.ts` | Duplicate clusters, and how many events carry LLM vs keyword tags. |
 
-`generate-icons.js` is plain JS: `node scripts/generate-icons.js`.
+`scrape.ts`, `send-digest.ts` and `seed.ts` back the npm scripts; `load-env.ts` is the
+shared `.env.local` loader every script imports first. `generate-icons.js` is plain
+JS: `node scripts/generate-icons.js`.
 
 ## Environment
 
@@ -92,7 +105,7 @@ pipeline.ts orchestrator: discover → scrape → enrich → tag → ingest → 
 **Coverage compounds through auto-discovery** — this is the central design idea, and it is what covers company events without a hand-maintained list of company websites:
 
 - **Luma**: the public city discover feed (`api.lu.ma/discover/get-paginated-events`) returns fully structured events *and* names each event's host `calendar`. Those calendar ids are harvested and each host's own feed is scraped, which yields far more (recon: *The Product Folks* appeared once in the city feed but had 18 events on its own calendar). Hosts include company calendars like *Razorpay Rize* and *Lyzr Community Events*.
-- **Meetup**: city find pages are fanned out across ~45 keywords (pagination is a no-op — pages 1/2/3 return byte-identical payloads, but different keywords return different events). Group slugs are harvested from those pages, then each group's ICS feed is read in one request.
+- **Meetup**: city find pages are fanned out across ~72 keywords (pagination is a no-op — pages 1/2/3 return byte-identical payloads, but different keywords return different events). Group slugs are harvested from those pages, then each group's ICS feed is read in one request. The keyword list spans software, **open source** (foss, apache, kafka, cncf, linux, hacktoberfest) and **hardware** (embedded, fpga, vlsi, semiconductor, arduino) topics, because keyword search is the discovery mechanism that works: probing 35 guessed open-source group slugs returned **0 hits**, while keywords both surface events and harvest real slugs.
 
 Discovered sources are **persisted to the `Source` collection** (`kind` + `handle`, unique-sparse index), so every run starts from everything ever found. A first run discovered ~110 Meetup groups and 18 Luma calendars from a seed list of 24.
 
@@ -103,11 +116,12 @@ Adapters and their measured quirks — read the file header before changing one,
 | `luma.ts` | Discover + per-host calendar JSON | Best source: cover images, coords, guest counts, ticket prices. Descriptions need enrichment. |
 | `meetup.ts` | Keyword fan-out (JSON-LD) + per-group ICS | **ICS emits no `LOCATION`** — venue/image come from `enrichMeetupEvents`. |
 | `eventbrite.ts` | Category browse pages (JSON-LD), real pagination | Main source of paid events. The private search API is CSRF-gated (401). |
-| `bevy.ts` | `gdg.community.dev/api/search/event` | GDG + CNCF chapters. |
+| `bevy.ts` | `<tenant>/api/search/event` across 5 verified tenants | GDG, CNCF, Snowflake, UiPath, Linux Foundation. Bevy is the ONE route to company-run event pages that returns structured JSON — but `probe-bevy-tenants.ts` found only 5 of 36 candidates are tenants, so guessing `community.<company>.com` does not work. |
+| `devevents.ts` | `developers.events/all-events.json` | Curated tech-conference index; the source of the open-source conferences (IndiaFOSS, UbuCon, gRPConf, droidCon, GIDS). `date` is an epoch-millis **array**, and the city is spelled `Bangalore`. |
 | `devfolio.ts` | Public hackathons API | Filters out the vendor's own `(Demo)`/`Fake` sandbox rows. |
 | `unstop.ts` | Public opportunity search | Listings are **deadlines, not events**; in-person Bengaluru only. |
 | `allevents.ts` | City page JSON-LD | Category pages are NOT category-scoped — `/technology` and `/music` return identical sets. Culture/concerts only. |
-| `universal.ts` | JSON-LD → ICS → RSS → embedded JSON, for any URL | Adding a company page is a one-line registry entry. Deliberately has **no** LLM-on-HTML or selector-guessing fallback. |
+| `universal.ts` | JSON-LD → ICS → RSS → embedded JSON, for any URL | Adding a company page is a one-line registry entry. Deliberately has **no** LLM-on-HTML or selector-guessing fallback. **Measured: 19 of the 20 pages in `COMPANY_EVENT_PAGES` yield nothing** — corporate marketing sites are JS-rendered shells with no schema.org markup. Kept because each costs one request and starts working the moment a site adds markup. |
 
 ### 2. Dedup — two keys, two jobs (`lib/models/Event.ts`)
 
@@ -134,6 +148,20 @@ The product goal is "every Bengaluru company that runs events is listed". Platfo
 search cannot deliver that, and recon proved it: on Meetup a **nonsense keyword
 returns the same 12 results as "Google"** (12 is the page size, not a match count),
 and only 5 of those 12 even mention Google. Eventbrite's company URLs return 0.
+
+The obvious alternative — go straight to the per-event microsites companies build,
+like `aws-experience.com` or `aws.amazon.com/events/summits/` — was probed and
+**rejected on evidence** (`probe-event-microsites.ts`, `probe-microsites-round2.ts`):
+`aws-experience.com` serves a 1.6 KB Angular shell with no data in the HTML, and every
+`aws.amazon.com/api/dirs` directory id returns 0 items. Corporate marketing pages are
+the same story — 19 of 20 in `COMPANY_EVENT_PAGES` yield nothing. Scraping those would
+need a headless browser per site plus per-site selectors, which is exactly the
+brittleness `universal.ts` refuses to take on.
+
+What actually reaches company events, in order of yield: company-run **Meetup groups**
+(docker-bangalore, bangalore-mongodb-user-group, microsoft-azure-bangalore,
+servicenow-bangalore, thoughtworks-bangalore …), company **Luma calendars** (Razorpay
+Rize, Lyzr), **Bevy tenants**, and `developers.events` for conferences.
 
 So the question is inverted. Rather than asking each platform "what are Google's
 events", we resolve the host strings we ALREADY scrape — 86% of events name their
