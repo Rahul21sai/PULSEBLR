@@ -1,4 +1,4 @@
-import { EVENT_CATEGORIES } from '../models/Event';
+import { EVENT_CATEGORIES, TECH_CATEGORY_NAMES } from '../models/Event';
 
 export interface TaggingResult {
   categories: string[];
@@ -75,9 +75,14 @@ ${EVENT_CATEGORIES.map(c => `  - ${c}`).join('\n')}
   yes only when food/snacks/refreshments/dinner/lunch are actually mentioned.
 
 "isTechEvent": true | false
-  true for software, data, AI, hardware, security, devops, product-engineering
-  and developer-community events. false for concerts, comedy, sports, generic
-  business networking, festivals and social gatherings.
+  TRUE only for SOFTWARE or HARDWARE engineering events: programming languages,
+  AI/ML, data engineering, cloud, devops, security, web/mobile, embedded,
+  robotics, chips, open source, developer tooling, hackathons, and technical
+  product/engineering talks. Practitioner meetups and conferences count.
+  FALSE for: concerts, comedy, sports, food, spiritual and wellness sessions,
+  book clubs, dating and social mixers, generic business/sales/marketing
+  networking, real-estate and investing pitches, and paid certification or
+  course-selling sessions that merely mention a technology.
 
 "confidence": 0.0-1.0
 
@@ -144,8 +149,40 @@ interface ProviderConfig {
   fallbackModel?: string;
 }
 
-/** Models proven unusable this run — skipped immediately afterwards. */
+/**
+ * Models proven unusable this run — skipped immediately afterwards.
+ *
+ * A model lands here only when it is DEFINITIVELY unusable (HTTP 404, i.e. not
+ * available to this account) or after repeated timeouts. See MODEL_TIMEOUTS.
+ */
 const DEAD_MODELS = new Set<string>();
+
+/**
+ * Timeout counter per model, and the threshold before we give up on it.
+ *
+ * Measured failure this caused: ICA's claude-sonnet-5 timed out ONCE mid-run. The
+ * original code marked it dead on that first timeout; because ICA has no fallback
+ * model configured, its chain became empty and every later batch threw
+ * "no usable model", which tripped the circuit breaker for ICA and then NVIDIA.
+ * A single transient blip therefore dropped 750 events to keyword tagging — a worse
+ * outcome than the slow-but-working path. Genuinely dead models (glm-5.2) time out
+ * every single time and still get retired quickly; transient ones now recover.
+ */
+const MODEL_TIMEOUTS = new Map<string, number>();
+const TIMEOUTS_BEFORE_DEAD = 3;
+
+function recordTimeout(model: string, provider: string): void {
+  const count = (MODEL_TIMEOUTS.get(model) ?? 0) + 1;
+  MODEL_TIMEOUTS.set(model, count);
+  if (count >= TIMEOUTS_BEFORE_DEAD) {
+    DEAD_MODELS.add(model);
+    console.warn(`[${provider}] model "${model}" retired after ${count} timeouts`);
+  } else {
+    console.warn(
+      `[${provider}] model "${model}" timed out (${count}/${TIMEOUTS_BEFORE_DEAD}) — will retry on the next batch`
+    );
+  }
+}
 
 /** NVIDIA NIM model measured as fast and reliable for this classification task. */
 const NVIDIA_FAST_MODEL = 'meta/llama-3.1-8b-instruct';
@@ -160,7 +197,10 @@ async function callOpenAICompatible(userPrompt: string, opts: ProviderConfig): P
     .filter(m => !DEAD_MODELS.has(m));
 
   if (chain.length === 0) {
-    throw new Error(`${provider}: no usable model (all marked dead this run)`);
+    throw new Error(
+      `${provider}: every configured model has been retired this run ` +
+        `(${[opts.model, fallbackModel].filter(Boolean).join(', ')})`
+    );
   }
 
   let lastError: Error | undefined;
@@ -220,10 +260,10 @@ async function callOpenAICompatible(userPrompt: string, opts: ProviderConfig): P
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       lastError = error instanceof Error ? error : new Error(message);
-      // A timeout means this model is too slow for batch work, whatever the cause.
+      // A timeout is only provisional evidence: count it, and retire the model
+      // only after it happens repeatedly (see recordTimeout).
       if (/abort|timeout/i.test(message)) {
-        DEAD_MODELS.add(model);
-        console.warn(`[${provider}] model "${model}" timed out — trying next model`);
+        recordTimeout(model, provider);
         continue;
       }
       // Auth/other errors are provider-level; no other model will help.
@@ -496,47 +536,47 @@ export async function tagEventWithLLM(
 // Keyword fallback — also the baseline every LLM result is validated against.
 // ─────────────────────────────────────────────────────────────────────────────
 const CATEGORY_KEYWORDS: Array<[string, RegExp]> = [
-  ['AI/ML', /\b(ai|a\.i\.|artificial intelligence|machine learning|\bml\b|deep learning|neural|llm|gpt|genai|generative|transformer|nlp|computer vision|agentic|rag)\b/i],
-  ['Fintech', /\b(fintech|payments?|upi|banking|lending|insurtech|neobank)\b/i],
-  ['Cybersecurity', /\b(security|cyber|infosec|pentest|penetration testing|owasp|ctf|capture the flag|vulnerabilit|appsec|devsecops)\b/i],
-  ['Cloud/DevOps', /\b(cloud|devops|aws|azure|gcp|kubernetes|k8s|docker|terraform|ci\/cd|sre|platform engineering|observability)\b/i],
-  ['Web/Mobile', /\b(web|frontend|front-end|backend|react|next\.?js|angular|vue|svelte|flutter|android|ios|react native|wordpress|javascript|typescript)\b/i],
-  ['Data/Analytics', /\b(data|analytics|big data|data science|data engineering|warehouse|spark|iceberg|dbt|visualization|bi\b|sql)\b/i],
-  ['Blockchain/Web3', /\b(blockchain|web3|crypto|ethereum|solana|nft|defi|smart contract)\b/i],
-  ['Robotics/Hardware', /\b(robotics|hardware|embedded|iot|drone|semiconductor|chip design|fpga|arduino|raspberry pi)\b/i],
-  ['Open Source', /\b(open source|oss\b|foss|linux|apache|cncf|contributor)\b/i],
-  ['Gaming/XR', /\b(gaming|game dev|gamedev|unity|unreal|\bvr\b|\bxr\b|metaverse|esports)\b/i],
-  ['Hackathon', /\b(hackathon|hack day|buildathon|code sprint|datathon|devsprint)\b/i],
-  ['Startup/Founders', /\b(startup|founder|entrepreneur|venture|\bvc\b|pitch|demo day|incubat|accelerat|fundrais|seed round)\b/i],
-  // NB: no bare `\bpm\b` or `\bui\b` here. `pm` matched the time in "6 PM", which
-  // tagged a fifth of the entire corpus as Product/Design on the first real run.
-  ['Product/Design', /\b(product manage|product management|product manager|\bux\b|ui\/ux|design system|figma|user research|design thinking|producttank|product design)\b/i],
-  ['Marketing/Growth', /\b(marketing|growth|\bseo\b|content strategy|brand|advertis|social media)\b/i],
-  ['Career/Job Fair', /\b(job fair|career fair|hiring|recruit|resume|interview prep|placement)\b/i],
-  ['Summit/Conference', /\b(summit|conference|convention|expo|symposium|congress)\b/i],
-  ['Workshop/Training', /\b(workshop|bootcamp|training|masterclass|certification|hands-on|tutorial|course)\b/i],
-  ['Business/Finance', /\b(business|finance|investing|equity|consult|\bb2b\b|sales|leadership|mba)\b/i],
-  ['Health/Biotech', /\b(health|medical|biotech|pharma|wellness|mental health|ultrasound|clinical)\b/i],
-  ['Science/Research', /\b(science|research|physics|space|astronomy|paper reading|academia|lecture)\b/i],
-  ['Climate/Sustainability', /\b(climate|sustainab|renewable|solar|\bev\b|environment|carbon)\b/i],
-  ['Music/Nightlife', /\b(music|concert|\bdj\b|\bedm\b|live band|gig|nightlife|party|festival|tour)\b/i],
-  ['Arts/Culture', /\b(art|gallery|exhibition|film|screening|photograph|dance|craft|museum|poetry)\b/i],
-  ['Comedy/Theatre', /\b(comedy|stand-?up|improv|theatre|theater|open mic|play\b)\b/i],
-  ['Sports/Fitness', /\b(sport|fitness|run(ning)?|marathon|yoga|cricket|football|padel|badminton|cycling|hik(e|ing)|trek)\b/i],
-  // Deliberately narrow: bare "food"/"coffee"/"beer" appear in "snacks provided"
-  // and "post-event beers", which describe catering at a TECH meetup rather than a
-  // food event. Those words feed hasFood detection instead (see FOOD_RE).
-  ['Food/Drink', /\b(food festival|food walk|dining|brunch|coffee tasting|beer tasting|wine tasting|whisky tasting|cocktail|culinary|potluck|supper club|brewery|bake)\b/i],
-  ['Books/Writing', /\b(book club|reading|writing|author|literature|poetry slam|storytell)\b/i],
-  ['Social/Community', /\b(social|mixer|networking|community|volunteer|board games|mafia|quiz|meet ?up)\b/i],
+  // ── Tech topics ──
+  ['AI/ML', /(ai|a\.i\.|artificial intelligence|machine learning|ml|deep learning|neural|llm|gpt|genai|generative|transformer|nlp|computer vision|agentic|rag|mlops)/i],
+  ['Data/Analytics', /(data|analytics|big data|data science|data engineering|warehouse|spark|iceberg|dbt|kafka|airflow|visualization|bi|sql|postgres|mysql|clickhouse)/i],
+  ['Cloud/DevOps', /(cloud|devops|aws|azure|gcp|kubernetes|k8s|docker|terraform|ci\/cd|sre|platform engineering|observability|serverless|helm)/i],
+  ['Web/Mobile', /(web|frontend|front-end|backend|react|next\.?js|angular|vue|svelte|flutter|android|ios|react native|wordpress|javascript|typescript|node\.?js|django|rails|laravel|php)/i],
+  ['Cybersecurity', /(security|cyber|infosec|pentest|penetration testing|owasp|ctf|capture the flag|vulnerabilit|appsec|devsecops|threat|malware)/i],
+  ['Open Source', /(open source|open-source|oss|foss|linux|apache|cncf|contributor|upstream|maintainer|hacktoberfest|gsoc|copyleft|licen[cs]e)/i],
+  ['Hardware/Robotics', /(hardware|embedded|robotics|iot|drone|semiconductor|chip design|silicon|fpga|arduino|raspberry pi|firmware|rtos|pcb|electronics)/i],
+  ['Blockchain/Web3', /(blockchain|web3|crypto|ethereum|solana|bitcoin|nft|defi|smart contract|zk|zero.?knowledge)/i],
+  ['Gaming/XR', /(gaming|game dev|gamedev|unity|unreal|godot|vr|xr|metaverse|esports)/i],
+  // NB: no bare `pm` or `ui` — `pm` matched the time in "6 PM" and tagged a
+  // fifth of the corpus Product/Design.
+  ['Product/Design', /(product manage|product management|product manager|ux|ui\/ux|design system|figma|user research|design thinking|producttank|product design)/i],
+
+  // ── Kind of gathering ──
+  ['Hackathon', /(hackathon|hack day|hack night|buildathon|code sprint|datathon|devsprint|game jam)/i],
+  ['Conference', /(conference|summit|convention|expo|symposium|congress|devfest|kubecon|con\s?20\d\d)/i],
+  ['Meetup', /(meetup|meet ?up|user group|community meet|lightning talks?|unconference|mixer|roundtable)/i],
+  ['Workshop', /(workshop|bootcamp|training|masterclass|certification|hands-on|tutorial|course|lab session)/i],
+  ['Career/Hiring', /(job fair|career fair|hiring|recruit|resume|interview prep|placement|open roles)/i],
+  ['Startup/Founders', /(startup|founder|entrepreneur|venture|vc|pitch|demo day|incubat|accelerat|fundrais|seed round|angel invest)/i],
+
+  // ── Non-tech tail ──
+  ['Business/Finance', /(business|finance|fintech|payments?|banking|investing|equity|consult|b2b|sales|marketing|growth|seo|leadership|mba|insurtech)/i],
+  ['Science/Research', /(science|research|physics|space|astronomy|paper reading|academia|lecture|climate|sustainab|renewable|biotech|pharma)/i],
+  ['Arts/Culture', /(art|gallery|exhibition|film|screening|photograph|dance|craft|museum|poetry|music|concert|dj|edm|comedy|stand-?up|theatre|theater|open mic|book club|reading|author|literature)/i],
+  ['Health/Fitness', /(health|medical|wellness|mental health|yoga|meditation|fitness|run(ning)?|marathon|cricket|football|badminton|cycling|hik(e|ing)|trek|sport)/i],
+  ['Community/Social', /(social|community|volunteer|board games|mafia|quiz|potluck|food|dining|brunch|networking)/i],
 ];
 
-/** Categories that make an event "tech" for the isTechEvent flag. */
-const TECH_CATEGORIES = new Set([
-  'AI/ML', 'Fintech', 'Cybersecurity', 'Cloud/DevOps', 'Web/Mobile', 'Data/Analytics',
-  'Blockchain/Web3', 'Robotics/Hardware', 'Open Source', 'Gaming/XR', 'Hackathon',
-  'Product/Design',
-]);
+/**
+ * Categories that make an event "tech" for the keyword fallback.
+ *
+ * Deliberately narrower than it looks: SOFTWARE and HARDWARE engineering only.
+ * `Fintech` and `Product/Design` were removed — a fintech sales mixer and a
+ * design-thinking workshop are not software/hardware events, and including them
+ * let business networking in through the fallback path. The LLM can still mark a
+ * genuinely technical fintech talk as tech; this floor just stops the keyword
+ * tagger from over-claiming when the LLM is unavailable.
+ */
+const TECH_CATEGORIES = new Set<string>([...TECH_CATEGORY_NAMES, 'Hackathon']);
 
 const FOOD_RE =
   /\b(food|snacks?|refreshments?|lunch|dinner|breakfast|pizza|beverages?|drinks?|meal|catering|high tea|buffet)\b/i;
@@ -551,7 +591,7 @@ export function keywordTagging(input: TaggingInput): TaggingResult {
 
   // Keep the three strongest signals; the list is ordered most-specific first.
   const chosen = categories.slice(0, 3);
-  if (chosen.length === 0) chosen.push('Networking/Meetup');
+  if (chosen.length === 0) chosen.push('Meetup');
 
   const hasVenue = Boolean(input.venue?.trim());
   const hasOnlineLink = Boolean(input.onlineLink?.trim());

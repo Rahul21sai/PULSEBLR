@@ -22,6 +22,7 @@ export * from './adapters/bevy';
 export * from './adapters/devfolio';
 export * from './adapters/unstop';
 export * from './adapters/allevents';
+export * from './adapters/devevents';
 export * from './adapters/universal';
 
 export * from './normalizer';

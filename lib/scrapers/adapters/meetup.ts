@@ -44,14 +44,31 @@ const MEETUP_SOURCE = 'meetup';
  * and duplicates collapse at ingest, so breadth is cheap.
  */
 export const MEETUP_KEYWORDS = [
-  // tech core
+  // ── Software core ──
   'technology', 'ai', 'machine learning', 'data', 'cloud', 'devops', 'security',
   'web development', 'mobile', 'python', 'javascript', 'java', 'golang', 'rust',
-  'blockchain', 'web3', 'robotics', 'iot', 'open source', 'kubernetes', 'llm',
-  // product / business / career
+  'blockchain', 'web3', 'kubernetes', 'llm', 'backend', 'frontend', 'sre',
+  'platform engineering', 'observability', 'api', 'database', 'postgres',
+
+  // ── Open source ──
+  // The product explicitly wants open-source events. Guessing group SLUGS does not
+  // work — 0 of 35 candidate open-source slugs existed — but keyword search DOES
+  // surface these groups, and each new keyword also harvests more group slugs which
+  // are then persisted. So breadth here is the mechanism, not a hand-kept list.
+  'open source', 'linux', 'foss', 'apache', 'kafka', 'cncf', 'docker',
+  'git', 'contributor', 'hacktoberfest',
+
+  // ── Hardware ──
+  // "software and hardware" is the stated focus, and hardware was thin before.
+  'robotics', 'iot', 'embedded', 'firmware', 'fpga', 'vlsi', 'semiconductor',
+  'chip design', 'electronics', 'drone', 'arduino', 'raspberry pi',
+
+  // ── Product / business / career ──
   'startup', 'product', 'design', 'ux', 'career', 'business', 'marketing',
   'entrepreneur', 'freelance', 'investing', 'finance',
-  // community / lifestyle (still real Bengaluru events)
+
+  // ── Community / lifestyle (still real Bengaluru events, shown when
+  //    "show all events" is on) ──
   'networking', 'workshop', 'hackathon', 'meetup', 'music', 'photography',
   'writing', 'book club', 'language', 'fitness', 'running', 'hiking', 'board games',
 ];

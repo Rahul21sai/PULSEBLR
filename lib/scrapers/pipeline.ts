@@ -28,7 +28,7 @@ import {
 } from './adapters/luma';
 import {
   scrapeMeetupCity,
-  scrapeMeetupGroups,
+  scrapeMeetupGroup,
   enrichMeetupEvents,
   SEED_MEETUP_GROUPS,
 } from './adapters/meetup';
@@ -37,6 +37,7 @@ import { scrapeBevy } from './adapters/bevy';
 import { scrapeDevfolio, DEVFOLIO_URL } from './adapters/devfolio';
 import { scrapeUnstop } from './adapters/unstop';
 import { scrapeAllEvents } from './adapters/allevents';
+import { scrapeDevEvents, DEVEVENTS_SOURCE_URL } from './adapters/devevents';
 import { scrapeUrlUniversal, COMPANY_EVENT_PAGES } from './adapters/universal';
 import { normalizeEvents } from './normalizer';
 import { ingestEvents, IngestionResult, updateSource } from './ingestion';
@@ -284,9 +285,17 @@ export async function runPipeline(options: PipelineOptions = {}): Promise<Pipeli
   );
 
   // ── 2. Per-host feeds, concurrently ───────────────────────────────────────
-  const calendarResults = await mapPool(lumaCalendars, 6, cal =>
-    scrapeLumaCalendar(cal.handle, cal.label)
-  );
+  // Health is recorded PER CALENDAR, not only as an aggregate. Without this, every
+  // discovered source showed "Not scraped yet" in Settings — 147 of 198 rows — which
+  // made a healthy scraper look broken and hid which specific calendar had died.
+  const calendarResults = await mapPool(lumaCalendars, 6, async cal => {
+    const one = await scrapeLumaCalendar(cal.handle, cal.label);
+    await updateSource(cal.label, 'api', `https://luma.com/calendar/${cal.handle}`, {
+      eventCount: one.events.length,
+      error: one.events.length === 0 ? one.errors[0] : undefined,
+    });
+    return one;
+  });
   let calendarEvents = 0;
   let calendarErrors = 0;
   for (const result of calendarResults) {
@@ -304,11 +313,33 @@ export async function runPipeline(options: PipelineOptions = {}): Promise<Pipeli
   });
 
   if (meetupSlugs.length > 0) {
-    await runSource(
-      { id: 'meetup-groups', label: 'Meetup — groups', type: 'ical', url: 'https://www.meetup.com/' },
-      () => scrapeMeetupGroups(meetupSlugs, 8),
-      collector
-    );
+    // Per-group health, for the same reason as the Luma calendars above: the
+    // aggregate row alone cannot tell you WHICH group stopped producing.
+    const groupResults = await mapPool(meetupSlugs, 8, async slug => {
+      const one = await scrapeMeetupGroup(slug);
+      await updateSource(slug.replace(/-/g, ' '), 'ical', `https://www.meetup.com/${slug}/`, {
+        eventCount: one.events.length,
+        error: one.events.length === 0 ? one.errors[0] : undefined,
+      });
+      return one;
+    });
+
+    let groupEvents = 0;
+    let groupErrors = 0;
+    for (const one of groupResults) {
+      if (!one) continue;
+      collector.events.push(...one.events);
+      groupEvents += one.events.length;
+      groupErrors += one.errors.length;
+      collector.errors.push(...one.errors.map(e => `${one.sourceId}: ${e}`));
+    }
+    collector.reports.push({
+      sourceId: 'meetup-groups',
+      label: `Meetup — ${meetupSlugs.length} groups`,
+      events: groupEvents,
+      errors: groupErrors,
+      durationMs: 0,
+    });
   }
 
   // ── 3. Remaining platforms ────────────────────────────────────────────────
@@ -318,6 +349,7 @@ export async function runPipeline(options: PipelineOptions = {}): Promise<Pipeli
     [{ id: 'devfolio', label: 'Devfolio — hackathons', type: 'api', url: DEVFOLIO_URL }, scrapeDevfolio],
     [{ id: 'unstop', label: 'Unstop', type: 'api', url: 'https://unstop.com' }, scrapeUnstop],
     [{ id: 'allevents', label: 'AllEvents.in — Bengaluru', type: 'scrape', url: 'https://allevents.in/bengaluru/all' }, scrapeAllEvents],
+    [{ id: 'devevents', label: 'developers.events — conferences', type: 'api', url: DEVEVENTS_SOURCE_URL }, scrapeDevEvents],
   ];
   if (opts.includeEventbrite) {
     platformSources.push([

@@ -199,12 +199,16 @@ export function buildEventFilter(params: EventQueryParams): EventFilter {
   return filter;
 }
 
-export type SortKey = 'soonest' | 'newest' | 'popular' | 'relevance';
+export type SortKey = 'soonest' | 'newest' | 'popular' | 'relevance' | 'connections';
 
 export function buildSort(sort: SortKey, hasTextSearch: boolean): Record<string, 1 | -1 | { $meta: 'textScore' }> {
   switch (sort) {
     case 'newest':
       return { createdAt: -1 };
+    case 'connections':
+      // The product's core question: where will I actually meet useful people?
+      // Ties break by soonest so the list still reads as a schedule.
+      return { connectionScore: -1, startDateTime: 1 };
     case 'popular':
       // Nulls sort last in descending order, so events with no attendee data fall
       // below those with counts — which is the intent of a "popular" sort.

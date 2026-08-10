@@ -55,7 +55,29 @@ LLM tagging cascades **IBM ICA → NVIDIA NIM → Anthropic → keyword heuristi
 
 ## Architecture
 
-PulseBLR aggregates Bengaluru events city-wide (not only tech) and layers a per-user career/networking tracker on top. It's a PWA (service worker + `manifest.json`, share-target support).
+PulseBLR's purpose is narrow: surface Bengaluru **software and hardware engineering**
+events that are worth attending **to make professional connections**, and track who you
+met. It's a PWA (service worker + `manifest.json`, share-target support).
+
+The scraper still ingests the whole city (concerts, treks, book clubs and all) because
+one broad pass is cheaper than many narrow ones and the classifier sorts it out — but
+the **feed defaults to `techOnly`**, and "show all events" is a deliberate opt-out in
+the filter rail. Roughly 20% of the corpus is tech; the other 80% is noise for this
+product's purpose.
+
+Two derived fields encode the purpose, and both are recomputable without re-scraping:
+
+- **`isTechEvent`** — software/hardware engineering only. The LLM prompt explicitly
+  excludes generic business/sales networking, wellness, book clubs, and paid
+  certification sessions that merely name a technology. Sharpening this moved the tech
+  count from 239 to 169.
+- **`connectionScore`** (0-100, `lib/events/connection-score.ts`) — a deterministic
+  ranking signal for "will I leave with useful contacts", powering the
+  **"Best for connections"** sort. In-person is the biggest term; attendee counts are
+  log-scaled; and titles matching certification/cohort/webinar/course are penalised
+  hard, because those put you in an audience rather than a room. Measured effect: real
+  practitioner meetups with food and a company host score 88-99, while
+  "Get Google AI Certified … Cohort" and "Webinar: …" land at 0-2.
 
 ### 1. Scraping (`lib/scrapers/`)
 
@@ -95,6 +117,8 @@ Adapters and their measured quirks — read the file header before changing one,
 Ingestion **upserts and merges** rather than skipping duplicates (`mergeInto`): a later sighting may only fill gaps or improve values, never blank them. That is what makes multi-source coverage additive.
 
 > **Consequence to remember:** because merging *unions* categories, a bad tag can never be removed by re-scraping. Fixing tags requires `scripts/retag-events.ts`, which replaces them.
+
+Both keys are derived in a **`pre('validate')`** hook, and that is not interchangeable with `pre('save')`. Mongoose registers its own validation as the first pre-save middleware, so a `pre('save')` hook that fills a `required` field never runs — validation has already rejected the document. Verified with `scripts/diag-hook-order.ts`: identical logic fails in `pre('save')` (hook body never entered) and succeeds in `pre('validate')`. This cost 3 events in one run — six documents predating `clusterKey` were stored without it, and merging a fresh sighting into one threw `clusterKey: Path 'clusterKey' is required`. The hook now self-heals such documents; `scripts/diag-clusterkey-selfheal.ts` asserts it end-to-end.
 
 ### 3. LLM tagging (`lib/llm/tagger.ts`)
 

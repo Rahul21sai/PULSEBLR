@@ -23,7 +23,7 @@ export function DesktopNav() {
   const { data: session } = useSession();
 
   return (
-    <nav className="hidden md:flex fixed top-0 w-full h-14 bg-white/70 glass-nav z-50 border-b border-black/5">
+    <nav className="hidden md:flex fixed top-0 w-full h-14 bg-white/96 glass-nav z-50 border-b border-black/5">
       <div className="flex justify-between items-center w-full max-w-[1240px] mx-auto px-8">
         <Link
           href="/"
@@ -78,7 +78,7 @@ export function DesktopNav() {
 
 export function MobileHeader({ title }: { title?: string }) {
   return (
-    <header className="md:hidden fixed top-0 w-full h-14 bg-white/70 glass-nav z-50 border-b border-black/5 flex items-center justify-between px-5">
+    <header className="md:hidden fixed top-0 w-full h-14 bg-white/96 glass-nav z-50 border-b border-black/5 flex items-center justify-between px-5">
       <Link href="/" className="text-lg font-bold tracking-tight text-[#1D1D1F]">
         PulseBLR
       </Link>
@@ -92,7 +92,7 @@ export function MobileBottomNav() {
 
   return (
     <nav
-      className="fixed bottom-0 w-full md:hidden bg-white/85 glass-nav border-t border-black/5 flex justify-around items-center px-2 pt-1.5 z-50"
+      className="fixed bottom-0 w-full md:hidden bg-white/96 glass-nav border-t border-black/5 flex justify-around items-center px-2 pt-1.5 z-50"
       // Keep the bar clear of the iOS home indicator.
       style={{ paddingBottom: 'max(6px, env(safe-area-inset-bottom))' }}
     >

@@ -14,6 +14,7 @@ import { slugify, truncate, stripHtml } from './core/text';
 import { tagEvents, TaggingInput, TaggingResult } from '../llm/tagger';
 import { isTargetCompanyEvent, hasRecruiterMention } from '../helpers/phase6';
 import { resolveCompanies } from '../companies/resolve';
+import { connectionScore } from '../events/connection-score';
 
 export interface NormalizedEvent {
   title: string;
@@ -54,6 +55,7 @@ export interface NormalizedEvent {
   seenInSources: string[];
   isTechEvent: boolean;
   companies: string[];
+  connectionScore: number;
   tagConfidence: number;
   isTargetCompany?: boolean;
   recruiterMentioned?: boolean;
@@ -142,6 +144,13 @@ function assemble(raw: RawEvent, tagged: TaggingResult): NormalizedEvent {
   const dedupHash = Event.generateDedupHash(title, raw.startDateTime, raw.venue, raw.source);
   const clusterKey = Event.generateClusterKey(title, raw.startDateTime);
 
+  const companies = resolveCompanies({
+    organizer: raw.organizer,
+    title,
+    description,
+    tags: raw.tags,
+  });
+
   // Public tags: drop the internal markers, keep organiser-supplied topics.
   const tags = [...new Set((raw.tags || []).filter(t => !t.startsWith('__') && !t.startsWith('kw:')))]
     .slice(0, 12);
@@ -184,11 +193,19 @@ function assemble(raw: RawEvent, tagged: TaggingResult): NormalizedEvent {
     lastSeenAt: new Date(),
     seenInSources: [raw.source],
     isTechEvent: tagged.isTechEvent,
-    companies: resolveCompanies({
+    companies,
+    // Derived last, because it depends on the resolved format/companies/food above.
+    connectionScore: connectionScore({
+      format,
+      hasFood: raw.rawHasFood === 'yes' ? 'yes' : tagged.hasFood,
+      attendeeCount: raw.attendeeCount,
+      capacity: raw.capacity,
+      category: tagged.categories,
+      companies,
       organizer: raw.organizer,
       title,
-      description,
-      tags,
+      isFree: pricing.isFree,
+      price: pricing.price,
     }),
     tagConfidence: tagged.confidence,
     isTargetCompany: isTargetCompanyEvent(raw.organizer, raw.description),

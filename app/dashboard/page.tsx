@@ -96,7 +96,7 @@ export default function DashboardPage() {
           here duplicated the request on every dashboard visit. */}
 
       {/* Desktop Nav */}
-      <nav className="hidden md:flex fixed top-0 w-full h-14 bg-white/70 glass-nav z-50 border-b border-black/5">
+      <nav className="hidden md:flex fixed top-0 w-full h-14 bg-white/96 glass-nav z-50 border-b border-black/5">
         <div className="flex justify-between items-center w-full max-w-[1200px] mx-auto px-20">
           <Link href="/" className="text-xl font-bold tracking-tight text-[#1D1D1F]">PulseBLR</Link>
           <div className="flex items-center gap-8">
@@ -112,7 +112,7 @@ export default function DashboardPage() {
       </nav>
 
       {/* Mobile Header */}
-      <header className="md:hidden fixed top-0 w-full h-14 bg-white/70 glass-nav z-50 border-b border-black/5 flex items-center justify-between px-5">
+      <header className="md:hidden fixed top-0 w-full h-14 bg-white/96 glass-nav z-50 border-b border-black/5 flex items-center justify-between px-5">
         <Link href="/" className="text-lg font-bold tracking-tight text-[#1D1D1F]">PulseBLR</Link>
         <span className="text-[#86868B] text-sm font-medium">Dashboard</span>
       </header>
@@ -252,7 +252,7 @@ export default function DashboardPage() {
       </main>
 
       {/* Mobile Bottom Nav */}
-      <nav className="fixed bottom-0 w-full md:hidden bg-white/70 glass-nav border-t border-black/5 flex justify-around items-center px-4 py-2 z-50 rounded-t-2xl">
+      <nav className="fixed bottom-0 w-full md:hidden bg-white/96 glass-nav border-t border-black/5 flex justify-around items-center px-4 py-2 z-50 rounded-t-2xl">
         {NAV_LINKS.map(link => {
           const isActive = link.href === '/dashboard';
           return (

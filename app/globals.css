@@ -58,6 +58,20 @@
   /* Feed additions */
   --hairline: #e5e5ea;
   --live: #ff3b30;
+
+  /* ── Feed chrome heights: ONE source of truth ───────────────────────────────
+     The feed has two stacked fixed bars — the nav/mobile header, then the command
+     bar (search row + time-window tabs). Both the main content's top padding and
+     the sticky day-heading offset must clear their combined height.
+
+     These were previously hand-tuned constants in two different files and they
+     disagreed: main used 132px while the command bar actually ends at 153px, so
+     21px of the first event row sat hidden underneath it, and the sticky day
+     heading parked at 106px — 47px BEHIND the bar, invisible whenever it stuck.
+     Deriving both from these variables makes that class of drift impossible. */
+  --topbar-h: 56px;      /* h-14 nav / mobile header */
+  --commandbar-h: 98px;  /* search row + tab row */
+  --feed-offset: calc(var(--topbar-h) + var(--commandbar-h));
 }
 
 @theme inline {
@@ -79,15 +93,41 @@ body {
 .no-scrollbar::-webkit-scrollbar { display: none; }
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 
-/* ─── Glass nav ──────────────────────────────────────────────────────────── */
-.glass-nav {
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+/* ─── Glass nav ──────────────────────────────────────────────────────────────
+   Blur is a PROGRESSIVE ENHANCEMENT, never load-bearing for legibility.
+
+   Measured in the browser: the CSS optimiser in this toolchain (Lightning CSS via
+   Tailwind v4 / Turbopack) strips bare `backdrop-filter` declarations. `.glass-nav`
+   compiled to a literally empty rule — `getComputedStyle` reported
+   `backdrop-filter: none` on a probe element even though the browser reported
+   `CSS.supports('backdrop-filter','blur(20px)') === true`. The bars were therefore
+   only 70–88% opaque with NO blur, and page content read straight through them.
+
+   Two consequences encoded here:
+     1. The companion utility classes now carry near-opaque backgrounds (see the
+        `bg-white/96` / `bg-[#F5F5F7]/97` usages in app/), so text can never bleed
+        through regardless of blur support.
+     2. The blur sits inside `@supports`, which survives the optimiser and also
+        degrades cleanly on engines where the property is unavailable or disabled
+        (older Android WebView, Firefox with layout.css.backdrop-filter off).
+   Do not "simplify" this back to a bare declaration — it silently disappears. */
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .glass-nav {
+    -webkit-backdrop-filter: saturate(180%) blur(20px);
+    backdrop-filter: saturate(180%) blur(20px);
+  }
+  .glass-header {
+    -webkit-backdrop-filter: saturate(180%) blur(20px);
+    backdrop-filter: saturate(180%) blur(20px);
+  }
+  .day-heading {
+    -webkit-backdrop-filter: blur(14px);
+    backdrop-filter: blur(14px);
+  }
 }
+
 .glass-header {
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  background-color: rgba(245, 245, 247, 0.85);
+  background-color: rgba(245, 245, 247, 0.97);
 }
 
 /* ─── Material Symbols variation defaults ────────────────────────────────── */
@@ -282,14 +322,17 @@ body {
 /* ─── Sticky day heading ─────────────────────────────────────────────────── */
 .day-heading {
   position: sticky;
-  top: 106px;
+  /* Parks exactly at the bottom edge of the fixed chrome — see --feed-offset. */
+  top: var(--feed-offset);
   z-index: 20;
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-  background: color-mix(in srgb, #F5F5F7 88%, transparent);
+  /* Near-opaque so the rows scrolling underneath never show through the heading.
+     The blur that used to live here is now in the @supports block above. */
+  background: color-mix(in srgb, #F5F5F7 97%, transparent);
 }
-@media (min-width: 768px) {
-  .day-heading { top: 112px; }
+
+/* Content must start below the fixed chrome, from the same variable. */
+.feed-main {
+  padding-top: var(--feed-offset);
 }
 
 /* ─── Pills ──────────────────────────────────────────────────────────────── */

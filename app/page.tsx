@@ -19,6 +19,7 @@ const WHEN_TABS = [
 
 const SORTS = [
   { id: 'soonest', label: 'Soonest' },
+  { id: 'connections', label: 'Best for connections' },
   { id: 'popular', label: 'Most popular' },
   { id: 'newest', label: 'Just added' },
 ] as const;
@@ -37,7 +38,11 @@ export default function Home() {
   const [query, setQuery] = useState('');
   const [when, setWhen] = useState<string>('');
   const [sort, setSort] = useState<string>('soonest');
-  const [filters, setFilters] = useState<FilterState>(EMPTY_FILTERS);
+  // Tech-only is the DEFAULT view, not an option you have to find. This app exists
+  // to surface Bengaluru SOFTWARE and HARDWARE events worth attending for the
+  // connections; the other ~70% of the corpus (concerts, treks, book clubs) is
+  // noise for that purpose and is one toggle away in the filter rail.
+  const [filters, setFilters] = useState<FilterState>({ ...EMPTY_FILTERS, techOnly: true });
   const [view, setView] = useState<ViewMode>('rail');
   const [sheetOpen, setSheetOpen] = useState(false);
 
@@ -82,9 +87,30 @@ export default function Home() {
     [query, when, filters, sort]
   );
 
+  /**
+   * Monotonic token identifying the current filter generation.
+   *
+   * Bumped whenever a fresh load starts, so any request still in flight for a
+   * PREVIOUS filter set can detect that its response is stale and discard it.
+   * Without this the feed had two observable races:
+   *
+   *  1. Switching filters while scrolled down fired loadMore() with the page
+   *     number from the OLD result set. Live network log showed
+   *     `?when=tomorrow&page=1` immediately followed by `?when=tomorrow&page=3`,
+   *     so page 2 of the new filter was silently skipped and those events never
+   *     appeared.
+   *  2. A slow response for filter A could resolve after a fast one for filter B
+   *     and overwrite B's events, leaving the list disagreeing with the controls.
+   */
+  const requestGeneration = useRef(0);
+
   const load = useCallback(async () => {
+    const generation = ++requestGeneration.current;
     setLoading(true);
     setError(null);
+    // Clear pagination up front so the infinite-scroll sentinel cannot fire
+    // loadMore() with a page number belonging to the previous filter set.
+    setPagination(null);
     try {
       const params = buildParams(1);
       const [listRes, facetRes] = await Promise.all([
@@ -94,16 +120,23 @@ export default function Home() {
       if (!listRes.ok) throw new Error('Could not load events');
 
       const list = await listRes.json();
+      // Superseded by a newer filter set — drop this response entirely.
+      if (generation !== requestGeneration.current) return;
+
       setEvents(list.events || []);
       setPagination(list.pagination || null);
 
       // Facets are decoration, not content — a facet failure must not blank the feed.
-      if (facetRes.ok) setFacets(await facetRes.json());
+      if (facetRes.ok) {
+        const nextFacets = await facetRes.json();
+        if (generation === requestGeneration.current) setFacets(nextFacets);
+      }
     } catch (err) {
+      if (generation !== requestGeneration.current) return;
       setError(err instanceof Error ? err.message : 'Something went wrong');
       setEvents([]);
     } finally {
-      setLoading(false);
+      if (generation === requestGeneration.current) setLoading(false);
     }
   }, [buildParams]);
 
@@ -117,23 +150,30 @@ export default function Home() {
   }, [load]);
 
   const loadMore = useCallback(async () => {
-    if (!pagination?.hasMore || loadingMore) return;
+    // `loading` is part of the guard on purpose: while a fresh filter set is being
+    // fetched there is no valid page number to continue from.
+    if (loading || loadingMore || !pagination?.hasMore) return;
+
+    const generation = requestGeneration.current;
     setLoadingMore(true);
     try {
       const res = await fetch(`/api/events?${buildParams(pagination.page + 1).toString()}`);
-      if (res.ok) {
-        const data = await res.json();
-        // Guard against a duplicate page if the user scrolls fast.
-        setEvents(prev => {
-          const seen = new Set(prev.map(e => e._id));
-          return [...prev, ...(data.events || []).filter((e: FeedEvent) => !seen.has(e._id))];
-        });
-        setPagination(data.pagination || null);
-      }
+      if (!res.ok) return;
+      const data = await res.json();
+      // The filters changed while this page was in flight; appending it now would
+      // mix results from two different queries.
+      if (generation !== requestGeneration.current) return;
+
+      // Guard against a duplicate page if the user scrolls fast.
+      setEvents(prev => {
+        const seen = new Set(prev.map(e => e._id));
+        return [...prev, ...(data.events || []).filter((e: FeedEvent) => !seen.has(e._id))];
+      });
+      setPagination(data.pagination || null);
     } finally {
       setLoadingMore(false);
     }
-  }, [pagination, loadingMore, buildParams]);
+  }, [loading, loadingMore, pagination, buildParams]);
 
   // Infinite scroll via a sentinel element.
   const sentinelRef = useRef<HTMLDivElement | null>(null);
@@ -182,7 +222,7 @@ export default function Home() {
     <div className="min-h-screen bg-[#F5F5F7]">
       <DesktopNav />
 
-      <header className="md:hidden fixed top-0 w-full h-14 bg-white/70 glass-nav z-50 border-b border-black/5 flex items-center justify-between px-5">
+      <header className="md:hidden fixed top-0 w-full h-14 bg-white/96 glass-nav z-50 border-b border-black/5 flex items-center justify-between px-5">
         <span className="text-lg font-bold tracking-tight text-[#1D1D1F]">PulseBLR</span>
         <Link
           href="/tracker"
@@ -194,7 +234,12 @@ export default function Home() {
       </header>
 
       {/* ── Command bar: search, time window, sort, view ─────────────────── */}
-      <div className="fixed top-14 left-0 right-0 z-40 bg-[#F5F5F7]/92 glass-nav border-b border-black/5">
+      {/* Height is pinned to --commandbar-h rather than left to content, so the
+          measured offset the rest of the layout depends on stays true. */}
+      <div
+        className="fixed top-14 left-0 right-0 z-40 bg-[#F5F5F7]/97 glass-nav border-b border-black/5 overflow-hidden"
+        style={{ height: 'var(--commandbar-h)' }}
+      >
         <div className="max-w-[1240px] mx-auto px-4 md:px-8">
           <div className="flex items-center gap-2 py-2.5">
             <div className="relative flex-1 min-w-0">
@@ -294,7 +339,9 @@ export default function Home() {
       </div>
 
       {/* ── Body ─────────────────────────────────────────────────────────── */}
-      <main className="pt-[132px] md:pt-[138px] pb-24 md:pb-16">
+      {/* `feed-main` supplies padding-top from --feed-offset, the same variable the
+          sticky day headings use, so content can never sit under the fixed bars. */}
+      <main className="feed-main pb-24 md:pb-16">
         <div className="max-w-[1240px] mx-auto px-4 md:px-8 flex gap-8">
           {/* Desktop filter rail */}
           <aside className="hidden lg:block w-[248px] shrink-0">
@@ -429,8 +476,15 @@ export default function Home() {
             onClick={() => setSheetOpen(false)}
             className="absolute inset-0 bg-black/40 backdrop-blur-sm"
           />
-          <div className="relative w-full max-h-[85vh] bg-[#F5F5F7] rounded-t-3xl overflow-y-auto">
-            <div className="sticky top-0 bg-[#F5F5F7]/95 glass-nav px-5 pt-3 pb-3 flex items-center justify-between border-b border-black/5">
+          {/* Three-row flex column, and ONLY the middle row scrolls.
+              The header and footer used to be `sticky` inside a single scrolling
+              box, which meant the "Show N events" button permanently overlaid the
+              bottom of the filter list — measured with a clip-aware overlap probe,
+              the "Event type" group heading sat 100% underneath it. A sticky
+              element still occupies its place in flow, so no amount of bottom
+              padding fixes that; the footer has to leave the scrollport. */}
+          <div className="relative flex w-full max-h-[85vh] flex-col rounded-t-3xl bg-[#F5F5F7]">
+            <div className="shrink-0 bg-[#F5F5F7]/97 glass-nav px-5 pt-3 pb-3 flex items-center justify-between border-b border-black/5 rounded-t-3xl">
               <span className="text-[17px] font-bold text-[#1D1D1F]">Filters</span>
               <button
                 type="button"
@@ -441,10 +495,13 @@ export default function Home() {
                 <span className="material-symbols-outlined text-[18px]">close</span>
               </button>
             </div>
-            <div className="p-5">
+            {/* min-h-0 is required: without it a flex child refuses to shrink below
+                its content height and the panel grows past max-h instead of
+                scrolling. */}
+            <div className="min-h-0 flex-1 overflow-y-auto p-5">
               <FilterRail facets={facets} filters={filters} onChange={setFilters} loading={loading} />
             </div>
-            <div className="sticky bottom-0 bg-[#F5F5F7]/95 glass-nav p-4 border-t border-black/5">
+            <div className="shrink-0 bg-[#F5F5F7]/97 glass-nav p-4 border-t border-black/5">
               <button
                 type="button"
                 onClick={() => setSheetOpen(false)}

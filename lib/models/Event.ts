@@ -20,47 +20,65 @@ import { normalizeTitleForMatch } from '../scrapers/core/text';
  *                distinct (digits are preserved by normalizeTitleForMatch).
  */
 
-/** The category taxonomy. Widened well beyond the original 12 tech buckets
- *  because the product's goal is every Bengaluru event, not only tech ones. */
-export const EVENT_CATEGORIES = [
-  // tech
-  'AI/ML',
-  'Fintech',
-  'Cybersecurity',
-  'Cloud/DevOps',
-  'Web/Mobile',
-  'Data/Analytics',
-  'Blockchain/Web3',
-  'Robotics/Hardware',
-  'Open Source',
-  'Gaming/XR',
-  // professional
-  'Hackathon',
-  'Startup/Founders',
-  'Product/Design',
-  'Marketing/Growth',
-  'Career/Job Fair',
-  'Summit/Conference',
-  'Workshop/Training',
-  'Corporate',
-  'Government',
-  'Networking/Meetup',
-  // wider city life
-  'Business/Finance',
-  'Health/Biotech',
-  'Science/Research',
-  'Climate/Sustainability',
-  'Music/Nightlife',
-  'Arts/Culture',
-  'Comedy/Theatre',
-  'Sports/Fitness',
-  'Food/Drink',
-  'Books/Writing',
-  'Social/Community',
-  'Other',
-] as const;
+/**
+ * The category taxonomy — 22 buckets, tech-first.
+ *
+ * This was 32 and got consolidated. Two reasons: the filter rail became a long
+ * scroll of near-synonyms, and the product's focus narrowed to software/hardware
+ * events, which made a dozen lifestyle buckets pointless. The tech topics are
+ * listed first because they are what the default (tech-only) view shows, then the
+ * KIND of gathering, then a deliberately small non-tech tail for when "show all
+ * events" is on.
+ *
+ * `CATEGORY_MIGRATION` below maps every retired value forward, so stored events
+ * can be migrated without re-tagging.
+ */
+// The taxonomy itself lives in lib/event-types.ts, which has no mongoose import and
+// is therefore safe for the filter rail to import. Re-exported here so every existing
+// `from '@/lib/models/Event'` import keeps working and there is one definition.
+export {
+  EVENT_CATEGORIES,
+  TECH_CATEGORY_NAMES,
+  GATHERING_CATEGORY_NAMES,
+  OTHER_CATEGORY_NAMES,
+  CATEGORY_GROUPS,
+} from '../event-types';
+export type { EventCategory } from '../event-types';
 
-export type EventCategory = (typeof EVENT_CATEGORIES)[number];
+// Imported (not just re-exported) because the schema enum below needs the value.
+import { EVENT_CATEGORIES as CATEGORY_VALUES } from '../event-types';
+
+/**
+ * Retired category → current category.
+ *
+ * Kept permanently: `scripts/migrate-categories.ts` uses it, and it documents what
+ * each old bucket became so nobody has to guess when reading old data or diffs.
+ */
+export const CATEGORY_MIGRATION: Record<string, string> = {
+  // Renames
+  'Robotics/Hardware': 'Hardware/Robotics',
+  'Summit/Conference': 'Conference',
+  'Networking/Meetup': 'Meetup',
+  'Workshop/Training': 'Workshop',
+  'Career/Job Fair': 'Career/Hiring',
+  'Social/Community': 'Community/Social',
+  // Fintech is a business domain, not a software/hardware topic. A genuinely
+  // technical fintech talk still gets AI/ML, Web/Mobile or Cloud/DevOps from the
+  // tagger, so nothing technical is lost by folding the domain label into business.
+  Fintech: 'Business/Finance',
+  'Marketing/Growth': 'Business/Finance',
+  Corporate: 'Business/Finance',
+  // Absorbed into the small non-tech tail
+  'Climate/Sustainability': 'Science/Research',
+  'Health/Biotech': 'Health/Fitness',
+  'Sports/Fitness': 'Health/Fitness',
+  'Food/Drink': 'Community/Social',
+  'Music/Nightlife': 'Arts/Culture',
+  'Comedy/Theatre': 'Arts/Culture',
+  'Books/Writing': 'Arts/Culture',
+  Government: 'Other',
+};
+
 
 /** Platforms we ingest from. */
 export const EVENT_SOURCES = [
@@ -71,6 +89,7 @@ export const EVENT_SOURCES = [
   'devfolio',
   'unstop',
   'allevents',
+  'devevents',
   'hasgeek',
   'company',
   'manual',
@@ -118,6 +137,12 @@ export interface IEvent extends Document {
   seenInSources: string[];
   isTechEvent: boolean;
   /**
+   * 0-100 ranking signal for "how likely am I to leave with useful contacts".
+   * Derived deterministically from format/attendees/host/title — see
+   * lib/events/connection-score.ts.
+   */
+  connectionScore: number;
+  /**
    * Canonical company names this event is attributable to, resolved from the
    * host/title/tags by lib/companies/resolve.ts. Empty for the many community
    * events no company runs — that absence is meaningful, not missing data.
@@ -151,7 +176,7 @@ const EventSchema = new Schema<IEvent>(
       type: [String],
       required: true,
       // `enum` on an array field validates each element.
-      enum: EVENT_CATEGORIES as unknown as string[],
+      enum: CATEGORY_VALUES as unknown as string[],
     },
     tags: { type: [String], default: [] },
     format: { type: String, required: true, enum: ['online', 'offline', 'hybrid'] },
@@ -184,6 +209,7 @@ const EventSchema = new Schema<IEvent>(
     seenInSources: { type: [String], default: [] },
     isTechEvent: { type: Boolean, default: true },
     companies: { type: [String], default: [], index: true },
+    connectionScore: { type: Number, default: 20, min: 0, max: 100 },
     tagConfidence: { type: Number, default: 0.6, min: 0, max: 1 },
     isTargetCompany: { type: Boolean, default: false },
     recruiterMentioned: { type: Boolean, default: false },
@@ -202,6 +228,8 @@ EventSchema.index({ startDateTime: 1, area: 1 });
 EventSchema.index({ startDateTime: 1, isTechEvent: 1 });
 // Powers the companies browse page and the feed's company filter.
 EventSchema.index({ startDateTime: 1, companies: 1 });
+// Powers the "best for connections" sort within the tech-only default view.
+EventSchema.index({ isTechEvent: 1, connectionScore: -1, startDateTime: 1 });
 EventSchema.index({ source: 1 });
 EventSchema.index({ createdAt: -1 });
 EventSchema.index({ isTargetCompany: 1 });
@@ -249,22 +277,46 @@ EventSchema.statics.generateClusterKey = function (
   return `${normalizeTitleForMatch(title)}|${istDay}`;
 };
 
-EventSchema.pre('save', function () {
+/**
+ * Derive the two dedup keys for any document that reaches the database without
+ * them.
+ *
+ * This MUST be `pre('validate')`, not `pre('save')`. Mongoose registers its own
+ * validation as the first pre-save hook, so a `pre('save')` hook that fills a
+ * `required` field runs too late — it never runs at all, because validation has
+ * already rejected the document. Measured (scripts/diag-hook-order.ts): deriving a
+ * required field in `pre('save')` fails with "Path `x` is required" and the hook
+ * body is never entered, while the identical logic in `pre('validate')` saves fine.
+ *
+ * That was not academic. Six documents predating `clusterKey` were stored without
+ * it, and when a fresh sighting merged into one, `existing.save()` threw
+ * "clusterKey: Path `clusterKey` is required" and the event was dropped — 3 lost in
+ * a single run. Self-healing here means a legacy document repairs itself the next
+ * time it is touched.
+ */
+EventSchema.pre('validate', function () {
   const self = this as unknown as IEvent;
   const statics = this.constructor as unknown as {
     generateDedupHash: (t: string, d: Date, v?: string, s?: string) => string;
     generateClusterKey: (t: string, d: Date) => string;
   };
+
+  // Both generators read `startDateTime`, and `generateClusterKey` throws
+  // RangeError on an invalid Date. Bail out rather than throw: letting the
+  // required-field validator report a clean message beats an opaque RangeError.
+  const start = self.startDateTime;
+  if (!(start instanceof Date) || Number.isNaN(start.getTime())) return;
+
   if (!self.dedupHash) {
     self.dedupHash = statics.generateDedupHash(
       self.title,
-      self.startDateTime,
+      start,
       self.venue,
       self.source
     );
   }
   if (!self.clusterKey) {
-    self.clusterKey = statics.generateClusterKey(self.title, self.startDateTime);
+    self.clusterKey = statics.generateClusterKey(self.title, start);
   }
 });
 

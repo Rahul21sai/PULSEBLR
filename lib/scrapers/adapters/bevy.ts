@@ -48,14 +48,42 @@ interface BevySearchResponse {
  * Bevy communities to search. gdg.community.dev is by far the largest in
  * Bengaluru; the others are separate Bevy tenants that host India chapters.
  */
-// mlh.community.dev was removed: it does not resolve (DNS failure in testing),
-// so it only ever contributed two error lines per run.
+/**
+ * Bevy tenants, each VERIFIED to return the Bevy search shape.
+ *
+ * Guessing hostnames does not work and wastes a request each: of 18 candidates
+ * probed, mongodb/sap/aws/jamf/grafana/neo4j/temporal returned 403 or 404 and
+ * datastax/airbyte/redis/commonroom did not resolve at all. mlh.community.dev was
+ * removed for the same reason. Only add a host here after
+ * scripts/probe-microsites-round2.ts confirms it.
+ *
+ * Measured counts for q=bengaluru: GDG 327, UiPath 127, Snowflake 22, CNCF 4.
+ */
+// Every host here was verified live by scripts/probe-bevy-tenants.ts, which checked
+// 36 candidates and found exactly these 5. That ratio is the point: Bevy is the one
+// route to company-run event pages that returns structured JSON, but only a handful
+// of companies use it. The other 31 candidates were 404s, Cloudflare blocks, or HTML
+// forums — guessing `community.<company>.com` does not work, so this list only grows
+// on evidence. Re-run the probe before adding to it.
 const BEVY_HOSTS = [
   'https://gdg.community.dev',
   'https://community.cncf.io',
+  'https://usergroups.snowflake.com',
+  'https://community.uipath.com',
+  // Linux Foundation — the open-source events hub (217 India events at probe time),
+  // covering Open Networking & Edge Summit India, KubeCon-adjacent days and the
+  // foundation's Indian chapters.
+  'https://community.linuxfoundation.org',
 ];
 
-const QUERIES = ['bangalore', 'bengaluru'];
+/**
+ * Search terms. "india" is included deliberately: CNCF returned 13 records for
+ * q=india versus 4 for q=bengaluru, because nationally-branded events (KubeDay
+ * India) do not carry the city in their indexed text. The geo gate below still
+ * rejects anything not actually in Bengaluru, so the wider query costs nothing
+ * but catches more.
+ */
+const QUERIES = ['bangalore', 'bengaluru', 'india'];
 
 function toRawEvent(item: BevyResult, host: string): RawEvent | null {
   if (!item.title || !item.start_date_iso) return null;

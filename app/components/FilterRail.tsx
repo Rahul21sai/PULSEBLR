@@ -1,6 +1,7 @@
 'use client';
 
-import { Facets } from '@/lib/event-types';
+import { useState } from 'react';
+import { CATEGORY_GROUPS, Facets } from '@/lib/event-types';
 
 export interface FilterState {
   categories: string[];
@@ -21,6 +22,14 @@ export const EMPTY_FILTERS: FilterState = {
   foodOnly: false,
   techOnly: false,
 };
+
+/** Format options, in the order they matter for meeting people in person. */
+const FORMAT_OPTIONS: Array<{ value: '' | 'offline' | 'online' | 'hybrid'; label: string }> = [
+  { value: '', label: 'Any' },
+  { value: 'offline', label: 'In person' },
+  { value: 'online', label: 'Online' },
+  { value: 'hybrid', label: 'Hybrid' },
+];
 
 export function countActive(filters: FilterState): number {
   return (
@@ -53,10 +62,15 @@ export default function FilterRail({
   onChange: (next: FilterState) => void;
   loading?: boolean;
 }) {
+  // Per-group disclosure state. Undefined means "use the group's own default",
+  // which is why this is a sparse record rather than a fully-populated one.
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
+
   const toggleIn = (list: string[], value: string) =>
     list.includes(value) ? list.filter(v => v !== value) : [...list, value];
 
-  const categories = Object.entries(facets?.categories || {}).sort((a, b) => b[1] - a[1]);
+  const counts = facets?.categories || {};
+  const categories = Object.entries(counts);
   const companies = Object.entries(facets?.companies || {}).sort((a, b) => b[1] - a[1]);
   const areas = Object.entries(facets?.areas || {}).sort((a, b) => b[1] - a[1]);
   const formats = facets?.formats || {};
@@ -68,8 +82,10 @@ export default function FilterRail({
       <section>
         <h3 className="text-label-sm uppercase tracking-widest text-[#86868B] mb-2.5">Quick filters</h3>
         <div className="flex flex-wrap gap-2">
+          {/* On by default. Labelled as the thing it lets you do — see everything —
+              because a toggle that is already active reads as a filter you can drop. */}
           <Toggle
-            label="Tech only"
+            label={filters.techOnly ? 'Tech only' : 'Show all events'}
             count={totals?.tech}
             active={filters.techOnly}
             onClick={() => onChange({ ...filters, techOnly: !filters.techOnly })}
@@ -89,29 +105,55 @@ export default function FilterRail({
         </div>
       </section>
 
-      {/* Format */}
+      {/* Format
+          A 4-way segmented control could not hold "In person 4 / Online 6 / Hybrid"
+          inside the 248px rail — the labels collided with each other and with their
+          counts. A 2x2 grid of buttons gives each option a full half-width, so the
+          label and count always fit and nothing overlaps at any rail width. */}
       <section>
         <h3 className="text-label-sm uppercase tracking-widest text-[#86868B] mb-2.5">Format</h3>
-        <div className="seg-control">
-          {(['', 'offline', 'online', 'hybrid'] as const).map(value => (
-            <button
-              key={value || 'any'}
-              type="button"
-              onClick={() => onChange({ ...filters, format: value })}
-              className={`seg-btn capitalize ${filters.format === value ? 'active' : ''}`}
-            >
-              {value === '' ? 'Any' : value === 'offline' ? 'In person' : value}
-              {value !== '' && formats[value] !== undefined && (
-                <span className="text-[#a1a1a6] ml-1 tnum">{formats[value]}</span>
-              )}
-            </button>
-          ))}
+        <div className="grid grid-cols-2 gap-1.5">
+          {FORMAT_OPTIONS.map(({ value, label }) => {
+            const active = filters.format === value;
+            const count = value ? formats[value] : undefined;
+            // An option with no matching events is disabled rather than hidden, so
+            // the grid never reflows while you change other filters.
+            const empty = value !== '' && count === 0 && !active;
+            return (
+              <button
+                key={value || 'any'}
+                type="button"
+                disabled={empty}
+                aria-pressed={active}
+                onClick={() => onChange({ ...filters, format: value })}
+                className={`flex items-center justify-center gap-1.5 h-9 px-2 rounded-lg text-[12.5px] font-semibold border transition-colors ${
+                  active
+                    ? 'bg-[#1D1D1F] text-white border-[#1D1D1F]'
+                    : empty
+                      ? 'bg-[#f7f7f9] text-[#c7c7cc] border-[#f0f0f2] cursor-not-allowed'
+                      : 'bg-white text-[#1D1D1F] border-[#e5e5ea] hover:bg-[#f3f3f5]'
+                }`}
+              >
+                <span className="truncate">{label}</span>
+                {count !== undefined && (
+                  <span className={`tnum shrink-0 ${active ? 'text-white/60' : 'text-[#a1a1a6]'}`}>
+                    {count}
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </div>
       </section>
 
-      {/* Categories */}
+      {/* Categories, grouped by the two axes the taxonomy actually mixes.
+          A single count-sorted list put "Community/Social (335)" and
+          "Health/Fitness (143)" above every tech topic, so the one thing this
+          product is for sat below the fold. Grouping fixes the ordering without
+          hiding anything: topic first, then kind of gathering, then the non-tech
+          tail folded away behind a disclosure. */}
       <section>
-        <div className="flex items-center justify-between mb-2.5">
+        <div className="flex items-center justify-between mb-1">
           <h3 className="text-label-sm uppercase tracking-widest text-[#86868B]">Category</h3>
           {filters.categories.length > 0 && (
             <button
@@ -119,25 +161,89 @@ export default function FilterRail({
               onClick={() => onChange({ ...filters, categories: [] })}
               className="text-[11px] font-semibold text-[#0071E3] hover:underline"
             >
-              Clear
+              Clear {filters.categories.length}
             </button>
           )}
         </div>
+
         {loading && categories.length === 0 ? (
           <SkeletonList rows={8} />
         ) : (
-          <div className="flex flex-col gap-0.5 max-h-[320px] overflow-y-auto pr-1">
-            {categories.map(([name, count]) => (
-              <CheckRow
-                key={name}
-                label={name}
-                count={count}
-                checked={filters.categories.includes(name)}
-                onToggle={() =>
-                  onChange({ ...filters, categories: toggleIn(filters.categories, name) })
-                }
-              />
-            ))}
+          <div className="flex flex-col gap-3.5">
+            {CATEGORY_GROUPS.map(group => {
+              // Facet counts decide what to show; the group supplies only order and
+              // grouping. A category with no events is omitted entirely here —
+              // unlike the format grid, where a fixed 2x2 must not reflow — because
+              // 22 permanently-visible rows is what made this rail unusable.
+              const rows = group.names
+                .map(name => [name, counts[name] ?? 0] as const)
+                .filter(([name, count]) => count > 0 || filters.categories.includes(name));
+              if (rows.length === 0) return null;
+
+              const selectedHere = rows.filter(([name]) =>
+                filters.categories.includes(name)
+              ).length;
+              // A collapsed group opens itself when it holds a selection; otherwise
+              // an active filter would be invisible.
+              const open = openGroups[group.id] ?? (!group.collapsed || selectedHere > 0);
+              const groupTotal = rows.reduce((sum, [, count]) => sum + count, 0);
+
+              return (
+                <div key={group.id}>
+                  <button
+                    type="button"
+                    aria-expanded={open}
+                    onClick={() => setOpenGroups(prev => ({ ...prev, [group.id]: !open }))}
+                    className="flex w-full items-center gap-1.5 py-1 text-left"
+                  >
+                    <svg
+                      viewBox="0 0 12 12"
+                      aria-hidden="true"
+                      className={`w-2.5 h-2.5 shrink-0 text-[#a1a1a6] transition-transform ${
+                        open ? 'rotate-90' : ''
+                      }`}
+                    >
+                      <path
+                        d="M4 2l4 4-4 4"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                    <span className="text-[12px] font-semibold text-[#1D1D1F]">{group.label}</span>
+                    {selectedHere > 0 && (
+                      <span className="tnum rounded-full bg-[#0071E3] px-1.5 text-[10px] font-bold leading-[15px] text-white">
+                        {selectedHere}
+                      </span>
+                    )}
+                    <span className="tnum ml-auto truncate pl-2 text-[11px] text-[#a1a1a6]">
+                      {open ? group.hint : groupTotal}
+                    </span>
+                  </button>
+
+                  {open && (
+                    <div className="flex flex-col gap-0.5 mt-0.5">
+                      {rows.map(([name, count]) => (
+                        <CheckRow
+                          key={name}
+                          label={name}
+                          count={count}
+                          checked={filters.categories.includes(name)}
+                          onToggle={() =>
+                            onChange({
+                              ...filters,
+                              categories: toggleIn(filters.categories, name),
+                            })
+                          }
+                        />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
       </section>

@@ -421,7 +421,7 @@ export default function AddEventPage() {
       <DesktopNav />
 
       {/* Mobile Header */}
-      <header className="md:hidden fixed top-0 w-full h-14 bg-white/70 glass-nav z-50 border-b border-black/5 flex items-center justify-center">
+      <header className="md:hidden fixed top-0 w-full h-14 bg-white/96 glass-nav z-50 border-b border-black/5 flex items-center justify-center">
         <span className="text-label-md font-bold text-[#1D1D1F]">Add Event</span>
       </header>
 
