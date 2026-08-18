@@ -51,10 +51,30 @@ There is **no test runner** configured — no `test` script and no test files ex
 | `diag-clusterkey-selfheal.ts` | Assert that a document stripped of `clusterKey` repairs itself on save. |
 | `diag-hook-order.ts` | Proves `pre('validate')` runs before required-field validation and `pre('save')` does not. Scratch collection only. |
 | `diag-dupe.ts` / `diag-tagquality.ts` | Duplicate clusters, and how many events carry LLM vs keyword tags. |
+| `diag-keyword-tagging.ts` | Asserts `keywordTagging()` still classifies. Exits non-zero on regression — see the `\b` warning below. |
+| `diag-seed-integrity.ts` | Duplicate company names, name/alias collisions, duplicate seed handles, over-confident `strength`. Run after editing the registry or a seed list. |
+| `probe-attended-sources.ts` / `probe-attended-round2.ts` / `probe-attended-round3.ts` | Probe the platforms named in the user's attendance history. Round 2/3 drill into the leads. Read-only. |
+| `verify-attended-seeds.ts` | The gate before a seed is added: fetches each candidate with its production mechanism and keeps it only if it returns **upcoming** events. Read-only. |
+| `probe-seed-candidates.ts` | FOSS United sitemap shape, Luma handle → calendar id, and Meetup name → slug resolution. Read-only. |
+| `probe-india-platforms.ts` / `probe-india-ticketing.ts` | Survey of Indian event platforms (Konfhub, Townscript, District, 10times, HasGeek…). Read-only. |
+| `diag-attended-coverage.ts` | Checks the user's own communities are present **by name** — a rising total does not prove a seed worked. |
+| `diag-legacy-docs.ts` | Groups pre-migration damage by creation date. This is what identified the stale cron as the writer. |
+| `diag-seed-dupes.ts` | Full dedup identity of a suspected duplicate pair, so "why didn't clustering catch this" is answerable. |
+| `cleanup-duplicate-clusters.ts` | Collapse documents sharing a `clusterKey`; keeps the most complete, repoints `TrackerEntry` rows, gap-fills only. **Destructive** — dry by default, `--apply` to write. |
+| `cleanup-past.ts` / `cleanup-seed.ts` / `cleanup-dryrun.ts` | Older one-off cleanups, kept for reference. |
 
 `scrape.ts`, `send-digest.ts` and `seed.ts` back the npm scripts; `load-env.ts` is the
 shared `.env.local` loader every script imports first. `generate-icons.js` is plain
 JS: `node scripts/generate-icons.js`.
+
+> **The daily cron runs the DEFAULT branch.** `.github/workflows/daily-scrape.yml`
+> executes `npm run scrape` from whatever is on `main`, against the same Atlas
+> database a local run uses. While improvements sit on an unmerged branch, the cron
+> keeps writing documents with the *old* schema — measured 11–18 Aug 2026: 26
+> documents with no `clusterKey`, no `connectionScore` and retired categories, one
+> small batch per day. Documents without a `clusterKey` cannot match at ingest, so
+> they surface as duplicate cards in the feed. If the feed shows doubles, run
+> `diag-legacy-docs.ts` before suspecting the dedup logic.
 
 ## Environment
 
@@ -141,6 +161,19 @@ Both keys are derived in a **`pre('validate')`** hook, and that is not interchan
 The category taxonomy (`EVENT_CATEGORIES`, 32 values) lives in `lib/models/Event.ts` and the system prompt is generated from it, so they cannot drift.
 
 > Keyword regexes are load-bearing when the LLM is unavailable, and loose ones do real damage: a bare `\bpm\b` matched the "PM" in "6 PM" and tagged a fifth of the corpus `Product/Design`. Keep them specific.
+
+> **Never edit `tagger.ts` through a shell heredoc.** Doing so once rewrote all 70 `\b`
+> word boundaries as literal **0x08 BACKSPACE bytes**, so `/\b(ai|...)\b/i` became
+> `/<BS>(ai|...)<BS>/i` and matched *nothing* — `keywordTagging()` was silently dead
+> code. It was invisible because the LLM tier was succeeding on 100% of events, but the
+> documented floor ("an event is never dropped for want of a classification") had no
+> floor at all: with every provider down, events would store zero categories and no
+> `isTechEvent`. Measured before the repair: 0 of 10 representative events classified.
+> After: 10 of 10. Use the Write/Edit tools or a Python file for this file, and run
+> `scripts/diag-keyword-tagging.ts` afterwards — its decisive assertion is the
+> aggregate count, because a mangled boundary yields *no* categories rather than a few
+> wrong ones. `python -c "print(open('lib/llm/tagger.ts','rb').read().count(b'\x08'))"`
+> must print `0`.
 
 ### 4. Company attribution (`lib/companies/`)
 
