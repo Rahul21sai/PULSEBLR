@@ -53,7 +53,8 @@ There is **no test runner** configured — no `test` script and no test files ex
 | `diag-dupe.ts` / `diag-tagquality.ts` | Duplicate clusters, and how many events carry LLM vs keyword tags. |
 | `diag-keyword-tagging.ts` | Asserts `keywordTagging()` still classifies. Exits non-zero on regression — see the `\b` warning below. |
 | `diag-seed-integrity.ts` | Duplicate company names, name/alias collisions, duplicate seed handles, over-confident `strength`. Run after editing the registry or a seed list. |
-| `diag-api-auth.ts` | Hits every mutating endpoint signed-out and asserts 401/403/503, and every public one and asserts 200. Needs a dev server. Run after touching any route. |
+| `diag-api-auth.ts` | Hits every mutating endpoint signed-out and asserts 401/403/503, every public one and asserts 200, and every protected page and asserts a 307 to `/login`. Needs a dev server. Run after touching any route. |
+| `diag-admin-stats.ts` | Asserts the invariants `/admin` relies on (source buckets sum, `tech <= upcoming`, non-empty breakdowns). Read-only. |
 | `diag-ssrf-guard.ts` | Asserts the SSRF guard blocks metadata IPs, loopback, private ranges, v4-mapped IPv6, decimal-encoded IPs and non-http schemes. No network calls. |
 | `probe-attended-sources.ts` / `probe-attended-round2.ts` / `probe-attended-round3.ts` | Probe the platforms named in the user's attendance history. Round 2/3 drill into the leads. Read-only. |
 | `verify-attended-seeds.ts` | The gate before a seed is added: fetches each candidate with its production mechanism and keeps it only if it returns **upcoming** events. Read-only. |
@@ -257,6 +258,14 @@ The digest is scoped too: `generateDailyDigest(userId)` takes a **required** use
 - Feed (`app/page.tsx`) is a date-grouped **time rail** with a "Happening now" bucket pinned above the day groups, plus a grid view, faceted filters with live counts, debounced search, and infinite scroll.
 - Event covers use a plain `<img>`, not `next/image`, on purpose: covers come from a long and growing list of third-party CDNs, and `remotePatterns` would break every time a source changes host. The fallback is a category-tinted monogram.
 - Tracker (`app/tracker/page.tsx`) is a drag-and-drop kanban with optimistic updates and rollback, a list view, and a "follow-ups due" strip on top.
+
+**Two audiences, two surfaces.** A regular user browses, tracks and applies; they never see the scraping machinery. `/admin` (`app/admin/`) is the operator console: corpus stats, the scraper trigger, source enable/disable/delete, and event administration (delete, and correct a mis-tagged `isTechEvent`). Its data comes from `GET /api/admin/stats` in one round trip, so the dashboard cannot render internally inconsistent totals.
+
+The scraper and source controls used to live in `/settings`, which every signed-in user can open — that was the boundary problem in one page. `/settings` is now purely per-user (account, digest, a "your permissions" list that names what is admin-only) and links to `/admin` only for admins.
+
+> **`/admin` is a server component and that is load-bearing.** `proxy.ts` can only see whether a session cookie exists; it cannot know whether that session is an admin. So the page re-checks the allowlist server-side and `redirect()`s a non-admin to `/` before any admin markup is generated. `session.user.isAdmin` (set in `auth.ts`) exists **only** to decide whether to draw the nav link — it is a courtesy, not authorisation, and editing it in devtools buys a 403 from `requireAdmin()`. `token.isAdmin` is recomputed on every JWT callback rather than written once at sign-in, so removing someone from `ADMIN_EMAILS` takes effect on their next request instead of whenever their weeks-long token happens to expire.
+
+`scripts/diag-admin-stats.ts` asserts the invariants the dashboard's UI assumes (bucket sums, `tech <= upcoming`, non-empty breakdowns) because the HTTP path cannot be exercised headlessly — Google OAuth can't complete.
 
 ### 8. Career intelligence (`lib/helpers/phase6.ts`)
 

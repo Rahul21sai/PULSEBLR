@@ -9,7 +9,7 @@ import { NextRequest, NextResponse } from 'next/server';
 //
 // NOTE: the matcher below deliberately excludes `api`, so NOTHING here protects an API
 // route. Every /api guard lives in its own handler. See lib/api-auth.ts.
-const PROTECTED = ['/dashboard', '/tracker', '/add-event', '/settings'];
+const PROTECTED = ['/dashboard', '/tracker', '/add-event', '/settings', '/admin'];
 
 export default function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;

@@ -37,7 +37,15 @@ const MUST_REFUSE: Case[] = [
   { method: 'POST', path: '/api/scrape-url', body: { url: 'http://169.254.169.254/' }, why: 'SSRF to cloud metadata' },
   { method: 'POST', path: '/api/notifications/send-digest', why: 'drain the Resend quota' },
   { method: 'GET', path: '/api/notifications/send-digest', why: "read EVERY user's contacts and private notes" },
+  { method: 'GET', path: '/api/admin/stats', why: 'source health, user counts and corpus internals' },
 ];
+
+/**
+ * Pages that must redirect (307) to /login rather than render. proxy.ts can only check
+ * that a session cookie EXISTS — /admin additionally re-checks the allowlist server-side,
+ * because the proxy cannot know whether a session belongs to an admin.
+ */
+const MUST_REDIRECT = ['/admin', '/settings', '/dashboard', '/tracker', '/add-event'];
 
 /** Endpoints that are public on purpose — a regression the other way matters too. */
 const MUST_ALLOW: Case[] = [
@@ -92,6 +100,24 @@ async function main() {
     } catch (err) {
       failures++;
       console.log(`  FAIL  ERR  ${c.method} ${c.path} — ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  console.log('\nPAGES THAT MUST REDIRECT TO /login (307)\n');
+  for (const path of MUST_REDIRECT) {
+    try {
+      const res = await fetch(BASE + path, {
+        headers: { Accept: 'text/html' },
+        redirect: 'manual',
+        signal: AbortSignal.timeout(30000),
+      });
+      const location = res.headers.get('location') || '';
+      const ok = res.status === 307 && location.includes('/login');
+      if (!ok) failures++;
+      console.log(`  ${ok ? 'PASS' : 'FAIL'}  ${res.status}  ${path.padEnd(14)} -> ${location.replace(BASE, '') || '(no redirect)'}`);
+    } catch (err) {
+      failures++;
+      console.log(`  FAIL  ERR  ${path} — ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 

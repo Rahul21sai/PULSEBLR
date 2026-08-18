@@ -20,6 +20,7 @@
 
 import { NextResponse } from 'next/server';
 import { auth } from '@/auth';
+import { isAdminConfigured, isAdminEmail } from '@/lib/admin';
 
 /** JSON 401, in the shape the existing tracker routes already return. */
 function unauthorized() {
@@ -52,12 +53,7 @@ export async function requireUser(): Promise<{ userId: string } | { response: Ne
  * the variable so the fix is obvious.
  */
 export async function requireAdmin(): Promise<{ userId: string; email: string } | { response: NextResponse }> {
-  const allowlist = (process.env.ADMIN_EMAILS || '')
-    .split(',')
-    .map(e => e.trim().toLowerCase())
-    .filter(Boolean);
-
-  if (allowlist.length === 0) {
+  if (!isAdminConfigured()) {
     console.error(
       'ADMIN_EMAILS is not set, so every admin API route is refusing requests. ' +
         'Set it to a comma-separated list of Google account emails allowed to run the ' +
@@ -79,7 +75,7 @@ export async function requireAdmin(): Promise<{ userId: string; email: string } 
   const email = session?.user?.email?.toLowerCase();
   if (!userId || !email) return { response: unauthorized() };
 
-  if (!allowlist.includes(email)) {
+  if (!isAdminEmail(email)) {
     // 403, not 401: the caller is authenticated, they are simply not permitted. The
     // email is deliberately not echoed back.
     return { response: NextResponse.json({ error: 'Forbidden' }, { status: 403 }) };

@@ -2,6 +2,7 @@ import NextAuth from 'next-auth';
 import Google from 'next-auth/providers/google';
 import connectDB from '@/lib/mongodb';
 import User from '@/lib/models/User';
+import { isAdminEmail } from '@/lib/admin';
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
   providers: [
@@ -39,6 +40,12 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           console.error('Error upserting user:', err);
         }
       }
+      // Recomputed on EVERY call, not just at sign-in, so changing ADMIN_EMAILS takes
+      // effect on the next request instead of requiring everyone to sign out. The JWT is
+      // long-lived, so a value written once at sign-in would be stale for weeks — and
+      // stale in the dangerous direction if an admin is removed from the allowlist.
+      token.isAdmin = isAdminEmail(token.email);
+
       return token;
     },
 
@@ -49,6 +56,8 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         session.user.email = token.email!;
         session.user.name = token.name ?? '';
         session.user.image = (token.picture as string) ?? '';
+        // For hiding admin UI only. Server routes never trust this.
+        session.user.isAdmin = token.isAdmin === true;
       }
       return session;
     },

@@ -50,6 +50,23 @@ export function DesktopNav() {
               </Link>
             );
           })}
+
+          {/* Admin, for admins only. `isAdmin` comes from the session and is a COURTESY
+              -- it decides whether to draw a link, nothing more. /admin re-checks on the
+              server and every admin API route is gated by requireAdmin(), so editing this
+              flag in devtools buys a 403, not access. */}
+          {session?.user?.isAdmin && (
+            <Link
+              href="/admin"
+              aria-current={isActive('/admin') ? 'page' : undefined}
+              className={`flex items-center gap-1 text-[13.5px] font-semibold transition-colors ${
+                isActive('/admin') ? 'text-[#0071E3]' : 'text-[#1D1D1F] hover:text-[#0071E3]'
+              }`}
+            >
+              <span className="material-symbols-outlined text-[16px]">shield_person</span>
+              Admin
+            </Link>
+          )}
         </div>
 
         <div className="flex items-center gap-3">
@@ -103,7 +120,7 @@ export function MobileBottomNav() {
             key={link.href}
             href={link.href}
             aria-current={active ? 'page' : undefined}
-            className={`flex flex-col items-center justify-center px-3 py-1 rounded-xl transition-colors active:scale-95 ${
+            className={`flex min-w-0 flex-1 flex-col items-center justify-center px-1 py-1 rounded-xl transition-colors active:scale-95 ${
               active ? 'bg-[#0071E3]/10' : 'hover:bg-[#f3f3f5]'
             }`}
           >
