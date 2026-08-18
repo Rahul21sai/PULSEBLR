@@ -34,11 +34,20 @@ export default function EventCover({
   const accent = categoryAccent(category);
 
   if (!src || failed) {
+    // FLAT tint, not a 135° two-tone gradient.
+    //
+    // 21% of events have no cover, so this fallback is on screen constantly — and a
+    // saturated diagonal gradient made every one of them shout louder than the real
+    // photographs beside it. A pale wash of the category colour with the monogram in
+    // that same colour keeps the category signal, stays quiet next to real imagery,
+    // and reads as intentional rather than as a placeholder.
     return (
       <div
         className={`cover-fallback ${monogramSize} ${className}`}
         style={{
-          background: `linear-gradient(135deg, ${accent} 0%, color-mix(in srgb, ${accent} 60%, #1D1D1F) 100%)`,
+          background: `color-mix(in srgb, ${accent} 12%, #FFFFFF)`,
+          color: `color-mix(in srgb, ${accent} 78%, #1D1D1F)`,
+          boxShadow: 'inset 0 0 0 1px rgba(0,0,0,0.05)',
         }}
         aria-hidden="true"
       >

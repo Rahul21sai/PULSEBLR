@@ -2,62 +2,70 @@
 
 /* ─── Design Tokens ──────────────────────────────────────────────────────── */
 :root {
-  --background: #F5F5F7;
-  --foreground: #1D1D1F;
-  --text-primary: #1D1D1F;
-  --text-secondary: #86868B;
-  --surface-card: #FFFFFF;
-  --surface: #f9f9fb;
-  --surface-bright: #f9f9fb;
-  --surface-container-lowest: #ffffff;
-  --surface-container-low: #f3f3f5;
-  --surface-container: #eeeef0;
-  --surface-container-high: #e8e8ea;
-  --surface-container-highest: #e2e2e4;
-  --surface-variant: #e2e2e4;
-  --surface-dim: #d9dadc;
-  --surface-dark: #000000;
-  --accent-blue: #0071E3;
-  --primary: #0059b5;
-  --primary-container: #0071e3;
-  --primary-fixed: #d7e2ff;
-  --primary-fixed-dim: #abc7ff;
-  --on-primary: #ffffff;
-  --on-primary-container: #fcfbff;
-  --on-primary-fixed: #001b3f;
-  --on-primary-fixed-variant: #00458f;
-  --secondary: #5f5e60;
-  --secondary-container: #e2dfe1;
-  --secondary-fixed: #e4e2e4;
-  --secondary-fixed-dim: #c8c6c8;
-  --on-secondary: #ffffff;
-  --on-secondary-container: #636264;
-  --on-secondary-fixed: #1b1b1d;
-  --on-secondary-fixed-variant: #474649;
-  --tertiary: #9b3f00;
-  --tertiary-container: #c25100;
-  --tertiary-fixed: #ffdbcb;
-  --tertiary-fixed-dim: #ffb693;
-  --on-tertiary: #ffffff;
-  --on-tertiary-container: #fffaf9;
-  --on-tertiary-fixed: #341000;
-  --on-tertiary-fixed-variant: #7a3000;
-  --outline-variant: #c1c6d6;
-  --outline: #717785;
-  --on-surface: #1a1c1d;
-  --on-surface-variant: #414753;
-  --on-background: #1a1c1d;
-  --inverse-surface: #2f3132;
-  --inverse-on-surface: #f0f0f2;
-  --inverse-primary: #abc7ff;
-  --surface-tint: #005cbb;
-  --error: #ba1a1a;
-  --error-container: #ffdad6;
-  --on-error: #ffffff;
-  --on-error-container: #93000a;
-  /* Feed additions */
-  --hairline: #e5e5ea;
-  --live: #ff3b30;
+  /* ── Surfaces: Apple's system grays ─────────────────────────────────────── */
+  --paper:       #F5F5F7;   /* systemGray6 — the page itself */
+  --card:        #FFFFFF;
+  --well:        #F7F7F9;   /* insets, code, quiet wells inside a card */
+
+  /* ── Ink: three label levels, and only three ─────────────────────────────
+     Apple ships label / secondaryLabel / tertiaryLabel and stops. A fourth grey is
+     how type hierarchy turns to mud, so there isn't one here. */
+  --ink:   #1D1D1F;
+  --ink-2: #6E6E73;
+  --ink-3: #8E8E93;
+
+  /* ── Hairlines are ALPHA, never solid grey ───────────────────────────────
+     A solid #E5E5EA border reads as a light line on white and as a DARKER line on
+     the page grey, so the same border looks like two different weights depending on
+     what it sits on. Alpha composites correctly against both. */
+  --hairline:        rgba(0, 0, 0, 0.07);
+  --hairline-strong: rgba(0, 0, 0, 0.13);
+
+  /* ── Accent, rationed ───────────────────────────────────────────────────
+     Blue means "you can act on this": links, focus, primary actions, the connection
+     meter. It is never decoration. Rationing one hue is what makes the covers —
+     real content — the only colourful thing on screen. */
+  --blue:       #0071E3;
+  --blue-press: #0061C3;
+  --blue-wash:  #EBF4FE;
+
+  /* The only other hue in the chrome, and it marks exactly one state. */
+  --live:      #FF3B30;
+  --live-wash: #FFF1F0;
+
+  --good:      #1D8A44;
+  --good-wash: #EBF7EF;
+
+  /* ── Motion: one curve ──────────────────────────────────────────────────
+     Apple's standard decelerate. It settles hard instead of coasting, which is why
+     UIKit transitions read as "placed" rather than "eased". Everything uses it, so
+     the whole app moves with one accent. */
+  --ease: cubic-bezier(0.32, 0.72, 0, 1);
+  --dur-fast: 160ms;
+  --dur-med:  260ms;
+
+  /* ── Elevation: a ring PLUS a lift, never one blur ───────────────────────
+     The previous `0 4px 40px rgba(0,0,0,.04)` was a single very diffuse shadow,
+     which reads as fog: the card had no defined edge and barely separated from the
+     page. Apple stacks a half-pixel ring for the boundary with a soft offset shadow
+     for the height, so a card is crisply bounded AND clearly above the surface. */
+  --lift-1: 0 0 0 0.5px rgba(0,0,0,0.045), 0 1px 1.5px rgba(0,0,0,0.04),
+            0 6px 16px -8px rgba(0,0,0,0.08);
+  --lift-2: 0 0 0 0.5px rgba(0,0,0,0.05), 0 2px 4px rgba(0,0,0,0.05),
+            0 16px 34px -14px rgba(0,0,0,0.14);
+
+  /* ── Aliases ────────────────────────────────────────────────────────────
+     Kept because components already reference these names. Everything else from the
+     old Material token set was referenced nowhere and is gone. */
+  --background:            var(--paper);
+  --foreground:            var(--ink);
+  --text-primary:          var(--ink);
+  --text-secondary:        var(--ink-2);
+  --accent-blue:           var(--blue);
+  --surface-container:     #EEEEF0;
+  --surface-container-low: #F3F3F5;
+  --outline-variant:       var(--hairline-strong);
+  --hairline-solid:        #E5E5EA;
 
   /* ── Feed chrome heights: ONE source of truth ───────────────────────────────
      The feed has two stacked fixed bars — the nav/mobile header, then the command
@@ -78,6 +86,9 @@
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  /* Inter Tight sets noticeably tighter than Inter at display sizes, which is the
+     closest a web face gets to SF Pro Display's fit. Used for headings only. */
+  --font-display: var(--font-inter-tight), 'Inter Tight', system-ui, -apple-system, sans-serif;
 }
 
 /* ─── Base ────────────────────────────────────────────────────────────────── */
@@ -137,35 +148,63 @@ body {
   vertical-align: middle;
 }
 
-/* ─── Stitch typography scale ────────────────────────────────────────────── */
-.text-display-lg        { font-size: 56px; line-height: 1.1; letter-spacing: -0.02em; font-weight: 700; }
-.text-display-lg-mobile { font-size: 40px; line-height: 1.1; letter-spacing: -0.01em; font-weight: 700; }
-.text-headline-lg       { font-size: 32px; line-height: 1.2; letter-spacing: -0.01em; font-weight: 600; }
-.text-headline-md       { font-size: 24px; line-height: 1.3; letter-spacing: -0.01em; font-weight: 600; }
-.text-body-lg           { font-size: 19px; line-height: 1.5; letter-spacing: 0;       font-weight: 400; }
-.text-body-md           { font-size: 17px; line-height: 1.5; letter-spacing: 0;       font-weight: 400; }
-.text-label-md          { font-size: 14px; line-height: 1.4; letter-spacing: 0.02em;  font-weight: 500; }
-.text-label-sm          { font-size: 12px; line-height: 1.2; letter-spacing: 0.05em;  font-weight: 600; }
+/* ─── Type scale ───────────────────────────────────────────────────────────
+   TRACKING IS A FUNCTION OF SIZE. That is the mechanic behind Apple typography and
+   the thing most type ramps miss: SF Pro ships two optical families and tightens as
+   it grows, so 40px text is set far tighter than 13px text. The previous scale used
+   one letter-spacing for nearly every step (-0.01em), which is precisely what makes
+   a page read as a default Inter site.
 
-/* ─── Card gradients ─────────────────────────────────────────────────────── */
-.gradient-ai        { background: linear-gradient(135deg, #0071E3 0%, #00C6FF 100%); }
-.gradient-fintech   { background: linear-gradient(135deg, #34C759 0%, #30D158 100%); }
-.gradient-networking{ background: linear-gradient(135deg, #FF9500 0%, #FFCC00 100%); }
-.gradient-cyber     { background: linear-gradient(135deg, #FF3B30 0%, #FF6B6B 100%); }
-.gradient-cloud     { background: linear-gradient(135deg, #5AC8FA 0%, #007AFF 100%); }
-.gradient-data      { background: linear-gradient(135deg, #5856D6 0%, #AF52DE 100%); }
-.gradient-hackathon { background: linear-gradient(135deg, #FF2D55 0%, #FF6CAB 100%); }
-.gradient-default   { background: linear-gradient(135deg, #8E8E93 0%, #636366 100%); }
+   Display sizes get Inter Tight and negative tracking; small utility text gets
+   POSITIVE tracking, because tight small caps are unreadable. */
+.t-display {
+  font-family: var(--font-display);
+  font-size: clamp(28px, 4.6vw, 40px);
+  line-height: 1.06;
+  letter-spacing: -0.035em;
+  font-weight: 700;
+}
+.t-title   { font-family: var(--font-display); font-size: 24px;   line-height: 1.15; letter-spacing: -0.028em; font-weight: 700; }
+.t-head    { font-family: var(--font-display); font-size: 19px;   line-height: 1.26; letter-spacing: -0.021em; font-weight: 600; }
+.t-sub     { font-family: var(--font-display); font-size: 16px;   line-height: 1.32; letter-spacing: -0.016em; font-weight: 600; }
+.t-body    { font-size: 15px;   line-height: 1.47; letter-spacing: -0.008em; font-weight: 400; }
+.t-caption { font-size: 13px;   line-height: 1.38; letter-spacing: 0;        font-weight: 400; }
+.t-label   { font-size: 11px;   line-height: 1.1;  letter-spacing: 0.055em;  font-weight: 650; text-transform: uppercase; }
 
-/* Event detail hero — exact Stitch spec */
-.hero-gradient { background: linear-gradient(135deg, #0071E3 0%, #0059b5 100%); }
+/* Aliases: the previous scale's names, kept so existing pages keep rendering while
+   they migrate. Same sizes, corrected tracking and the display face where it helps. */
+.text-display-lg        { font-family: var(--font-display); font-size: 56px; line-height: 1.03; letter-spacing: -0.04em;  font-weight: 700; }
+.text-display-lg-mobile { font-family: var(--font-display); font-size: 40px; line-height: 1.05; letter-spacing: -0.035em; font-weight: 700; }
+.text-headline-lg       { font-family: var(--font-display); font-size: 32px; line-height: 1.12; letter-spacing: -0.032em; font-weight: 700; }
+.text-headline-md       { font-family: var(--font-display); font-size: 24px; line-height: 1.15; letter-spacing: -0.028em; font-weight: 700; }
+.text-body-lg           { font-size: 19px; line-height: 1.5;  letter-spacing: -0.012em; font-weight: 400; }
+.text-body-md           { font-size: 17px; line-height: 1.5;  letter-spacing: -0.01em;  font-weight: 400; }
+.text-label-md          { font-size: 14px; line-height: 1.4;  letter-spacing: 0.005em;  font-weight: 500; }
+.text-label-sm          { font-size: 11.5px; line-height: 1.15; letter-spacing: 0.055em; font-weight: 650; }
 
-/* ─── Card shadow ────────────────────────────────────────────────────────── */
-.card-shadow { box-shadow: 0 4px 40px rgba(0,0,0,0.04); }
+/* Headings pick up the display face automatically, so a page does not have to
+   remember to ask for it. */
+h1, h2, h3 { font-family: var(--font-display); }
 
-/* ─── Hover lift ─────────────────────────────────────────────────────────── */
-.hover-lift { transition: transform 0.3s ease, box-shadow 0.3s ease; }
-.hover-lift:hover { transform: scale(1.02); box-shadow: 0 10px 40px rgba(0,0,0,0.08); }
+/* ─── Elevation ────────────────────────────────────────────────────────────
+   Eight category gradients, a hero gradient and a `hover-lift` that scaled cards to
+   1.02 used to live here. All were verified unreferenced and removed: rainbow
+   gradient tiles are the loudest "template" signal a UI can send, and on this
+   product they also competed with the one thing that should carry colour — the
+   event cover, which is real content. */
+.card-shadow { box-shadow: var(--lift-1); }
+.card-shadow-lg { box-shadow: var(--lift-2); }
+
+/* Interactive surfaces PRESS rather than lift. A card that grows on hover has no
+   equivalent on a touch screen, where most of this app is used; scaling down on
+   :active reads as physical on both. */
+.pressable {
+  transition: transform var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
+}
+.pressable:active { transform: scale(0.978); }
+
+.raise { transition: box-shadow var(--dur-med) var(--ease), transform var(--dur-med) var(--ease); }
+.raise:hover { box-shadow: var(--lift-2); }
 
 /* ─── Loading spinner ────────────────────────────────────────────────────── */
 .spinner {
@@ -348,11 +387,34 @@ body {
   line-height: 1.35;
   white-space: nowrap;
 }
-.pill-quiet  { background: var(--surface-container-low); color: var(--text-secondary); }
-.pill-free   { background: rgba(52,199,89,0.12);  color: #1B7F3B; }
-.pill-live   { background: rgba(255,59,48,0.12);  color: #C7362D; }
-.pill-online { background: rgba(0,113,227,0.10);  color: #0060C0; }
-.pill-sold   { background: var(--surface-container); color: var(--text-secondary); text-decoration: line-through; }
+/* Pills are BOUNDED, not filled. Five tinted blocks under every title turned each
+   card into a swatch board and made the title compete for attention with its own
+   metadata. A hairline outline carries the same grouping at a fraction of the
+   visual weight, so only genuinely exceptional states (live, free) get any fill. */
+.pill-quiet  { background: transparent; color: var(--ink-2); box-shadow: inset 0 0 0 1px var(--hairline); }
+.pill-free   { background: var(--good-wash); color: var(--good); }
+.pill-live   { background: var(--live-wash); color: #C7362D; font-weight: 650; }
+.pill-online { background: transparent; color: var(--ink-2); box-shadow: inset 0 0 0 1px var(--hairline); }
+.pill-sold   { background: transparent; color: var(--ink-3); box-shadow: inset 0 0 0 1px var(--hairline); text-decoration: line-through; }
+
+/* ─── Connection meter ─────────────────────────────────────────────────────
+   The SIGNATURE element, and the reason this app exists rather than a Luma filter:
+   connectionScore is computed for every event (in-person weight, attendee count,
+   food, a penalty for certification funnels) and was displayed NOWHERE in the UI.
+   Three bars is enough to rank at a glance without implying the score is precise. */
+.meter { display: inline-flex; align-items: flex-end; gap: 2px; height: 11px; }
+.meter i {
+  display: block;
+  width: 3px;
+  border-radius: 1px;
+  background: var(--hairline-strong);
+}
+.meter i:nth-child(1) { height: 5px; }
+.meter i:nth-child(2) { height: 8px; }
+.meter i:nth-child(3) { height: 11px; }
+.meter[data-level='1'] i:nth-child(1),
+.meter[data-level='2'] i:nth-child(-n+2),
+.meter[data-level='3'] i { background: var(--blue); }
 
 /* ─── Cover images ───────────────────────────────────────────────────────── */
 .cover {
@@ -364,9 +426,12 @@ body {
 .cover-fallback {
   display: grid;
   place-items: center;
+  font-family: var(--font-display);
   font-weight: 700;
-  letter-spacing: -0.02em;
-  color: #fff;
+  letter-spacing: -0.03em;
+  /* Colour is set per-event inline, derived from the category. No `color: #fff` here:
+     the fallback is now a pale wash, so white type on it would be invisible. */
+  color: var(--ink);
 }
 
 /* ─── Skeleton shimmer ───────────────────────────────────────────────────── */

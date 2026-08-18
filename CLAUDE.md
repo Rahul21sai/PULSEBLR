@@ -257,6 +257,21 @@ The digest is scoped too: `generateDailyDigest(userId)` takes a **required** use
 - `lib/event-types.ts` — the client-side event shape (dates are ISO **strings** over JSON, not `Date`).
 - Feed (`app/page.tsx`) is a date-grouped **time rail** with a "Happening now" bucket pinned above the day groups, plus a grid view, faceted filters with live counts, debounced search, and infinite scroll.
 - Event covers use a plain `<img>`, not `next/image`, on purpose: covers come from a long and growing list of third-party CDNs, and `remotePatterns` would break every time a source changes host. The fallback is a category-tinted monogram.
+
+#### Design system (`app/globals.css`)
+
+Four rules carry the whole look. Breaking any one of them is what made the earlier version read as generic:
+
+1. **Tracking is a function of size.** `.t-display` is set at `-0.035em`, `.t-body` at `-0.008em`, `.t-label` at **+0.055em**. A single `letter-spacing` applied across a ramp is the tell of a default type scale. Display sizes use **Inter Tight** (`--font-display`), body uses Inter; headings pick up the display face automatically via an `h1, h2, h3` rule.
+2. **Elevation is a ring plus a lift, never one blur.** `--lift-1`/`--lift-2` stack a `0.5px` hairline ring for the edge with a soft offset shadow for the height. The old single `0 4px 40px rgba(0,0,0,.04)` read as fog — no defined edge, barely separated from the page.
+3. **Hairlines are alpha, not solid grey.** A solid `#E5E5EA` border looks like a light line on white and a *darker* line on the page grey. `--hairline: rgba(0,0,0,0.07)` composites correctly on both.
+4. **One accent, rationed.** `--blue` means "you can act on this" — links, focus, primary actions, the connection meter — and is never decoration. `--live` marks exactly one state. Everything else is greyscale, which is what leaves the **cover images** as the only colourful thing on screen. Eight category gradients, a hero gradient and a `hover-lift` (all verified unreferenced) were deleted for this reason.
+
+Interactive surfaces **press** (`.pressable`, `scale(0.978)`) rather than lift: a hover-grow has no touch equivalent, and most of this app is used on a phone. All motion uses one curve, `--ease: cubic-bezier(0.32, 0.72, 0, 1)` — Apple's decelerate, which settles instead of coasting.
+
+> **The signature element is the connection meter** (`.meter` + `ConnectionMeter` in `EventRow.tsx`). `connectionScore` is computed for every event and powers the "Best for connections" sort, but it was rendered **nowhere**, so the app's one signal that Luma and Meetup cannot show was invisible and that sort looked arbitrary. It renders as three bars, not the number, because the score is a ranking signal rather than a measurement and printing "83" implies a precision it does not have.
+
+> **Verifying layout changes:** run the clip-aware overlap probe and **exclude `position: fixed`/`sticky` ancestors**. A naive probe reports the command bar and bottom nav "overlapping" every row they scroll over, which is intended behaviour — those bars are near-opaque. Measured after this redesign: 0 content-only overlaps at 1440×900 and 390×844, at both scroll-top and scrolled.
 - Tracker (`app/tracker/page.tsx`) is a drag-and-drop kanban with optimistic updates and rollback, a list view, and a "follow-ups due" strip on top.
 
 **Two audiences, two surfaces.** A regular user browses, tracks and applies; they never see the scraping machinery. `/admin` (`app/admin/`) is the operator console: corpus stats, the scraper trigger, source enable/disable/delete, and event administration (delete, and correct a mis-tagged `isTechEvent`). Its data comes from `GET /api/admin/stats` in one round trip, so the dashboard cannot render internally inconsistent totals.

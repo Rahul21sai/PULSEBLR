@@ -356,18 +356,40 @@ export default function Home() {
           </aside>
 
           <div className="flex-1 min-w-0">
-            {/* Result count — the honest header. No hero: the events ARE the hero. */}
-            <div className="flex items-baseline justify-between gap-3 mb-4">
-              <h1 className="text-[19px] md:text-[22px] font-bold tracking-[-0.02em] text-[#1D1D1F]">
-                {loading
-                  ? 'Loading events…'
-                  : total === 0
-                    ? 'No events match'
-                    : `${total.toLocaleString('en-IN')} event${total === 1 ? '' : 's'} in Bengaluru`}
+            {/* Large title, in the SCROLL area rather than the fixed chrome.
+                The events are still the hero — this does not become a banner — but the
+                page had no title at all: its h1 was a 19px result count, so the top of
+                the document opened on a statistic. An iOS-style large title that scrolls
+                away gives the page a voice for the first screenful and then gets out of
+                the way, and keeping it out of the fixed bars leaves --feed-offset (and
+                the sticky day-heading maths that depends on it) untouched.
+
+                The title states the ACTIVE VIEW, so it doubles as a readout of the
+                filters — which is why it earns the space. */}
+            <div className="mb-5">
+              <h1 className="t-display text-[#1D1D1F]">
+                {query
+                  ? `“${query}”`
+                  : filters.techOnly
+                    ? 'Tech events in Bengaluru'
+                    : 'Events in Bengaluru'}
               </h1>
-              {!loading && query && (
-                <span className="text-[12.5px] text-[#86868B] shrink-0">for “{query}”</span>
-              )}
+              <p className="mt-1.5 text-[13px] text-[#6E6E73] tracking-[0]">
+                {loading ? (
+                  'Loading…'
+                ) : total === 0 ? (
+                  'Nothing matches these filters yet.'
+                ) : (
+                  <>
+                    <span className="tnum font-semibold text-[#1D1D1F]">
+                      {total.toLocaleString('en-IN')}
+                    </span>{' '}
+                    upcoming
+                    {sort === 'connections' && ' · ranked by who you’ll meet there'}
+                    {sort === 'soonest' && ' · soonest first'}
+                  </>
+                )}
+              </p>
             </div>
 
             {loading ? (
@@ -411,9 +433,18 @@ export default function Home() {
               <div className="rail">
                 {days.map(([dayKey, dayEvents]) => (
                   <section key={dayKey} className="mb-2">
-                    <div className="day-heading py-2 mb-1">
-                      <div className="flex items-baseline gap-2">
-                        <h2 className="text-[15px] font-bold tracking-[-0.01em] text-[#1D1D1F] flex items-center gap-1.5">
+                    {/* Grouped-list header, Apple's sectioned-table treatment: a small
+                        tracked label with a hairline that runs to the edge. The day
+                        boundary is real structure — it is the one thing the reader
+                        navigates by — so it gets a device, while the label itself stays
+                        quiet enough that the event titles remain the loudest text. */}
+                    <div className="day-heading pt-2.5 pb-2 mb-1.5">
+                      <div className="flex items-center gap-2.5">
+                        <h2
+                          className={`t-label flex shrink-0 items-center gap-1.5 ${
+                            dayKey === NOW_GROUP_KEY ? 'text-[#FF3B30]' : 'text-[#1D1D1F]'
+                          }`}
+                        >
                           {dayKey === NOW_GROUP_KEY ? (
                             <>
                               <span className="live-dot w-1.5 h-1.5 rounded-full bg-[#FF3B30]" />
@@ -424,11 +455,14 @@ export default function Home() {
                           )}
                         </h2>
                         {dayKey !== NOW_GROUP_KEY && (
-                          <span className="text-[12px] text-[#86868B]">
+                          <span className="shrink-0 text-[11.5px] text-[#8E8E93] tracking-[0]">
                             {fullDateIST(dayEvents[0].startDateTime)}
                           </span>
                         )}
-                        <span className="text-[12px] text-[#a1a1a6] tnum ml-auto">
+                        {/* Hairline fills whatever space is left, so the rule always
+                            reaches the column edge without a fixed width. */}
+                        <span aria-hidden="true" className="h-px flex-1 bg-[color:var(--hairline)]" />
+                        <span className="tnum shrink-0 text-[11.5px] text-[#8E8E93]">
                           {dayEvents.length}
                         </span>
                       </div>

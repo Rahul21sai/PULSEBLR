@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Inter } from "next/font/google";
+import { Inter, Inter_Tight } from "next/font/google";
 import "./globals.css";
 import Script from "next/script";
 import Providers from "./providers";
@@ -7,6 +7,21 @@ import Providers from "./providers";
 const inter = Inter({
   subsets: ["latin"],
   variable: "--font-inter",
+  display: "swap",
+});
+
+/**
+ * Display face, headings only.
+ *
+ * Inter Tight sets appreciably tighter than Inter at large sizes, which is the closest
+ * a web-served face gets to SF Pro Display's fit — and fit is what makes Apple
+ * typography read as Apple. Only the two weights the type scale actually uses are
+ * requested, so this costs one small extra file rather than a whole family.
+ */
+const interTight = Inter_Tight({
+  subsets: ["latin"],
+  weight: ["600", "700"],
+  variable: "--font-inter-tight",
   display: "swap",
 });
 
@@ -23,7 +38,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#000000",
+  themeColor: "#F5F5F7",
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
@@ -35,7 +50,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" translate="no" className={`${inter.variable} h-full`}>
+    <html
+      lang="en"
+      translate="no"
+      className={`${inter.variable} ${interTight.variable} h-full`}
+    >
       <head>
         <meta name="google" content="notranslate" />
         <link rel="icon" href="/icon-192.svg" />

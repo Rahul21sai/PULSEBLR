@@ -46,11 +46,13 @@ export default function EventRow({ event }: { event: FeedEvent }) {
 
       {/* Card */}
       <article className="flex-1 min-w-0 mb-3">
-        <div className="group relative bg-white rounded-2xl card-shadow overflow-hidden transition-[transform,box-shadow] duration-200 hover:shadow-[0_8px_30px_rgba(0,0,0,0.07)] hover:-translate-y-px">
-          {/* Category hairline — a quiet colour cue that doesn't cost layout space */}
+        <div className="group relative bg-white rounded-[18px] card-shadow raise pressable overflow-hidden">
+          {/* Category cue. Kept to a low-opacity tint rather than a saturated stripe:
+              the cover image is the only thing on this card allowed to be colourful,
+              because it is the only part that is real content. */}
           <span
             aria-hidden="true"
-            className="absolute left-0 top-0 bottom-0 w-[3px]"
+            className="absolute left-0 top-0 bottom-0 w-[3px] opacity-70"
             style={{ background: accent }}
           />
 
@@ -66,7 +68,7 @@ export default function EventRow({ event }: { event: FeedEvent }) {
 
             <div className="flex-1 min-w-0 flex flex-col gap-1.5">
               <div className="flex items-start gap-2">
-                <h3 className="flex-1 min-w-0 text-[15px] md:text-[17px] font-semibold leading-snug tracking-[-0.01em] text-[#1D1D1F]">
+                <h3 className="flex-1 min-w-0 text-[15.5px] md:text-[17.5px] font-semibold leading-[1.28] tracking-[-0.021em] text-[#1D1D1F]">
                   <Link href={href} className="hover:text-[#0071E3] transition-colors line-clamp-2">
                     {event.title}
                   </Link>
@@ -74,7 +76,10 @@ export default function EventRow({ event }: { event: FeedEvent }) {
                 <SaveButton eventId={event._id} />
               </div>
 
-              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px] text-[#6E6E73] min-w-0">
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px] tracking-[0] text-[#6E6E73] min-w-0">
+                {typeof event.connectionScore === 'number' && (
+                  <ConnectionMeter score={event.connectionScore} />
+                )}
                 {event.organizer && (
                   <span className="inline-flex items-center gap-1 min-w-0 max-w-full">
                     {event.hostAvatarUrl ? (
@@ -105,5 +110,39 @@ export default function EventRow({ event }: { event: FeedEvent }) {
         </div>
       </article>
     </div>
+  );
+}
+
+/**
+ * How likely is this event to leave you with useful contacts?
+ *
+ * `connectionScore` is computed for every event by lib/events/connection-score.ts —
+ * in-person weighting, log-scaled attendee counts, food, and a hard penalty for
+ * certification funnels — and it powers the "Best for connections" sort. It was
+ * displayed NOWHERE, which meant the app's most distinctive signal was invisible and
+ * that sort order looked arbitrary.
+ *
+ * Three bars, not the number. The score is a ranking signal, not a measurement, and
+ * printing "83" invites a precision it does not have. Bars rank at a glance; the title
+ * attribute carries the detail for anyone who wants it.
+ */
+function ConnectionMeter({ score }: { score: number }) {
+  const level = score >= 70 ? 3 : score >= 50 ? 2 : 1;
+  const label =
+    level === 3
+      ? 'Strong chance of useful contacts'
+      : level === 2
+        ? 'Some chance of useful contacts'
+        : 'Unlikely to lead to contacts';
+
+  return (
+    <span className="inline-flex items-center gap-1.5 shrink-0" title={`${label} · score ${score}/100`}>
+      <span className="meter" data-level={level} aria-hidden="true">
+        <i />
+        <i />
+        <i />
+      </span>
+      <span className="sr-only">{label}</span>
+    </span>
   );
 }
