@@ -346,6 +346,17 @@ export async function scrapeLumaCalendar(
  * that turns out to be run from another city contributes nothing rather than noise.
  */
 export const LUMA_SEED_CALENDARS: Array<{ handle: string; label: string }> = [
+  // ── Seeded from the user's own 12-month event-attendance history ──
+  // Each was verified live via calendar/get-items?period=future before being added;
+  // two other calendars from the same list (Sela x Google Cloud, kipi.ai) returned 0
+  // upcoming events and were deliberately left out.
+  { handle: 'cal-l0CgIJ0Hhef7fcT', label: 'Bengaluru Tech Week' },
+  { handle: 'cal-YsGACKB4XWwUMCs', label: 'Agentic Summit / Unicorn AI Summit' },
+  // These two are GLOBAL calendars whose Bengaluru chapters the user attends. Most of
+  // their events are elsewhere (Osaka, Houston, Dresden, Lagos) and the pipeline's geo
+  // gate drops those, so the cost is one request for the BLR-chapter events we want.
+  { handle: 'cal-TOpA5LAFfuDeFpu', label: 'Claude Community (CCCL) — incl. BLR chapter' },
+  { handle: 'cal-rKZGvZjZWgFjKWW', label: 'n8n Community — incl. n8n Bangalore' },
   { handle: 'cal-W1a1JagbP7BFFnE', label: 'Postman Meetups' },
   { handle: 'cal-skHyTNF1BS9afOF', label: 'Slice' },
   { handle: 'cal-sa2bowyF5saW6io', label: 'Zluri' },

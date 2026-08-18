@@ -67,3 +67,12 @@ lint2.txt
 
 # Security-scan working directories
 CLAUDE-SECURITY-*/
+
+# Debug and probe artefacts. These are generated locally and have been observed to
+# contain real credentials -- the Playwright console logs captured a Google API key and
+# digest_probe.json captured passwords in URL params -- so they must never be staged.
+.playwright-mcp/
+digest_probe.json
+*.log
+audit-report.md
+COMMIT_MSG.txt

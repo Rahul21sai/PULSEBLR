@@ -329,4 +329,32 @@ export const SEED_MEETUP_GROUPS = [
   'bangalore-mongodb-user-group', 'docker-bangalore', 'grafana-and-friends-bengaluru',
   'bangalore-kubernetes-meetup', 'microsoft-azure-bangalore', 'servicenow-bangalore',
   'thoughtworks-bangalore',
+
+  // Resolved from the communities named in the user's own attendance history. The
+  // names were searched rather than guessed (guessing scored 0/35), then every
+  // candidate slug's ICS feed was fetched and kept only if it returned UPCOMING
+  // events -- scripts/verify-attended-seeds.ts prints the counts.
+  //
+  // Open-source / data-infrastructure groups, which is where the corpus was thinnest:
+  'apache-iceberg-meetups-india',          // Bangalore Iceberg Community Meetup
+  'apache-pinot-bengaluru-by-startree',    // Apache Pinot, hosted by StarTree
+  'presto-bangalore',                      // Presto/Trino
+  // Platform, cloud and AI practitioner groups:
+  'lead-with-tech-meetup-group',           // 10 upcoming at verification time
+  'ai-xchange',
+  'global-platform-engineers-network-gpen',
+  'cloud-computing-circle',
+  'technexus-community',
+  // Startup/founder groups the user follows via newsletter invites:
+  'startups-entrepreneurs-network-senex-by-cedat',
+  'bangalore-seapreneurs-community',
+  // Non-tech but real city events, kept because the scraper ingests the whole city
+  // and the feed filters with techOnly:
+  'hsrmeetups',
+  //
+  // DELIBERATELY NOT SEEDED: 'whfl-bangalore'. Its ICS does return 6 upcoming events,
+  // but they are the "India's Premier Weekly Business Exchange Network" series that
+  // the tagger currently mis-classifies as a tech event. It is already in the Source
+  // collection from keyword discovery, so seeding it would only make a known
+  // false-positive family more prominent.
 ];

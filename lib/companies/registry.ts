@@ -34,6 +34,7 @@ export type CompanySector =
   | 'Consumer Internet'
   | 'SaaS'
   | 'Services & GCC'
+  | 'Hardware & Semiconductor'
   | 'Community'
   | 'Investor';
 
@@ -177,9 +178,46 @@ export const COMPANIES: Company[] = [
   { name: 'CNCF', sector: 'Community', strength: 'distinctive', aliases: ['Cloud Native Computing Foundation', 'Kubernetes Community Days'] },
   { name: 'OWASP', sector: 'Community', strength: 'distinctive', aliases: ['null community'] },
   { name: 'Devfolio', sector: 'Community', strength: 'distinctive' },
-  { name: 'Bengaluru Tech Week', sector: 'Community', strength: 'distinctive', aliases: ['BTS', 'Bangalore Tech Summit'] },
+  { name: 'Bengaluru Tech Week', sector: 'Community', strength: 'distinctive', aliases: ['BTS', 'BTW', 'Bangalore Tech Summit'] },
   { name: 'Bitshala', sector: 'Community', strength: 'distinctive' },
   { name: 'PyData Bangalore', sector: 'Community', strength: 'distinctive', aliases: ['BangPypers'] },
+
+  // ── Seeded from the user's own event-attendance history (Aug 2025 - Aug 2026) ──
+  // Every company below either hosted an event the user personally attended or already
+  // appears as an organiser string in the live corpus, so each demonstrably runs
+  // Bengaluru events. `strength` follows the header rule: when in doubt, 'ambiguous'.
+  { name: 'AMD', sector: 'Hardware & Semiconductor', strength: 'distinctive', aliases: ['AMD India', 'AMD Developer Community'] },
+  { name: 'Keysight', sector: 'Hardware & Semiconductor', strength: 'distinctive', aliases: ['Keysight Technologies'] },
+  { name: 'Texas Instruments', sector: 'Hardware & Semiconductor', strength: 'distinctive', aliases: ['TI India'] },
+  { name: 'Bosch', sector: 'Hardware & Semiconductor', strength: 'distinctive', aliases: ['Bosch India', 'RBEI', 'Bosch Global Software'] },
+  { name: 'Micron', sector: 'Hardware & Semiconductor', strength: 'distinctive', aliases: ['Micron India'] },
+  { name: 'Nokia', sector: 'Hardware & Semiconductor', strength: 'distinctive', aliases: ['Nokia India'] },
+  { name: 'Logitech', sector: 'Hardware & Semiconductor', strength: 'distinctive' },
+  { name: 'Arm', sector: 'Hardware & Semiconductor', strength: 'ambiguous', aliases: ['Arm India'] },
+  { name: 'OpenAI', sector: 'Data & AI', strength: 'distinctive', aliases: ['OpenAI Codex Community'] },
+  { name: 'Anthropic', sector: 'Data & AI', strength: 'distinctive', aliases: ['Claude Community', 'CCCL'] },
+  { name: 'ElevenLabs', sector: 'Data & AI', strength: 'distinctive' },
+  { name: 'Cartesia', sector: 'Data & AI', strength: 'distinctive' },
+  { name: 'kipi.ai', sector: 'Data & AI', strength: 'distinctive' },
+  { name: 'Magicball', sector: 'Data & AI', strength: 'distinctive' },
+  { name: 'ClickHouse', sector: 'Data & AI', strength: 'distinctive' },
+  { name: 'StarTree', sector: 'Data & AI', strength: 'distinctive', aliases: ['Apache Pinot'] },
+  { name: 'SurrealDB', sector: 'Developer Tools', strength: 'distinctive' },
+  { name: 'UiPath', sector: 'Developer Tools', strength: 'distinctive', aliases: ['UiPath Community'] },
+  { name: 'n8n', sector: 'Developer Tools', strength: 'distinctive', aliases: ['n8n Bangalore'] },
+  { name: 'Nutanix', sector: 'Developer Tools', strength: 'distinctive' },
+  { name: 'HackerRank', sector: 'Developer Tools', strength: 'distinctive' },
+  { name: 'Contentstack', sector: 'SaaS', strength: 'distinctive' },
+  { name: 'Amadeus', sector: 'SaaS', strength: 'distinctive', aliases: ['Amadeus Labs'] },
+  { name: 'Pine Labs', sector: 'Fintech', strength: 'distinctive' },
+  { name: 'Hack2skill', sector: 'Community', strength: 'distinctive' },
+  { name: 'HackCulture', sector: 'Community', strength: 'distinctive' },
+  { name: 'DevAarambh', sector: 'Community', strength: 'distinctive' },
+  { name: 'Outskill', sector: 'Community', strength: 'distinctive' },
+  { name: 'Scaler', sector: 'Community', strength: 'distinctive', aliases: ['Scaler Academy'] },
+  { name: 'Apidays', sector: 'Community', strength: 'distinctive', aliases: ['FOST', 'Future of Software Technologies'] },
+  { name: 'FOSS United', sector: 'Community', strength: 'distinctive', aliases: ['IndiaFOSS', 'FOSSUnited'] },
+  { name: 'Global AI Community', sector: 'Community', strength: 'distinctive', aliases: ['AgentCon'] },
 ];
 
 /** URL-safe slug for a company name. */
@@ -207,6 +245,7 @@ export const COMPANY_SECTORS: CompanySector[] = [
   'Consumer Internet',
   'SaaS',
   'Services & GCC',
+  'Hardware & Semiconductor',
   'Investor',
   'Community',
 ];
