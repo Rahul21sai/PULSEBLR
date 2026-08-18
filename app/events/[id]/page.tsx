@@ -79,10 +79,10 @@ export default function EventDetailPage({ params }: { params: Promise<{ id: stri
     return (
       <Shell>
         <div className="max-w-[880px] mx-auto px-4 md:px-8 pt-6">
-          <div className="skeleton aspect-[2/1] rounded-2xl mb-6" />
+          <div className="skeleton aspect-[2/1] rounded-[18px] mb-6" />
           <div className="skeleton h-8 w-3/4 rounded mb-3" />
           <div className="skeleton h-4 w-1/2 rounded mb-8" />
-          <div className="skeleton h-32 rounded-2xl" />
+          <div className="skeleton h-32 rounded-[18px]" />
         </div>
       </Shell>
     );
@@ -131,7 +131,7 @@ export default function EventDetailPage({ params }: { params: Promise<{ id: stri
         <div className="flex flex-col lg:flex-row gap-8">
           {/* ── Main column ─────────────────────────────────────────────── */}
           <div className="flex-1 min-w-0">
-            <div className="relative rounded-2xl overflow-hidden mb-6 bg-white card-shadow">
+            <div className="relative rounded-[18px] overflow-hidden mb-6 bg-white card-shadow">
               <EventCover
                 src={event.imageUrl}
                 title={event.title}
@@ -147,19 +147,30 @@ export default function EventDetailPage({ params }: { params: Promise<{ id: stri
               )}
             </div>
 
-            <div className="flex flex-wrap gap-1.5 mb-3">
+            {/* Category as a dot plus a label, not a filled block. Saturated chips
+                stacked directly above the title made the taxonomy the loudest thing on
+                the page; the colour still identifies the category, at a tenth of the
+                visual weight. */}
+            <div className="mb-3.5 flex flex-wrap items-center gap-x-3 gap-y-1.5">
               {(event.category || []).map(category => (
                 <span
                   key={category}
-                  className="pill text-white"
-                  style={{ background: categoryAccent(category) }}
+                  className="inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-[#3a3a3c]"
                 >
+                  <span
+                    aria-hidden="true"
+                    className="h-[7px] w-[7px] rounded-full"
+                    style={{ background: categoryAccent(category) }}
+                  />
                   {category}
                 </span>
               ))}
             </div>
 
-            <h1 className="text-[26px] md:text-[36px] font-bold leading-[1.15] tracking-[-0.025em] text-[#1D1D1F] mb-4">
+            <h1
+              className="text-[27px] md:text-[38px] font-bold leading-[1.08] tracking-[-0.035em] text-[#1D1D1F] mb-4"
+              style={{ fontFamily: 'var(--font-display)' }}
+            >
               {event.title}
             </h1>
 
@@ -167,10 +178,10 @@ export default function EventDetailPage({ params }: { params: Promise<{ id: stri
 
             {event.description && event.description !== event.title && (
               <section className="mt-8">
-                <h2 className="text-label-sm uppercase tracking-widest text-[#86868B] mb-3">
+                <h2 className="t-label text-[#8E8E93] mb-2.5">
                   About this event
                 </h2>
-                <div className="bg-white rounded-2xl card-shadow p-5 md:p-6">
+                <div className="bg-white rounded-[18px] card-shadow p-5 md:p-6">
                   <p className="text-[15px] leading-[1.65] text-[#3a3a3c] whitespace-pre-line">
                     {event.description}
                   </p>
@@ -185,6 +196,23 @@ export default function EventDetailPage({ params }: { params: Promise<{ id: stri
                     <span key={tag} className="pill pill-quiet">
                       {tag}
                     </span>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {event.companies && event.companies.length > 0 && (
+              <section className="mt-6">
+                <h2 className="t-label text-[#8E8E93] mb-2.5">Companies involved</h2>
+                <div className="flex flex-wrap gap-1.5">
+                  {event.companies.map(name => (
+                    <Link
+                      key={name}
+                      href={`/companies?q=${encodeURIComponent(name)}`}
+                      className="pill pill-quiet hover:bg-[#F7F7F9]"
+                    >
+                      {name}
+                    </Link>
                   ))}
                 </div>
               </section>
@@ -208,7 +236,7 @@ export default function EventDetailPage({ params }: { params: Promise<{ id: stri
 
             {related.length > 0 && (
               <section className="mt-10">
-                <h2 className="text-[17px] font-bold tracking-[-0.01em] text-[#1D1D1F] mb-3">
+                <h2 className="t-sub text-[#1D1D1F] mb-3">
                   Similar events
                 </h2>
                 <div className="flex flex-col gap-2">
@@ -246,7 +274,10 @@ export default function EventDetailPage({ params }: { params: Promise<{ id: stri
           {/* ── Sticky action card ──────────────────────────────────────── */}
           <aside className="lg:w-[336px] shrink-0">
             <div className="lg:sticky lg:top-[84px] flex flex-col gap-4 pb-8">
-              <div className="bg-white rounded-2xl card-shadow overflow-hidden">
+              {typeof event.connectionScore === 'number' && (
+                <WorthGoing event={event} />
+              )}
+              <div className="bg-white rounded-[18px] card-shadow overflow-hidden">
                 <div className="h-1" style={{ background: accent }} />
                 <div className="p-5 flex flex-col gap-4">
                   <div className="flex gap-3">
@@ -376,7 +407,7 @@ export default function EventDetailPage({ params }: { params: Promise<{ id: stri
               </div>
 
               {event.recruiterMentioned && (
-                <div className="bg-[#0071E3]/[0.06] border border-[#0071E3]/15 rounded-2xl p-4">
+                <div className="bg-[#0071E3]/[0.06] border border-[#0071E3]/15 rounded-[18px] p-4">
                   <p className="text-[13px] font-semibold text-[#0060C0] flex items-center gap-1.5">
                     <span className="material-symbols-outlined text-[16px]">work</span>
                     Hiring signal
@@ -405,6 +436,79 @@ function Shell({ children }: { children: React.ReactNode }) {
       </header>
       <main className="pt-14 pb-24 md:pb-10">{children}</main>
       <MobileBottomNav />
+    </div>
+  );
+}
+
+/**
+ * "Is this worth my evening?" — the question the whole product exists to answer.
+ *
+ * connectionScore is deterministic (lib/events/connection-score.ts), so the factors can
+ * be restated here from the same fields rather than guessed at. Showing the reasoning
+ * matters more than showing the number: a bare 83/100 is a black box, while "in person,
+ * 60 going, food" is something a person can agree or disagree with.
+ */
+function WorthGoing({ event }: { event: FeedEvent }) {
+  const score = event.connectionScore ?? 0;
+  const level = score >= 70 ? 3 : score >= 50 ? 2 : 1;
+  const verdict =
+    level === 3 ? 'Strong chance' : level === 2 ? 'Worth a look' : 'Probably not';
+
+  // Mirrors the weights in connection-score.ts. Ordered by how much they move the score.
+  const FUNNEL = /\b(certifi\w*|cohort|bootcamp|training|masterclass|course|webinar|batch \d)\b/i;
+  const reasons: Array<{ good: boolean; text: string }> = [];
+
+  if (event.format === 'offline') reasons.push({ good: true, text: 'In person — you can actually meet people' });
+  else if (event.format === 'hybrid') reasons.push({ good: true, text: 'Hybrid — go in person if you can' });
+  else reasons.push({ good: false, text: 'Online — you will watch, not mingle' });
+
+  if (typeof event.attendeeCount === 'number' && event.attendeeCount > 0) {
+    reasons.push({ good: true, text: `${event.attendeeCount} people going` });
+  }
+  if (event.hasFood === 'yes') reasons.push({ good: true, text: 'Food — people stay and talk' });
+  if (event.companies && event.companies.length > 0) {
+    reasons.push({ good: true, text: `Hosted by ${event.companies.slice(0, 2).join(' & ')}` });
+  }
+  if (FUNNEL.test(event.title)) {
+    reasons.push({ good: false, text: 'Reads like a course — you may be in an audience' });
+  }
+  if (event.isFree) reasons.push({ good: true, text: 'Free — draws practitioners' });
+
+  return (
+    <div className="rounded-[18px] bg-white card-shadow p-5">
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="t-label text-[#8E8E93]">Worth going?</h2>
+        <span className="meter" data-level={level} aria-hidden="true">
+          <i />
+          <i />
+          <i />
+        </span>
+      </div>
+      <p
+        className="mt-1.5 text-[19px] font-bold tracking-[-0.025em] text-[#1D1D1F]"
+        style={{ fontFamily: 'var(--font-display)' }}
+      >
+        {verdict}
+      </p>
+      <ul className="mt-3 space-y-1.5">
+        {reasons.map(r => (
+          <li key={r.text} className="flex items-start gap-2 text-[12.5px] leading-snug text-[#3a3a3c]">
+            <span
+              aria-hidden="true"
+              className={`material-symbols-outlined mt-[1px] text-[15px] shrink-0 ${
+                r.good ? 'text-[#1D8A44]' : 'text-[#8E8E93]'
+              }`}
+            >
+              {r.good ? 'check' : 'remove'}
+            </span>
+            {r.text}
+          </li>
+        ))}
+      </ul>
+      <p className="mt-3 text-[11.5px] leading-relaxed text-[#8E8E93]">
+        A ranking signal, not a promise. Powers the feed&rsquo;s &ldquo;Best for
+        connections&rdquo; sort.
+      </p>
     </div>
   );
 }

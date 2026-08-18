@@ -4,14 +4,20 @@ import Link from 'next/link';
 import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { DesktopNav, MobileBottomNav } from '../components/NavBar';
+import { CATEGORY_GROUPS } from '@/lib/event-types';
 
 
 
-const CATEGORIES = [
-  'AI/ML', 'Fintech', 'Cybersecurity', 'Cloud/DevOps', 'Web/Mobile',
-  'Data/Analytics', 'Hackathon', 'Government', 'Corporate',
-  'Summit/Conference', 'Networking/Meetup', 'Career/Job Fair',
-];
+/**
+ * Categories come FROM THE SCHEMA, never from a copy.
+ *
+ * This list used to be hardcoded and still held six values retired in the 32 -> 22
+ * taxonomy consolidation — Fintech, Government, Corporate, Summit/Conference,
+ * Networking/Meetup and Career/Job Fair. Choosing any of them made the submission fail
+ * enum validation, so the Add Event form could not actually add an event. Deriving it
+ * from CATEGORY_GROUPS also gives the picker the same tech-first ordering as the feed's
+ * filter rail. */
+const CATEGORY_SECTIONS = CATEGORY_GROUPS;
 
 const AREAS = [
   'Koramangala', 'Indiranagar', 'Whitefield', 'HSR Layout',
@@ -87,7 +93,7 @@ function AddEventForm() {
           ...formData,
           source: 'manual',
           price: formData.price ? parseFloat(formData.price) : undefined,
-          category: formData.category.length > 0 ? formData.category : ['Networking/Meetup'],
+          category: formData.category.length > 0 ? formData.category : ['Meetup'],
         }),
       });
       if (res.ok) {
@@ -221,21 +227,41 @@ function AddEventForm() {
         </div>
       </section>
 
-      {/* Categories */}
-      <section className="bg-white rounded-[20px] card-shadow p-6">
-        <h2 className="text-label-sm uppercase tracking-widest text-[#86868B] mb-4">Category</h2>
-        <div className="flex flex-wrap gap-2">
-          {CATEGORIES.map(cat => (
-            <button
-              key={cat} type="button" onClick={() => toggleCategory(cat)}
-              className={`px-4 py-2 rounded-full text-label-md transition-colors ${
-                formData.category.includes(cat)
-                  ? 'bg-[#0071E3] text-white border border-[#0071E3]'
-                  : 'bg-[#f3f3f5] text-[#1D1D1F] border border-transparent hover:bg-[#e8e8ea]'
-              }`}
-            >
-              {cat}
-            </button>
+      {/* Categories, grouped exactly as the feed's filter rail groups them, so the
+          vocabulary a user picks from is the vocabulary they later filter by. */}
+      <section className="bg-white rounded-[18px] card-shadow p-6">
+        <h2 className="t-label text-[#8E8E93] mb-1">Category</h2>
+        <p className="text-[13px] text-[#6E6E73] mb-4">Pick up to three.</p>
+        <div className="space-y-4">
+          {CATEGORY_SECTIONS.map(group => (
+            <div key={group.id}>
+              <p className="text-[12px] font-semibold text-[#1D1D1F] mb-2">{group.label}</p>
+              <div className="flex flex-wrap gap-1.5">
+                {group.names.map(cat => {
+                  const on = formData.category.includes(cat);
+                  // Three is the cap the tagger and the schema both enforce.
+                  const full = formData.category.length >= 3 && !on;
+                  return (
+                    <button
+                      key={cat}
+                      type="button"
+                      disabled={full}
+                      aria-pressed={on}
+                      onClick={() => toggleCategory(cat)}
+                      className={`pressable rounded-full px-3.5 h-9 text-[12.5px] font-semibold transition-colors ${
+                        on
+                          ? 'bg-[#1D1D1F] text-white'
+                          : full
+                            ? 'bg-white text-[#c7c7cc] shadow-[inset_0_0_0_1px_var(--hairline)] cursor-not-allowed'
+                            : 'bg-white text-[#1D1D1F] shadow-[inset_0_0_0_1px_var(--hairline)] hover:bg-[#F7F7F9]'
+                      }`}
+                    >
+                      {cat}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           ))}
         </div>
       </section>
