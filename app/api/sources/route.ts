@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import Source from '@/lib/models/Source';
+import { requireAdmin } from '@/lib/api-auth';
 
 export async function GET() {
   try {
@@ -17,7 +18,17 @@ export async function GET() {
   }
 }
 
+/**
+ * POST /api/sources -- register a scrape source. ADMIN ONLY.
+ *
+ * `Source.create(body)` means an attacker could inject a handle that the NEXT
+ * pipeline run will dutifully fetch, turning the scheduled scraper into a request
+ * generator aimed at a target of their choosing.
+ */
 export async function POST(request: Request) {
+  const gate = await requireAdmin();
+  if ('response' in gate) return gate.response;
+
   try {
     await dbConnect();
     const body = await request.json();

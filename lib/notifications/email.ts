@@ -16,6 +16,12 @@ function getResend(): Resend {
 
 export interface EmailConfig {
   to: string;
+  /**
+   * Whose tracker data the personal half of the digest is built from. Required,
+   * because generateDailyDigest without a user id used to return EVERY user's
+   * tracked events, contacts and private notes.
+   */
+  userId: string;
   from?: string;
 }
 
@@ -30,7 +36,7 @@ export async function sendDailyDigestEmail(config: EmailConfig): Promise<boolean
 
   try {
     console.log('📧 Generating daily digest...');
-    const digest = await generateDailyDigest();
+    const digest = await generateDailyDigest(config.userId);
 
     // Check if there's anything to send. A source-health problem alone is worth
     // an email — it means the event feed is silently breaking.

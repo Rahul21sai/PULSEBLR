@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import connectDB from '@/lib/mongodb';
 import Event from '@/lib/models/Event';
 import { parseEventParams, buildEventFilter, buildSort, SortKey } from '@/lib/events/query';
+import { requireAdmin } from '@/lib/api-auth';
 
 /**
  * GET /api/events — the feed.
@@ -76,8 +77,17 @@ export async function GET(request: NextRequest) {
   }
 }
 
-/** POST /api/events — manual event creation. */
+/**
+ * POST /api/events — manual event creation. ADMIN ONLY.
+ *
+ * Gated because an event is GLOBAL, not per-user: anything created here appears in
+ * everyone's feed, and app/events/[id]/page.tsx renders `applyLink` straight into an
+ * href, so an open create endpoint is a phishing-link injector.
+ */
 export async function POST(request: NextRequest) {
+  const gate = await requireAdmin();
+  if ('response' in gate) return gate.response;
+
   try {
     await connectDB();
     const body = await request.json();
@@ -101,9 +111,12 @@ export async function POST(request: NextRequest) {
       startDateTime,
       endDateTime: body.endDateTime ? new Date(body.endDateTime) : undefined,
       description: body.description || body.title,
+      // 'Meetup', not the retired 'Networking/Meetup': the latter was dropped from the
+      // schema enum in the 32 -> 22 taxonomy consolidation, so this default made every
+      // manual creation fail validation with an unhelpful enum error.
       category: Array.isArray(body.category) && body.category.length > 0
         ? body.category
-        : ['Networking/Meetup'],
+        : ['Meetup'],
       format: body.format || 'offline',
       sourceUrl: body.sourceUrl || body.applyLink || 'https://pulseblr.local/manual',
       dedupHash:

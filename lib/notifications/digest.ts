@@ -39,11 +39,23 @@ export interface DigestData {
 }
 
 /**
- * Generate daily digest data
- * Called once per day to compile what's new and what needs attention
+ * Generate daily digest data.
+ *
+ * `userId` SCOPES THE PERSONAL HALF and is required. Both TrackerEntry queries below
+ * previously ran with no user predicate, so the digest returned every user's tracked
+ * events, their contacts' names, companies and roles, and the user's private notes —
+ * and `GET /api/notifications/send-digest` served that object to anonymous callers.
+ * The event half (new events, deadlines, source health) is global by nature and stays
+ * global.
+ *
+ * Typed as required rather than optional on purpose: an optional parameter would let a
+ * caller silently reintroduce the leak by forgetting it, and TypeScript would say
+ * nothing.
  */
-export async function generateDailyDigest(): Promise<DigestData> {
+export async function generateDailyDigest(userId: string): Promise<DigestData> {
   await connectDB();
+
+  if (!userId) throw new Error('generateDailyDigest requires a userId');
 
   // Get events added in the last 24 hours
   const yesterday = new Date();
@@ -53,8 +65,9 @@ export async function generateDailyDigest(): Promise<DigestData> {
   // Get events with registration deadline in next 3 days
   const upcomingDeadlines = await getEventsWithDeadlineSoon(3);
 
-  // Get tracker entries updated in last 24 hours
+  // Get THIS USER'S tracker entries updated in last 24 hours
   const trackerUpdates = await TrackerEntry.find({
+    userId,
     updatedAt: { $gte: yesterday },
   })
     .populate('eventId')
@@ -66,6 +79,7 @@ export async function generateDailyDigest(): Promise<DigestData> {
   threeDaysFromNow.setDate(threeDaysFromNow.getDate() + 3);
 
   const followUpReminders = await TrackerEntry.find({
+    userId,
     'connections.followUpAt': {
       $gte: new Date(),
       $lte: threeDaysFromNow,

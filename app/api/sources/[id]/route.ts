@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import Source from '@/lib/models/Source';
+import { requireAdmin } from '@/lib/api-auth';
 
 export async function GET(
   request: NextRequest,
@@ -22,10 +23,14 @@ export async function GET(
   }
 }
 
+// ADMIN ONLY: this is how a source gets disabled, which silently shrinks the feed.
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const gate = await requireAdmin();
+  if ('response' in gate) return gate.response;
+
   try {
     await dbConnect();
     const { id } = await params;
@@ -47,10 +52,15 @@ export async function PUT(
   }
 }
 
+// ADMIN ONLY: deleting a Source destroys persisted discovery state that took
+// multiple runs to build, and it does not come back on its own.
 export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const gate = await requireAdmin();
+  if ('response' in gate) return gate.response;
+
   try {
     await dbConnect();
     const { id } = await params;

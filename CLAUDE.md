@@ -53,6 +53,8 @@ There is **no test runner** configured — no `test` script and no test files ex
 | `diag-dupe.ts` / `diag-tagquality.ts` | Duplicate clusters, and how many events carry LLM vs keyword tags. |
 | `diag-keyword-tagging.ts` | Asserts `keywordTagging()` still classifies. Exits non-zero on regression — see the `\b` warning below. |
 | `diag-seed-integrity.ts` | Duplicate company names, name/alias collisions, duplicate seed handles, over-confident `strength`. Run after editing the registry or a seed list. |
+| `diag-api-auth.ts` | Hits every mutating endpoint signed-out and asserts 401/403/503, and every public one and asserts 200. Needs a dev server. Run after touching any route. |
+| `diag-ssrf-guard.ts` | Asserts the SSRF guard blocks metadata IPs, loopback, private ranges, v4-mapped IPv6, decimal-encoded IPs and non-http schemes. No network calls. |
 | `probe-attended-sources.ts` / `probe-attended-round2.ts` / `probe-attended-round3.ts` | Probe the platforms named in the user's attendance history. Round 2/3 drill into the leads. Read-only. |
 | `verify-attended-seeds.ts` | The gate before a seed is added: fetches each candidate with its production mechanism and keeps it only if it returns **upcoming** events. Read-only. |
 | `probe-seed-candidates.ts` | FOSS United sitemap shape, Luma handle → calendar id, and Meetup name → slug resolution. Read-only. |
@@ -79,6 +81,8 @@ JS: `node scripts/generate-icons.js`.
 ## Environment
 
 Copy `.env.example` → `.env.local`. Required: `MONGODB_URI` (defaults to `mongodb://localhost:27017/pulseblr`), `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`, `NEXTAUTH_SECRET`, `NEXTAUTH_URL`. `RESEND_API_KEY` is optional (email digests).
+
+**`ADMIN_EMAILS` is required to use the Settings page** — a comma-separated list of Google account emails allowed to run the scraper and edit events/sources. It fails closed: unset means every admin endpoint returns 503 with a message naming the variable, so a 503 from `/api/scrape` is a configuration problem, not a bug.
 
 LLM tagging cascades **IBM ICA → NVIDIA NIM → Anthropic → keyword heuristics**, and every tier is optional — with no key at all the pipeline still runs on keywords.
 
@@ -231,7 +235,20 @@ Shared by `/api/events` and `/api/events/facets` so the list and the counts besi
 
 ### 6. Auth & per-user scoping
 
-NextAuth v5 (Auth.js) config lives in the root `auth.ts`, imported as `@/auth`. Strategy is **JWT** (no DB session): the `jwt` callback stashes the Google `sub`/email/name/picture into the token *and* upserts the `User` doc by `googleId` on first sign-in; `session` surfaces `token.sub` as `session.user.id`. Server code uses `getCurrentUserId()` (`lib/auth-helpers.ts`). Protection is two-layered: `proxy.ts` redirects `/dashboard`, `/tracker`, `/add-event` to `/login`, and API routes filter by `userId`. **Everything user-owned must be scoped by `userId`** — `TrackerEntry` has a compound-unique index `{ userId, eventId }`.
+NextAuth v5 (Auth.js) config lives in the root `auth.ts`, imported as `@/auth`. Strategy is **JWT** (no DB session): the `jwt` callback stashes the Google `sub`/email/name/picture into the token *and* upserts the `User` doc by `googleId` on first sign-in; `session` surfaces `token.sub` as `session.user.id`. Server code uses `getCurrentUserId()` (`lib/auth-helpers.ts`). `proxy.ts` redirects `/dashboard`, `/tracker`, `/add-event` and `/settings` to `/login`. **Everything user-owned must be scoped by `userId`** — `TrackerEntry` has a compound-unique index `{ userId, eventId }`.
+
+> **`proxy.ts` protects NO API route.** Its matcher is `'/((?!api|_next/static|…).*)'` — `api` is the first negative-lookahead term, so the proxy never runs for `/api/*`. Every API guard must live in its own handler. Six endpoints were reachable with no credentials because of this (`POST /api/events`, `PUT`+`DELETE /api/events/[id]`, `POST /api/sources`, `PUT`+`DELETE /api/sources/[id]`, `POST /api/scrape`, `POST /api/scrape-url`, `POST`+`GET /api/notifications/send-digest`). `scripts/diag-api-auth.ts` hits every one signed-out and asserts a refusal; run it after touching any route.
+
+**Two guard tiers** live in `lib/api-auth.ts`:
+
+- `requireUser()` — any signed-in user. For per-user data (`/api/tracker`, `/api/phase6`, the digest preview, `/api/scrape-url`).
+- `requireAdmin()` — email must be in the `ADMIN_EMAILS` allowlist. For anything **global**: creating/editing/deleting events, adding/removing sources, triggering a scrape, sending the digest email. Google sign-in is open to anyone with a Google account, so "signed in" is not a bar for operations that affect everyone — a stranger could otherwise empty the corpus or loop `/api/scrape` and burn the LLM quota.
+
+`requireAdmin()` **fails closed**: with `ADMIN_EMAILS` unset every admin route returns 503, never "any signed-in user". Neither cron needs it — `daily-scrape.yml` and `daily-digest.yml` run `npm run scrape` / `npm run send-digest` directly rather than calling the API, so there is no shared secret to leak.
+
+`POST /api/scrape-url` fetches a URL the caller supplies, which made it an SSRF. It now goes through `lib/security/safe-fetch.ts`: http(s) only, no embedded credentials, and every **resolved** address checked against loopback/private/link-local/CGNAT/multicast ranges (including v4-mapped IPv6 and decimal-encoded forms), with redirects followed manually so each hop is re-validated. `scripts/diag-ssrf-guard.ts` asserts the bypasses. Full DNS-rebinding protection would need connection pinning and is documented as out of scope in the module header.
+
+The digest is scoped too: `generateDailyDigest(userId)` takes a **required** userId, because both its `TrackerEntry` queries previously ran unfiltered and `GET /api/notifications/send-digest` served that object anonymously — every user's contacts, companies, follow-up dates and private notes.
 
 ### 7. App layer
 

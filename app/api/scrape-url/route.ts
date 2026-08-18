@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireUser } from '@/lib/api-auth';
+import { safeFetch, UnsafeUrlError } from '@/lib/security/safe-fetch';
 
 /**
  * POST /api/scrape-url
@@ -10,27 +12,37 @@ import { NextRequest, NextResponse } from 'next/server';
  * Does NOT require Playwright — uses fetch() so it works on serverless.
  */
 export async function POST(request: NextRequest) {
+  // Signed-in only. This endpoint makes the SERVER issue a request to a destination the
+  // caller chooses, so leaving it open made it a general-purpose proxy sitting inside
+  // the deployment's network.
+  const gate = await requireUser();
+  if ('response' in gate) return gate.response;
+
   try {
     const { url } = await request.json();
     if (!url || typeof url !== 'string') {
       return NextResponse.json({ error: 'url is required' }, { status: 400 });
     }
 
-    // Fetch the page HTML
-    const res = await fetch(url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; PulseBLR-bot/1.0)',
-        Accept: 'text/html',
-      },
-      // 8 second timeout via AbortSignal
-      signal: AbortSignal.timeout(8000),
-    });
+    // safeFetch enforces http(s) only, refuses any host that resolves to a private,
+    // loopback or link-local address (169.254.169.254 is the cloud metadata service,
+    // which hands out temporary credentials), re-validates every redirect hop, and caps
+    // the body size. Previously this was a bare fetch(url) with no validation at all.
+    let result;
+    try {
+      result = await safeFetch(url, { timeoutMs: 8000, accept: 'text/html' });
+    } catch (err) {
+      if (err instanceof UnsafeUrlError) {
+        return NextResponse.json({ event: null, error: err.message }, { status: 400 });
+      }
+      throw err;
+    }
 
-    if (!res.ok) {
+    if (result.status < 200 || result.status >= 300) {
       return NextResponse.json({ event: null, error: 'Could not fetch URL' }, { status: 200 });
     }
 
-    const html = await res.text();
+    const html = result.body;
 
     // ── Helpers ──────────────────────────────────────────────────────────────
     const metaContent = (name: string): string | undefined => {

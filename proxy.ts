@@ -1,7 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-// Routes that require a signed-in user
-const PROTECTED = ['/dashboard', '/tracker', '/add-event'];
+// Routes that require a signed-in user.
+//
+// `/settings` belongs here and was missing: it exposes controls that disable event
+// sources and trigger a scraper run, so it was operable by anyone who knew the URL.
+// The underlying API routes are now gated too (lib/api-auth.ts) — this is the
+// don't-even-render-it layer, not the security boundary.
+//
+// NOTE: the matcher below deliberately excludes `api`, so NOTHING here protects an API
+// route. Every /api guard lives in its own handler. See lib/api-auth.ts.
+const PROTECTED = ['/dashboard', '/tracker', '/add-event', '/settings'];
 
 export default function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;

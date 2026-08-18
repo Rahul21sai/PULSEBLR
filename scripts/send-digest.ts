@@ -6,6 +6,8 @@
 
 import './load-env'; // MUST be first — populates process.env from .env.local
 import { sendDailyDigestEmail } from '../lib/notifications/email';
+import connectDB from '../lib/mongodb';
+import User from '../lib/models/User';
 
 async function main() {
   console.log('='.repeat(60));
@@ -30,8 +32,24 @@ async function main() {
   }
 
   try {
+    // The digest's personal half is scoped by user id, so USER_EMAIL has to be
+    // resolved to an actual account. Skipping with exit 0 (rather than failing) keeps
+    // the scheduled Action green, matching how a missing RESEND_API_KEY is handled
+    // above -- a red cron that emails a failure every morning gets muted, and then
+    // real breakage goes unnoticed.
+    await connectDB();
+    const user = await User.findOne({ email: userEmail.toLowerCase() }).select('googleId').lean();
+    if (!user) {
+      console.log(
+        `\u2139\ufe0f  No account found for USER_EMAIL (${userEmail}) -- sign in once with that ` +
+          'Google account so the digest has tracker data to report. Skipping, no email sent.'
+      );
+      process.exit(0);
+    }
+
     const success = await sendDailyDigestEmail({
       to: userEmail,
+      userId: user.googleId,
     });
 
     if (success) {

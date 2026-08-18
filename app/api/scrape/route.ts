@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { runPipeline, PipelineOptions } from '@/lib/scrapers/pipeline';
+import { requireAdmin } from '@/lib/api-auth';
 
 /**
- * POST /api/scrape — trigger a scraper run.
+ * POST /api/scrape — trigger a scraper run. ADMIN ONLY.
  *
- * Callable from the Settings UI, a GitHub Actions cron, or any scheduler.
  * Body (all optional): { fast?: boolean, skipLlm?: boolean, prune?: boolean }
  *
  * A full run fans out to hundreds of upstream requests and does batched LLM
@@ -12,10 +12,22 @@ import { runPipeline, PipelineOptions } from '@/lib/scrapers/pipeline';
  * company-page sweep and shrinks the enrichment budgets, which is what the UI
  * button should use; the scheduled workflow runs the full pipeline via
  * `npm run scrape` where there is no request timeout at all.
+ *
+ * ADMIN, not merely signed-in, for three reasons this endpoint uniquely combines:
+ * `prune` defaults to TRUE and pruneStale issues Event.deleteMany, each call fans out
+ * to ~700 upstream requests plus LLM tagging on the owner's paid keys, and repeated
+ * calls get the deployment IP banned by Meetup, Luma and Eventbrite. It was previously
+ * reachable by anyone on the internet with no credentials at all.
+ *
+ * The GitHub Actions cron does NOT use this route — daily-scrape.yml runs
+ * `npm run scrape` directly — so gating it breaks no automation.
  */
 export const maxDuration = 300;
 
 export async function POST(request: NextRequest) {
+  const gate = await requireAdmin();
+  if ('response' in gate) return gate.response;
+
   try {
     let body: Record<string, unknown> = {};
     try {

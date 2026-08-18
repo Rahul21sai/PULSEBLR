@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import connectDB from '@/lib/mongodb';
 import Event from '@/lib/models/Event';
 import mongoose from 'mongoose';
+import { requireAdmin } from '@/lib/api-auth';
 
 // GET /api/events/[id] - Get a single event
 export async function GET(
@@ -41,11 +42,15 @@ export async function GET(
   }
 }
 
-// PUT /api/events/[id] - Update an event
+// PUT /api/events/[id] - Update an event. ADMIN ONLY: events are global, so an open
+// update endpoint lets anyone rewrite any event's title, time or applyLink.
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const gate = await requireAdmin();
+  if ('response' in gate) return gate.response;
+
   try {
     await connectDB();
     const { id } = await params;
@@ -78,11 +83,16 @@ export async function PUT(
   }
 }
 
-// DELETE /api/events/[id] - Delete an event
+// DELETE /api/events/[id] - Delete an event. ADMIN ONLY: real ids are handed out by
+// the public GET /api/events, so an open delete is a trivially targetable way to
+// empty the corpus one curl at a time.
 export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const gate = await requireAdmin();
+  if ('response' in gate) return gate.response;
+
   try {
     await connectDB();
     const { id } = await params;
