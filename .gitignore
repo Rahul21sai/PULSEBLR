@@ -76,3 +76,4 @@ digest_probe.json
 *.log
 audit-report.md
 COMMIT_MSG.txt
+PR_BODY.md
