@@ -54,10 +54,58 @@ export default function Home() {
   // Deferred by a tick for the same two reasons as the load effect below: React's
   // compiler rules reject a synchronous setState inside an effect, and reading the
   // URL after hydration avoids a server/client mismatch on the checkbox state.
+  //
+  // Reads the FULL state, not just ?company=. Previously a search could not be shared,
+  // bookmarked, or survive a refresh — type a query, reload, and it was gone — and the
+  // browser's back button did nothing after ten filter changes. The Web Interface
+  // Guidelines call for stateful UI to live in query params for exactly this reason.
+  /**
+   * Has the initial URL been read yet?
+   *
+   * The write effect below depends on the filter state, so on mount it runs with the
+   * DEFAULTS and would replaceState to a bare "/" — wiping the query string before the
+   * read effect ever parses it. Opening a shared link restored nothing at all, which the
+   * round-trip check caught. The write is gated on this until hydration finishes.
+   */
+  const hydratedFromUrl = useRef(false);
+
   useEffect(() => {
     const timer = setTimeout(() => {
-      const company = new URLSearchParams(window.location.search).get('company');
-      if (company) setFilters(prev => ({ ...prev, companies: [company] }));
+      const p = new URLSearchParams(window.location.search);
+
+      const q = p.get('q');
+      if (q) {
+        setSearchInput(q);
+        setQuery(q);
+      }
+      const w = p.get('when');
+      if (w !== null && WHEN_TABS.some(t => t.id === w)) setWhen(w);
+      const s = p.get('sort');
+      if (s && SORTS.some(o => o.id === s)) setSort(s);
+      const v = p.get('view');
+      if (v === 'grid' || v === 'rail') setView(v);
+
+      const company = p.get('company');
+      const category = p.get('category');
+      const area = p.get('area');
+      const format = p.get('format');
+      // techOnly defaults to TRUE, so only an explicit "false" turns it off — otherwise a
+      // link without the param would silently flip the default.
+      const techOnly = p.get('techOnly');
+
+      setFilters(prev => ({
+        ...prev,
+        companies: company ? company.split(',').filter(Boolean) : prev.companies,
+        categories: category ? category.split(',').filter(Boolean) : prev.categories,
+        areas: area ? area.split(',').filter(Boolean) : prev.areas,
+        format: format ?? prev.format,
+        freeOnly: p.get('isFree') === 'true' ? true : prev.freeOnly,
+        foodOnly: p.get('hasFood') === 'yes' ? true : prev.foodOnly,
+        techOnly: techOnly === null ? prev.techOnly : techOnly !== 'false',
+      }));
+
+      // Only now may the URL be written back.
+      hydratedFromUrl.current = true;
     }, 0);
     return () => clearTimeout(timer);
   }, []);
@@ -67,6 +115,42 @@ export default function Home() {
     const timer = setTimeout(() => setQuery(searchInput.trim()), 280);
     return () => clearTimeout(timer);
   }, [searchInput]);
+
+  /**
+   * Mirror the current view into the URL so it can be shared, bookmarked and restored.
+   *
+   * `replaceState`, not `pushState`: filtering is exploratory, and pushing an entry per
+   * toggle would mean twelve Back presses to leave the page. The trade-off is that Back
+   * does not step through filter history — the right call, because a URL that is CORRECT
+   * when copied matters far more than one that is undoable.
+   *
+   * Only non-default values are written, so a clean view stays a clean "/" rather than a
+   * wall of redundant params. techOnly is the exception: it defaults to true, so turning it
+   * OFF is what has to be recorded.
+   */
+  useEffect(() => {
+    // Never write before the initial read has landed, or a shared link erases itself.
+    if (!hydratedFromUrl.current) return;
+
+    const p = new URLSearchParams();
+    if (query) p.set('q', query);
+    if (when) p.set('when', when);
+    if (sort !== 'soonest') p.set('sort', sort);
+    if (view !== 'rail') p.set('view', view);
+    if (filters.categories.length) p.set('category', filters.categories.join(','));
+    if (filters.areas.length) p.set('area', filters.areas.join(','));
+    if (filters.companies.length) p.set('company', filters.companies.join(','));
+    if (filters.format) p.set('format', filters.format);
+    if (filters.freeOnly) p.set('isFree', 'true');
+    if (filters.foodOnly) p.set('hasFood', 'yes');
+    if (!filters.techOnly) p.set('techOnly', 'false');
+
+    const qs = p.toString();
+    const next = `${window.location.pathname}${qs ? `?${qs}` : ''}`;
+    if (next !== window.location.pathname + window.location.search) {
+      window.history.replaceState(null, '', next);
+    }
+  }, [query, when, sort, view, filters]);
 
   /**
    * One character is not a query. The API ignores a term this short — before
