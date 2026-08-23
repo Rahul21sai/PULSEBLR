@@ -13,10 +13,17 @@
  * classifier reached for when unsure, and because it sits in TECH_CATEGORY_NAMES it put a DJ
  * night, a design-thinking workshop and a board-game meetup into the default tech feed.
  *
+ * `--match` selects by TITLE REGEX instead of by category, which is the other half of the same
+ * problem: a category that has gone bad has documents to remove it from, but a category that is
+ * being MISSED has no marker to select on. "Leveraging Robotics for Success" was tagged
+ * `[AI/ML]` with `Robotics` in its own title; nothing about that document says "I should have
+ * been Hardware/Robotics", so only a text match can find it.
+ *
  * Usage:
  *   npx tsx scripts/retag-category.ts "Gaming/XR" --dry
  *   npx tsx scripts/retag-category.ts "Gaming/XR"
- *   npx tsx scripts/retag-category.ts "Gaming/XR" --all     include past events
+ *   npx tsx scripts/retag-category.ts "Gaming/XR" --all           include past events
+ *   npx tsx scripts/retag-category.ts --match="robotics|embedded" retag by title regex
  */
 import './load-env';
 import mongoose from 'mongoose';
@@ -28,17 +35,19 @@ import { EVENT_CATEGORIES } from '../lib/event-types';
 const argv = process.argv.slice(2);
 const DRY = argv.includes('--dry');
 const ALL = argv.includes('--all');
+const MATCH = argv.find(a => a.startsWith('--match='))?.slice('--match='.length);
 const CATEGORY = argv.find(a => !a.startsWith('--'));
 
 const CHUNK = 25;
 
 async function main() {
-  if (!CATEGORY) {
+  if (!CATEGORY && !MATCH) {
     console.error('usage: retag-category.ts "<Category>" [--dry] [--all]');
+    console.error('   or: retag-category.ts --match="<title regex>" [--dry] [--all]');
     console.error(`categories: ${EVENT_CATEGORIES.join(', ')}`);
     process.exit(1);
   }
-  if (!(EVENT_CATEGORIES as readonly string[]).includes(CATEGORY)) {
+  if (CATEGORY && !(EVENT_CATEGORIES as readonly string[]).includes(CATEGORY)) {
     console.error(`"${CATEGORY}" is not a category. Valid: ${EVENT_CATEGORIES.join(', ')}`);
     process.exit(1);
   }
@@ -46,8 +55,9 @@ async function main() {
   await connectDB();
   const now = new Date();
 
+  const selector = MATCH ? { title: new RegExp(MATCH, 'i') } : { category: CATEGORY };
   const filter = {
-    category: CATEGORY,
+    ...selector,
     ...(ALL ? {} : { $or: [{ startDateTime: { $gte: now } }, { endDateTime: { $gte: now } }] }),
   };
 
@@ -55,7 +65,8 @@ async function main() {
     'title description venue onlineLink category tags isTechEvent hasFood format'
   );
 
-  console.log(`Re-tagging ${events.length} event(s) carrying "${CATEGORY}"${DRY ? ' (dry run)' : ''}\n`);
+  const what = MATCH ? `whose title matches /${MATCH}/i` : `carrying "${CATEGORY}"`;
+  console.log(`Re-tagging ${events.length} event(s) ${what}${DRY ? ' (dry run)' : ''}\n`);
 
   let changed = 0;
   let stillHas = 0;
@@ -82,7 +93,8 @@ async function main() {
       const catsChanged = oldCats !== newCats;
       const techChanged = event.isTechEvent !== tagged.isTechEvent;
       if (techChanged) techFlips++;
-      if (tagged.categories.includes(CATEGORY)) stillHas++;
+      // Only meaningful in category mode; in --match mode there is no category to still carry.
+      if (CATEGORY && tagged.categories.includes(CATEGORY)) stillHas++;
 
       console.log(
         `  ${catsChanged || techChanged ? '~' : ' '} ${String(event.title).slice(0, 46).padEnd(46)}`
@@ -111,7 +123,9 @@ async function main() {
   }
 
   console.log(`\nDone: ${changed}/${events.length} changed, ${techFlips} tech-flag flip(s)`);
-  console.log(`  ${stillHas} still carry "${CATEGORY}" — those are the ones the sharpened rule accepts`);
+  if (CATEGORY) {
+    console.log(`  ${stillHas} still carry "${CATEGORY}" — those are the ones the sharpened rule accepts`);
+  }
   await mongoose.disconnect();
 }
 

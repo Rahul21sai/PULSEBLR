@@ -110,8 +110,13 @@ const DEFAULTS: Required<PipelineOptions> = {
   // share. Enrichment is what takes the feed from 45% to ~90% image coverage.
   lumaEnrichBudget: 150,
   meetupEnrichBudget: 450,
-  maxLumaCalendars: 60,
-  maxMeetupGroups: 120,
+  // Sized ABOVE the known set with headroom, because discovery compounds and a cap that bites
+  // is a permanent blind spot (see loadDiscovered). Measured 2026-08-23: 200 Meetup groups and
+  // 55 Luma calendars known. A Meetup group costs exactly ONE request (its ICS feed), so
+  // raising 120 → 260 adds ~80 requests to a run that already makes ~700 — cheap next to
+  // never scraping Microsoft Reactor or OWASP Bangalore again.
+  maxLumaCalendars: 120,
+  maxMeetupGroups: 260,
   includeEventbrite: true,
   includeCompanyPages: true,
   prune: true,
@@ -174,18 +179,76 @@ async function persistDiscovered(discovered: DiscoveredSource[]): Promise<number
 }
 
 /** Previously discovered sources of a given kind, minus any the user disabled. */
+/**
+ * Load every discovered source of a kind, ORDERED BY EXPECTED YIELD.
+ *
+ * The order matters because callers `.slice(0, cap)` the result, and discovery is designed to
+ * compound — the known set only grows, so sooner or later it passes the cap. Measured
+ * 2026-08-23 with scripts/diag-source-caps.ts: 200 Meetup groups known against a cap of 120,
+ * so 80 were dropped. Silently, with no log line and no health signal, and — because the
+ * previous query had no sort and Mongo returned a stable order — it was the SAME 80 on every
+ * run. A permanent blind spot, not a rotation, and indistinguishable in the feed from 80
+ * groups with nothing scheduled.
+ *
+ * What was in that tail: `microsoft-reactor-bengaluru`, `microsoft-365ug`,
+ * `owasp-bangalore-chapter`, `lfdt-bengaluru` (Linux Foundation) and `makers-tribe` — company
+ * events, security and makers, i.e. precisely the coverage that looked like a supply gap.
+ *
+ * Ordering, best first:
+ *   1. never scraped — a new discovery must get its first look, or it can never prove itself
+ *   2. produced events last time, most productive first
+ *   3. quiet, fewest consecutive empty scrapes first
+ *   4. long dead — the only sensible thing to drop
+ */
 async function loadDiscovered(kind: string): Promise<DiscoveredSource[]> {
   try {
     await connectDB();
     const rows = await Source.find({ kind, enabled: true })
-      .select('name handle')
+      .select('name handle lastScrapedAt lastEventCount consecutiveEmptyScrapes')
       .lean();
-    return (rows as Array<{ name?: string; handle?: string }>)
+
+    type Row = {
+      name?: string;
+      handle?: string;
+      lastScrapedAt?: Date;
+      lastEventCount?: number;
+      consecutiveEmptyScrapes?: number;
+    };
+
+    const rank = (row: Row): number => {
+      if (!row.lastScrapedAt) return 0; // never scraped
+      if ((row.lastEventCount ?? 0) > 0) return 1; // productive
+      return 2; // empty last time
+    };
+
+    return (rows as Row[])
       .filter(row => row.handle)
+      .sort((a, b) => {
+        const byRank = rank(a) - rank(b);
+        if (byRank !== 0) return byRank;
+        // Within "productive", more events first. Within "empty", fewer dead runs first.
+        const byYield = (b.lastEventCount ?? 0) - (a.lastEventCount ?? 0);
+        if (byYield !== 0) return byYield;
+        return (a.consecutiveEmptyScrapes ?? 0) - (b.consecutiveEmptyScrapes ?? 0);
+      })
       .map(row => ({ kind, handle: row.handle!, label: row.name || row.handle! }));
   } catch {
     return [];
   }
+}
+
+/**
+ * Apply a per-run cap and SAY SO when it bites.
+ *
+ * The whole defect above was that the drop was silent. A cap is a legitimate cost control; a
+ * cap you cannot see in the logs is a coverage bug that presents as a supply problem.
+ */
+function applyCap<T>(items: T[], cap: number, label: string, errors: string[]): T[] {
+  if (items.length <= cap) return items;
+  const message = `${label}: capped at ${cap} of ${items.length} — ${items.length - cap} not scraped this run (lowest expected yield first)`;
+  console.log(`  ! ${message}`);
+  errors.push(message);
+  return items.slice(0, cap);
 }
 
 /** Run one source with isolation + health recording. */
@@ -303,15 +366,22 @@ export async function runPipeline(options: PipelineOptions = {}): Promise<Pipeli
   );
   const newlyDiscovered = await persistDiscovered(collector.discovered);
   const lumaCalendars = wants('luma-calendars')
-    ? (await loadDiscovered('luma-calendar')).slice(0, opts.maxLumaCalendars)
+    ? applyCap(await loadDiscovered('luma-calendar'), opts.maxLumaCalendars, 'Luma calendars', collector.errors)
     : [];
   const meetupGroupsFromDb = wants('meetup-groups') ? await loadDiscovered('meetup-group') : [];
 
+  // Seeds go FIRST: they are hand-verified, so they must never be the ones a cap drops.
+  // loadDiscovered has already ordered the rest by expected yield.
   const meetupSlugs = !wants('meetup-groups')
     ? []
-    : [...new Set([...meetupGroupsFromDb.map(d => d.handle), ...SEED_MEETUP_GROUPS])]
-        .filter(slug => isEnabled(slug, `https://www.meetup.com/${slug}/`))
-        .slice(0, opts.maxMeetupGroups);
+    : applyCap(
+        [...new Set([...SEED_MEETUP_GROUPS, ...meetupGroupsFromDb.map(d => d.handle)])].filter(slug =>
+          isEnabled(slug, `https://www.meetup.com/${slug}/`)
+        ),
+        opts.maxMeetupGroups,
+        'Meetup groups',
+        collector.errors
+      );
 
   console.log(
     `Discovery: ${newlyDiscovered} new source(s); scraping ${lumaCalendars.length} Luma calendars + ${meetupSlugs.length} Meetup groups`

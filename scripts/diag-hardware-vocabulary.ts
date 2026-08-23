@@ -79,6 +79,8 @@ const MUST_NOT_MATCH: Array<[string, string]> = [
   ['Wafer biscuits and chai tasting', '`wafer` is also food'],
   ['A sensory sound bath and meditation', '"sensory" must not match `sensors?`'],
   ['RF proposal writing workshop', '`rf` is too short to be safe'],
+  ['Silicon Valley Business Networking (Online)', '"Silicon Valley" is a PLACE — common in startup titles'],
+  ['FounderX Silicon Valley: VIP Gathering', '"Silicon Valley" again'],
   ['Product management masterclass', 'unrelated — guards against a catch-all'],
   ['Live jazz and open mic night', 'unrelated'],
 ];

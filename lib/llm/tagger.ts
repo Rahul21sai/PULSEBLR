@@ -588,7 +588,18 @@ export async function tagEventWithLLM(
 // ─────────────────────────────────────────────────────────────────────────────
 // Keyword fallback — also the baseline every LLM result is validated against.
 // ─────────────────────────────────────────────────────────────────────────────
-const CATEGORY_KEYWORDS: Array<[string, RegExp]> = [
+/**
+ * Exported so diagnostics can measure against THE pattern rather than a copy of it.
+ *
+ * A copy is what `diag-scorecard.ts` had, and it drifted within one session: the tagger gained a
+ * `silicon(?! valley)` guard and the scorecard's duplicate did not, so the scorecard counted the
+ * tagger's CORRECT refusal of "Silicon Valley Business Networking" as a hardware miss and
+ * reported a worse number than reality. A metric that keeps its own copy of the thing it
+ * measures will eventually measure the copy.
+ *
+ * Use `categoryPattern(name)` rather than indexing this directly.
+ */
+export const CATEGORY_KEYWORDS: Array<[string, RegExp]> = [
   // ── Tech topics ──
   ['AI/ML', /\b(ai|a\.i\.|artificial intelligence|machine learning|\bml\b|deep learning|neural|llm|gpt|genai|generative|transformer|nlp|computer vision|agentic|rag|mlops)\b/i],
   ['Data/Analytics', /\b(data|analytics|big data|data science|data engineering|warehouse|spark|iceberg|dbt|kafka|airflow|visualization|\bbi\b|sql|postgres|mysql|clickhouse)\b/i],
@@ -613,7 +624,13 @@ const CATEGORY_KEYWORDS: Array<[string, RegExp]> = [
   // `asic` is safe inside `\b(…)\b` because "basic" has no word boundary before its `a`.
   // Plural/gerund forms are spelled out where the base word is a prefix of a longer one:
   // `\b` after "3d print" fails on "3D printing", so the suffix must be in the pattern.
-  ['Hardware/Robotics', /\b(hardware|embedded|robotics|iot|drone|semiconductor|chip design|soc design|analog design|silicon|fpga|vlsi|verilog|systemverilog|vhdl|asic|risc-?v|tape-?outs?|photonics?|mems|arduino|raspberry pi|esp32|stm32|microcontrollers?|mechatronics|firmware|rtos|pcb|soldering|electronics|electron devices?|signal processing|3d print(?:ing|ers?)?|makerspaces?|maker faire|sensors?)\b/i],
+  // `silicon` is guarded against "Silicon Valley", which is a PLACE and turns up constantly in
+  // Bengaluru startup-networking titles ("Silicon Valley Business Networking", "FounderX Silicon
+  // Valley"). It was in this pattern before the widening and would have keyword-tagged those as
+  // hardware whenever the LLM tier was unavailable. Found by reading the events the scorecard
+  // listed rather than trusting its percentage — the metric had counted the tagger's CORRECT
+  // refusal as a miss.
+  ['Hardware/Robotics', /\b(hardware|embedded|robotics|iot|drone|semiconductor|chip design|soc design|analog design|silicon(?! valley)|fpga|vlsi|verilog|systemverilog|vhdl|asic|risc-?v|tape-?outs?|photonics?|mems|arduino|raspberry pi|esp32|stm32|microcontrollers?|mechatronics|firmware|rtos|pcb|soldering|electronics|electron devices?|signal processing|3d print(?:ing|ers?)?|makerspaces?|maker faire|sensors?)\b/i],
   ['Blockchain/Web3', /\b(blockchain|web3|crypto|ethereum|solana|bitcoin|nft|defi|smart contract|zk\b|zero.?knowledge)\b/i],
   // A bare `gaming` matched "BoardGaming Sunday" and put a board-game night in the tech feed.
   //
@@ -662,6 +679,16 @@ const TECH_CATEGORIES = new Set<string>([...TECH_CATEGORY_NAMES, 'Hackathon']);
 
 const FOOD_RE =
   /\b(food|snacks?|refreshments?|lunch|dinner|breakfast|pizza|beverages?|drinks?|meal|catering|high tea|buffet)\b/i;
+
+/**
+ * The keyword pattern for one category, or undefined if it has none.
+ *
+ * `Meetup` and a few others are assigned by the LLM only and have no regex, so the caller must
+ * handle undefined rather than assume every category is keyword-detectable.
+ */
+export function categoryPattern(category: string): RegExp | undefined {
+  return CATEGORY_KEYWORDS.find(([name]) => name === category)?.[1];
+}
 
 export function keywordTagging(input: TaggingInput): TaggingResult {
   const text = `${input.title} ${input.description} ${(input.hints || []).join(' ')}`;
