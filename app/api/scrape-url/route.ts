@@ -125,6 +125,41 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    /**
+     * Fall back to <time datetime="…"> when JSON-LD gave no date.
+     *
+     * This is what makes "Import from Link" useful for the pages a crawler CANNOT reach,
+     * which is the whole reason the feature exists. Measured with
+     * scripts/diag-import-from-link.ts: Luma and HasGeek fill 7 of 7 fields from JSON-LD,
+     * but FOSS United filled only 3 of 7 — no date — despite publishing start and end as
+     *
+     *     <time datetime="2026-08-01T14:00:00">2:00 PM</time>
+     *     <time datetime="2026-08-01T17:00:00">5:00 PM</time>
+     *
+     * <time datetime> is a web standard, so reading it is not selector guessing; it helps
+     * every site with semantic markup, not just this one.
+     *
+     * The first two parseable values are taken as start and end, which is the ordinary
+     * document order for an event's own times. A page whose first <time> is a post date
+     * would mislead this, so it only ever runs when JSON-LD produced nothing — a page with
+     * proper Event markup is always trusted over a heuristic.
+     */
+    if (!startDateTime) {
+      const times: string[] = [];
+      for (const m of html.matchAll(/<time[^>]*datetime=["']([^"']+)["']/gi)) {
+        const value = m[1].trim();
+        // A bare local string is read in the SERVER's zone, which would shift a Bengaluru
+        // evening event by 5.5 hours on a UTC host. Treat unzoned values as IST, matching
+        // every other date path in this project.
+        const unzoned = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/.test(value);
+        const parsed = new Date(unzoned ? `${value}+05:30` : value);
+        if (!Number.isNaN(parsed.getTime())) times.push(parsed.toISOString().slice(0, 16));
+        if (times.length >= 2) break;
+      }
+      if (times[0]) startDateTime = times[0];
+      if (!endDateTime && times[1]) endDateTime = times[1];
+    }
+
     // Venue
     let venue: string | undefined;
     let format: 'online' | 'offline' | 'hybrid' = 'offline';
