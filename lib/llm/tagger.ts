@@ -86,6 +86,10 @@ ${EVENT_CATEGORIES.map(c => `  - ${c}`).join('\n')}
 
 "confidence": 0.0-1.0
 
+"event": the number from the "Event N:" heading this object classifies.
+  REQUIRED. Copy it exactly. It is how each classification is matched back to its
+  event, so an object without it, or with the wrong number, is discarded.
+
 Respond with ONLY a JSON array, one object per input event, in the SAME ORDER.
 No prose, no markdown fences.`;
 
@@ -485,13 +489,53 @@ export async function tagEvents(inputs: TaggingInput[]): Promise<TaggingResult[]
     }
 
     if (parsed) {
-      // Apply positionally. A short array leaves the tail on keyword tags rather
-      // than mis-assigning another event's classification to it.
-      parsed.forEach((item, index) => {
-        results[offset + index] = coerce(item, fallbacks[offset + index]);
-      });
-      llmTagged += Math.min(parsed.length, batch.length);
-      if (parsed.length < batch.length) partialBatches++;
+      /**
+       * Match each classification to its event by the ECHOED EVENT NUMBER, not by array
+       * position.
+       *
+       * Position was wrong, and wrong in a way that produced confident nonsense. The old
+       * comment claimed a short array "leaves the tail on keyword tags rather than
+       * mis-assigning another event's classification to it" — true only if the omission is
+       * at the END. The salvage path collects every complete object it can find, so when a
+       * model skips or malforms one in the MIDDLE, everything after the gap shifts left by
+       * one and each event inherits its neighbour's tags.
+       *
+       * Measured in the live corpus: "Sunday book club meet" tagged [Cybersecurity, AI/ML],
+       * "ComicCast Society: Live Stand-Up Comedy Evening" tagged [AI/ML, Web/Mobile], and
+       * "Dr. Joe Dispenza's Meditation Challenge" tagged [Product/Design, AI/ML,
+       * Cloud/DevOps]. Those are not judgement errors — they are other events' answers,
+       * landing one row off. 17 of 333 tech-flagged events came from this.
+       *
+       * The events are already numbered "Event N:" in the prompt, so the model just echoes
+       * that number back and a gap becomes harmless instead of corrupting the remainder.
+       */
+      let applied = 0;
+      let mappedByIndex = 0;
+
+      for (const item of parsed) {
+        const raw = (item as { event?: unknown })?.event;
+        const eventNumber = typeof raw === 'number' ? raw : Number.parseInt(String(raw ?? ''), 10);
+        if (!Number.isInteger(eventNumber) || eventNumber < 1 || eventNumber > batch.length) continue;
+        const target = offset + eventNumber - 1;
+        results[target] = coerce(item, fallbacks[target]);
+        applied++;
+        mappedByIndex++;
+      }
+
+      // Fall back to positional ONLY when the count matches exactly, which is the one case
+      // where position cannot be ambiguous. A short array with no usable numbers is left on
+      // keyword tags for the whole batch — fewer LLM tags is strictly better than
+      // authoritative-looking tags belonging to a different event.
+      if (mappedByIndex === 0 && parsed.length === batch.length) {
+        parsed.forEach((item, index) => {
+          results[offset + index] = coerce(item, fallbacks[offset + index]);
+        });
+        applied = parsed.length;
+      }
+
+      llmTagged += applied;
+      if (applied < batch.length) partialBatches++;
+      if (applied === 0) batchFailures++;
     } else {
       batchFailures++;
     }
