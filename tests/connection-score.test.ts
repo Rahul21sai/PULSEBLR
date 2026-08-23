@@ -55,6 +55,39 @@ describe('connectionScore', () => {
     expect(meetup - cohort).toBeGreaterThan(40);
   });
 
+  /**
+   * The coaching-centre variants. Two of these reached the top of the live feed scoring 58 and
+   * 70 because the funnel list was built around the word "paid" and these advertise as FREE.
+   *
+   * The `demo` cases are the subtle ones and the reason this test exists: the same word marks
+   * the best kind of event and the worst, so it is matched under a lookahead. That is exactly
+   * the sort of pattern that breaks silently when someone later "simplifies" it.
+   */
+  it('penalises coaching-centre course adverts, including free ones', () => {
+    const peer = connectionScore({ ...base, title: 'Bangalore Go Meetup', category: ['Meetup'] });
+
+    for (const title of [
+      'Free DevOps Demo Class in Electronic City Bangalore',
+      'Free Gen AI & Agentic AI Demo at eMexo',
+      'Enrollment open — Full Stack Trial Class',
+      'Best Software Testing Coaching Center Electronic City',
+    ]) {
+      expect(connectionScore({ ...base, title }), title).toBeLessThan(peer);
+    }
+  });
+
+  it('does NOT penalise demo nights, demos or demo days — those are peer events', () => {
+    const plain = connectionScore({ ...base, title: 'Some Event' });
+
+    // "demo night" additionally earns the PEER_PATTERN bonus, so it must come out ahead.
+    expect(connectionScore({ ...base, title: 'Bengaluru Demo Night' })).toBeGreaterThan(plain);
+    // The plural is community show-and-tell, and must not be caught by the singular rule.
+    expect(connectionScore({ ...base, title: 'Show and Tell: Demos from the community' }))
+      .toBeGreaterThanOrEqual(plain);
+    // Startup demo days are networking-dense; unpenalised, matching the pre-existing behaviour.
+    expect(connectionScore({ ...base, title: 'Accel Demo Day' })).toBeGreaterThanOrEqual(plain);
+  });
+
   it('scales attendees logarithmically, so 20 -> 40 matters more than 200 -> 220', () => {
     const at = (n: number) => connectionScore({ ...base, attendeeCount: n });
     const smallJump = at(40) - at(20);

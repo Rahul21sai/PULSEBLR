@@ -13,14 +13,35 @@
  *   npx tsx scripts/retag-events.ts               everything the feed can show
  *   npx tsx scripts/retag-events.ts --ongoing     only in-progress events
  *   npx tsx scripts/retag-events.ts --all         past events too
+ *   npx tsx scripts/retag-events.ts --inconsistent  ONLY documents whose two "tech"
+ *                                                   signals contradict each other
  *   npx tsx scripts/retag-events.ts --limit 100
  *   npx tsx scripts/retag-events.ts --dry
+ *
+ * ── WHY `--inconsistent` EXISTS, AND WHY IT IS USUALLY THE RIGHT FLAG ──────────────
+ * A blanket re-tag is not free. Measured with scripts/diag-retag-preview.ts on 16 targeted
+ * events: the current provider (NVIDIA llama-3.1-8b, because the IBM ICA key has expired)
+ * corrected 7 wrong `isTechEvent` flags and broke none — but it consistently returns FEWER
+ * categories than are stored. `Databricks Campus Hackathon` came back `[Data/Analytics]`
+ * where it had held `[Hackathon, AI/ML, Data/Analytics]`, so re-tagging it would delete a
+ * correct Event-type tag the filter rail depends on.
+ *
+ * So a `--all` run trades category richness across the whole corpus for flag accuracy on a
+ * small slice of it. `--inconsistent` takes only the documents where the two independent
+ * definitions of "tech" contradict each other — `isTechEvent`, which `techOnly` filters on,
+ * versus membership of TECH_CATEGORY_NAMES, which the "Tech topic" rail counts. Those
+ * documents are provably wrong in one direction or the other, so a narrower-but-correct tag
+ * is a strict improvement; every consistent document keeps the tags it has.
+ *
+ * Note that re-tagging does NOT guarantee the two agree afterwards, and should not: a
+ * hackathon with no topic category is legitimately `isTechEvent: true`.
  */
 import './load-env';
 import mongoose from 'mongoose';
 import connectDB from '../lib/mongodb';
 import Event from '../lib/models/Event';
 import { tagEvents } from '../lib/llm/tagger';
+import { TECH_CATEGORY_NAMES } from '../lib/event-types';
 
 const argv = process.argv.slice(2);
 const DRY = argv.includes('--dry');
@@ -28,6 +49,7 @@ const ALL = argv.includes('--all');
 // Ongoing events (started, not finished) are the ones a start-date-only filter
 // misses, and they're exactly where stale tags survived.
 const ONGOING_ONLY = argv.includes('--ongoing');
+const INCONSISTENT_ONLY = argv.includes('--inconsistent');
 const limitArg = argv.indexOf('--limit');
 const LIMIT = limitArg >= 0 ? Number(argv[limitArg + 1]) : 0;
 
@@ -43,11 +65,37 @@ async function main() {
   // later occurrences got correct ones, so the same event appeared twice in the
   // feed with contradictory categories.
   const now = new Date();
-  const filter = ALL
+
+  /**
+   * The two contradictions, as a Mongo predicate:
+   *   A. carries a tech TOPIC but isTechEvent is not true → hidden from the default feed
+   *      despite being on a tech subject.
+   *   B. isTechEvent is true but carries NO tech topic → shown in the tech feed with nothing
+   *      tech about its categories.
+   */
+  const TECH = [...TECH_CATEGORY_NAMES];
+  const inconsistent = {
+    $or: [
+      { isTechEvent: { $ne: true }, category: { $in: TECH } },
+      { isTechEvent: true, category: { $nin: TECH } },
+    ],
+  };
+
+  const window_ = ALL
     ? {}
     : ONGOING_ONLY
       ? { startDateTime: { $lt: now }, endDateTime: { $gte: now } }
       : { $or: [{ startDateTime: { $gte: now } }, { endDateTime: { $gte: now } }] };
+
+  // $and rather than a merged object: both halves use $or, and spreading them would silently
+  // drop the first one.
+  const filter = INCONSISTENT_ONLY
+    ? (Object.keys(window_).length > 0 ? { $and: [window_, inconsistent] } : inconsistent)
+    : window_;
+
+  if (INCONSISTENT_ONLY) {
+    console.log('Selecting only documents whose isTechEvent contradicts their tech categories.');
+  }
   let query = Event.find(filter)
     .sort({ startDateTime: 1 })
     .select('title description venue onlineLink category tags isTechEvent hasFood format');

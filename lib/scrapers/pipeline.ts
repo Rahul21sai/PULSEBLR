@@ -40,6 +40,7 @@ import { scrapeAllEvents } from './adapters/allevents';
 import { scrapeDevEvents, DEVEVENTS_SOURCE_URL } from './adapters/devevents';
 import { scrapeHasgeek } from './adapters/hasgeek';
 import { scrapeFossUnited } from './adapters/fossunited';
+import { scrapeDistrict, DISTRICT_SOURCE_URL } from './adapters/district';
 import { scrapeUrlUniversal, COMPANY_EVENT_PAGES } from './adapters/universal';
 import { normalizeEvents } from './normalizer';
 import { ingestEvents, IngestionResult, updateSource } from './ingestion';
@@ -61,6 +62,22 @@ export interface PipelineOptions {
   includeCompanyPages?: boolean;
   /** Delete events that stopped appearing and are now in the past. */
   prune?: boolean;
+  /**
+   * Restrict the run to these source ids (`district`, `hasgeek`, `luma-city`,
+   * `meetup-groups`, `company-pages`, …). Empty means every source, which is the
+   * normal path — the daily cron never sets this.
+   *
+   * This exists because verifying a NEW adapter end-to-end otherwise costs a full run:
+   * ~700 upstream requests and 5-10 minutes to exercise one feed. It is also the honest
+   * way to re-ingest a single source after fixing its parser.
+   *
+   * SETTING THIS FORCES `prune` OFF, and that is not a convenience. `pruneStale()` deletes
+   * any past event no source has reported for a week; the sources that did not run this
+   * time cannot report theirs, so a partial run must never be allowed to reach the pruner.
+   * Today's 7-day grace would usually absorb it, but "usually" is not a guarantee to build
+   * a delete on.
+   */
+  onlySources?: string[];
 }
 
 export interface SourceReport {
@@ -98,6 +115,7 @@ const DEFAULTS: Required<PipelineOptions> = {
   includeEventbrite: true,
   includeCompanyPages: true,
   prune: true,
+  onlySources: [],
 };
 
 /** URLs the user has switched off in Settings. Fail-open: unknown ⇒ enabled. */
@@ -248,16 +266,27 @@ export async function runPipeline(options: PipelineOptions = {}): Promise<Pipeli
   const disabled = await disabledUrls();
   const isEnabled = (...keys: string[]) => !keys.some(key => disabled.has(key));
 
+  /**
+   * Source-id gate for `onlySources`. Empty list ⇒ everything runs, which is the daily path.
+   * See PipelineOptions.onlySources for why this also disables pruning.
+   */
+  const only = new Set(opts.onlySources ?? []);
+  const wants = (id: string) => only.size === 0 || only.has(id);
+  if (only.size > 0) {
+    console.log(`Restricted run: ${[...only].join(', ')} (pruning disabled)`);
+    opts.prune = false;
+  }
+
   // ── 1. City-level feeds (also the discovery engines) ──────────────────────
   console.log('Scraping city feeds…');
-  if (isEnabled('https://luma.com/bengaluru')) {
+  if (wants('luma-city') && isEnabled('https://luma.com/bengaluru')) {
     await runSource(
       { id: 'luma-city', label: 'Luma — Bengaluru', type: 'api', url: 'https://luma.com/bengaluru' },
       () => scrapeLumaCity('bengaluru'),
       collector
     );
   }
-  if (isEnabled('https://www.meetup.com/find/')) {
+  if (wants('meetup-city') && isEnabled('https://www.meetup.com/find/')) {
     await runSource(
       { id: 'meetup-city', label: 'Meetup — Bengaluru search', type: 'scrape', url: 'https://www.meetup.com/find/' },
       () => scrapeMeetupCity(),
@@ -273,14 +302,16 @@ export async function runPipeline(options: PipelineOptions = {}): Promise<Pipeli
     LUMA_SEED_CALENDARS.map(c => ({ kind: 'luma-calendar', handle: c.handle, label: c.label }))
   );
   const newlyDiscovered = await persistDiscovered(collector.discovered);
-  const lumaCalendars = (await loadDiscovered('luma-calendar')).slice(0, opts.maxLumaCalendars);
-  const meetupGroupsFromDb = await loadDiscovered('meetup-group');
+  const lumaCalendars = wants('luma-calendars')
+    ? (await loadDiscovered('luma-calendar')).slice(0, opts.maxLumaCalendars)
+    : [];
+  const meetupGroupsFromDb = wants('meetup-groups') ? await loadDiscovered('meetup-group') : [];
 
-  const meetupSlugs = [
-    ...new Set([...meetupGroupsFromDb.map(d => d.handle), ...SEED_MEETUP_GROUPS]),
-  ]
-    .filter(slug => isEnabled(slug, `https://www.meetup.com/${slug}/`))
-    .slice(0, opts.maxMeetupGroups);
+  const meetupSlugs = !wants('meetup-groups')
+    ? []
+    : [...new Set([...meetupGroupsFromDb.map(d => d.handle), ...SEED_MEETUP_GROUPS])]
+        .filter(slug => isEnabled(slug, `https://www.meetup.com/${slug}/`))
+        .slice(0, opts.maxMeetupGroups);
 
   console.log(
     `Discovery: ${newlyDiscovered} new source(s); scraping ${lumaCalendars.length} Luma calendars + ${meetupSlugs.length} Meetup groups`
@@ -362,6 +393,12 @@ export async function runPipeline(options: PipelineOptions = {}): Promise<Pipeli
     // rather than CSS classes; see the adapter header for why the two earlier rejections of
     // this source were asking the wrong question.
     [{ id: 'fossunited', label: 'FOSS United — Bengaluru + IndiaFOSS', type: 'scrape', url: 'https://fossunited.org/c/bengaluru' }, scrapeFossUnited],
+    // District (ex-Paytm Insider, now Zomato's) is the CITY-BREADTH source, not a tech one:
+    // comedy, concerts, theatre, cultural festivals, runs, business networking. It exists to
+    // serve "every Bengaluru event"; the tech feed is gated by isTechEvent so it cannot
+    // dilute it. Costs ~27 requests because the slug pre-filter drops 287 past and 57
+    // always-on listings without fetching them — see the adapter header.
+    [{ id: 'district', label: 'District — Bengaluru city events', type: 'scrape', url: DISTRICT_SOURCE_URL }, scrapeDistrict],
   ];
   if (opts.includeEventbrite) {
     platformSources.push([
@@ -371,12 +408,13 @@ export async function runPipeline(options: PipelineOptions = {}): Promise<Pipeli
   }
 
   for (const [descriptor, run] of platformSources) {
+    if (!wants(descriptor.id)) continue;
     if (!isEnabled(descriptor.url)) continue;
     await runSource(descriptor, run, collector);
   }
 
   // ── 4. Company / community pages via the universal adapter ────────────────
-  if (opts.includeCompanyPages) {
+  if (opts.includeCompanyPages && wants('company-pages')) {
     console.log(`Sweeping ${COMPANY_EVENT_PAGES.length} company/community pages…`);
     const pages = COMPANY_EVENT_PAGES.filter(page => isEnabled(page.url));
     const results = await mapPool(pages, 5, page =>

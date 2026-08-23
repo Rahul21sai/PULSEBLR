@@ -47,8 +47,25 @@ const SOCIAL_CATEGORIES = new Set([
  * The corpus is full of them — "Get Google AI Certified — AI Professionals July 2026
  * Cohort [6 of 8]" is a recurring series, and it is worthless for making peers.
  */
+/*
+ * The coaching-centre variants were added after two of them reached the top of the feed:
+ * "Free DevOps Demo Class in Electronic City Bangalore" scored 58 and "Free Gen AI & Agentic AI
+ * Demo at eMexo" scored 70 (diag-coaching-leak.ts). Both are lead generation for paid courses,
+ * and the word "free" is what let them past a list built around "paid certification".
+ *
+ * `demo` is guarded rather than listed bare, because three uses of the word mean the opposite
+ * thing:
+ *   · "Demo Night" and "Demos" — community show-and-tell, among the BEST events for connections,
+ *     and "demo night" already earns +10 from PEER_PATTERN. The `s\b` branch of the lookahead is
+ *     what spares the plural.
+ *   · "Demo Day" — startup demo days are networking-dense, so they stay unpenalised, matching the
+ *     pre-existing `demo day for` entry.
+ *   · "… Demo at <institute>" / "Demo Class" — a sales session. This is the one to penalise.
+ * Alternation is ordered, so the explicit `demo class` / `demo lecture` / `demo day for` branches
+ * are tried before the guarded bare `demo`.
+ */
 const FUNNEL_PATTERN =
-  /\b(certifi\w*|cohort|bootcamp|training|masterclass|course|webinar|demo day for|free workshop|crash course|placement|internship drive|batch \d)\b/i;
+  /\b(certifi\w*|cohort|bootcamp|training|masterclass|course|webinar|free workshop|crash course|placement|internship drive|batch \d|enroll\w*|trial class|coaching cent(?:re|er)|demo class|demo lecture|demo day for|demo(?!\s*(?:day|night|s\b)))\b/i;
 
 /** Titles that signal genuine practitioner gatherings. */
 const PEER_PATTERN =

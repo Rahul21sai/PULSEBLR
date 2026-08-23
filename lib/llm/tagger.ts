@@ -68,6 +68,15 @@ For EACH numbered event you receive, return one JSON object with these fields:
 "categories": 1-3 values chosen ONLY from this exact list:
 ${EVENT_CATEGORIES.map(c => `  - ${c}`).join('\n')}
 
+Two of those categories are read as tech topics and are easy to reach for wrongly:
+  - "Gaming/XR" means games ENGINEERING — Unity/Unreal/Godot, game design, engines,
+    shaders, VR/XR development, esports infrastructure. A board-game night, a quiz, a
+    DJ night or a "screen-free Sunday" is "Community/Social", NEVER Gaming/XR.
+  - "Hardware/Robotics" means physical engineering — embedded, firmware, VLSI, RISC-V,
+    PCBs, robots, sensors. Not a talk that merely happens near a machine.
+  Prefer "Other" over a tech category you are unsure about. A wrong tech category puts a
+  non-tech event in front of an engineer; "Other" simply omits it.
+
 "format": "online" | "offline" | "hybrid"
   online = purely virtual. offline = physical venue. hybrid = both.
 
@@ -587,9 +596,38 @@ const CATEGORY_KEYWORDS: Array<[string, RegExp]> = [
   ['Web/Mobile', /\b(web|frontend|front-end|backend|react|next\.?js|angular|vue|svelte|flutter|android|ios|react native|wordpress|javascript|typescript|node\.?js|django|rails|laravel|php)\b/i],
   ['Cybersecurity', /\b(security|cyber|infosec|pentest|penetration testing|owasp|ctf|capture the flag|vulnerabilit|appsec|devsecops|threat|malware)\b/i],
   ['Open Source', /\b(open source|open-source|oss\b|foss|linux|apache|cncf|contributor|upstream|maintainer|hacktoberfest|gsoc|copyleft|licen[cs]e)\b/i],
-  ['Hardware/Robotics', /\b(hardware|embedded|robotics|iot|drone|semiconductor|chip design|silicon|fpga|arduino|raspberry pi|firmware|rtos|pcb|electronics)\b/i],
+  // Widened for Bengaluru specifically, which is India's chip-design centre.
+  //
+  // The Meetup discovery fan-out ALREADY searches `vlsi`, `fpga`, `semiconductor` and
+  // `embedded` — but this floor could not recognise `VLSI`, `Verilog`, `VHDL` or `RISC-V`, the
+  // four words that community actually writes. Discovery and classification have to share a
+  // vocabulary: with every LLM provider down, a chip-design meetup was reaching ingest with
+  // zero categories and isTechEvent=false, i.e. found and then discarded.
+  //
+  // Deliberately EXCLUDED as too ambiguous, remembering what a bare `\bpm\b` did to
+  // Product/Design: `soc` (Security Operations Center), `rf`, `foundry` (Microsoft Foundry is
+  // an AI product), `maker` (decision-maker, policy-maker), `bare metal` (cloud servers),
+  // `wafer` (a biscuit), `asics` (the shoe brand sponsors running events — so only the
+  // singular `asic` is listed).
+  //
+  // `asic` is safe inside `\b(…)\b` because "basic" has no word boundary before its `a`.
+  // Plural/gerund forms are spelled out where the base word is a prefix of a longer one:
+  // `\b` after "3d print" fails on "3D printing", so the suffix must be in the pattern.
+  ['Hardware/Robotics', /\b(hardware|embedded|robotics|iot|drone|semiconductor|chip design|soc design|analog design|silicon|fpga|vlsi|verilog|systemverilog|vhdl|asic|risc-?v|tape-?outs?|photonics?|mems|arduino|raspberry pi|esp32|stm32|microcontrollers?|mechatronics|firmware|rtos|pcb|soldering|electronics|electron devices?|signal processing|3d print(?:ing|ers?)?|makerspaces?|maker faire|sensors?)\b/i],
   ['Blockchain/Web3', /\b(blockchain|web3|crypto|ethereum|solana|bitcoin|nft|defi|smart contract|zk\b|zero.?knowledge)\b/i],
-  ['Gaming/XR', /\b(gaming|game dev|gamedev|unity|unreal|godot|\bvr\b|\bxr\b|metaverse|esports)\b/i],
+  // A bare `gaming` matched "BoardGaming Sunday" and put a board-game night in the tech feed.
+  //
+  // This category means games ENGINEERING. Playing games is Community/Social, and the
+  // distinction matters because Gaming/XR is in TECH_CATEGORY_NAMES, so anything tagged with it
+  // is a candidate for the default `techOnly` view. Measured (diag-gamingxr-leak.ts): of 7
+  // upcoming events tagged Gaming/XR, ZERO were games engineering — the category had become the
+  // bin the classifier reached for when unsure, catching a DJ night, a design-thinking workshop
+  // and a board-game meetup.
+  //
+  // Bare `unity` is deliberately NOT here: "Unity in Diversity" and "National Unity Day" are
+  // ordinary Indian event titles. A real Unity meetup is caught by `game dev`/`game development`,
+  // which is how such events actually title themselves.
+  ['Gaming/XR', /\b(game dev|gamedev|game development|game design|game engine|game jam|unity3d|unreal engine|godot|shader|webgl|\bvr\b|\bxr\b|metaverse|esports)\b/i],
   // NB: no bare `\bpm\b` or `\bui\b` — `pm` matched the time in "6 PM" and tagged a
   // fifth of the corpus Product/Design.
   ['Product/Design', /\b(product manage|product management|product manager|\bux\b|ui\/ux|design system|figma|user research|design thinking|producttank|product design)\b/i],

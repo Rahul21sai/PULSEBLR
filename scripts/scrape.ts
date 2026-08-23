@@ -7,6 +7,12 @@
  *   npx tsx scripts/scrape.ts --no-llm        keyword tagging only (fast)
  *   npx tsx scripts/scrape.ts --fast          skip Eventbrite + company sweep
  *   npx tsx scripts/scrape.ts --no-prune      keep stale past events
+ *   npx tsx scripts/scrape.ts --only=district,hasgeek   run just those sources
+ *
+ * `--only` exists to verify ONE adapter end-to-end without paying for a full run
+ * (~700 upstream requests, 5-10 min). It forces pruning off — see PipelineOptions.
+ * Source ids: luma-city, luma-calendars, meetup-city, meetup-groups, bevy, devfolio,
+ * unstop, allevents, devevents, hasgeek, fossunited, district, eventbrite, company-pages.
  */
 
 import './load-env'; // MUST be first — populates process.env before lib/mongodb reads it
@@ -15,11 +21,22 @@ import { runPipeline, PipelineOptions } from '../lib/scrapers/pipeline';
 function parseArgs(): PipelineOptions {
   const argv = process.argv.slice(2);
   const fast = argv.includes('--fast');
+
+  const onlyArg = argv.find(a => a.startsWith('--only='));
+  const onlySources = onlyArg
+    ? onlyArg
+        .slice('--only='.length)
+        .split(',')
+        .map(s => s.trim())
+        .filter(Boolean)
+    : [];
+
   return {
     skipLlm: argv.includes('--no-llm'),
     includeEventbrite: !fast,
     includeCompanyPages: !fast,
     prune: !argv.includes('--no-prune'),
+    onlySources,
     ...(fast ? { lumaEnrichBudget: 20, meetupEnrichBudget: 20 } : {}),
   };
 }
