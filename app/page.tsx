@@ -7,6 +7,7 @@ import EventRow from './components/EventRow';
 import EventGridCard from './components/EventGridCard';
 import FilterRail, { FilterState, EMPTY_FILTERS, countActive } from './components/FilterRail';
 import { FeedEvent, Facets, Pagination } from '@/lib/event-types';
+import { MIN_SEARCH_CHARS } from '@/lib/events/query';
 import { dayKeyIST, dayHeading, fullDateIST, isHappeningNow, NOW_GROUP_KEY } from '@/lib/format';
 
 const WHEN_TABS = [
@@ -66,6 +67,14 @@ export default function Home() {
     const timer = setTimeout(() => setQuery(searchInput.trim()), 280);
     return () => clearTimeout(timer);
   }, [searchInput]);
+
+  /**
+   * One character is not a query. The API ignores a term this short — before
+   * prefix-anchoring it matched 815 of 815 events — so the UI has to SAY that rather
+   * than render the entire corpus and let the user believe it was a result set.
+   */
+  const needsMoreChars =
+    searchInput.trim().length > 0 && searchInput.trim().length < MIN_SEARCH_CHARS;
 
   const buildParams = useCallback(
     (page: number) => {
@@ -247,19 +256,25 @@ export default function Home() {
                 search
               </span>
               <input
+                id="event-search"
+                name="q"
                 type="search"
                 value={searchInput}
                 onChange={e => setSearchInput(e.target.value)}
-                placeholder="Search events, hosts, venues"
-                aria-label="Search events"
-                className="w-full h-10 pl-10 pr-9 rounded-full bg-white border border-[#e5e5ea] text-[14px] text-[#1D1D1F] placeholder:text-[#a1a1a6] focus:outline-none focus:border-[#0071E3] transition-colors"
+                placeholder="Kubernetes, Razorpay, Koramangala…"
+                aria-label="Search events by name, host or venue"
+                aria-describedby="search-hint"
+                autoComplete="off"
+                spellCheck={false}
+                enterKeyHint="search"
+                className="w-full h-10 pl-10 pr-9 rounded-full bg-white text-[14px] text-[#1D1D1F] placeholder:text-[#a1a1a6] shadow-[inset_0_0_0_1px_var(--hairline-strong)] transition-[box-shadow,background-color] focus:outline-none focus-visible:shadow-[inset_0_0_0_2px_#0071E3] [touch-action:manipulation]"
               />
               {searchInput && (
                 <button
                   type="button"
                   onClick={() => setSearchInput('')}
                   aria-label="Clear search"
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-[#86868B] hover:text-[#1D1D1F]"
+                  className="absolute right-2.5 top-1/2 grid h-6 w-6 -translate-y-1/2 place-items-center rounded-full text-[#86868B] hover:bg-[#F0F0F2] hover:text-[#1D1D1F] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0071E3] [touch-action:manipulation]"
                 >
                   <span className="material-symbols-outlined text-[18px]">close</span>
                 </button>
@@ -309,7 +324,8 @@ export default function Home() {
                   key={tab.id || 'all'}
                   type="button"
                   onClick={() => setWhen(tab.id)}
-                  className={`shrink-0 px-3.5 py-1.5 rounded-full text-[13px] font-semibold transition-colors ${
+                  aria-pressed={when === tab.id}
+                  className={`shrink-0 rounded-full px-3.5 py-1.5 text-[13px] font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0071E3] [touch-action:manipulation] ${
                     when === tab.id
                       ? 'bg-[#1D1D1F] text-white'
                       : 'text-[#6E6E73] hover:bg-white hover:text-[#1D1D1F]'
@@ -320,12 +336,24 @@ export default function Home() {
               ))}
             </div>
 
-            <label className="hidden md:flex shrink-0 items-center gap-1.5 text-[12.5px] text-[#86868B]">
-              Sort
+            {/* Available on EVERY width. This was `hidden md:flex`, which left phones
+                with no sort control — and "Best for connections" is the one ranking this
+                product has that Luma and Meetup do not. */}
+            <label
+              htmlFor="event-sort"
+              className="flex shrink-0 items-center gap-1.5 text-[12.5px] text-[#8E8E93]"
+            >
+              <span className="hidden sm:inline">Sort</span>
+              <span className="material-symbols-outlined sm:hidden text-[17px]" aria-hidden="true">
+                swap_vert
+              </span>
+              <span className="sr-only sm:hidden">Sort events by</span>
               <select
+                id="event-sort"
+                name="sort"
                 value={sort}
                 onChange={e => setSort(e.target.value)}
-                className="bg-transparent font-semibold text-[#1D1D1F] focus:outline-none cursor-pointer"
+                className="cursor-pointer rounded-md bg-transparent py-0.5 pr-1 font-semibold text-[#1D1D1F] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0071E3] [touch-action:manipulation]"
               >
                 {SORTS.map(option => (
                   <option key={option.id} value={option.id}>
@@ -366,7 +394,7 @@ export default function Home() {
 
                 The title states the ACTIVE VIEW, so it doubles as a readout of the
                 filters — which is why it earns the space. */}
-            <div className="mb-5">
+            <div className="mb-5" aria-live="polite" aria-atomic="true">
               <h1 className="t-display text-[#1D1D1F]">
                 {query
                   ? `“${query}”`
@@ -374,19 +402,35 @@ export default function Home() {
                     ? 'Tech events in Bengaluru'
                     : 'Events in Bengaluru'}
               </h1>
-              <p className="mt-1.5 text-[13px] text-[#6E6E73] tracking-[0]">
+              <p id="search-hint" className="mt-1.5 text-[13px] text-[#6E6E73] tracking-[0]">
                 {loading ? (
-                  'Loading…'
+                  'Searching…'
+                ) : needsMoreChars ? (
+                  <>Keep typing — {MIN_SEARCH_CHARS} characters minimum.</>
                 ) : total === 0 ? (
-                  'Nothing matches these filters yet.'
+                  query ? (
+                    <>
+                      No match for{' '}
+                      <span className="font-semibold text-[#1D1D1F]">“{query}”</span>
+                    </>
+                  ) : (
+                    'No events match these filters.'
+                  )
                 ) : (
                   <>
                     <span className="tnum font-semibold text-[#1D1D1F]">
                       {total.toLocaleString('en-IN')}
                     </span>{' '}
-                    upcoming
+                    {query ? (
+                      <>
+                        match{total === 1 ? '' : 'es'} for{' '}
+                        <span className="font-semibold text-[#1D1D1F]">“{query}”</span>
+                      </>
+                    ) : (
+                      'upcoming'
+                    )}
                     {sort === 'connections' && ' · ranked by who you’ll meet there'}
-                    {sort === 'soonest' && ' · soonest first'}
+                    {sort === 'soonest' && !query && ' · soonest first'}
                   </>
                 )}
               </p>

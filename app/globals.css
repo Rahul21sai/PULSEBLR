@@ -456,7 +456,13 @@ h1, h2, h3 { font-family: var(--font-display); }
 :focus-visible {
   outline: 2px solid var(--accent-blue);
   outline-offset: 2px;
-  border-radius: 6px;
+  /* NO border-radius here. It used to set 6px, which does not style the outline — it
+     restyles the ELEMENT, so tabbing onto a pill-shaped button squared it off to 6px
+     and it visibly changed shape under the keyboard. Every current browser draws the
+     outline following the element's own radius, so the override bought nothing and
+     cost that. Reasoned from the cascade rather than observed: programmatic .focus()
+     does not match :focus-visible on a button in Chrome, so it cannot be reproduced
+     from a script — only by a real Tab press. */
 }
 
 /* ─── Reduced motion ─────────────────────────────────────────────────────── */

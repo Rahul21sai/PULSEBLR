@@ -127,6 +127,21 @@ export function resolveWindow(when: string): { from: Date; to: Date } | null {
 }
 
 /** Build the Mongo filter for a parsed parameter set. */
+/**
+ * A search term shorter than this carries no signal. One character matched 815 of 815
+ * events before prefix-anchoring, and even anchored it only means "every word starting
+ * with c". Exported so the UI can tell the user how many characters it needs, rather
+ * than silently handing back the whole corpus and calling it a result set.
+ */
+export const MIN_SEARCH_CHARS = 2;
+
+/**
+ * Descriptions run to several KB, so a short prefix matches nearly every event through
+ * them and buries the title hits. Only terms this long are specific enough to be worth
+ * searching descriptions for.
+ */
+export const DESCRIPTION_SEARCH_CHARS = 4;
+
 export function buildEventFilter(params: EventQueryParams): EventFilter {
   const filter: EventFilter = {};
   const and: EventFilter[] = [];
@@ -171,28 +186,48 @@ export function buildEventFilter(params: EventQueryParams): EventFilter {
     //
     //  · Multi-word queries use $text against the weighted compound index, which
     //    gives real relevance ranking ("ai product meetup" ranks sensibly).
-    //  · Single-word queries use a substring regex, because $text only matches
-    //    WHOLE words and a search box needs to work while you're still typing
-    //    ("kuber" must find Kubernetes events).
+    //  · Single-word queries use a regex, because $text only matches WHOLE words
+    //    and a search box must work while you are still typing ("kuber" has to
+    //    find Kubernetes events).
     //
-    // DESCRIPTION IS SEARCHED IN BOTH PATHS. Leaving it out of the regex branch
-    // meant `q=kubernetes` returned 0 results while the text index found 3 — the
-    // term appears in event descriptions far more often than in titles.
-    if (/\s/.test(params.q.trim())) {
-      filter.$text = { $search: params.q };
-    } else {
-      const escaped = params.q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const regex = new RegExp(escaped, 'i');
-      and.push({
-        $or: [
-          { title: regex },
-          { organizer: regex },
-          { venue: regex },
-          { tags: regex },
-          { description: regex },
-        ],
-      });
+    // The regex is anchored to a WORD START (\b), not a bare substring. That
+    // distinction is the difference between a search box and a no-op: measured
+    // against the live corpus, unanchored substrings returned
+    //
+    //    q="a"    -> 815 of 815 events   (the entire corpus)
+    //    q="c"    -> 803 of 815
+    //    q="AI"   -> 519 of 815          ("tr-ai-ning", "ch-ai-r", "av-ai-lable")
+    //    q="rust" ->  28                 (including "t-rust")
+    //
+    // A query that returns everything is indistinguishable from no query at all.
+    // Prefix-anchoring keeps mid-typing useful ("kub" still finds Kubernetes) while
+    // refusing to match the inside of unrelated words.
+    const term = params.q.trim();
+
+    if (/\s/.test(term)) {
+      filter.$text = { $search: term };
+    } else if (term.length >= MIN_SEARCH_CHARS) {
+      const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const prefix = new RegExp(`\\b${escaped}`, 'i');
+
+      // DESCRIPTION is searched only for longer terms. Descriptions run to
+      // several KB, so a 2-character prefix hits almost every event through them
+      // and drowns the title matches that are actually relevant — leaving it out
+      // of the regex branch entirely was also wrong (`q=kubernetes` once returned
+      // 0 while the text index found 3), so the rule is length, not exclusion.
+      const fields: Array<Record<string, unknown>> = [
+        { title: prefix },
+        { organizer: prefix },
+        { venue: prefix },
+        { tags: prefix },
+      ];
+      if (term.length >= DESCRIPTION_SEARCH_CHARS) fields.push({ description: prefix });
+
+      and.push({ $or: fields });
     }
+    // A 1-character term falls through unfiltered on purpose: it carries no signal,
+    // and the UI tells the user to keep typing rather than showing them everything
+    // and calling it a result set.
   }
 
   if (and.length > 0) filter.$and = and;
