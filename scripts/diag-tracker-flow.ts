@@ -217,6 +217,47 @@ async function main() {
       `${Array.isArray(afterList) ? afterList.length : 0} pending after`
     );
 
+    // ── followedUp via the tracker PUT ──────────────────────────────────────
+    // Two different surfaces complete a follow-up and they use DIFFERENT endpoints: the
+    // strip on /tracker posts to /api/phase6/follow-ups (asserted above), while the edit
+    // modal's per-person "Mark done" toggle saves `followedUp` with the rest of the
+    // connection through PUT /api/tracker/[id]. That second path was untested, and before
+    // the modal was rebuilt it did not exist at all — `followedUp` had exactly one writer
+    // in the whole repo.
+    console.log('\nTracker: followedUp via PUT (the edit modal path)');
+    const putRes = await admin.fetch(`/api/tracker/${entryId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        connections: [
+          {
+            name: 'Diag Test Person',
+            role: 'Staff Engineer',
+            company: 'ClickHouse',
+            context: 'Met at the table by the door',
+            followUpAt,
+            followedUp: true,
+          },
+        ],
+      }),
+    });
+    check('PUT accepts followedUp on a connection', putRes.status < 300, `HTTP ${putRes.status}`);
+
+    const afterPut = await (await admin.fetch('/api/tracker')).json();
+    const putEntry = (afterPut.entries || []).find((e: { _id: string }) => e._id === entryId);
+    check(
+      'followedUp persists through the tracker PUT',
+      putEntry?.connections?.[0]?.followedUp === true,
+      `followedUp=${putEntry?.connections?.[0]?.followedUp}`
+    );
+
+    const stillPending = await (await admin.fetch('/api/phase6/follow-ups')).json();
+    check(
+      'a PUT-completed follow-up drops out of the pending list too',
+      !JSON.stringify(stillPending.followUps || []).includes('Diag Test Person'),
+      'both surfaces agree on what is done'
+    );
+
     // ── Per-user isolation: the whole point of userId scoping ───────────────
     console.log('\nPer-user isolation');
     const other = new Session();

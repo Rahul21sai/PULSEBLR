@@ -71,6 +71,8 @@ export default function TrackerPage() {
   const [view, setView] = useState<ViewMode>('board');
   const [selected, setSelected] = useState<TrackerEntry | null>(null);
   const [editing, setEditing] = useState<TrackerEntry | null>(null);
+  /** `${entryId}:${connectionName}` while a follow-up completion is in flight. */
+  const [completing, setCompleting] = useState<string | null>(null);
   const [dragId, setDragId] = useState<string | null>(null);
   const [overColumn, setOverColumn] = useState<string | null>(null);
 
@@ -94,6 +96,37 @@ export default function TrackerPage() {
       setLoading(false);
     }
   }, []);
+
+  /**
+   * Mark one follow-up done straight from the strip, without opening a modal.
+   *
+   * Uses POST /api/phase6/follow-ups, which was already the ONLY writer for `followedUp`
+   * anywhere in the repo — it was just unreachable from the screen most people use. The
+   * strip offered only "Log it", which opened a modal that had no followedUp control at
+   * all, and the one screen that could complete a follow-up (/dashboard) is absent from
+   * the mobile nav. On a phone the due count could therefore only ever go up.
+   */
+  const completeFollowUp = useCallback(
+    async (entryId: string, connectionName: string) => {
+      setCompleting(`${entryId}:${connectionName}`);
+      try {
+        const res = await fetch('/api/phase6/follow-ups', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ trackerEntryId: entryId, connectionName }),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        // Refetch rather than patching local state: the strip is derived from entries and
+        // only the server knows what is still due.
+        await fetchEntries();
+      } catch {
+        setError('Could not mark that follow-up done. Try again.');
+      } finally {
+        setCompleting(null);
+      }
+    },
+    [fetchEntries]
+  );
 
   // Deferred so the effect doesn't setState synchronously (see the same pattern
   // in the feed page).
@@ -313,12 +346,27 @@ export default function TrackerPage() {
                         LinkedIn
                       </a>
                     )}
+                    {/* Complete the follow-up right here.
+                        This strip previously offered only "Log it", which opened the edit
+                        modal — and that modal had no followedUp control at all. The single
+                        writer for `followedUp` was POST /api/phase6/follow-ups, reachable
+                        only from /dashboard, which is absent from the mobile nav. So on a
+                        phone a follow-up could become due and never be cleared: the count
+                        only ever went up. */}
+                    <button
+                      type="button"
+                      onClick={() => completeFollowUp(entry._id, connection.name)}
+                      disabled={completing === `${entry._id}:${connection.name}`}
+                      className="pressable shrink-0 h-8 px-3 rounded-full bg-[#1D1D1F] text-[12px] font-semibold text-white hover:bg-black disabled:opacity-50"
+                    >
+                      {completing === `${entry._id}:${connection.name}` ? 'Saving…' : 'Done'}
+                    </button>
                     <button
                       type="button"
                       onClick={() => setEditing(entry)}
-                      className="shrink-0 h-8 px-3 rounded-full bg-white border border-[#e5e5ea] text-[12px] font-semibold text-[#1D1D1F] hover:bg-[#f3f3f5] transition-colors"
+                      className="pressable shrink-0 h-8 px-3 rounded-full bg-white text-[12px] font-semibold text-[#1D1D1F] shadow-[inset_0_0_0_1px_var(--hairline-strong)] hover:bg-[#F7F7F9]"
                     >
-                      Log it
+                      Edit
                     </button>
                   </div>
                 ))}
@@ -565,6 +613,7 @@ export default function TrackerPage() {
       {editing && (
         <EditTrackerModal
           entryId={editing._id}
+          eventTitle={editing.eventId?.title}
           currentNotes={editing.notes}
           currentConnections={editing.connections}
           onClose={() => setEditing(null)}
