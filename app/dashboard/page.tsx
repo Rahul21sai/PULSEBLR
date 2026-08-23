@@ -121,7 +121,7 @@ export default function DashboardPage() {
         {/* Hero */}
         <section className="bg-black text-white px-5 md:px-20 pt-12 pb-10">
           <div className="max-w-[1200px] mx-auto">
-            <h1 className="text-[32px] md:text-[40px] font-bold tracking-tight mb-1">Dashboard</h1>
+            <h1 className="t-display mb-1">Dashboard</h1>
             <p className="text-gray-400 text-[15px]">Your networking & event stats</p>
           </div>
         </section>
@@ -137,7 +137,7 @@ export default function DashboardPage() {
               {stats && (
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
                   {STAT_CARDS(stats).map(card => (
-                    <div key={card.label} className={`${card.cardBg} rounded-2xl p-5 card-shadow`}>
+                    <div key={card.label} className={`${card.cardBg} rounded-[18px] p-5 card-shadow`}>
                       {/* Icon badge */}
                       <div className={`w-9 h-9 rounded-xl ${card.iconBg} flex items-center justify-center mb-3`}>
                         <span className="material-symbols-outlined text-white text-[18px]"
@@ -156,7 +156,7 @@ export default function DashboardPage() {
               {/* Two-column panels */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {/* Pending follow-ups */}
-                <section className="bg-white rounded-2xl card-shadow p-6">
+                <section className="bg-white rounded-[18px] card-shadow p-6">
                   <div className="flex items-center gap-2 mb-5">
                     <span className="material-symbols-outlined text-orange-500" style={{ fontVariationSettings: "'FILL' 1" }}>schedule</span>
                     <h2 className="text-[17px] font-bold text-[#1D1D1F]">Pending Follow-ups</h2>
@@ -201,7 +201,7 @@ export default function DashboardPage() {
                 </section>
 
                 {/* Repeat connections */}
-                <section className="bg-white rounded-2xl card-shadow p-6">
+                <section className="bg-white rounded-[18px] card-shadow p-6">
                   <div className="flex items-center gap-2 mb-5">
                     <span className="material-symbols-outlined text-purple-500" style={{ fontVariationSettings: "'FILL' 1" }}>group</span>
                     <h2 className="text-[17px] font-bold text-[#1D1D1F]">Repeat Connections</h2>

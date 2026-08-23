@@ -90,7 +90,7 @@ export default function CompaniesPage() {
       <main className="pt-14 pb-24 md:pb-10">
         <div className="max-w-[1100px] mx-auto px-4 md:px-8 pt-6">
           <div className="mb-5">
-            <h1 className="text-[24px] md:text-[30px] font-bold tracking-[-0.025em] text-[#1D1D1F]">
+            <h1 className="t-display text-[#1D1D1F]">
               Companies
             </h1>
             <p className="text-[13.5px] text-[#6E6E73] mt-0.5">
@@ -147,18 +147,18 @@ export default function CompaniesPage() {
           {loading ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
               {Array.from({ length: 9 }, (_, i) => (
-                <div key={i} className="skeleton h-[92px] rounded-2xl" />
+                <div key={i} className="skeleton h-[92px] rounded-[18px]" />
               ))}
             </div>
           ) : error ? (
-            <div className="bg-white rounded-2xl card-shadow py-14 text-center">
+            <div className="bg-white rounded-[18px] card-shadow py-14 text-center">
               <span className="material-symbols-outlined text-[40px] text-[#d5d5da] block mb-2">
                 cloud_off
               </span>
               <p className="text-[15px] font-semibold text-[#1D1D1F]">{error}</p>
             </div>
           ) : visible.length === 0 ? (
-            <div className="bg-white rounded-2xl card-shadow py-14 text-center px-6">
+            <div className="bg-white rounded-[18px] card-shadow py-14 text-center px-6">
               <span className="material-symbols-outlined text-[40px] text-[#d5d5da] block mb-2">
                 domain_disabled
               </span>
@@ -176,7 +176,7 @@ export default function CompaniesPage() {
                     key={company.slug}
                     href={hasEvents ? `/?company=${encodeURIComponent(company.name)}` : '/companies'}
                     aria-disabled={!hasEvents}
-                    className={`group bg-white rounded-2xl card-shadow p-4 flex flex-col gap-2 transition-[transform,box-shadow] ${
+                    className={`group bg-white rounded-[18px] card-shadow p-4 flex flex-col gap-2 transition-[transform,box-shadow] ${
                       hasEvents
                         ? 'hover:shadow-[0_8px_28px_rgba(0,0,0,0.08)] hover:-translate-y-px'
                         : 'opacity-55 pointer-events-none'
