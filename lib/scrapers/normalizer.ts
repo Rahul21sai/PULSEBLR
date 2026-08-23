@@ -149,6 +149,8 @@ function assemble(raw: RawEvent, tagged: TaggingResult): NormalizedEvent {
     title,
     description,
     tags: raw.tags,
+    // A company's office in the venue field means that company is involved.
+    venue: raw.venue,
   });
 
   // Public tags: drop the internal markers, keep organiser-supplied topics.

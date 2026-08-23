@@ -22,7 +22,11 @@ const DRY = process.argv.includes('--dry');
 async function main() {
   await connectDB();
 
-  const events = await Event.find({}).select('title description organizer tags companies');
+  // `venue` is in the projection because resolveCompanies now scores it — an office name
+  // in that field means the company is involved. Omitting it here would make the new rule
+  // silently never fire, which is the worst kind of bug: the code is right and the data
+  // never reaches it.
+  const events = await Event.find({}).select('title description organizer tags companies venue');
   console.log(`Resolving companies for ${events.length} event(s)${DRY ? ' (dry run)' : ''}\n`);
 
   let changed = 0;
@@ -35,6 +39,7 @@ async function main() {
       title: event.title,
       description: event.description,
       tags: event.tags,
+      venue: event.venue,
     });
 
     if (companies.length > 0) {

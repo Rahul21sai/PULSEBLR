@@ -1,6 +1,10 @@
 import { defineConfig } from 'vitest/config';
 import path from 'node:path';
 
+// `import.meta.dirname` rather than `__dirname`: this file is ESM (.mts), and Vite's native
+// config loader warns that __dirname is unsupported and slated to break.
+const rootDir = import.meta.dirname;
+
 /**
  * Test config.
  *
@@ -20,6 +24,6 @@ export default defineConfig({
     testTimeout: 5000,
   },
   resolve: {
-    alias: { '@': path.resolve(__dirname, '.') },
+    alias: { '@': path.resolve(rootDir, '.') },
   },
 });
