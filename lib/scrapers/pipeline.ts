@@ -38,6 +38,7 @@ import { scrapeDevfolio, DEVFOLIO_URL } from './adapters/devfolio';
 import { scrapeUnstop } from './adapters/unstop';
 import { scrapeAllEvents } from './adapters/allevents';
 import { scrapeDevEvents, DEVEVENTS_SOURCE_URL } from './adapters/devevents';
+import { scrapeHasgeek } from './adapters/hasgeek';
 import { scrapeUrlUniversal, COMPANY_EVENT_PAGES } from './adapters/universal';
 import { normalizeEvents } from './normalizer';
 import { ingestEvents, IngestionResult, updateSource } from './ingestion';
@@ -350,6 +351,11 @@ export async function runPipeline(options: PipelineOptions = {}): Promise<Pipeli
     [{ id: 'unstop', label: 'Unstop', type: 'api', url: 'https://unstop.com' }, scrapeUnstop],
     [{ id: 'allevents', label: 'AllEvents.in — Bengaluru', type: 'scrape', url: 'https://allevents.in/bengaluru/all' }, scrapeAllEvents],
     [{ id: 'devevents', label: 'developers.events — conferences', type: 'api', url: DEVEVENTS_SOURCE_URL }, scrapeDevEvents],
+    // HasGeek carries the practitioner communities Meetup and Luma do not: Rust
+    // Bangalore, The Fifth Elephant, Rootconf, Functional Programming India, JSFoo.
+    // Yield is small (2-6 upcoming) but net new, and the accounts keep publishing, so
+    // it grows on its own rather than being a one-off backfill.
+    [{ id: 'hasgeek', label: 'HasGeek — Fifth Elephant, Rootconf, Rust Bangalore', type: 'api', url: 'https://hasgeek.com' }, scrapeHasgeek],
   ];
   if (opts.includeEventbrite) {
     platformSources.push([
