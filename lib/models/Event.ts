@@ -91,6 +91,7 @@ export const EVENT_SOURCES = [
   'allevents',
   'devevents',
   'hasgeek',
+  'fossunited',
   'company',
   'manual',
   'other',

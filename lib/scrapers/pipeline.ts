@@ -39,6 +39,7 @@ import { scrapeUnstop } from './adapters/unstop';
 import { scrapeAllEvents } from './adapters/allevents';
 import { scrapeDevEvents, DEVEVENTS_SOURCE_URL } from './adapters/devevents';
 import { scrapeHasgeek } from './adapters/hasgeek';
+import { scrapeFossUnited } from './adapters/fossunited';
 import { scrapeUrlUniversal, COMPANY_EVENT_PAGES } from './adapters/universal';
 import { normalizeEvents } from './normalizer';
 import { ingestEvents, IngestionResult, updateSource } from './ingestion';
@@ -356,6 +357,11 @@ export async function runPipeline(options: PipelineOptions = {}): Promise<Pipeli
     // Yield is small (2-6 upcoming) but net new, and the accounts keep publishing, so
     // it grows on its own rather than being a one-off backfill.
     [{ id: 'hasgeek', label: 'HasGeek — Fifth Elephant, Rootconf, Rust Bangalore', type: 'api', url: 'https://hasgeek.com' }, scrapeHasgeek],
+    // FOSS United runs India's open-source community — the Bengaluru monthly meetup plus
+    // IndiaFOSS. Extraction is from <time datetime> and Open Graph tags, which are standards
+    // rather than CSS classes; see the adapter header for why the two earlier rejections of
+    // this source were asking the wrong question.
+    [{ id: 'fossunited', label: 'FOSS United — Bengaluru + IndiaFOSS', type: 'scrape', url: 'https://fossunited.org/c/bengaluru' }, scrapeFossUnited],
   ];
   if (opts.includeEventbrite) {
     platformSources.push([

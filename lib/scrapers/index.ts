@@ -24,6 +24,7 @@ export * from './adapters/unstop';
 export * from './adapters/allevents';
 export * from './adapters/devevents';
 export * from './adapters/hasgeek';
+export * from './adapters/fossunited';
 export * from './adapters/universal';
 
 export * from './normalizer';
