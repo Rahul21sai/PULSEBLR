@@ -17,13 +17,34 @@ import { isBengaluru } from '../core/geo';
 const EVENTBRITE_SOURCE = 'eventbrite';
 const BASE = 'https://www.eventbrite.com/d/india--bengaluru';
 
-/** Category paths verified to return distinct Bengaluru result sets. */
+/**
+ * Category paths verified to return DISTINCT Bengaluru result sets.
+ *
+ * "Distinct" is the whole criterion, and it excludes more than it includes.
+ * scripts/probe-eventbrite-categories.ts measured 20 further candidates against what these
+ * already return:
+ *
+ *   ALL DUPLICATES — robotics, engineering, hardware, maker. Each returns 1-39 events and
+ *   not one is new. Eventbrite's /d/<city>/<path>/ URL is a relevance search rather than a
+ *   filter, so a topic word mostly re-ranks the same inventory. Same trap as AllEvents.in,
+ *   where /technology and /music return identical sets.
+ *
+ *   ZERO RESULTS — iot, semiconductor, and every non-tech category: music,
+ *   food-and-drink, arts, health, sports-and-fitness, community, film-and-media, hobbies,
+ *   education, travel-and-outdoor, charity-and-causes, fashion. Eventbrite Bengaluru is
+ *   almost entirely a paid-professional-events platform; the city's cultural events are
+ *   not on it, which is worth knowing before anyone tries to widen coverage here again.
+ */
 const CATEGORIES = [
   'all-events',
   'technology--events',
   'business--events',
   'science-and-tech--events',
   'startup--events',
+  // The only two of 20 candidates that added anything: +4 and +1 events respectively.
+  // Small, but hardware-adjacent, and hardware is the thinnest part of the corpus.
+  'drone--events',
+  'electronics--events',
 ];
 
 export async function scrapeEventbrite(maxPagesPerCategory = 6): Promise<ScrapeResult> {
