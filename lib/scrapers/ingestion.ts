@@ -2,6 +2,7 @@ import connectDB from '../mongodb';
 import Event, { IEvent } from '../models/Event';
 import Source from '../models/Source';
 import { NormalizedEvent } from './normalizer';
+import { resolveCompanies } from '../companies/resolve';
 
 export interface IngestionResult {
   total: number;
@@ -203,13 +204,42 @@ function mergeInto(existing: IEvent, incoming: NormalizedEvent): boolean {
     changed = true;
   }
 
-  // Companies union freely: a second source naming a co-host is new information,
-  // and the resolver only emits names it could actually justify.
-  const mergedCompanies = [
-    ...new Set([...(existing.companies || []), ...incoming.companies]),
-  ].slice(0, 6);
-  if (mergedCompanies.length !== (existing.companies || []).length) {
-    existing.companies = mergedCompanies;
+  /*
+   * Companies are RECOMPUTED from the merged document, not unioned into it.
+   *
+   * They used to union, on the reasoning that "a second source naming a co-host is new
+   * information, and the resolver only emits names it could actually justify". The first half is
+   * true. The second half is only true AT THE MOMENT OF WRITING, and union is forever:
+   *
+   *   · enrichment REPLACES descriptions on most runs (Meetup's ICS carries none at all), so a
+   *     name justified by text that no longer exists survives permanently;
+   *   · tightening a registry entry's `strength` from distinctive to ambiguous — which is the
+   *     documented remedy for a false positive — cannot undo the rows it already produced.
+   *
+   * Measured: `Docker` was attributed to "Meetup new people/seekers of SriVidya Tradition",
+   * hosted by "srividya personal spiritua", with the string "docker" appearing in NO field of the
+   * document (scripts/diag-company-leak.ts). Exactly the harm `strength` exists to prevent, from a
+   * direction `strength` cannot defend against.
+   *
+   * Recomputing is the right shape because `companies` is PURELY DERIVED from fields on this same
+   * document, and resolveCompanies() is local and cheap — no network, no LLM. That makes the field
+   * self-correcting: it follows the text and the registry instead of accumulating history. It is
+   * also what scripts/backfill-companies.ts already does, so ingest and the backfill now agree
+   * rather than the backfill existing to clean up after ingest.
+   *
+   * Co-hosts are NOT lost: the merge above has already taken the best organizer, title, venue and
+   * tags from both sightings, so the resolver sees strictly more evidence than either source did
+   * alone. What is dropped is only what the merged text can no longer justify.
+   */
+  const recomputed = resolveCompanies({
+    organizer: existing.organizer,
+    title: existing.title,
+    venue: existing.venue,
+    tags: existing.tags,
+  }).slice(0, 6);
+  const previous = (existing.companies || []).join('|');
+  if (recomputed.join('|') !== previous) {
+    existing.companies = recomputed;
     changed = true;
   }
 

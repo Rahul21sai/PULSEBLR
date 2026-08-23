@@ -103,7 +103,16 @@ export interface PipelineResult {
   timestamp: Date;
 }
 
-const DEFAULTS: Required<PipelineOptions> = {
+/**
+ * Exported so diagnostics report the REAL caps rather than a mirrored copy.
+ *
+ * `scripts/diag-source-caps.ts` kept its own `MAX_MEETUP_GROUPS = 120` with a comment saying it
+ * mirrored this object, and it went stale the moment the cap was raised — so the script that
+ * exists to detect silently-dropped sources was itself silently reporting the wrong cap. Second
+ * time a duplicated constant drifted within this session (see `CATEGORY_KEYWORDS`). A diagnostic
+ * that mirrors the value it checks eventually checks the mirror.
+ */
+export const DEFAULTS: Required<PipelineOptions> = {
   skipLlm: false,
   // Budgets sized from a measured run: ~90 Luma and ~480 Meetup events arrive per
   // day, and Meetup's ICS supplies neither venue nor image, so it needs the larger

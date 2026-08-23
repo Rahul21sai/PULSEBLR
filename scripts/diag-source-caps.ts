@@ -25,11 +25,14 @@ import './load-env';
 import connectDB from '../lib/mongodb';
 import Source from '../lib/models/Source';
 import Event from '../lib/models/Event';
+import { DEFAULTS } from '../lib/scrapers/pipeline';
 import mongoose from 'mongoose';
 
-/** Mirrors DEFAULTS in lib/scrapers/pipeline.ts. */
-const MAX_MEETUP_GROUPS = 120;
-const MAX_LUMA_CALENDARS = 60;
+// THE caps, imported. A mirrored copy of these went stale the moment they were raised, so the
+// script whose entire job is finding silently-dropped sources was itself silently reporting the
+// wrong cap and claiming 84 groups were being dropped when none were.
+const MAX_MEETUP_GROUPS = DEFAULTS.maxMeetupGroups;
+const MAX_LUMA_CALENDARS = DEFAULTS.maxLumaCalendars;
 
 /** Communities the scorecard reported absent, to test the "never scraped" explanation. */
 const WATCH = ['docker', 'cncf', 'postgres', 'pgsql', 'grafana', 'clickhouse', 'linux', 'mongodb', 'kafka', 'hacktoberfest'];

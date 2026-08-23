@@ -59,9 +59,24 @@ export const MEETUP_KEYWORDS = [
   'git', 'contributor', 'hacktoberfest',
 
   // ── Hardware ──
-  // "software and hardware" is the stated focus, and hardware was thin before.
-  'robotics', 'iot', 'embedded', 'firmware', 'fpga', 'vlsi', 'semiconductor',
+  // "software and hardware" is the stated focus, and hardware is the thinnest slice of
+  // the corpus by a wide margin.
+  //
+  // Note what was MISSING from this list until 2026-08-23: the word `hardware` itself,
+  // plus `maker`/`makerspace`, `deeptech` and `space tech`. Two hardware communities —
+  // "The Hardware Club Bangalore - Robotics & Physical AI" and "Space Tech Meetup -
+  // Bengaluru" — were reaching the corpus only incidentally, via some other keyword's
+  // relevance spill. Searching for the obvious word is not optional.
+  //
+  // Keyword search is the discovery mechanism that WORKS here: probing 35 guessed
+  // open-source group slugs returned 0 hits, while keywords both surface events and
+  // harvest real group slugs, which are then persisted and scraped directly forever.
+  // Each keyword costs one request.
+  'hardware', 'robotics', 'iot', 'embedded', 'firmware', 'fpga', 'vlsi', 'semiconductor',
   'chip design', 'electronics', 'drone', 'arduino', 'raspberry pi',
+  'maker', 'makerspace', 'mechatronics', 'pcb', 'microcontroller', 'risc-v',
+  '3d printing', 'deeptech', 'space tech', 'satellite', 'automotive', 'electric vehicle',
+  'signal processing', 'sensors',
 
   // ── Product / business / career ──
   'startup', 'product', 'design', 'ux', 'career', 'business', 'marketing',
