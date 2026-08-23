@@ -90,8 +90,14 @@ Two of those categories are read as tech topics and are easy to reach for wrongl
   product/engineering talks. Practitioner meetups and conferences count.
   FALSE for: concerts, comedy, sports, food, spiritual and wellness sessions,
   book clubs, dating and social mixers, generic business/sales/marketing
-  networking, real-estate and investing pitches, and paid certification or
+  networking, real-estate and investing pitches, and certification or
   course-selling sessions that merely mention a technology.
+  COURSE SELLING IS FALSE EVEN WHEN THE SESSION IS FREE. A free demo class, a
+  trial lecture, a "training with placement assistance", a batch-starting
+  announcement or a coaching-institute enquiry session is lead generation for a
+  paid course. Judge it by what happens in the room: a sales pitch to an audience
+  is FALSE no matter how technical the syllabus sounds. Real practitioner talks,
+  meetups, conferences, hackathons and workshops run by communities are TRUE.
 
 "confidence": 0.0-1.0
 
