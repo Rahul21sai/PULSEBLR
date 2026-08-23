@@ -55,13 +55,28 @@ const MAX_PAGES_PER_TERM = 3;
  * is what this project has repeatedly proven does not work.
  */
 export const HASGEEK_SEED_ACCOUNTS = [
-  'fifthelephant',   // The Fifth Elephant — data/ML, 77 projects
-  'rootconf',        // Rootconf — infra/DevOps/SRE, 77 projects
-  'rustbangalore',   // Rust Bangalore — the one that 0/35 Meetup slug guesses missed
-  'jsfoo',           // JSFoo — JavaScript
-  'fpindia',         // Functional Programming India
-  'vizchitra',       // VizChitra — data visualisation
-  'anthillinside',   // Anthill Inside — applied ML
+  'fifthelephant',          // The Fifth Elephant — data/ML, 77 projects
+  'rootconf',               // Rootconf — infra/DevOps/SRE, 77 projects
+  'rustbangalore',          // Rust Bangalore — the one 0/35 Meetup slug guesses missed
+  'jsfoo',                  // JSFoo — JavaScript
+  'fpindia',                // Functional Programming India
+  'VizChitra',              // VizChitra — data visualisation
+  'anthillinside',          // Anthill Inside — applied ML
+
+  // Resolved from the search results by scripts/probe-hasgeek-accounts.ts, which harvests
+  // slugs rather than guessing them. That mattered: `blrsystems` was a hand-guessed 404,
+  // and the real slug is `bengalurusystemsmeetup`. 33 of 34 harvested accounts return JSON.
+  'bengalurusystemsmeetup', // Bengaluru Systems Meetup — the 404 guess, corrected
+  'pwl_bangalore',          // Papers We Love Bangalore — CS papers, reading group
+  'spcblr',                 // South Park Commons Bangalore
+  'open_source_ai',         // Open Source AI Community
+  'wcblr',                  // WordCamp Bengaluru — WordPress/open source
+
+  // DELIBERATELY NOT SEEDED, though they resolve: rustpune, keralars, gdgraipur, lucknow,
+  // eventmanagementdelhi, TMBC (Madras), SHRMIndia, SHRM__MENA_UAE, fosscell (NIT Calicut)
+  // and homebrew. None are Bengaluru communities, so every event they publish would be
+  // geo-gated out — the request is spent to import nothing. `socbangalore` ("SOC 2
+  // certification in Bangalore") and `help` are not communities at all.
 ];
 
 interface HasgeekProject {
