@@ -346,6 +346,26 @@ export async function scrapeLumaCalendar(
  * that turns out to be run from another city contributes nothing rather than noise.
  */
 export const LUMA_SEED_CALENDARS: Array<{ handle: string; label: string }> = [
+  // ── Deeptech / hardware hosts ──────────────────────────────────────────────
+  // Hardware is this product's weakest dimension, and diag-hardware-gap.ts established
+  // WHY: exactly 1 of 788 upcoming events mentioned real hardware vocabulary, so it is a
+  // SUPPLY problem and no tagger work can touch it. These calendars were found by
+  // harvesting the host behind hardware events already in the corpus
+  // (probe-hardware-sources.ts) rather than by guessing handles — the method that has
+  // worked, against 0/35 on guessed Meetup slugs and 18/107 on guessed Luma handles.
+  //
+  // Seeding them matters even though the city discover feed already surfaces some of their
+  // events: a seed is scraped EVERY run, while the discover feed only shows what it happens
+  // to rank that day.
+  //
+  // Honest limitation: these hosts are deeptech- and AI-adjacent, not silicon. They will
+  // not make Bengaluru's VLSI, FPGA and embedded scene appear, because those events are not
+  // published on Luma, Meetup or anywhere else machine-readable — see the note in
+  // scripts/diag-hardware-gap.ts.
+  { handle: 'cal-KD8pFvz8yyo00aW', label: 'The Hardware Club Bangalore / Physical AI' },
+  { handle: 'cal-E8r4chACboAw3Oq', label: 'The Ecosystem Community — AI in DeepTech' },
+  { handle: 'cal-nFRgTPChtz8gLju', label: 'DeepX — DeepTech' },
+
   // ── Seeded from the user's own 12-month event-attendance history ──
   // Each was verified live via calendar/get-items?period=future before being added;
   // two other calendars from the same list (Sela x Google Cloud, kipi.ai) returned 0
