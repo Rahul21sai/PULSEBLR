@@ -1,0 +1,54 @@
+name: CI
+
+# Runs on every push and pull request. The point is that the checks which used to be
+# "remember to run them" become unavoidable — this project has already shipped a dead
+# keyword tagger, a form that could not submit, and a search that matched every event,
+# all of which a green pipeline would have caught or at least dated.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# A second push to the same branch makes the first run irrelevant.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Ordered cheapest-first so an obvious break fails in seconds rather than minutes.
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit tests
+        run: npm test
+
+      # The build needs no secrets: every page that touches Mongo is server-rendered on
+      # demand, so nothing connects at build time. If that ever changes this step is where
+      # it will surface.
+      - name: Production build
+        run: npm run build
+        env:
+          # Auth.js refuses to build callback URLs from an untrusted host and auto-trusts
+          # only Vercel, so CI needs an explicit origin — the same requirement a real
+          # deployment has. See auth.ts.
+          NEXTAUTH_URL: http://localhost:3000
+          NEXTAUTH_SECRET: ci-build-only-not-a-real-secret
