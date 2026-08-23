@@ -109,7 +109,14 @@ const DEFAULTS: Required<PipelineOptions> = {
   // day, and Meetup's ICS supplies neither venue nor image, so it needs the larger
   // share. Enrichment is what takes the feed from 45% to ~90% image coverage.
   lumaEnrichBudget: 150,
-  meetupEnrichBudget: 450,
+  // Raised 450 → 800 because the group cap fix changed the input volume this is sized against.
+  // The old figure was measured when ~480 Meetup events arrived per day; scraping 221 groups
+  // instead of 120 brings ~931, and the budget was being exhausted exactly at 450 — which showed
+  // up as cover-image coverage falling 83% → 77%. Meetup's ICS carries neither venue nor image,
+  // so enrichment is the ONLY thing that gets them, and a cover is one of the four fields the
+  // event card renders. Costs one event-page fetch each, so this is the expensive knob in the
+  // run; re-check with diag-scorecard.ts ("Feed data the UI renders") before raising it further.
+  meetupEnrichBudget: 800,
   // Sized ABOVE the known set with headroom, because discovery compounds and a cap that bites
   // is a permanent blind spot (see loadDiscovered). Measured 2026-08-23: 200 Meetup groups and
   // 55 Luma calendars known. A Meetup group costs exactly ONE request (its ICS feed), so
