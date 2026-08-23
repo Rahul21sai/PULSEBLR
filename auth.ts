@@ -6,6 +6,19 @@ import User from '@/lib/models/User';
 import { isAdminEmail } from '@/lib/admin';
 import { devLoginEnabled, devUserId } from '@/lib/dev-login';
 
+/**
+ * `trustHost: true` below is only safe when the canonical origin is pinned, so refuse to
+ * start quietly without it. A production deploy missing NEXTAUTH_URL would let a spoofed
+ * Host header into generated links; failing loudly at boot beats discovering that later.
+ */
+if (process.env.NODE_ENV === 'production' && !process.env.NEXTAUTH_URL && !process.env.AUTH_URL) {
+  console.error(
+    '[auth] NEXTAUTH_URL is not set in production. Set it to the deployment origin ' +
+      '(e.g. https://pulseblr.example.com) — trustHost is enabled, so without a pinned ' +
+      'origin Auth.js will infer URLs from the request Host header.'
+  );
+}
+
 export const { handlers, signIn, signOut, auth } = NextAuth({
   providers: [
     Google({
@@ -48,6 +61,28 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         ]
       : []),
   ],
+
+  /**
+   * REQUIRED to deploy anywhere except Vercel.
+   *
+   * Auth.js v5 refuses to construct callback URLs from an untrusted Host header, and it
+   * auto-trusts only Vercel. Everywhere else — Render, Railway, Fly, Docker, a VPS —
+   * every single auth route returns 500 with:
+   *
+   *   [auth][error] UntrustedHost: Host must be trusted. URL was: <origin>/api/auth/...
+   *
+   * Reproduced by running `next start` with NODE_ENV=production: /api/auth/providers,
+   * /api/auth/csrf and the Google callback all failed, so sign-in was impossible. It is
+   * invisible in development because dev mode trusts localhost.
+   *
+   * SAFETY: `trustHost: true` means Auth.js will believe the Host / X-Forwarded-Host
+   * header, which a client can set. That only becomes dangerous if Auth.js has to INFER
+   * its base URL, because a spoofed host could then appear in a callback or email link.
+   * Setting NEXTAUTH_URL to the canonical origin removes the inference — the explicit
+   * value wins — which is why the check below treats a missing NEXTAUTH_URL in
+   * production as a real misconfiguration and says so loudly rather than failing quietly.
+   */
+  trustHost: true,
 
   session: { strategy: 'jwt' },
 

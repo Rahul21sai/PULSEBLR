@@ -56,6 +56,8 @@ There is **no test runner** configured — no `test` script and no test files ex
 | `diag-api-auth.ts` | Hits every mutating endpoint signed-out and asserts 401/403/503, every public one and asserts 200, and every protected page and asserts a 307 to `/login`. Needs a dev server. Run after touching any route. |
 | `diag-admin-stats.ts` | Asserts the invariants `/admin` relies on (source buckets sum, `tech <= upcoming`, non-empty breakdowns). Read-only. |
 | `diag-ssrf-guard.ts` | Asserts the SSRF guard blocks metadata IPs, loopback, private ranges, v4-mapped IPv6, decimal-encoded IPs and non-http schemes. No network calls. |
+| `diag-tracker-flow.ts` | Drives the whole tracker signed-in via the dev-only provider: create, kanban moves, record a person, follow-up complete, and cross-user isolation. **Writes then deletes** its own rows. Needs a dev server with `DEV_LOGIN=true`. |
+| `diag-dev-login.ts` | Truth table proving the dev-only sign-in cannot activate in production. No network. |
 | `probe-attended-sources.ts` / `probe-attended-round2.ts` / `probe-attended-round3.ts` | Probe the platforms named in the user's attendance history. Round 2/3 drill into the leads. Read-only. |
 | `verify-attended-seeds.ts` | The gate before a seed is added: fetches each candidate with its production mechanism and keeps it only if it returns **upcoming** events. Read-only. |
 | `probe-seed-candidates.ts` | FOSS United sitemap shape, Luma handle → calendar id, and Meetup name → slug resolution. Read-only. |
@@ -82,6 +84,8 @@ JS: `node scripts/generate-icons.js`.
 ## Environment
 
 Copy `.env.example` → `.env.local`. Required: `MONGODB_URI` (defaults to `mongodb://localhost:27017/pulseblr`), `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`, `NEXTAUTH_SECRET`, `NEXTAUTH_URL`. `RESEND_API_KEY` is optional (email digests).
+
+> **`NEXTAUTH_URL` is not optional once deployed.** Auth.js v5 auto-trusts only Vercel. On any other host every `/api/auth/*` route returns 500 with `[auth][error] UntrustedHost: Host must be trusted` — reproduced with `next start` under `NODE_ENV=production`, where `/api/auth/providers`, `/api/auth/csrf` and the Google callback all failed, making sign-in impossible. It is invisible in development because dev mode trusts localhost. `auth.ts` sets `trustHost: true` to fix it and logs an error at boot if `NEXTAUTH_URL` is unset in production, because `trustHost` without a pinned origin lets a spoofed `Host` header into generated links.
 
 **`ADMIN_EMAILS` is required to use the Settings page** — a comma-separated list of Google account emails allowed to run the scraper and edit events/sources. It fails closed: unset means every admin endpoint returns 503 with a message naming the variable, so a 503 from `/api/scrape` is a configuration problem, not a bug.
 
