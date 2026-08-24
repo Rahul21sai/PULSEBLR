@@ -96,7 +96,7 @@ verified. Duplicating those as unit tests would only produce slow, flaky copies.
 | `retag-events.ts` | Re-tag stored events with the LLM, **replacing** categories. `--ongoing`, `--all`, `--limit N`, `--dry`, **`--inconsistent`** (only documents whose two "tech" signals contradict each other — usually the right flag; see the warning under §3). |
 | `migrate-events.ts` | Backfill documents written before `clusterKey` / `lastSeenAt` / `isTechEvent` existed. |
 | `cleanup-implausible.ts` | Delete evergreen adverts and impossible date ranges. |
-| `cleanup-non-bengaluru.ts` | Delete stored events that are not in Bengaluru. The stage-5c gate stops new ones arriving but filters the incoming batch only — it never queries the collection, so everything that got in while `meetup.ts`'s guard was dead code stays in the feed forever. Judges on coordinates / `city` / `venue` / `address` and **never the description**, because deleting on "lessons from our Chennai rollout" would be the tagger's `\bpm\b` over-match with a DELETE attached. Skips any event a user has tracked. **Destructive** — dry by default, `--apply` to write. **It does NOT cover the same rows as the gate — see the warning below.** |
+| `cleanup-non-bengaluru.ts` | Delete stored events that are not in Bengaluru. The stage-5c gate stops new ones arriving but filters the incoming batch only — it never queries the collection, so everything that got in before it existed stays in the feed forever. Selects on **the gate's own `offCityReason()`**, imported not mirrored, so it judges `city` / `venue` / `address` / **`title`** and **never the description** — deleting on "lessons from our Chennai rollout" would be the tagger's `\bpm\b` over-match with a DELETE attached. Online events **are** judged (see below); `--keep-online` restores the old exemption and names the rows it spares. Skips any event a user has **tracked** or built a **`Folder`** for, sparing outright rather than repointing. **Destructive** — dry by default, `--apply` to write. |
 | `backfill-companies.ts` | Recompute `Event.companies` from the registry. Run after editing it. |
 | `diag-organizers.ts` | Which hosts and known companies appear in the corpus. |
 | `diag-overtagged.ts` | Documents with more categories than the tagger emits. `--fix` / `--trim`. |
@@ -160,84 +160,53 @@ verified. Duplicating those as unit tests would only produce slow, flaky copies.
 | `cleanup-duplicate-clusters.ts` | Collapse documents sharing a `clusterKey`; keeps the most complete, repoints `TrackerEntry` rows, gap-fills only. **Destructive** — dry by default, `--apply` to write. |
 | `cleanup-past.ts` / `cleanup-seed.ts` / `cleanup-dryrun.ts` | Older one-off cleanups, kept for reference. |
 
-> **THE OFF-CITY GATE AND THE OFF-CITY CLEANUP DO NOT COVER THE SAME ROWS, and running the
-> cleanup looks like it worked.** They were written by different sessions against different
-> predicates: stage 5c calls `offCityReason()`; `cleanup-non-bengaluru.ts` condemns only on
-> `isBengaluru(...) === false`.
+> **WHY THE CLEANUP SELECTS ON `offCityReason()`, AND WHY IT JUDGES ONLINE EVENTS.** Both were
+> defects, fixed 2026-08-24; this records the evidence, because both look like things a later
+> "simplification" would undo.
 >
-> Measured 2026-08-24, each tool's own summary, no title matching between them:
+> It used to condemn on `isBengaluru(...) === false`, which is a different question from the one
+> stage 5c asks. `isBengaluru` reads `city` for a POSITIVE match only, then builds its `location`
+> string from **venue + address alone** — `city` is not in it — and only `if (namesOther) return
+> false` can condemn. So it can never reject on `city`: `Los Angeles`, `San Francisco`, `Chennai`
+> and `Mysuru` all return `null`, which the cleanup correctly kept. `OTHER_STATE_HINTS` is
+> other-**state** only on top of that, so `city: 'Mysuru'` matches no hint and no Bengaluru
+> pattern. Measured against live Atlas, same corpus, same moment:
 >
-> | | upcoming | of those, tech |
-> | --- | --- | --- |
-> | `diag-offcity.ts` — what the gate rejects | **29** | **10** |
-> | `cleanup-non-bengaluru.ts` dry run | **14** | **3** |
+> | | all stored | upcoming | of those, tech |
+> | --- | --- | --- | --- |
+> | `isBengaluru(...) === false` — the old predicate | 21 | **14** | **3** |
+> | `offCityReason(...)` — the gate's own | 39 | **29** | **10** |
 >
-> So **15 upcoming rows and 7 tech-flagged rows are invisible to the cleanup.** Note its headline
-> `will delete: 21` counts 7 already-past events too — compare the *upcoming* figures or the gap
-> looks half its real size, which is the mistake this table exists to stop.
+> — 15 upcoming and 7 tech-flagged rows were invisible to it. Compare the **upcoming** figures: the
+> old headline `will delete: 21` counted 7 already-past events, which makes the gap look half its
+> real size. The switch only ever deletes MORE, never differently — the set of rows the old
+> predicate condemned that `offCityReason` spares is **empty**, so it is a strict superset.
 >
-> **TWO independent causes, and the first one means swapping the predicate is NOT enough:**
+> Swapping the predicate alone was **not enough**, and this is the half that looks reckless without
+> the evidence. The script skipped `format === 'online' || onlineLink` before any geo judgement, so
+> four tech-flagged `Chennai - Build Your First AI Agent` rows survived — `format: 'online'`,
+> `city`/`venue`/`address` all empty, Chennai in the TITLE only. The series is a natural controlled
+> experiment: all **9** upcoming rows are online, geo-empty and `isTechEvent: true`, differing by
+> one word of title.
 >
-> 1. **The online exemption fires first.** Line 57 is
->    `if (r.format === 'online' || r.onlineLink) continue;` — before any geo judgement. The four
->    upcoming `Chennai - Build Your First AI Agent` rows are `format: 'online'`, `onlineLink` set,
->    `city`/`venue`/`address` all empty, `isTechEvent: true`. They are skipped, not judged. Its
->    reasoning — a Bengaluru user can attend an online event hosted anywhere — is right in general
->    and wrong for a city-scoped edition. **Change the predicate and keep line 57 and these four
->    still survive.** So the fix is two changes, not one: use `offCityReason()` **and** stop
->    exempting online events wholesale.
+> ```
+> KEEP                    Bengaluru - Build Your First AI Agent…   ×4
+> KEEP                    Build Your First AI Agent…               ×1   (unprefixed → unknown)
+> REJECT Chennai (title)  Chennai - Build Your First AI Agent…      ×4
+> ```
 >
->    That the second change is safe is not a judgement call — the series is a natural controlled
->    experiment. All **9** upcoming rows are `format: 'online'`, `onlineLink` set, `city`/`venue`/
->    `address` empty and `isTechEvent: true`, differing only by one word of title:
+> So the title rule is **necessary** — nothing else distinguishes a Chennai edition from a Bengaluru
+> one — and **safe**, because the Bengaluru-evidence veto spares all four siblings and the
+> unprefixed row passes as unknown. "Attendable from anywhere" is right for a venue-less event with
+> no city signal and wrong when the title names the city it is scoped to. `--keep-online` restores
+> the exemption and **names** the rows it spares instead of silently skipping them.
 >
->    ```
->    KEEP                    Bengaluru - Build Your First AI Agent…   ×4
->    KEEP                    Build Your First AI Agent…              ×1   (unprefixed → unknown, passes)
->    REJECT Chennai (title)  Chennai - Build Your First AI Agent…     ×4
->    ```
->
->    So the title rule is **necessary** — nothing else in these documents distinguishes a Chennai
->    edition from a Bengaluru one — and **safe**, because the Bengaluru-evidence veto spares the
->    siblings. "Attendable from anywhere" is the right rule for a venue-less event with no city
->    signal and the wrong one when the title names the city it is scoped to.
-> 2. **`isBengaluru` never uses `city` to REJECT.** It reads `city` for a positive match only
->    (`if (input.city && BLR_NAME.test(input.city)) return true`), then builds
->    `location` from **venue + address alone** — `city` is not in it — and only
->    `if (namesOther) return false` can condemn. So `city: 'Los Angeles'` and
->    `city: 'San Francisco'` return `null`, and line 66 needs `false`. `OTHER_STATE_HINTS` is also
->    other-**state** only, so **`city: 'Mysuru'` falls through both lists** — a Karnataka city
->    that is not Bengaluru matches no hint and no Bengaluru pattern.
->
-> Rows it *does* catch, so the fix is not a rewrite: anything whose **venue or address** text
-> names another state, e.g. `Umbraco India Festival 2026` (`city=Kochi`, address naming Kochi).
->
-> > Do not read the dry run's `why` column as the reason a row was condemned. Line 72 labels with
-> > `isBengaluru({ city }) !== true`, where `null` qualifies — so a row condemned on its
-> > **address** is printed as `city="…"`. Cosmetic, but it reverses the apparent cause and it
-> > misled a review of exactly this question.
->
-> Fix: select on `offCityReason()` (it reads `city` as a first-class rejection signal, knows
-> foreign and Karnataka-other cities, and reads the title) **and** narrow line 57 so an online
-> event is still judged on its title. Review the candidates in `diag-offcity.ts` §4 first — it
-> prints all 29 rejects and all 6 spares by name, because this deletes.
->
-> **Do not copy `cleanup-duplicate-clusters.ts`'s referrer handling into this one.** They look
-> like siblings and are not. That script *repoints* `TrackerEntry` and `Folder.eventId` because a
-> surviving twin exists to repoint **to**; an off-city delete has no twin, so repointing is not
-> available and a **dangling soft ref is the correct outcome**, not a bug to engineer around.
-> `Folder.eventId` is deliberately soft — `pruneStale()` already deletes events 7 days past on
-> every scrape without touching referrers, so dangling is the steady state. This stopped being
-> hypothetical on 2026-08-23: there is now real user data in these collections (a `Folder` named
-> `"api days"` with one `qr-linkedin` `Contact`, under a real Google `sub`). Keep the existing skip
-> for events a user has **tracked**, and note that `getPendingFollowUps` still 500s on a dangling
-> ref by reading `entry.eventId.title` with no null guard.
->
-> Why the backlog cannot be waited out: rejecting a re-sighting stops `lastSeenAt` refreshing, so
-> each stored off-city row is now **frozen** — a later scrape can no longer correct or cancel it —
-> and `pruneStale()` only removes it a week after its own start date. They drain **after** being
-> shown, and `sort=connections` currently ranks one of them (`KONG API + AI Summit`, Los Angeles)
-> **second**.
+> **Do not copy `cleanup-duplicate-clusters.ts`'s referrer handling in here.** That script
+> *repoints* `TrackerEntry` and `Folder.eventId` because a surviving twin exists to repoint **to**;
+> an off-city delete has no twin, so a dangling soft ref is the correct outcome and the cleanup
+> **spares** the referenced row instead. It skips anything a user has tracked or built a `Folder`
+> for — a folder means they scanned people there. Both guard paths are asserted with a
+> write-then-delete fixture, because zero rows exercise them in production today.
 
 `scrape.ts`, `send-digest.ts` and `seed.ts` back the npm scripts; `load-env.ts` is the
 shared `.env.local` loader every script imports first. `generate-icons.js` is plain
