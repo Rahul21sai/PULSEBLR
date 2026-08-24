@@ -162,27 +162,57 @@ verified. Duplicating those as unit tests would only produce slow, flaky copies.
 
 > **THE OFF-CITY GATE AND THE OFF-CITY CLEANUP DO NOT COVER THE SAME ROWS, and running the
 > cleanup looks like it worked.** They were written by different sessions against different
-> predicates: stage 5c calls `offCityReason()`, which reads the **title** and knows foreign
-> cities; `cleanup-non-bengaluru.ts` condemns only on `isBengaluru(...) === false`, which
-> **never reads the title** and whose other-place hints are **Indian-only**.
+> predicates: stage 5c calls `offCityReason()`; `cleanup-non-bengaluru.ts` condemns only on
+> `isBengaluru(...) === false`.
 >
-> Measured 2026-08-24 against the same corpus: the gate rejects **29** rows, the cleanup's dry
-> run would delete **21**. The 8 it misses are the ones that matter most — **6 of them are
-> `isTechEvent`, so they are the ones in the DEFAULT feed**: `KONG API + AI Summit 2026`
-> (`city=Los Angeles`), `FounderX Silicon Valley` (`city=San Francisco`), and four repeats of
-> `Chennai - Build Your First AI Agent` which carry **no city, venue or address at all** and name
-> Chennai only in the title. `Ronda Central Park` (New York, ×2) and a Pisa cycling trip make up
-> the rest.
+> Measured 2026-08-24, each tool's own summary, no title matching between them:
 >
-> So `cleanup-non-bengaluru.ts --apply` reports a successful deletion of 21 rows while leaving
-> every foreign-city and title-only event exactly where it was — including the one that
-> `sort=connections` now ranks **second**. The fix is one import: select on `offCityReason()`
-> rather than `isBengaluru(...) === false`. Both live in `lib/scrapers/core/geo.ts`.
+> | | upcoming | of those, tech |
+> | --- | --- | --- |
+> | `diag-offcity.ts` — what the gate rejects | **29** | **10** |
+> | `cleanup-non-bengaluru.ts` dry run | **14** | **3** |
 >
-> Two consequences of the ingest gate that make this urgent rather than cosmetic: rejecting a
-> re-sighting stops `lastSeenAt` refreshing, so each stored off-city row is now **frozen** — a
-> later scrape can no longer correct or cancel it — and `pruneStale()` only removes it a week
-> after its own start date. They drain **after** being shown.
+> So **15 upcoming rows and 7 tech-flagged rows are invisible to the cleanup.** Note its headline
+> `will delete: 21` counts 7 already-past events too — compare the *upcoming* figures or the gap
+> looks half its real size, which is the mistake this table exists to stop.
+>
+> **TWO independent causes, and the first one means swapping the predicate is NOT enough:**
+>
+> 1. **The online exemption fires first.** Line 57 is
+>    `if (r.format === 'online' || r.onlineLink) continue;` — before any geo judgement. The four
+>    upcoming `Chennai - Build Your First AI Agent` rows are `format: 'online'`, `onlineLink` set,
+>    `city`/`venue`/`address` all empty, `isTechEvent: true`. They are skipped, not judged. Its
+>    reasoning — a Bengaluru user can attend an online event hosted anywhere — is right in general
+>    and wrong for a city-scoped edition. **Change the predicate and keep line 57 and these four
+>    still survive.** Safe to judge them on title: the same series also runs
+>    `Bengaluru - Build Your First AI Agent` (5 upcoming, same online shape), and
+>    `offCityReason()` spares those because naming Bengaluru is an unconditional veto.
+> 2. **`isBengaluru` never uses `city` to REJECT.** It reads `city` for a positive match only
+>    (`if (input.city && BLR_NAME.test(input.city)) return true`), then builds
+>    `location` from **venue + address alone** — `city` is not in it — and only
+>    `if (namesOther) return false` can condemn. So `city: 'Los Angeles'` and
+>    `city: 'San Francisco'` return `null`, and line 66 needs `false`. `OTHER_STATE_HINTS` is also
+>    other-**state** only, so **`city: 'Mysuru'` falls through both lists** — a Karnataka city
+>    that is not Bengaluru matches no hint and no Bengaluru pattern.
+>
+> Rows it *does* catch, so the fix is not a rewrite: anything whose **venue or address** text
+> names another state, e.g. `Umbraco India Festival 2026` (`city=Kochi`, address naming Kochi).
+>
+> > Do not read the dry run's `why` column as the reason a row was condemned. Line 72 labels with
+> > `isBengaluru({ city }) !== true`, where `null` qualifies — so a row condemned on its
+> > **address** is printed as `city="…"`. Cosmetic, but it reverses the apparent cause and it
+> > misled a review of exactly this question.
+>
+> Fix: select on `offCityReason()` (it reads `city` as a first-class rejection signal, knows
+> foreign and Karnataka-other cities, and reads the title) **and** narrow line 57 so an online
+> event is still judged on its title. Review the candidates in `diag-offcity.ts` §4 first — it
+> prints all 29 rejects and all 6 spares by name, because this deletes.
+>
+> Why the backlog cannot be waited out: rejecting a re-sighting stops `lastSeenAt` refreshing, so
+> each stored off-city row is now **frozen** — a later scrape can no longer correct or cancel it —
+> and `pruneStale()` only removes it a week after its own start date. They drain **after** being
+> shown, and `sort=connections` currently ranks one of them (`KONG API + AI Summit`, Los Angeles)
+> **second**.
 
 `scrape.ts`, `send-digest.ts` and `seed.ts` back the npm scripts; `load-env.ts` is the
 shared `.env.local` loader every script imports first. `generate-icons.js` is plain
