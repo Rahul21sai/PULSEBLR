@@ -80,19 +80,35 @@ export async function POST(request: NextRequest) {
     const folder = await Folder.create(doc);
     return NextResponse.json({ folder: folderToDTO(folder.toObject()) }, { status: 201 });
   } catch (error) {
-    const err = error as { code?: number; message?: string };
-    // The { userId, slug } unique index. Returning the existing folder lets the client
-    // simply navigate to it, which is what the user wanted anyway.
+    const err = error as { code?: number; message?: string; keyPattern?: Record<string, unknown> };
+    /*
+     * CHECK WHICH INDEX COLLIDED. This used to assume every 11000 was the { userId, slug }
+     * name clash and answer "You already have a folder with that name" — so when the
+     * { userId, clientId } index misfired on `clientId: null`, the message named the only
+     * thing that was not wrong, and the real fault (nobody could create a second folder at
+     * all) stayed hidden behind a plausible sentence. A duplicate-key handler that guesses
+     * its own cause turns a schema bug into a user-error message.
+     */
     if (err.code === 11000) {
-      const existing = await Folder.findOne({
-        userId: gate.userId,
-        slug: folderSlug(String(body.name ?? '')),
-      }).lean();
+      if (err.keyPattern && 'slug' in err.keyPattern) {
+        // The genuine name clash. Returning the existing folder lets the client simply
+        // navigate to it, which is what the user wanted anyway.
+        const existing = await Folder.findOne({
+          userId: gate.userId,
+          slug: folderSlug(String(body.name ?? '')),
+        }).lean();
+        return NextResponse.json(
+          {
+            error: 'You already have a folder with that name',
+            folder: existing ? folderToDTO(existing) : undefined,
+          },
+          { status: 409 }
+        );
+      }
+      // Any other unique index: report it as the conflict it is rather than mislabelling it.
+      console.error('Error creating folder — unexpected duplicate key:', err.keyPattern, err.message);
       return NextResponse.json(
-        {
-          error: 'You already have a folder with that name',
-          folder: existing ? folderToDTO(existing) : undefined,
-        },
+        { error: 'Could not create that folder. Please try again.' },
         { status: 409 }
       );
     }

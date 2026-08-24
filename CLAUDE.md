@@ -125,6 +125,7 @@ verified. Duplicating those as unit tests would only produce slow, flaky copies.
 | `diag-contact-flow.ts` | Drives the whole scan feature signed-in: create a folder, reject a duplicate name, **replay a `clientId` and assert exactly one contact**, drain the offline outbox (including a folder that only existed offline, and one bad record that must not fail the batch), upgrade a `nm:` key to `li:`, export CSV and assert the formula escaping and `no-store`, mint and revoke a public intake token, and eight cross-user isolation refusals. 48 checks. **Writes then deletes** its own rows. Needs a dev server with `DEV_LOGIN=true`. |
 | `migrate-connections-to-contacts.ts` | Move people out of `TrackerEntry.connections[]` into the `Contact` collection, one folder per event. Idempotent (deterministic `migrated:<entryId>:<index>` clientIds) and non-destructive — the legacy array is left in place, and `phase6.ts` reads both stores while suppressing the overlap. **Dry by default**, `--apply` to write. Verified end-to-end against a seeded legacy fixture, which is the only way to test it: a dry run over 0 rows never reaches the `.populate('eventId')` and so hid a `MissingSchemaError` for the unregistered `Event` model. |
 | `backfill-contact-companies.ts` | Recompute `Contact.companies` / `isTargetCompany` using the same `deriveContactMeta()` the write path uses. Run after editing the registry, the resolver, or a user's target list. **Dry by default**, `--apply`. |
+| `migrate-folder-clientid-index.ts` | Replace `folders.userId_1_clientId_1` with a **partial** unique index. Needed because the sparse compound version capped every user at ONE folder — see the warning under §9. Idempotent, reports the row counts it is unblocking. **Dry by default**, `--apply`. |
 | `copy-wasm.js` | Copies the ZXing reader wasm into `public/wasm/`. Plain JS, run by `postinstall`. See §9 for why self-hosting is mandatory. |
 | `diag-dev-login.ts` | Truth table proving the dev-only sign-in cannot activate in production. No network. |
 | `probe-district.ts` / `-round2.ts` / `-round3.ts` | How District went from "dismissed" to the city-breadth source. Round 1 starts at robots.txt instead of guessing paths; round 2 follows the events sitemap; round 3 measures what fraction are REAL dated events versus always-on attractions, and whether the slug can pre-filter the fetch list. Read-only. |
@@ -920,6 +921,35 @@ and exposes no page↔worker channel.
 > continue, leaving no row at all. The dev-only provider hits this on **every** sign-in for an
 > account that has also used real Google, because its googleId is `devlogin:<email>` rather
 > than the Google `sub`. Found when `/api/me/card` returned 404 for a perfectly good session.
+
+> **NEVER USE `sparse` ON A COMPOUND UNIQUE INDEX. Use `partialFilterExpression`.** On a compound
+> index, `sparse` omits a document only when **every** indexed field is missing. Any always-present
+> field in the key — `userId`, here — means every document gets indexed, with `null` standing in for
+> the field you meant to skip, and `unique` then permits exactly ONE such row.
+>
+> This shipped, and it capped every user at **one folder**. `{ userId, clientId }` was declared
+> `{ unique: true, sparse: true }`; folders created in the app carry no `clientId`, so the second
+> one always collided:
+>
+> ```
+> E11000 duplicate key error index: userId_1_clientId_1 dup key: { userId: "1001028…", clientId: null }
+> ```
+>
+> One folder per event is the core of this feature, and it was capped at one folder, full stop.
+> `POST /api/folders` made it worse by assuming every 11000 was the `{ userId, slug }` name clash
+> and answering **"You already have a folder with that name"** — naming the only thing that was not
+> wrong. A duplicate-key handler must branch on `err.keyPattern`, or a schema bug gets reported as
+> user error. Fixed with `partialFilterExpression: { clientId: { $type: 'string' } }`.
+>
+> **A schema edit alone does not fix a deployed database.** Mongoose creates a missing index and
+> otherwise leaves an existing one exactly as it found it — `createIndex` with different options on
+> the same key raises IndexOptionsConflict rather than migrating. Run
+> `scripts/migrate-folder-clientid-index.ts --apply`.
+>
+> `Contact` is unaffected: its `clientId` is `required`, so a plain unique compound index is right
+> there. **`Source.index({ kind, handle }, { unique: true, sparse: true })` is the same shape and is
+> latent** — it survives only because its 76 handle-less rows also lack `kind`, so `sparse` really
+> does omit them. The first row with a `kind` and no `handle` will collide with the next one.
 
 > **WHAT THE SCAN FEATURE DOES NOT DO YET (measured 2026-08-24).** Capture works and has real
 > usage — an `"api days"` folder holding a `qr-linkedin` contact under a real Google `sub`,

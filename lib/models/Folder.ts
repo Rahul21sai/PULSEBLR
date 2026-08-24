@@ -80,9 +80,32 @@ const FolderSchema = new Schema<IFolder>(
 // One folder per name per user: creating "I/O Connect" twice by accident on the morning
 // of the event is exactly the mistake this prevents.
 FolderSchema.index({ userId: 1, slug: 1 }, { unique: true });
-// Sparse: only folders created offline carry a clientId. Makes a replayed offline folder
-// creation idempotent, the same guarantee Contact gets from { userId, clientId }.
-FolderSchema.index({ userId: 1, clientId: 1 }, { unique: true, sparse: true });
+/**
+ * Only folders created offline carry a clientId, so a replayed offline creation is idempotent —
+ * the same guarantee Contact gets from { userId, clientId }.
+ *
+ * PARTIAL, NOT SPARSE, and the difference is the whole bug this replaced. **On a COMPOUND index,
+ * `sparse` omits a document only when EVERY indexed field is missing.** `userId` is always
+ * present, so every folder was indexed, with `clientId: null` for the ones created in the app —
+ * and `unique` then collapsed all of them into a single allowed row.
+ *
+ * Measured symptom: a user with one folder could never create a second. `Folder.create` threw
+ * `E11000 … index: userId_1_clientId_1 dup key: { userId: "…", clientId: null }`, and the route
+ * reported it as "You already have a folder with that name" — so the message named the one thing
+ * that was NOT wrong. One folder per event is the core of this feature; it was capped at one
+ * folder, full stop.
+ *
+ * `partialFilterExpression` indexes only documents where clientId is really a string, which is
+ * what "sparse" was reaching for. `Contact` is unaffected: its clientId is `required`, so every
+ * row has one and a plain unique compound index is correct there.
+ *
+ * Changing this in the schema is NOT enough — Mongoose will not alter an index that already
+ * exists. `scripts/migrate-folder-clientid-index.ts` drops and recreates it.
+ */
+FolderSchema.index(
+  { userId: 1, clientId: 1 },
+  { unique: true, partialFilterExpression: { clientId: { $type: 'string' } } }
+);
 FolderSchema.index({ userId: 1, eventDate: -1 });
 FolderSchema.index({ userId: 1, updatedAt: -1 });
 // Sparse: only folders that have opted into public intake carry a token.
