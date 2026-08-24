@@ -29,9 +29,20 @@
  * over the stored corpus, including the rows it SPARES. Both halves matter: the gate is one
  * loose regex away from deleting real events, and this is where that shows up.
  *
- * This script imports the gate rather than reimplementing it, for the reason recorded in
- * pipeline.ts's DEFAULTS: a diagnostic that mirrors the value it checks eventually checks the
- * mirror.
+ * EVERY TECH ROW ALSO CARRIES ITS POSITION IN THE DEFAULT FEED, and that is not decoration.
+ * A count of leaked rows says nothing about how many a user sees. The default sort is now
+ * `connections`, which rewards in-person-with-a-venue and penalises online hard, so the leak
+ * is wildly non-uniform in visibility: measured 2026-08-24, `KONG API + AI Summit 2026` (Los
+ * Angeles) scores a flat 100 and sits at #2 in the entire tech feed, while the four
+ * `Chennai - Build Your First AI Agent` rows that prompted this whole gate score 15 and sit at
+ * #279-#301, where nobody will ever scroll. So the rows that were REPORTED are the least
+ * visible ones, and a partial cleanup should be triaged by rank rather than by complaint. A
+ * diagnostic that names rows without ranking them under-reports severity, which is the general
+ * form of the mistake this section exists to stop.
+ *
+ * This script imports the gate AND the feed's sort rather than reimplementing either, for the
+ * reason recorded in pipeline.ts's DEFAULTS: a diagnostic that mirrors the value it checks
+ * eventually checks the mirror.
  *
  * Read-only. No writes, no network.
  *
@@ -41,6 +52,7 @@ import './load-env';
 import connectDB from '../lib/mongodb';
 import Event from '../lib/models/Event';
 import { namesOtherCity, offCityReason, isBengaluru } from '../lib/scrapers/core/geo';
+import { buildSort } from '../lib/events/query';
 import mongoose from 'mongoose';
 
 /**
@@ -62,6 +74,7 @@ type Row = {
   lng?: number;
   source?: string;
   isTechEvent?: boolean;
+  connectionScore?: number;
   startDateTime?: Date;
 };
 
@@ -70,11 +83,26 @@ const ist = (d?: Date): string =>
 
 const cut = (s: unknown, n: number): string => String(s ?? '—').slice(0, n).padEnd(n);
 
+/**
+ * Position of each tech event in the DEFAULT feed, keyed by id.
+ *
+ * Ordered by `buildSort('connections')` — the feed's own sort function, not a copy of it, so
+ * this cannot drift when the weights or the tie-break change. The row set is upcoming + tech,
+ * which is the default feed's filter; the only difference from what a user sees is the ongoing
+ * window, which shifts a rank by a place or two and never changes the conclusion.
+ */
+let feedRank = new Map<string, number>();
+
 /** One line per event, in the same shape everywhere so the sections can be compared by eye. */
 function line(row: Row, extra = ''): string {
+  const rank = feedRank.get(String(row._id));
+  // Only tech rows have a position, because only they are in the default feed at all.
+  const where = row.isTechEvent
+    ? `feed#${String(rank ?? '?').padStart(4)} score ${String(row.connectionScore ?? '-').padStart(3)}  `
+    : ' '.repeat(21);
   return (
-    `  ${row.isTechEvent ? 'TECH' : '    '}  ${ist(row.startDateTime)}  ` +
-    `${cut(row.source, 11)} ${cut(row.title, 54)} city=${cut(row.city, 14)}${extra}`
+    `  ${row.isTechEvent ? 'TECH' : '    '}  ${where}${ist(row.startDateTime)}  ` +
+    `${cut(row.source, 11)} ${cut(row.title, 46)} city=${cut(row.city, 14)}${extra}`
   );
 }
 
@@ -84,8 +112,17 @@ async function main() {
 
   const rows = (await Event.find(
     { startDateTime: { $gte: now } },
-    { title: 1, city: 1, venue: 1, address: 1, lat: 1, lng: 1, source: 1, isTechEvent: 1, startDateTime: 1 }
+    {
+      title: 1, city: 1, venue: 1, address: 1, lat: 1, lng: 1,
+      source: 1, isTechEvent: 1, connectionScore: 1, startDateTime: 1,
+    }
   ).lean()) as unknown as Row[];
+
+  // Rank the tech feed exactly as the API does, then index it.
+  const ranked = (await Event.find({ startDateTime: { $gte: now }, isTechEvent: true }, { _id: 1 })
+    .sort(buildSort('connections', false) as Record<string, 1 | -1>)
+    .lean()) as unknown as Array<{ _id: mongoose.Types.ObjectId }>;
+  feedRank = new Map(ranked.map((r, i) => [String(r._id), i + 1]));
 
   const tech = rows.filter(r => r.isTechEvent);
   console.log(`upcoming ${rows.length}  |  flagged tech ${tech.length}\n`);
@@ -209,6 +246,29 @@ async function main() {
   console.log(`  of those, gate spares          ${spared.length}   (read every one — a wrong reject deletes an event)`);
   console.log(`  gate rejects across ALL rows   ${allRejected.length}  (${allRejected.filter(r => r.isTechEvent).length} flagged tech)`);
   console.log(`  survivors                      ${rows.length - allRejected.length} of ${rows.length}`);
+
+  // ── 5. Severity, not volume ───────────────────────────────────────────────
+  // The number above is how many leaked. This is how many a user meets. They are different
+  // questions and only this one determines what to fix first.
+  const ranks = allRejected
+    .filter(r => r.isTechEvent)
+    .map(r => feedRank.get(String(r._id)))
+    .filter((n): n is number => typeof n === 'number')
+    .sort((a, b) => a - b);
+
+  console.log('\n  ── severity in the DEFAULT feed (sort=connections) ──');
+  if (ranks.length === 0) {
+    console.log('  no off-city row is in the tech feed at all.');
+  } else {
+    console.log(`  best (worst-case) rank         #${ranks[0]}   ← the most prominent off-city row in the product`);
+    console.log(`  on page 1 (top 20)             ${ranks.filter(n => n <= 20).length} of ${ranks.length}`);
+    console.log(`  in the top 50                  ${ranks.filter(n => n <= 50).length} of ${ranks.length}`);
+    console.log(`  ranks                          ${ranks.join(', ')}`);
+    console.log('');
+    console.log('  Triage by THIS, not by which rows were reported. connectionScore penalises online');
+    console.log('  hard, so a wrong-city online listing sinks out of sight while a wrong-city in-person');
+    console.log('  summit with a venue rises to the top — the opposite of the order complaints arrive in.');
+  }
   console.log('');
   console.log('  The gate runs at INGEST, so it cannot reach anything already stored. A non-zero');
   console.log('  count above is the backlog: those rows stay in the feed until they pass, or until');
