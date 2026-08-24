@@ -4,7 +4,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 @AGENTS.md
 
-> **Next.js version warning (from AGENTS.md, repeated because it governs almost every change here):** This repo pins Next.js `16.2.9`, which has breaking changes from older releases. Before writing any Next.js code, read the relevant guide in `node_modules/next/dist/docs/` and heed deprecation notices. Notably, route protection lives in **`proxy.ts`** at the repo root (this version's middleware equivalent) — there is no `middleware.ts`.
+> **Next.js version warning (from AGENTS.md, repeated because it governs almost every change here):** This repo pins Next.js `16.3.2` (exactly, no caret), which has breaking changes from older releases. Before writing any Next.js code, read the relevant guide in `node_modules/next/dist/docs/` and heed deprecation notices. Notably, route protection lives in **`proxy.ts`** at the repo root (this version's middleware equivalent) — there is no `middleware.ts`, and route-handler `params` is a `Promise` you must `await`.
+
+> **Why it moved off 16.2.9 (2026-08-23):** `npm audit` reported 9 vulnerabilities, and two mattered
+> here — a **critical `next-auth` fail-open on existence-based auth checks** (which is exactly what
+> `requireUser()` is), and a **high `next` Middleware/Proxy bypass in App Router**, which is
+> `proxy.ts`, this app's route protection. `next@16.2.12` cleared all nine of Next's own advisories;
+> `16.3.2` additionally cleared the transitive `postcss` and `sharp` ones. `next-auth@5.0.0-beta.32`
+> pins the patched `@auth/core@0.41.3`. Peer requirements are byte-identical between 16.2.12 and
+> 16.3.2 (same React range), `proxy.ts` and the awaited-`params` convention are unchanged in the
+> bundled docs, and the full suite passes. **`npm audit` is now 0 vulnerabilities.** Versions are
+> pinned exactly on purpose — `npm install` rewrites them to carets, which would let a future
+> install drift off the pin this warning exists to protect.
 
 ## Commands
 
@@ -13,13 +24,53 @@ npm run dev          # start dev server (http://localhost:3000)
 npm run build        # production build
 npm run start        # serve the production build
 npm run lint         # eslint (flat config: eslint.config.mjs)
+npm test             # vitest, pure functions only (tests/); npm run test:watch to iterate
 npm run scrape       # full pipeline → MongoDB (~5-10 min, ~700 upstream requests)
 npm run send-digest  # generate + email the daily digest via Resend
 ```
 
-`npm run scrape` flags: `--no-llm` (keyword tagging only, fast), `--fast` (skip Eventbrite + the company-page sweep), `--no-prune`.
+`npm run scrape` flags: `--no-llm` (keyword tagging only, fast), `--fast` (skip Eventbrite + the company-page sweep), `--no-prune`, `--only=district,hasgeek` (run just those source ids).
 
-There is **no test runner** configured — no `test` script and no test files exist. Do not assume a testing framework; if asked to add tests, choose and wire one up explicitly. What exists instead is a set of read-only diagnostic scripts (below), which is how every claim in this document was verified.
+> **`--only` forces pruning off, and that is load-bearing.** `pruneStale()` deletes any past
+> event no source has reported for a week. The sources that did not run cannot report theirs,
+> so a partial run must never reach the pruner. The 7-day grace would usually absorb it;
+> "usually" is not a guarantee to build a delete on. Source ids: `luma-city`, `luma-calendars`,
+> `meetup-city`, `meetup-groups`, `bevy`, `devfolio`, `unstop`, `allevents`, `devevents`,
+> `hasgeek`, `fossunited`, `district`, `eventbrite`, `company-pages`.
+
+Verification is **two-tier**, and the tiers have a deliberate boundary.
+
+`npm test` runs **vitest** (`vitest.config.mts`, suites in `tests/`), scoped by that
+config's own docblock to **pure functions only** — scoring, dedup and identity keys, the
+taxonomy, the search filter, the SSRF guard, QR payload parsing, CSV escaping. Nothing
+there touches MongoDB or the network.
+
+> **`tests/scan-decode-e2e.test.ts` is the exception worth knowing about.** It encodes real QR
+> PNGs with `qrcode`, decodes them through the production `zxing-wasm` engine, and runs the result
+> through `parseScanPayload` — so it proves the whole chain rather than just the parser's string
+> handling. It still needs no database, server or network (the `.wasm` loads from the installed
+> package), which is why it belongs here. It is also the regression guard for the scanner
+> dependency: if a `zxing-wasm` build ever ships a `.wasm` that cannot load, this fails loudly
+> instead of the scanner silently finding nothing on a phone at an event.
+
+Everything with a database or a server behind it is covered by the read-only
+`scripts/diag-*.ts` family (below), which is how most claims in this document were
+verified. Duplicating those as unit tests would only produce slow, flaky copies.
+
+> This paragraph previously said "there is **no test runner** configured — no `test`
+> script and no test files exist". That was stale and actively misleading: it caused a
+> pure-function parser to be planned as a diag script when it belonged in `tests/`. If
+> you are about to assert what tooling exists, read `package.json` rather than this file.
+
+> **RESTART `npm run dev` AFTER ADDING A FIELD TO AN EXISTING MODEL.** Every model uses the
+> `mongoose.models.X || mongoose.model('X', schema)` guard, which is required for hot reload —
+> but it also means a model registered BEFORE your schema change keeps its old schema for the
+> life of the dev server. Mongoose then silently drops writes to the new path: no error, the
+> in-memory document even shows the value, and only the database disagrees. This cost real time
+> during the scan work — adding `User.card` looked like a persistence bug for twenty minutes,
+> and a fresh `tsx` process proved the code was correct all along. A brand-new model
+> (`Folder`, `Contact`) registers on first use and is unaffected; it is only fields added to
+> models the running server has already touched.
 
 ### Diagnostics and maintenance (`scripts/`, run with `tsx`)
 
@@ -32,7 +83,7 @@ There is **no test runner** configured — no `test` script and no test files ex
 | `diag-search.ts` | Text-index health and search-term hit counts. |
 | `check-llm.ts` | Which LLM providers are configured, whether their credentials work, and end-to-end tagging latency. |
 | `check-nvidia-models.ts` | Times candidate NVIDIA models so `NVIDIA_MODEL` is chosen from evidence. |
-| `retag-events.ts` | Re-tag stored events with the LLM, **replacing** categories. `--ongoing`, `--all`, `--limit N`, `--dry`. |
+| `retag-events.ts` | Re-tag stored events with the LLM, **replacing** categories. `--ongoing`, `--all`, `--limit N`, `--dry`, **`--inconsistent`** (only documents whose two "tech" signals contradict each other — usually the right flag; see the warning under §3). |
 | `migrate-events.ts` | Backfill documents written before `clusterKey` / `lastSeenAt` / `isTechEvent` existed. |
 | `cleanup-implausible.ts` | Delete evergreen adverts and impossible date ranges. |
 | `backfill-companies.ts` | Recompute `Event.companies` from the registry. Run after editing it. |
@@ -57,7 +108,31 @@ There is **no test runner** configured — no `test` script and no test files ex
 | `diag-admin-stats.ts` | Asserts the invariants `/admin` relies on (source buckets sum, `tech <= upcoming`, non-empty breakdowns). Read-only. |
 | `diag-ssrf-guard.ts` | Asserts the SSRF guard blocks metadata IPs, loopback, private ranges, v4-mapped IPv6, decimal-encoded IPs and non-http schemes. No network calls. |
 | `diag-tracker-flow.ts` | Drives the whole tracker signed-in via the dev-only provider: create, kanban moves, record a person, follow-up complete, and cross-user isolation. **Writes then deletes** its own rows. Needs a dev server with `DEV_LOGIN=true`. |
+| `diag-contact-identity.ts` | Asserts the `Contact.contactKey` / `Folder.slug` derived-key hooks: that they run on `pre('validate')` (so a document that never supplied the key still validates), that the key upgrades when a LinkedIn slug arrives later, and that a legacy document self-heals. Read-only, **no DB and no server** — Mongoose runs document middleware in process. |
+| `diag-contact-flow.ts` | Drives the whole scan feature signed-in: create a folder, reject a duplicate name, **replay a `clientId` and assert exactly one contact**, drain the offline outbox (including a folder that only existed offline, and one bad record that must not fail the batch), upgrade a `nm:` key to `li:`, export CSV and assert the formula escaping and `no-store`, mint and revoke a public intake token, and eight cross-user isolation refusals. 48 checks. **Writes then deletes** its own rows. Needs a dev server with `DEV_LOGIN=true`. |
+| `migrate-connections-to-contacts.ts` | Move people out of `TrackerEntry.connections[]` into the `Contact` collection, one folder per event. Idempotent (deterministic `migrated:<entryId>:<index>` clientIds) and non-destructive — the legacy array is left in place, and `phase6.ts` reads both stores while suppressing the overlap. **Dry by default**, `--apply` to write. Verified end-to-end against a seeded legacy fixture, which is the only way to test it: a dry run over 0 rows never reaches the `.populate('eventId')` and so hid a `MissingSchemaError` for the unregistered `Event` model. |
+| `backfill-contact-companies.ts` | Recompute `Contact.companies` / `isTargetCompany` using the same `deriveContactMeta()` the write path uses. Run after editing the registry, the resolver, or a user's target list. **Dry by default**, `--apply`. |
+| `copy-wasm.js` | Copies the ZXing reader wasm into `public/wasm/`. Plain JS, run by `postinstall`. See §9 for why self-hosting is mandatory. |
 | `diag-dev-login.ts` | Truth table proving the dev-only sign-in cannot activate in production. No network. |
+| `probe-district.ts` / `-round2.ts` / `-round3.ts` | How District went from "dismissed" to the city-breadth source. Round 1 starts at robots.txt instead of guessing paths; round 2 follows the events sitemap; round 3 measures what fraction are REAL dated events versus always-on attractions, and whether the slug can pre-filter the fetch list. Read-only. |
+| `test-district.ts` | Live smoke test: pins `districtSlugDate()` against the real slug forms, then asserts the scrape returns dated Bengaluru events with no evergreen listings. Exits non-zero on regression. No DB writes. |
+| `diag-district-precision.ts` | Asserts District did not cost tech precision — prints every District row flagged `isTechEvent` so each is judged by eye, not by an aggregate. Read-only. |
+| `probe-hardware-bodies.ts` / `-round2.ts` | Hardware via the PROFESSIONAL BODIES rather than the consumer platforms: IEEE vTools, IEEE Bangalore, IESA, SEMI, Hackster, IISc, IIIT-B. Round 2 follows the leads round 1 was too quick to dismiss (a `tribe_events` route answering 200 means the plugin is installed, not that events exist). Read-only. |
+| `diag-hardware-vocabulary.ts` | Asserts the Hardware/Robotics floor recognises `vlsi`/`verilog`/`risc-v`/`asic` AND still refuses the ambiguous near-misses. **The negative half is the important half** — a widened regex fails by over-matching, which no aggregate count reveals. Exits non-zero on regression. |
+| `diag-hardware-corpus-delta.ts` | Runs the OLD and NEW hardware patterns over the live corpus and names every newly-matched event, so over-matching is caught against real scraped copy rather than synthetic titles. Read-only. |
+| `diag-tech-consistency.ts` | Do the app's TWO definitions of "tech" agree — `isTechEvent` (what `techOnly` filters on) versus membership of `TECH_CATEGORY_NAMES` (what the rail counts)? Reports both directions separately, because one is recall loss and the other precision risk. Read-only. |
+| `diag-retag-preview.ts` | Would re-tagging FIX the mis-tagged events or just churn them? Re-tags a targeted sample plus controls and prints old → new, writing nothing. Run this before any bulk retag — the controls matter more than the broken ones. |
+| `diag-gamingxr-leak.ts` | Leisure gaming leaking into the tech feed through `Gaming/XR`, the one tech category whose everyday sense is a leisure activity. Read-only. |
+| `diag-coaching-leak.ts` | Training-institute course adverts in the tech feed, and what `connectionScore` gives them. Read-only. |
+| `diag-flagship-events.ts` | Are the marquee Bengaluru tech events (IndiaFOSS, droidCon, GIDS, Open Source India …) actually IN the default feed? Checks **by name**, because a rising total does not prove the right things are present. Read-only. |
+| `retag-category.ts` | Re-tag a SUBSET, replacing categories. By category name, for when a category has gone bad; or **`--match=<title regex>`** for when a category is being *missed* and the documents carry no marker to select on. `--dry`, `--all`. |
+| `diag-scorecard.ts` | **The product scorecard as measurements, not estimates.** Each dimension is a criterion a query decides. Two rules keep it honest: CAPABILITY and SUPPLY are never averaged (hardware is externally capped, so mixing it with a code metric hides what you can act on), and no dimension scores itself on a proxy that cannot fail. Ratios with a denominator under 10 are printed but **not judged** — a supply cap must not be reported as a code defect. Exits non-zero only on a capability shortfall with enough evidence to call it one. |
+| `diag-source-caps.ts` | Are the per-run caps silently dropping discovered sources? This is what found 80 of 200 Meetup groups being skipped on every run. Read-only. |
+| `diag-cap-victims.ts` | Which specific named handles the old cap dropped, and which the new ordering rescues. Read-only, does not scrape. |
+| `diag-tech-fp.ts` | Tech-feed false positives **with the organiser and description head**, plus how many land on the first 20 — because the default sort is soonest, so 2% of the corpus can be 10% of what a user sees. A count is not a ranking. Read-only. |
+| `diag-deploy-readiness.ts` | Every production failure that is **invisible locally**, grouped by consequence and stating what BREAKS rather than naming a variable. Detects a dev environment and reports `DEV_LOGIN` / localhost `NEXTAUTH_URL` as "set this on the host" rather than as failures — they are correct locally. No network, no DB; safe in CI. |
+| `diag-company-leak.ts` | Where an ambiguous company name came from on an event that is not that company's. Prints every field and says whether the attribution is justified, stale, or absent from the document entirely. Read-only. |
+| `diag-recent-writes.ts` | What was written in the last N minutes, and whether it carries the keyword-tagging fingerprint (`tagConfidence` exactly 0.6). Reports; does not judge — the floor is often right. Read-only. |
 | `probe-attended-sources.ts` / `probe-attended-round2.ts` / `probe-attended-round3.ts` | Probe the platforms named in the user's attendance history. Round 2/3 drill into the leads. Read-only. |
 | `verify-attended-seeds.ts` | The gate before a seed is added: fetches each candidate with its production mechanism and keeps it only if it returns **upcoming** events. Read-only. |
 | `probe-seed-candidates.ts` | FOSS United sitemap shape, Luma handle → calendar id, and Meetup name → slug resolution. Read-only. |
@@ -113,6 +188,20 @@ Two derived fields encode the purpose, and both are recomputable without re-scra
   excludes generic business/sales networking, wellness, book clubs, and paid
   certification sessions that merely name a technology. Sharpening this moved the tech
   count from 239 to 169.
+
+  > **Hardware is a SUPPLY problem, and this is settled — do not re-probe it.** Five
+  > independent classes of source were tested and none publishes machine-readable Bengaluru
+  > hardware events. Consumer platforms: hardware vocabulary appears in **24 of 1354** events.
+  > **IEEE vTools**, the system every IEEE chapter files events in, returns 404/500 — the
+  > public surface is retired. **IEEE Bangalore** *has* The Events Calendar installed and its
+  > REST route answers (`tribe_events` is a registered post type), but the collection holds
+  > **exactly one event, from 2020** — the mechanism exists and is abandoned. **IESA** 404s and
+  > **SEMI** 403s. **IISc** has no events post type and its feeds are empty; **IIIT-B** has no
+  > `wp-json` at all. A 200 that needs a browser is not a source, and a `tribe_events` route
+  > answering 200 means the plugin is installed, not that events exist. Evidence:
+  > `probe-hardware-bodies.ts` / `-round2.ts`, `diag-hardware-gap.ts`, `diag-tech-recall.ts`.
+  > What *is* actionable is the classifier vocabulary (see §3) — so that when a hardware event
+  > does appear, it is not found and then discarded.
 - **`connectionScore`** (0-100, `lib/events/connection-score.ts`) — a deterministic
   ranking signal for "will I leave with useful contacts", powering the
   **"Best for connections"** sort. In-person is the biggest term; attendee counts are
@@ -120,6 +209,18 @@ Two derived fields encode the purpose, and both are recomputable without re-scra
   hard, because those put you in an audience rather than a room. Measured effect: real
   practitioner meetups with food and a company host score 88-99, while
   "Get Google AI Certified … Cohort" and "Webinar: …" land at 0-2.
+
+  > The funnel list was built around the word **"paid"**, which let the coaching centres
+  > through: "Free DevOps Demo Class in Electronic City" scored 58 and "Free Gen AI &
+  > Agentic AI Demo at eMexo" scored 70 — both lead generation for paid courses, sitting
+  > near the top of the feed. `demo` is now matched under a **lookahead**, because the same
+  > word marks the best events and the worst: "Demo Night" and "Demos" are community
+  > show-and-tell (and "demo night" already earns the peer bonus), "Demo Day" is
+  > networking-dense, while "Demo Class" and "… Demo at \<institute\>" are sales sessions.
+  > Course adverts scoring ≥ 50 went 2 → 0. `tests/connection-score.test.ts` pins both the
+  > penalised and the spared forms — that lookahead is exactly the kind of thing a later
+  > "simplification" breaks silently. Re-run `scripts/backfill-connection-score.ts` after
+  > editing the weights, and `scripts/diag-coaching-leak.ts` to re-measure.
 
 ### 1. Scraping (`lib/scrapers/`)
 
@@ -138,6 +239,28 @@ pipeline.ts orchestrator: discover → scrape → enrich → tag → ingest → 
 
 Discovered sources are **persisted to the `Source` collection** (`kind` + `handle`, unique-sparse index), so every run starts from everything ever found. A first run discovered ~110 Meetup groups and 18 Luma calendars from a seed list of 24.
 
+> **A per-run cap on a compounding set is a permanent blind spot, not a rate limit.** Because
+> discovery only ever grows, `maxMeetupGroups`/`maxLumaCalendars` eventually bite — and the
+> caps were applied as a bare `.slice()` on an **unsorted** query. Measured 2026-08-23
+> (`scripts/diag-source-caps.ts`): **200 Meetup groups known against a cap of 120, so 80 were
+> dropped — the same 80 on every run**, since Mongo's return order was stable. No log line, no
+> health signal, and in the feed it is indistinguishable from 80 groups with nothing scheduled.
+>
+> What was in that tail (`scripts/diag-cap-victims.ts`): `microsoft-reactor-bengaluru`
+> (6 events), `lfdt-bengaluru` (Linux Foundation, 7), `owasp-bangalore-chapter`,
+> `microsoft-365ug`, `makers-tribe` — company events, security and makers, i.e. exactly the
+> coverage that was being written off as a supply gap. Worse, **30 groups had never been
+> scraped at all and all 30 were past the cap**, so they could never prove themselves.
+>
+> Two fixes, both needed. `loadDiscovered()` now orders by expected yield — never-scraped
+> first (so a new discovery gets its first look), then most productive, then quietest, with the
+> long-dead last — so if a cap does bite it drops the least valuable rather than the
+> alphabetically unlucky. And `applyCap()` **logs and records a source error** when it bites, so
+> the drop can never be silent again. Caps raised to 260 / 120 against 200 / 55 known; a Meetup
+> group costs exactly one request (its ICS feed), so the headroom is cheap.
+>
+> Hand-verified `SEED_MEETUP_GROUPS` are ordered **first**, so a cap can never drop them.
+
 Adapters and their measured quirks — read the file header before changing one, each documents what was tried and rejected:
 
 | Adapter | Mechanism | Notes |
@@ -150,6 +273,7 @@ Adapters and their measured quirks — read the file header before changing one,
 | `devfolio.ts` | Public hackathons API | Filters out the vendor's own `(Demo)`/`Fake` sandbox rows. |
 | `unstop.ts` | Public opportunity search | Listings are **deadlines, not events**; in-person Bengaluru only. |
 | `allevents.ts` | City page JSON-LD | Category pages are NOT category-scoped — `/technology` and `/music` return identical sets. Culture/concerts only. |
+| `district.ts` | Sitemap → per-event JSON-LD | **The city-breadth source, not a tech one** — comedy, concerts, theatre, cultural festivals, runs, business networking. Measured 0 of 23 flagged `isTechEvent`, which is the safety argument: the feed defaults to `techOnly`, so breadth cannot dilute it. Best field coverage of any source (venue/address/image/description/price/organizer all 100%). **The slug is the filter:** District appends the date for dated events and omits it for its always-on "experiences" catalogue; 11 of 11 dated slugs were real events, 13 of 13 undated ones were Timezone arcades, vineyard tours and play areas reporting `startDate` = today. Undated slugs are skipped WITHOUT a request, so the run costs ~27 fetches rather than 365 × 233 KB. Fails loudly: zero dated slugs is reported as a source error. |
 | `universal.ts` | JSON-LD → ICS → RSS → embedded JSON, for any URL | Adding a company page is a one-line registry entry. Deliberately has **no** LLM-on-HTML or selector-guessing fallback. **Measured: 19 of the 20 pages in `COMPANY_EVENT_PAGES` yield nothing** — corporate marketing sites are JS-rendered shells with no schema.org markup. Kept because each costs one request and starts working the moment a site adds markup. |
 
 ### 2. Dedup — two keys, two jobs (`lib/models/Event.ts`)
@@ -170,6 +294,67 @@ Both keys are derived in a **`pre('validate')`** hook, and that is not interchan
 The category taxonomy (`EVENT_CATEGORIES`, 32 values) lives in `lib/models/Event.ts` and the system prompt is generated from it, so they cannot drift.
 
 > Keyword regexes are load-bearing when the LLM is unavailable, and loose ones do real damage: a bare `\bpm\b` matched the "PM" in "6 PM" and tagged a fifth of the corpus `Product/Design`. Keep them specific.
+
+> **The discovery keywords and the classifier vocabulary must agree.** The Meetup fan-out
+> searches `vlsi`, `fpga`, `semiconductor` and `embedded`, but the keyword floor knew only the
+> last two — so a chip-design meetup could be *discovered* and then, with every LLM provider
+> down, stored with zero categories and `isTechEvent: false`. Found and then discarded.
+> `Hardware/Robotics` now covers what Bengaluru's silicon community actually writes (`vlsi`,
+> `verilog`, `vhdl`, `risc-v`, `asic`, `tapeout`, `photonics`, `mems`, `microcontroller`,
+> `mechatronics`, `signal processing`, `electron devices`, `3d printing`, `makerspace`,
+> `sensors`). Run `scripts/diag-hardware-vocabulary.ts` after touching it — **its negative
+> half is the important half**, because a widened regex fails by silently over-matching and
+> no aggregate count reveals that.
+
+> **"Tech" is defined TWICE, and the two can disagree.** `isTechEvent` is what `techOnly`
+> filters on (`lib/events/query.ts`: `filter.isTechEvent = true`); membership of
+> `TECH_CATEGORY_NAMES` is what the "Tech topic" rail counts. The keyword floor derives one
+> from the other, so it cannot drift — the LLM sets both independently, so it can. Measured at
+> 75 of 1048 upcoming events (7.2%), with `IndiaFOSS 2026` stored `[Arts/Culture, AI/ML,
+> Data/Analytics]` and `isTechEvent: false`, i.e. **hidden from the default feed**. Those
+> mis-tags carry the signature of the batch-misalignment bug: categories belonging to a
+> different event in the same batch of five.
+>
+> The fix was `retag-events.ts --inconsistent`, not `--all`. A blanket retag is not free —
+> measured with `diag-retag-preview.ts`, the current provider fixes flags well (7 fixed, 0
+> broken) but returns **fewer** categories, so `Databricks Campus Hackathon` came back
+> `[Data/Analytics]` having held `[Hackathon, AI/ML, Data/Analytics]`. Selecting only the
+> self-contradicting documents took disagreement to 0.6% while leaving consistent documents
+> their richer tags. `diag-flagship-events.ts` then confirms 0 marquee events hidden.
+
+> **Consistency-based selection is structurally blind to agreed-upon errors, and that blind
+> spot has now bitten twice.** `--inconsistent` finds documents whose two "tech" signals
+> contradict each other. A board-game night tagged `[Web/Mobile]` with `isTechEvent: true` is
+> **self-consistent and wrong**, so it survives — as did the `Gaming/XR` leak. Both were found
+> by reading the feed's actual first page. When a wrong tag is *agreed upon*, only content-based
+> selection reaches it: `retag-category.ts --match=<title regex>`.
+>
+> Measured: "Sunday Sports🏏 & Dinner meet🍛" stored `[AI/ML, Data/Analytics]` with a description
+> reading "cricket sesh followed by dinner", and "Sunday Jamming 🎶" stored `[Web/Mobile,
+> Gaming/XR]`. No technical text in either — those categories belong to other events in the same
+> batch of five, and **ingestion unions categories, so re-scraping can never remove them.**
+
+> **A count is not a ranking, and the user sees the ranking.** Tech precision measured 98% while
+> the top of the default feed was board games and jamming: the feed sorts soonest-first, so 2% of
+> the corpus was 10% of the first twenty. `diag-tech-fp.ts` reports the first-page share
+> separately for this reason. Same story for the coaching-centre adverts — `connectionScore`
+> buries them correctly, but the default sort is soonest, so the penalty never reached the page.
+
+> **`isTechEvent` excludes course selling EVEN WHEN THE SESSION IS FREE.** The prompt used to say
+> "**paid** certification or course-selling sessions", and "paid" was exactly what let "Free
+> DevOps Demo Class in Electronic City" and "Java Training with Placement" into the tech feed.
+> The identical wording gap existed in `connection-score.ts`'s funnel list, which is why it is
+> worth stating rather than patching quietly: the test is **what happens in the room** — a sales
+> pitch to an audience is false however technical the syllabus sounds.
+
+> **Internal consistency is not correctness.** A metric that only finds contradictions is
+> blind to agreed-upon errors, so read the feed's actual first page, not just its totals.
+> `Gaming/XR` — the one entry in `TECH_CATEGORY_NAMES` whose everyday sense is a *leisure*
+> activity — had become the bin the classifier reached for when unsure: of 7 upcoming events
+> tagged with it, **zero** were games engineering, and it had put a DJ night, a board-game
+> Sunday and a design-thinking workshop into the tech feed. Two causes, both fixed: the
+> keyword `gaming` matched "Board**Gaming**", and the prompt never said the category means
+> games *engineering*. `scripts/retag-category.ts "Gaming/XR"` re-decided all seven.
 
 > **Never edit `tagger.ts` through a shell heredoc.** Doing so once rewrote all 70 `\b`
 > word boundaries as literal **0x08 BACKSPACE bytes**, so `/\b(ai|...)\b/i` became
@@ -223,6 +408,29 @@ organiser — into canonical companies:
 
 Attribution is derived data — `scripts/backfill-companies.ts` recomputes it from
 stored fields after any registry change, with no re-scraping.
+
+> **`Event.companies` is RECOMPUTED at ingest, not unioned — and that had to change.** It used
+> to union, on the reasoning that "the resolver only emits names it could actually justify".
+> True at the moment of writing; union is forever. Enrichment **replaces** descriptions on most
+> runs (Meetup's ICS carries none at all), so a name justified by text that no longer exists
+> survives permanently — and tightening a `strength` from `distinctive` to `ambiguous`, the
+> documented remedy for a false positive, cannot undo the rows it already produced.
+>
+> Measured: `Docker` was attributed to *"Meetup new people/seekers of SriVidya Tradition"*,
+> hosted by "srividya personal spiritua", with the string `docker` in **no field** of the
+> document (`scripts/diag-company-leak.ts`). Exactly the harm `strength` exists to prevent, from
+> a direction `strength` cannot defend against.
+>
+> Recomputing is the right shape because the field is purely derived from the same document and
+> `resolveCompanies()` is local and cheap — no network, no LLM. Ingest and
+> `backfill-companies.ts` now agree, instead of the backfill existing to clean up after ingest.
+> Co-hosts are not lost: the merge has already taken the best organiser, title, venue and tags
+> from both sightings, so the resolver sees strictly more evidence than either source alone.
+>
+> Consequence to expect after running the backfill: **attributions fell 150 → 109 and distinct
+> companies 51 → 27.** The higher figures were accumulated history plus names appearing only in
+> descriptions, which the resolver deliberately never matches. 109 is what the current text can
+> justify.
 
 Company names are also fed into the Meetup keyword fan-out. That is a *discovery*
 lever only (it surfaces real events like "Building AI Agents with Microsoft Foundry"
@@ -288,12 +496,209 @@ The scraper and source controls used to live in `/settings`, which every signed-
 
 ### 8. Career intelligence (`lib/helpers/phase6.ts`)
 
-Pending follow-ups, repeat-connection detection (same person across 2+ events), target-company/recruiter detection (`DEFAULT_TARGET_COMPANIES` is hardcoded — **not yet DB-backed**), and `getStats(userId)`. Surfaced via `app/api/phase6/*`.
+Pending follow-ups, repeat-connection detection (same person across 2+ events),
+target-company/recruiter detection, and `getStats(userId)`. Surfaced via `app/api/phase6/*`.
 
-### 9. Digest (`lib/notifications/`)
+**Person identity now comes from `Contact.contactKey`, and that fixed two real defects.**
+`detectRepeatConnections()` used to key on `connection.name.toLowerCase().trim()`, so two
+different people called Rahul at one event collapsed into one and the same person spelled two
+ways became two. `markFollowUpComplete()` matched `c.name === connectionName` — exact, case
+sensitive, first match wins — so the Done button silently no-opped **forever** on the second
+person with a given name, because `ConnectionSchema` is `{ _id: false }` and there was nothing
+better to address them by. Grouping is now by `contactKey` (which prefers a scanned LinkedIn
+slug) and completion is by `Contact._id`, via `completeContactFollowUp()`.
+
+Every function here **unions both stores** and tags each result with
+`source: 'contact' | 'tracker'`, so nothing disappears while
+`migrate-connections-to-contacts.ts` has not been run yet; `POST /api/phase6/follow-ups`
+accepts `{ contactId }` or the legacy `{ trackerEntryId, connectionName }` for the same reason.
+
+> **A union is not enough on its own — after migrating, the person is in BOTH stores.** Measured
+> against a real fixture: a migrated connection appeared TWICE in the follow-ups strip (and so
+> twice in the digest email), and `detectRepeatConnections` claimed "met at 2 events" for somebody
+> met once. Two causes, both fixed:
+> 1. The overlap is now suppressed exactly, not guessed at from names. The migration writes the
+>    deterministic clientId `migrated:<entryId>:<index>`, so `migratedClientIds()` computes which
+>    legacy rows already have a Contact and skips them. The Contact wins, because it is the row
+>    with a real `_id` to address.
+> 2. Repeat detection identifies the EVENT as `folder.eventId ?? folder._id`. Keying on the
+>    folder id alone made a migrated contact and its legacy twin look like two events — and would
+>    also have counted two folders for one event as two events.
+
+> **The two follow-up windows used to disagree**, which is why
+> `getPendingFollowUps(userId, { includeUpcomingDays })` takes an explicit parameter. This
+> function selected `followUpAt <= now` (OVERDUE) while the digest selected `now … now+3 days`
+> (UPCOMING) — so an overdue follow-up reached the dashboard but never the inbox, and
+> `diag-tracker-flow.ts` has to backdate its fixture to test anything. Default 0 preserves
+> overdue-only; the digest passes 3.
+
+> **`getTargetCompanies()`, `addTargetCompany()` and `removeTargetCompany()` were DELETED, not
+> extended.** The getter returned the module-level array **by reference**, so the adder mutated
+> a process-global shared by every user of the deployment, and the remover discarded its own
+> result. All three were uncalled. Per-user targets now live on `User.targetCompanies` and are
+> read by `lib/contacts/service.ts#getTargetCompanies`. `isTargetCompanyEvent()` stays here and
+> deliberately reads the default list, because it judges a shared event corpus at ingest time
+> where there is no signed-in user.
+
+### 9. Scan & contacts (`lib/scan/`, `lib/models/{Folder,Contact}.ts`)
+
+Capturing the people you meet at an event by scanning a QR code, into a per-event
+**folder** you can read as a table and export as CSV.
+
+Surfaces: `/scan` (camera), `/folders` and `/folders/[id]` (the table), `/card` (show your
+own code), plus two **public** pages — `/c/<token>` (somebody's card, opened from a QR by a
+stranger with no account) and `/f/<token>` ("add yourself to this folder"). Neither public
+page may ever be nested under a prefix listed in `proxy.ts`'s `PROTECTED`, which matches by
+`startsWith`; `/card` is safe only because `'/c/abc'.startsWith('/card')` is false.
+
+The scanner is `zxing-wasm@3.1.3`, self-hosted from `public/wasm/` by
+`scripts/copy-wasm.js` (wired to `postinstall`). **That self-hosting is mandatory, not
+tidy:** the shipped dist has no CDN fallback and resolves the `.wasm` relative to the
+script URL, which under Turbopack is `/_next/static/chunks/` — so without the `locateFile`
+override the first scan 404s, and only in a production build. Measured: 1,093,289 bytes
+raw, 349 KB brotli, 445 KB gzip. A native `BarcodeDetector` fast path exists but is gated
+behind a **runtime self-test that decodes a known QR**, because on iOS with the Shape
+Detection flag on the global exists and does not work (WebKit 281848).
+
+> **Verified first-hand on 2026-08-23, not just inferred.** Pointing the scanner at a real
+> LinkedIn QR decoded
+> `https://www.linkedin.com/in/naga-sai-rahul-vudumula-93419524b?fromQR=1` — exactly the
+> shape the 19-sample sweep predicted, on the current app build. The slug became
+> `contactKey: li:naga-sai-rahul-vudumula-93419524b`, `guessNameFromSlug` dropped the
+> trailing `93419524b` and offered "Naga Sai Rahul Vudumula" as an editable guess, and
+> `rawPayload` kept the string verbatim including `?fromQR=1`.
+
+> **The same test found a real bug worth remembering: a scanner re-detects the code it just
+> saved.** After "Save & scan next" the camera is still aimed at the same QR, the loop picks
+> it up within ~100 ms, and the obvious next tap files that person twice — which is how two
+> identical contacts appeared during verification. `clientId` idempotency cannot catch it,
+> because each capture legitimately mints a new one. `app/scan/page.tsx` therefore ignores a
+> payload identical to the one just saved for 10 seconds.
+
+**What a LinkedIn QR contains — measured, and the fact the whole design rests on:**
+
+```
+https://www.linkedin.com/in/<public-vanity-slug>?fromQR=1
+```
+
+19 independently published "My code" screenshots were decoded during research, spanning
+**Jun 2018 → Mar 2026**, iOS and Android, six locales, with **zero structural variation**.
+No opaque token, no `/qr/` route, no `mwlite` form, no embedded vCard — and **no name**.
+So the vanity slug is a globally unique identity available offline with no network call,
+and the name must come from the person or from the vCard. Of those 19 slugs only ~5 were
+hyphenated enough to guess a name from and ~4 contained no name at all
+(`ebusinesstutor`, `iraklizv`), which is why `guessNameFromSlug()` declines far more often
+than it fires and why anything it returns is flagged `nameIsGuess`.
+
+> **We never fetch linkedin.com.** LinkedIn's User Agreement forbids software "to scrape
+> or copy the Services, including profiles and other data from the Services" and
+> robots.txt terminates in `User-agent: * / Disallow: /`. It also does not work: measured,
+> `curl` of a profile returns **HTTP 999** and headless Chromium from the same address is
+> sent to `/authwall`, so a Vercel or Actions fetch gets nothing. There is no API
+> substitute — LinkedIn's self-serve endpoint returns only the *authenticated member's
+> own* profile. (*hiQ v. LinkedIn* found scraping public pages is not a CFAA violation,
+> but hiQ still lost on breach of the User Agreement.) Enrichment is out, permanently.
+
+> **Conference badge and ticket QRs carry no contact data.** Verified per platform:
+> HasGeek is exactly **16 chars** (an 8-char `puk` + 8-char `key`, both random URL-safe
+> base64); Meetup an opaque per-RSVP token readable only by their organiser app, valid 1 h
+> before → 24 h after; KonfHub and Luma server-side ids; Bevy undocumented; FOSS United a
+> URL carrying a ticket id. None lets a third party recover who the attendee is. So
+> "scan a badge, get a contact" is not buildable on any platform, and the parser's job is
+> to **recognise a ticket and say so** rather than save a person named `aB3xK9pQmZ2vL7wR`.
+> The same applies to the UPI payment codes that are everywhere in India.
+
+`parseScanPayload()` (`lib/scan/parse-payload.ts`) is a cascade shaped like
+`universal.ts` — most structured format first, never throws, and **always keeps `raw`**,
+so a payload shape we do not understand today can be re-parsed from stored documents
+tomorrow. Order: vCard → MECARD → recognised-not-a-person (Wi-Fi, UPI, calendar, geo) →
+mailto/tel → ticket → LinkedIn/X/GitHub/URL → text.
+
+The vCard parser (`lib/scan/vcard.ts`) is 200 lines rather than a `split('\n')` because
+each of its documented traps corrupts data *silently*: unfolding, QUOTED-PRINTABLE soft
+line breaks (a trailing `=`), splitting compound values on unescaped semicolons only,
+Apple's `item1.URL` + `X-ABLabel` grouping, case-insensitivity, and CHARSET decoding.
+
+**Two identity fields, and both differ from `Event`'s on purpose:**
+
+- **`Contact.contactKey`** (`lib/scan/contact-key.ts`) — `li:<slug>` > `em:<email>` >
+  `ph:<last 10 digits>` > `nm:<name>`, tier-prefixed so two tiers can never collide.
+  Unlike `Event.clusterKey` it is **recomputed when a source field changes**, not frozen:
+  an event's identity is fixed at ingest, a person's sharpens as you learn their LinkedIn.
+  Phone uses the last 10 digits because `9876543210`, `+919876543210` and `09876543210`
+  are one number.
+- **`Contact.clientId`** — a client-generated UUID, unique on `{ userId, clientId }`.
+  It is the idempotency key for offline sync: the create endpoint must treat a duplicate
+  as **success returning the existing document**, not a 409, or a replayed queued scan
+  duplicates people.
+
+> **Contacts are a top-level collection, not `TrackerEntry.connections[]`,** for four
+> independent reasons: `eventId` is `required` (so the subdocument cannot hold anyone met
+> at an event the scraper has never seen — Google I/O Connect is not in the corpus);
+> `ConnectionSchema` is `{ _id: false }` so there is no stable id, which is why
+> `markFollowUpComplete()` matches on `name` and silently no-ops on the second person with
+> that name; the only write path is `PUT /api/tracker/[id]` doing `{ $set: body }` with
+> the edit modal sending its **entire** local array, so every save is a full-array replace
+> and a queued offline scan replayed against a stale base array **drops contacts**; and
+> you cannot put a unique index on a subdocument array element.
+
+> **Every `Contact` write must go through `findOne` + assign + `.save()`.** The
+> `contactKey` hook is `pre('validate')` — mandatory, because Mongoose registers its own
+> validation as the first pre-save middleware so a `pre('save')` hook filling a `required`
+> field never runs — but `pre('validate')` **does not run on `findOneAndUpdate`**:
+> `runValidators` invokes Mongoose's separate update-validator helper, not document
+> middleware. `scripts/diag-contact-identity.ts` asserts the document path, including
+> that a document which never supplied `contactKey` still validates.
+
+`Folder` denormalises its own name, date and venue and treats `eventId` as a **soft**
+link, because `pruneStale()` deletes events 7 days past on every scrape without touching
+anything that references them — dangling refs are normal, and
+`getPendingFollowUps` already 500s on one by reading `entry.eventId.title` with no null
+guard. `scripts/cleanup-duplicate-clusters.ts` repoints `TrackerEntry` when it collapses a
+cluster and must repoint `Folder.eventId` too.
+
+The CSV export (`lib/scan/csv.ts`) escapes **spreadsheet formula injection** — a cell
+beginning `=`, `+`, `-`, `@`, tab or CR is executed as a formula by Excel and Sheets, and
+every cell here comes from a QR code somebody else generated. It also emits a UTF-8 BOM,
+without which Excel on Windows mangles non-ASCII names. The route serving it must send
+`Cache-Control: no-store` — do **not** copy the ICS route's `public, max-age=3600`, since
+that is a shared calendar and this is one person's private contact list.
+
+**Offline capture** (`lib/scan/outbox.ts`) writes every scan to **IndexedDB first**, then
+posts. `POST /api/contacts` and `POST /api/contacts/sync` are idempotent on `clientId` and
+answer a replay with **200 and the existing document, never 409** — that is the whole reason
+a queued scan can be retried on a saturated conference network without duplicating anybody.
+The queue is app-level, not in the service worker, because `sw.js` returns early for every
+non-GET request, has no Background Sync wired (and iOS has none), **deletes every
+non-current cache on activate** (so Cache Storage would lose the queue on a version bump),
+and exposes no page↔worker channel.
+
+> **`sw.js` is v3, and the bump fixed a real cross-account leak.** v2 cached every successful
+> API GET into an origin-wide cache and sign-out did not purge it, so signing out, signing in
+> with a different Google account and going offline served the PREVIOUS user's tracker
+> entries and contacts. v3 makes every private API path **network-only** and adds a
+> `purge-caches` message the app sends before `signOut()`. The cost, stated plainly: private
+> data can no longer be read offline. Unsynced captures are unaffected — they live in
+> IndexedDB, which the cache sweep cannot touch.
+
+> **`viewportFit: 'cover'` is set in `app/layout.tsx` and it is global.** Without it
+> `env(safe-area-inset-*)` resolves to 0 everywhere, which is why the mobile bottom nav's
+> `max(6px, env(safe-area-inset-bottom))` was always just 6px. The scan and card screens are
+> full-bleed and need the real insets — but changing it affects **every** page, so re-check
+> the feed and tracker after touching it.
+
+> **A `User` row can be missing for a valid session, so use `ensureUser()`
+> (`lib/user-record.ts`) rather than `findOne`.** `User.email` is unique, so the sign-in
+> upsert `findOneAndUpdate({ googleId }, { email }, { upsert: true })` throws E11000 whenever
+> that email already exists under a different googleId — and `auth.ts` used to catch, log and
+> continue, leaving no row at all. The dev-only provider hits this on **every** sign-in for an
+> account that has also used real Google, because its googleId is `devlogin:<email>` rather
+> than the Google `sub`. Found when `/api/me/card` returned 404 for a perfectly good session.
+
+### 10. Digest (`lib/notifications/`)
 
 `generateDailyDigest()` assembles new events (24 h), upcoming deadlines, tracker updates, follow-up reminders, and **unhealthy sources** — a source that silently stops producing events is reported rather than quietly shrinking the feed.
 
-### 10. Automation
+### 11. Automation
 
 `.github/workflows/daily-scrape.yml` and `daily-digest.yml` run at 8 AM IST. Secrets: `MONGODB_URI`, optionally `NVIDIA_API_KEY`/`NVIDIA_MODEL`/`ICA_*`/`ANTHROPIC_API_KEY`, and `RESEND_API_KEY`.
