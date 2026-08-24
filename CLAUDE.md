@@ -643,6 +643,58 @@ Shared by `/api/events` and `/api/events/facets` so the list and the counts besi
 
 NextAuth v5 (Auth.js) config lives in the root `auth.ts`, imported as `@/auth`. Strategy is **JWT** (no DB session): the `jwt` callback stashes the Google `sub`/email/name/picture into the token *and* upserts the `User` doc by `googleId` on first sign-in; `session` surfaces `token.sub` as `session.user.id`. Server code uses `getCurrentUserId()` (`lib/auth-helpers.ts`). `proxy.ts` redirects `/dashboard`, `/tracker`, `/add-event` and `/settings` to `/login`. **Everything user-owned must be scoped by `userId`** — `TrackerEntry` has a compound-unique index `{ userId, eventId }`.
 
+> **`proxy.ts` WAS BLIND TO A CHUNKED SESSION COOKIE, and that failure mode is a total sign-out
+> that looks like the app forgetting you.** It compared the cookie name against two exact strings.
+> `@auth/core/lib/utils/cookie.js` splits the session cookie once the value passes
+> `ALLOWED_COOKIE_SIZE - ESTIMATED_EMPTY_COOKIE_SIZE` (4096 - 160 = **3936** chars) into
+> `<name>.0`, `<name>.1`, ... and **the unchunked name then does not exist at all** - so a perfectly
+> valid session read as "signed out" on `/tracker`, `/folders`, `/add-event`, `/settings`, `/admin`,
+> `/scan` and `/card` simultaneously, while the client still drew the avatar because
+> `/api/auth/session` reassembles the chunks and this did not. Measured against production:
+>
+> | `Cookie:` sent to `/tracker` | response |
+> | --- | --- |
+> | *(none)* | 307 to `/login?callbackUrl=%2Ftracker` |
+> | `__Secure-authjs.session-token=x` | **200** |
+> | `__Secure-authjs.session-token.0=x` | **307 to `/login`** |
+>
+> **It is latent, not currently firing.** A real Google session encoded with this app's own
+> `encode()` measured **649-883 chars** against the 3936 threshold, so nothing chunks today. It goes
+> live the moment a token grows - a longer `picture` URL, a longer display name, one more claim in
+> the `jwt` callback. `tests/proxy-session-cookie.test.ts` pins it (23 cases), including that
+> `__Host-authjs.csrf-token`, `__Secure-authjs.callback-url` and the PKCE verifier must NOT count as
+> a session (all three are set on any anonymous visit to `/api/auth/csrf`, so accepting one would
+> admit every visitor), and that `/c/<token>` and `/f/<token>` stay public.
+>
+> **The check stays a PRESENCE check, deliberately.** Verifying the JWT in the proxy needs the
+> secret in the edge runtime, and getting that wrong logs out every user at once - the blast radius
+> is the whole app, not one route. The boundary is `requireUser()` in each handler. So this layer may
+> only ever become MORE permissive.
+
+> **`GET /api/me/whoami` exists to tell "looks signed in" apart from "is signed in", because the app
+> can be both at once.** `NavBar` draws the avatar when `session.user` is merely TRUTHY, while
+> `getCurrentUserId()` returns `session?.user?.id ?? null` and every `requireUser()` route answers
+> 401 on null. **A session missing `user.id` therefore looks signed in and behaves signed out** -
+> the avatar renders, and `/tracker` loads its shell and then shows its own "Sign in to use your
+> tracker" panel, whose button links to `/login`. That is indistinguishable from a redirect to
+> anyone reporting it, and it is why a report of "it sends me to the login page" must not be assumed
+> to be `proxy.ts`.
+>
+> The route is deliberately **not** behind a guard - it has to work exactly when the session is
+> broken, which is when a guard would refuse it. Safe because every field derives from the caller's
+> own cookies: it returns cookie **names**, never values, and truncates the user id, so an anonymous
+> request gets all-false and learns nothing. `sentSessionCookie` vs `hasUserId` is the whole
+> diagnostic - cookie absent is a cookie/domain/expiry problem, cookie present with no user id is a
+> token-shape problem, and the two have nothing in common.
+
+> **NOTHING EXERCISES THE GOOGLE JWT PATH.** Every `scripts/diag-*.ts` that signs in uses the
+> DEV_LOGIN provider, and `auth.ts`'s dev-login branch sets `token.sub` **explicitly** while the
+> Google branch relies on `profile.sub ?? token.sub`. So the one field every `requireUser()` route
+> depends on is set by hand in every test and inferred in production. `next start` cannot close this
+> gap either - `lib/dev-login.ts` requires `NODE_ENV !== 'production'`, so the provider is correctly
+> unavailable in exactly the build that behaves like production. Treat a production-only auth report
+> as plausible even when the whole diag suite is green.
+
 > **`proxy.ts` protects NO API route.** Its matcher is `'/((?!api|_next/static|…).*)'` — `api` is the first negative-lookahead term, so the proxy never runs for `/api/*`. Every API guard must live in its own handler. Six endpoints were reachable with no credentials because of this (`POST /api/events`, `PUT`+`DELETE /api/events/[id]`, `POST /api/sources`, `PUT`+`DELETE /api/sources/[id]`, `POST /api/scrape`, `POST /api/scrape-url`, `POST`+`GET /api/notifications/send-digest`). `scripts/diag-api-auth.ts` hits every one signed-out and asserts a refusal; run it after touching any route.
 
 > **A route that hands the raw body to Mongoose reports the CALLER's mistake as a 500, and
