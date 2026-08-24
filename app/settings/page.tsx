@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { useSession, signOut } from 'next-auth/react';
 import { DesktopNav, MobileBottomNav } from '../components/NavBar';
+import MyCardSection from './MyCardSection';
 
 /**
  * /settings — the USER's surface: their account, their digest, what the app is.
@@ -16,6 +17,46 @@ import { DesktopNav, MobileBottomNav } from '../components/NavBar';
  *
  * What is left is genuinely per-user, so there is nothing here to hide.
  */
+/**
+ * Wipe the service worker's caches, then sign out.
+ *
+ * Sign-out is the only moment the app knows the identity behind an origin-wide cache is about
+ * to change. `sw.js` v3 already refuses to cache private API responses, but cached NAVIGATIONS
+ * can carry server-rendered private markup, and a device shared between two Google accounts is
+ * exactly the case that made this a real leak rather than a theoretical one.
+ *
+ * Bounded by a short timeout so a wedged worker can never trap somebody signed in.
+ */
+async function signOutAfterPurgingCaches() {
+  try {
+    const registration = await navigator.serviceWorker?.getRegistration();
+    if (registration?.active) {
+      await new Promise<void>(resolve => {
+        const done = () => {
+          navigator.serviceWorker.removeEventListener('message', onMessage);
+          resolve();
+        };
+        const onMessage = (event: MessageEvent) => {
+          if (event.data?.type === 'caches-purged') done();
+        };
+        navigator.serviceWorker.addEventListener('message', onMessage);
+        registration.active!.postMessage({ type: 'purge-caches' });
+        setTimeout(done, 1500);
+      });
+    }
+    // Also clear anything the page owns directly. The scan outbox is deliberately NOT cleared:
+    // unsynced captures are the user's own data and must survive a sign-out so they can sign
+    // back in and upload them.
+    if (typeof caches !== 'undefined') {
+      const names = await caches.keys();
+      await Promise.all(names.map(name => caches.delete(name)));
+    }
+  } catch {
+    // Never block sign-out on cleanup.
+  }
+  await signOut({ callbackUrl: '/' });
+}
+
 export default function SettingsPage() {
   const { data: session } = useSession();
   const isAdmin = session?.user?.isAdmin === true;
@@ -110,7 +151,7 @@ export default function SettingsPage() {
               {session?.user ? (
                 <button
                   type="button"
-                  onClick={() => signOut({ callbackUrl: '/' })}
+                  onClick={() => void signOutAfterPurgingCaches()}
                   className="shrink-0 px-4 py-2 rounded-full text-[12.5px] font-semibold text-[#FF3B30] bg-red-50 hover:bg-red-100 transition-colors"
                 >
                   Sign out
@@ -125,6 +166,9 @@ export default function SettingsPage() {
               )}
             </div>
           </section>
+
+          {/* ── My card ─────────────────────────────────────────────────── */}
+          {session?.user && <MyCardSection />}
 
           {/* ── What you can do ─────────────────────────────────────────── */}
           <section className="bg-white rounded-2xl card-shadow p-5">

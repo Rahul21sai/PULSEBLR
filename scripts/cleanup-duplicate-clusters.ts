@@ -30,6 +30,7 @@ import mongoose from 'mongoose';
 import connectDB from '../lib/mongodb';
 import Event from '../lib/models/Event';
 import TrackerEntry from '../lib/models/TrackerEntry';
+import Folder from '../lib/models/Folder';
 
 const APPLY = process.argv.includes('--apply');
 const MAX_CATEGORIES = 3;
@@ -72,6 +73,7 @@ async function main() {
   let merged = 0;
   let deleted = 0;
   let trackerRelinked = 0;
+  let foldersRelinked = 0;
 
   for (const g of groups) {
     const docs = (await Event.find({ _id: { $in: g.ids } }).lean()) as unknown as Doc[];
@@ -147,6 +149,27 @@ async function main() {
           }
         }
       }
+
+      /**
+       * Folders reference an event too, and must be repointed for the same reason.
+       *
+       * Unlike a tracker entry, a folder DENORMALISES its own name, date and venue, so a
+       * dangling `eventId` costs only the link to the event card rather than the folder itself —
+       * that was deliberate, because `pruneStale()` makes dangling references normal. Repointing
+       * is still right: the folder should link to the surviving document, not a deleted one.
+       * There is no unique index on `{ userId, eventId }` for folders, so no clash to handle.
+       */
+      const folderRefs = await Folder.countDocuments({ eventId: loser._id });
+      if (folderRefs > 0) {
+        console.log(`     folders  : ${folderRefs} folder(s) point at the loser — will repoint to survivor`);
+        if (APPLY) {
+          const result = await Folder.updateMany(
+            { eventId: loser._id },
+            { $set: { eventId: survivor._id } }
+          );
+          foldersRelinked += result.modifiedCount ?? 0;
+        }
+      }
     }
 
     if (categories.size > 0) set.category = [...categories].slice(0, MAX_CATEGORIES);
@@ -165,7 +188,7 @@ async function main() {
   }
 
   if (APPLY) {
-    console.log(`Merged ${merged} cluster(s); deleted ${deleted} duplicate document(s); repointed ${trackerRelinked} tracker entry(ies).`);
+    console.log(`Merged ${merged} cluster(s); deleted ${deleted} duplicate document(s); repointed ${trackerRelinked} tracker entry(ies) and ${foldersRelinked} folder(s).`);
     const left = await Event.aggregate([
       { $match: { startDateTime: { $gte: now } } },
       { $group: { _id: '$clusterKey', n: { $sum: 1 } } },

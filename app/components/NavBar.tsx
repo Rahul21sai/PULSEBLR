@@ -4,14 +4,27 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 
+/**
+ * The full navigation, as shown on desktop where there is room for all of it.
+ *
+ * `mobile: false` keeps an entry OUT of the phone's bottom bar. The bar gives every entry
+ * `flex-1`, so at 390px six entries are already ~65px each and "Companies" sits close to
+ * truncating; a seventh would drop every slot to ~56px. Since "People" is the surface you
+ * reach for while standing at an event, and adding an event by hand is a desk task, `Add`
+ * yields its slot rather than shrinking everything.
+ */
 const NAV_LINKS = [
-  { href: '/', label: 'Events', icon: 'explore' },
-  { href: '/companies', label: 'Companies', icon: 'domain' },
-  { href: '/calendar', label: 'Calendar', icon: 'calendar_today' },
-  { href: '/tracker', label: 'Tracker', icon: 'bookmarks' },
-  { href: '/add-event', label: 'Add', icon: 'add_circle' },
-  { href: '/settings', label: 'Settings', icon: 'settings' },
+  { href: '/', label: 'Events', icon: 'explore', mobile: true },
+  { href: '/companies', label: 'Companies', icon: 'domain', mobile: true },
+  { href: '/calendar', label: 'Calendar', icon: 'calendar_today', mobile: true },
+  { href: '/tracker', label: 'Tracker', icon: 'bookmarks', mobile: true },
+  { href: '/folders', label: 'People', icon: 'groups', mobile: true },
+  { href: '/add-event', label: 'Add', icon: 'add_circle', mobile: false },
+  { href: '/settings', label: 'Settings', icon: 'settings', mobile: true },
 ];
+
+/** Six entries at most, which is what the bar can hold legibly. */
+const MOBILE_NAV_LINKS = NAV_LINKS.filter(link => link.mobile);
 
 function useIsActive() {
   const pathname = usePathname();
@@ -70,14 +83,30 @@ export function DesktopNav() {
         </div>
 
         <div className="flex items-center gap-3">
-          {session?.user?.image ? (
+          {/**
+           * Branch on whether there IS a user, not on whether they have an avatar.
+           *
+           * Branching on `image` showed a "Sign in" link to anybody signed in without a picture —
+           * every dev-login session, and any Google account with no photo — while the Admin link
+           * sat right next to it. A monogram fallback covers the missing image.
+           */}
+          {session?.user ? (
             <Link href="/dashboard" className="flex items-center hover:opacity-80 transition-opacity">
-              {/* eslint-disable-next-line @next/next/no-img-element -- Google avatar CDN */}
-              <img
-                src={session.user.image}
-                alt={session.user.name || 'Your account'}
-                className="w-8 h-8 rounded-full object-cover border border-[#e5e5ea]"
-              />
+              {session.user.image ? (
+                // eslint-disable-next-line @next/next/no-img-element -- Google avatar CDN
+                <img
+                  src={session.user.image}
+                  alt={session.user.name || 'Your account'}
+                  className="w-8 h-8 rounded-full object-cover border border-[#e5e5ea]"
+                />
+              ) : (
+                <span
+                  aria-label={session.user.name || 'Your account'}
+                  className="grid h-8 w-8 place-items-center rounded-full border border-[#e5e5ea] bg-[#F5F5F7] text-[12px] font-bold text-[#6E6E73]"
+                >
+                  {(session.user.name || session.user.email || '?').trim().charAt(0).toUpperCase()}
+                </span>
+              )}
             </Link>
           ) : (
             <Link
@@ -113,7 +142,7 @@ export function MobileBottomNav() {
       // Keep the bar clear of the iOS home indicator.
       style={{ paddingBottom: 'max(6px, env(safe-area-inset-bottom))' }}
     >
-      {NAV_LINKS.map(link => {
+      {MOBILE_NAV_LINKS.map(link => {
         const active = isActive(link.href);
         return (
           <Link
