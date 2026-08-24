@@ -71,6 +71,38 @@ const MUST_REFUSE: Case[] = [
   },
   { method: 'GET', path: '/api/me/card', why: 'read a user’s own card, including an unpublished phone number' },
   { method: 'PUT', path: '/api/me/card', body: { enabled: true }, why: 'publish somebody’s card without their say' },
+
+  // ── Tracker & career intelligence ────────────────────────────────────────
+  // These were ABSENT from this list until 2026-08-24, despite the docblock above claiming
+  // "every mutating endpoint" — so the whole tracker write path, the half of the product that
+  // holds a user's private notes on people they have met, was never probed signed-out. Only
+  // the /tracker PAGE redirect was checked, which says nothing about the API behind it.
+  //
+  // The payloads here are DELIBERATELY INVALID, and that is the point. Each of these routes
+  // now validates its body (lib/tracker/validate.ts), and validation must run AFTER the
+  // guard. If the order is ever inverted, an anonymous caller gets 400 instead of 401 — which
+  // both fails to refuse and tells a stranger their payload was well-formed enough to reach
+  // the validator. A valid payload could not detect that inversion; an invalid one does.
+  {
+    method: 'POST',
+    path: '/api/tracker',
+    body: { eventId: 'not-an-id', status: 'Ghosted' },
+    why: 'track an event in someone else’s account — invalid body, so a 400 here means validation outran the guard',
+  },
+  { method: 'GET', path: `/api/tracker/${GHOST}`, why: 'read a tracker entry, including its private notes' },
+  {
+    method: 'PUT',
+    path: `/api/tracker/${GHOST}`,
+    body: { status: 'Ghosted' },
+    why: 'rewrite any tracker entry — invalid status, so a 400 here means validation outran the guard',
+  },
+  { method: 'DELETE', path: `/api/tracker/${GHOST}`, why: 'delete any tracker entry' },
+  {
+    method: 'POST',
+    path: '/api/phase6/follow-ups',
+    body: { contactId: GHOST },
+    why: 'mark somebody else’s follow-up complete',
+  },
 ];
 
 /**

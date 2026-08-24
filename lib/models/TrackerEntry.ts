@@ -1,5 +1,12 @@
 import mongoose, { Schema, Document, Model } from 'mongoose';
 
+// The status list lives in lib/tracker/validate.ts, which has no mongoose import and is
+// therefore safe for the API routes to import for their 400 responses. One definition, so
+// the enum the API rejects against and the enum the schema enforces cannot drift.
+import { TRACKER_STATUSES } from '../tracker/validate';
+export { TRACKER_STATUSES } from '../tracker/validate';
+export type { TrackerStatus } from '../tracker/validate';
+
 export interface IConnection {
   name: string;
   role?: string;
@@ -14,7 +21,7 @@ export interface IConnection {
 export interface ITrackerEntry extends Document {
   eventId: mongoose.Types.ObjectId;
   userId: string;   // Google sub / email — owner of this entry
-  status: 'New' | 'Interested' | 'Applied' | 'Shortlisted' | 'Confirmed' | 'Attended' | 'Skipped' | 'Rejected';
+  status: (typeof TRACKER_STATUSES)[number];
   notes?: string;
   appliedAt?: Date;
   outcome?: string;
@@ -77,7 +84,7 @@ const TrackerEntrySchema = new Schema<ITrackerEntry>(
     status: {
       type: String,
       required: true,
-      enum: ['New', 'Interested', 'Applied', 'Shortlisted', 'Confirmed', 'Attended', 'Skipped', 'Rejected'],
+      enum: TRACKER_STATUSES as unknown as string[],
       default: 'New',
     },
     notes: {
