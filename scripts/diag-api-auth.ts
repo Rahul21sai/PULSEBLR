@@ -38,6 +38,39 @@ const MUST_REFUSE: Case[] = [
   { method: 'POST', path: '/api/notifications/send-digest', why: 'drain the Resend quota' },
   { method: 'GET', path: '/api/notifications/send-digest', why: "read EVERY user's contacts and private notes" },
   { method: 'GET', path: '/api/admin/stats', why: 'source health, user counts and corpus internals' },
+
+  // ── Scan & contacts ──────────────────────────────────────────────────────
+  // Every one of these touches a named person's private details: their phone number, their
+  // LinkedIn, and free-text notes about how you met them. The CSV export is a bulk PII dump.
+  { method: 'GET', path: '/api/folders', why: "list a user's event folders" },
+  { method: 'POST', path: '/api/folders', body: { name: 'x' }, why: "create a folder in someone's account" },
+  { method: 'GET', path: `/api/folders/${GHOST}`, why: 'read a folder and everyone in it' },
+  { method: 'PATCH', path: `/api/folders/${GHOST}`, body: { name: 'x' }, why: 'rename any folder' },
+  { method: 'DELETE', path: `/api/folders/${GHOST}`, why: 'delete a folder AND cascade-delete its contacts' },
+  {
+    method: 'POST',
+    path: `/api/folders/${GHOST}/intake`,
+    body: { action: 'enable' },
+    why: 'mint a public write token for somebody else’s folder',
+  },
+  { method: 'GET', path: `/api/folders/${GHOST}/export?format=csv`, why: 'bulk PII export — names, phones, notes' },
+  { method: 'GET', path: '/api/contacts', why: "read every person a user has ever met" },
+  {
+    method: 'POST',
+    path: '/api/contacts',
+    body: { clientId: 'diag', name: 'x', folderId: GHOST },
+    why: 'write a contact into another account',
+  },
+  { method: 'PATCH', path: `/api/contacts/${GHOST}`, body: { name: 'x' }, why: 'rewrite any contact' },
+  { method: 'DELETE', path: `/api/contacts/${GHOST}`, why: 'delete any contact' },
+  {
+    method: 'POST',
+    path: '/api/contacts/sync',
+    body: { contacts: [] },
+    why: 'bulk-write contacts via the offline outbox drain',
+  },
+  { method: 'GET', path: '/api/me/card', why: 'read a user’s own card, including an unpublished phone number' },
+  { method: 'PUT', path: '/api/me/card', body: { enabled: true }, why: 'publish somebody’s card without their say' },
 ];
 
 /**
@@ -45,13 +78,51 @@ const MUST_REFUSE: Case[] = [
  * that a session cookie EXISTS — /admin additionally re-checks the allowlist server-side,
  * because the proxy cannot know whether a session belongs to an admin.
  */
-const MUST_REDIRECT = ['/admin', '/settings', '/dashboard', '/tracker', '/add-event'];
+const MUST_REDIRECT = [
+  '/admin',
+  '/settings',
+  '/dashboard',
+  '/tracker',
+  '/add-event',
+  // Scan surfaces. NOTE the two public siblings that must NOT be here: `/c/<token>` (somebody's
+  // card, opened from a QR by a stranger) and `/f/<token>` (add yourself to a folder). proxy.ts
+  // matches by PREFIX, so `/card` is safe only because `'/c/abc'.startsWith('/card')` is false.
+  '/folders',
+  '/scan',
+  '/card',
+];
 
-/** Endpoints that are public on purpose — a regression the other way matters too. */
+/**
+ * Endpoints that are public on purpose — a regression the other way matters too.
+ *
+ * The two token endpoints are here deliberately: the whole point of a card QR is that somebody
+ * with no account and no app can scan it. Listing them formally blesses that, so "why is this
+ * reachable signed-out" has a recorded answer. What protects them is not a session:
+ * 16 bytes of CSPRNG entropy in the token, an explicit enable flag, an expiry, a rate limit, and
+ * responses that carry only what the owner chose to publish.
+ */
 const MUST_ALLOW: Case[] = [
   { method: 'GET', path: '/api/events?limit=1', why: 'the feed is public' },
   { method: 'GET', path: '/api/events/facets', why: 'filter counts are public' },
   { method: 'GET', path: '/api/companies', why: 'the companies directory is public' },
+];
+
+/**
+ * Public token endpoints. A bad token must yield 404 (not 401, not 500) — proving the handler
+ * ran and refused on its own terms rather than being gated by a session it does not need.
+ */
+const MUST_BE_PUBLIC_404: Case[] = [
+  {
+    method: 'GET',
+    path: '/api/card/0000000000000000000000',
+    why: 'a card page must resolve for a stranger; an unknown token is simply not found',
+  },
+  {
+    method: 'POST',
+    path: '/api/intake/0000000000000000000000',
+    body: { name: 'diag' },
+    why: 'folder self-registration must accept an anonymous POST, and refuse an unknown token',
+  },
 ];
 
 const REFUSING = new Set([401, 403, 503]);
@@ -97,6 +168,22 @@ async function main() {
       const ok = status === 200;
       if (!ok) failures++;
       console.log(`  ${ok ? 'PASS' : 'FAIL'}  ${status}  ${c.method.padEnd(6)} ${c.path.padEnd(42)} ${c.why}`);
+    } catch (err) {
+      failures++;
+      console.log(`  FAIL  ERR  ${c.method} ${c.path} — ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  console.log('\nPUBLIC TOKEN ENDPOINTS (must run un-authed and 404 an unknown token)\n');
+  for (const c of MUST_BE_PUBLIC_404) {
+    try {
+      const { status, detail } = await hit(c);
+      // 404 means the handler ran and refused on its own terms. A 401/403 would mean it had been
+      // gated by a session it must not require; a 500 would mean it crashed on a stranger.
+      const ok = status === 404;
+      if (!ok) failures++;
+      console.log(`  ${ok ? 'PASS' : 'FAIL'}  ${status}  ${c.method.padEnd(6)} ${c.path.padEnd(42)} ${c.why}`);
+      if (!ok) console.log(`         body: ${detail}`);
     } catch (err) {
       failures++;
       console.log(`  FAIL  ERR  ${c.method} ${c.path} — ${err instanceof Error ? err.message : String(err)}`);

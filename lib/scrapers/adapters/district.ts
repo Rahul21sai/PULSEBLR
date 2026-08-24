@@ -230,7 +230,14 @@ export async function scrapeDistrict(): Promise<ScrapeResult> {
           city: 'Bengaluru',
           // District's `organizer` is the promoter and its `performer` is the act; the
           // JSON-LD parser already prefers organizer and falls back to performer.
-          tags: [...(event.tags || []), 'district'],
+          //
+          // `tags` deliberately carries NO source marker. An earlier version appended 'district'
+          // here, which put a source name into a field meant for organiser-supplied TOPIC hints —
+          // and those hints are fed to the tagger, so it was feeding the classifier a word that
+          // says nothing about the subject. It was also the single most common tag value in the
+          // whole corpus (24 of 32 tagged events, per diag-tag-supply.ts), which made the field
+          // look populated when it is not. The source already lives in `Event.source`.
+          tags: event.tags || [],
           rawFormat: event.rawFormat || 'offline',
           applyLink: event.applyLink || event.sourceUrl,
         });

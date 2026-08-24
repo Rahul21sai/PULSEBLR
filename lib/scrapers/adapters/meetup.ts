@@ -212,9 +212,26 @@ export async function scrapeMeetupGroup(slug: string): Promise<ScrapeResult> {
     });
 
     for (const event of events) {
-      // ICS gives no venue (see header note), so the only geo signal available
-      // here is the description. Reject an event that positively names another
-      // city; keep everything else for the enrichment + geo pass downstream.
+      /*
+       * KNOWN DEFECT, left in place deliberately — the fix is being made in one place elsewhere.
+       *
+       * This guard CANNOT REJECT ANYTHING. `isBengaluru`'s only text-driven `return false` sits
+       * inside `if (location)`, where location is built from venue + address — and this adapter's
+       * own file header documents that Meetup's ICS emits no LOCATION, so both are always absent
+       * here. With only `text` the function returns `true` or `null`, so `=== false` is never
+       * satisfied. It reads as a working city filter and is dead code.
+       *
+       * Measured consequence (scripts/diag-meetup-geo-leak.ts, 2026-08-24): 23 of 886 upcoming
+       * Meetup events name another city in their title/venue/address without naming Bengaluru —
+       * 19 in-person, 9 in the DEFAULT tech feed, including "Anthropic - Code - Coffee : Chennai
+       * Edition", "… Coimbatore Edition", "KONG API + AI Summit 2026" (Los Angeles), "FounderX
+       * Silicon Valley" and "Umbraco India Festival 2026" (Kochi).
+       *
+       * Do NOT patch it here in isolation. The real gate belongs AFTER enrichment, which is what
+       * fills a real venue for this source, and it should serve every adapter rather than this
+       * one. See scripts/diag-meetup-geo-leak.ts for the reproduction and HEAPHEAPHURRAY-AUDIT.md
+       * for how it was found.
+       */
       if (isBengaluru({ text: event.description }) === false) continue;
       result.events.push(event);
     }

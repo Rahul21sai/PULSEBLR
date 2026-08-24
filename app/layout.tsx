@@ -42,6 +42,19 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
+  /**
+   * `cover` is what makes `env(safe-area-inset-*)` resolve to a real value.
+   *
+   * Without it those variables are 0 on every device, so the ONE existing use of them —
+   * `max(6px, env(safe-area-inset-bottom))` on the mobile bottom nav — was always just 6px, and
+   * the bar sat under the iOS home indicator. The scan and card screens are full-bleed and need
+   * the real insets.
+   *
+   * THIS IS A GLOBAL CHANGE: it activates the inset on every page at once and lets content
+   * extend under the notch, so the feed and tracker need re-checking after any edit here.
+   * `appleWebApp.statusBarStyle` is already `black-translucent`, which assumed this all along.
+   */
+  viewportFit: "cover",
 };
 
 export default function RootLayout({
