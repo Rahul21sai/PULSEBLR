@@ -40,6 +40,15 @@ type ViewMode = 'rail' | 'grid';
  */
 const SPOTLIGHT_COUNT = 2;
 
+/**
+ * How many hand-added events the "Curated by us" shelf shows.
+ *
+ * Six against the 5 that currently exist, so the shelf has room to grow without a code change,
+ * and a ceiling so that a burst of manual adds cannot push the ranked feed off the screen —
+ * which is the failure mode of an uncapped curated section.
+ */
+const CURATED_COUNT = 6;
+
 /** Same members in the same order. Used to keep `filters` identity stable — see below. */
 function sameList(a: string[], b: string[]): boolean {
   return a.length === b.length && a.every((v, i) => v === b[i]);
@@ -59,6 +68,17 @@ export default function Home() {
    * top of the ranking. Kept separate from `events` so a pin can never reorder the ranked list.
    */
   const [pinnedEvents, setPinnedEvents] = useState<FeedEvent[]>([]);
+  /**
+   * Events an admin added BY HAND rather than scraped — `source: 'manual'`, which is what
+   * `POST /api/events` writes when a body names no source.
+   *
+   * A separate concern from `pinnedEvents`, which is why it is a separate piece of state: a pin
+   * promotes something the scraper already found, while this is supply the scraper never had.
+   * Hand-added events are the ones platform coverage misses (an invite-only company evening, a
+   * college fest, anything announced only on WhatsApp), so they are worth their own shelf rather
+   * than being left to compete for a ranked slot against 1200 scraped rows.
+   */
+  const [curatedEvents, setCuratedEvents] = useState<FeedEvent[]>([]);
   const [facets, setFacets] = useState<Facets | null>(null);
   const [pagination, setPagination] = useState<Pagination | null>(null);
   const [loading, setLoading] = useState(true);
@@ -323,11 +343,32 @@ export default function Home() {
       pinnedParams.set('spotlight', 'true');
       pinnedParams.set('limit', String(SPOTLIGHT_COUNT));
 
-      const [listRes, facetRes, liveRes, pinnedRes] = await Promise.all([
+      /*
+       * The hand-added shelf. Same eligibility as the Spotlight — the untouched landing view —
+       * so it costs nothing on a searched or filtered page.
+       *
+       * `sort=soonest`, NOT the default `connections`, and that is a deliberate exception to this
+       * app's own thesis. Everywhere else the ranking is the product. Here a human already made
+       * the quality judgement by typing the event in, so re-ranking the shelf by
+       * `connectionScore` would second-guess the curation with a heuristic and could bury the
+       * event the admin most wanted seen. What a reader still needs to know is WHEN, so the shelf
+       * is chronological.
+       *
+       * It goes through `buildParams` like everything else, so a hand-added event still has to
+       * be upcoming and still respects `techOnly` — being typed in by an admin does not exempt
+       * a row from the filters the user can see.
+       */
+      const curatedParams = buildParams(1);
+      curatedParams.set('source', 'manual');
+      curatedParams.set('sort', 'soonest');
+      curatedParams.set('limit', String(CURATED_COUNT));
+
+      const [listRes, facetRes, liveRes, pinnedRes, curatedRes] = await Promise.all([
         fetch(`/api/events?${params.toString()}`),
         fetch(`/api/events/facets?${params.toString()}`),
         fetch(`/api/events?${liveParams.toString()}`),
         wantsSpotlight ? fetch(`/api/events?${pinnedParams.toString()}`) : Promise.resolve(null),
+        wantsSpotlight ? fetch(`/api/events?${curatedParams.toString()}`) : Promise.resolve(null),
       ]);
       if (!listRes.ok) throw new Error('Could not load events');
 
@@ -348,6 +389,17 @@ export default function Home() {
       } else if (!wantsSpotlight && generation === requestGeneration.current) {
         // Clear on a filtered/searched view so a stale pin cannot reappear when filters relax.
         setPinnedEvents([]);
+      }
+
+      // Same shape as the pins, and for the same reason: an enhancement, cleared rather than
+      // left stale when the view stops being eligible for it.
+      if (curatedRes?.ok) {
+        const curated = await curatedRes.json();
+        if (generation === requestGeneration.current) {
+          setCuratedEvents((curated.events || []) as FeedEvent[]);
+        }
+      } else if (!wantsSpotlight && generation === requestGeneration.current) {
+        setCuratedEvents([]);
       }
 
       // Live set is an enhancement, not content: a failure here must leave the feed intact.
@@ -497,8 +549,9 @@ export default function Home() {
    * Only computed for the ranked view. Under `soonest` the day grouping already does this, and
    * running it there would put the same events in two places.
    */
-  const [liveNow, spotlight, comingUp] = useMemo(() => {
-    if (chronological) return [[] as FeedEvent[], [] as FeedEvent[], events];
+  const [liveNow, spotlight, curated, comingUp] = useMemo(() => {
+    if (chronological)
+      return [[] as FeedEvent[], [] as FeedEvent[], [] as FeedEvent[], events];
     // `liveEvents` comes from its own soonest-ordered request, so it is authoritative for what
     // is on now. Live rows that ALSO happen to rank onto the page are folded in and de-duplicated
     // by id, then removed from "coming up" so nothing is listed twice.
@@ -546,8 +599,31 @@ export default function Home() {
     // Filter by id rather than slicing: a pinned event need not be at the top of the ranked page,
     // or on it at all, so `slice` would remove the wrong rows.
     const featuredIds = new Set(featured.map(event => event._id));
-    return [live, featured, ranked.filter(event => !featuredIds.has(event._id))];
-  }, [chronological, events, liveEvents, pinnedEvents, query, filters]);
+
+    /*
+     * CURATED: hand-added events, after the two sections that outrank them.
+     *
+     * The precedence is live > spotlight > curated > coming up, and it is enforced by SUBTRACTION
+     * at each step rather than by hoping the sets are disjoint — they are not. A hand-added event
+     * can be in progress, and an admin can pin one, and it can also rank onto page 1 on its own
+     * merit, so the same `_id` can legitimately arrive from three requests. Whichever section
+     * claims it first wins, because "happening now" is a more urgent fact than "we added this",
+     * which is in turn more specific than the ranking.
+     */
+    const hand = !eligible
+      ? []
+      : curatedEvents
+          .filter(event => !seen.has(event._id) && !featuredIds.has(event._id))
+          .slice(0, CURATED_COUNT);
+    const handIds = new Set(hand.map(event => event._id));
+
+    return [
+      live,
+      featured,
+      hand,
+      ranked.filter(event => !featuredIds.has(event._id) && !handIds.has(event._id)),
+    ];
+  }, [chronological, events, liveEvents, pinnedEvents, curatedEvents, query, filters]);
 
   return (
     <div className="min-h-screen bg-[#F5F5F7]">
@@ -795,6 +871,68 @@ export default function Home() {
             </div>
             <div className="rail sm:hidden">
               {spotlight.map(event => (
+                <EventRow key={event._id} event={event} showDate />
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* CURATED BY US — the events a human typed in.
+
+            WHY IT IS A SECTION AND NOT JUST A BADGE. `source: 'manual'` marks the one part of the
+            corpus that did not come from a platform, which means it is exactly the supply the
+            scrapers cannot reach: an invite-only company evening, a college fest, something
+            announced only in a WhatsApp group. Left to the ranking those rows compete against
+            ~1200 scraped ones and are seen only if `connectionScore` happens to favour them.
+
+            One heading, one rail, no cover grid. The Spotlight above already spends the page's
+            budget for large covers; a second grid would make the feed the third thing on the
+            screen. Rows keep `showDate` because the shelf is chronological and spans weeks, so
+            without it the ordering would look arbitrary.
+
+            Rendered only when non-empty, and empty is the ordinary state on a database where
+            nobody has used /add-event — same contract as the Spotlight's pin set. */}
+        {curated.length > 0 && (
+          <section className="max-w-[1240px] mx-auto px-4 md:px-8 pb-8">
+            <div className="day-heading pb-2 mb-3.5">
+              <div className="flex items-center gap-2.5">
+                <h2 className="t-label shrink-0 text-[#1D1D1F]">Curated by us</h2>
+                <span aria-hidden="true" className="h-px flex-1 bg-[color:var(--hairline)]" />
+                {/* States the PROVENANCE, which is the entire claim the section makes. The count
+                    is here rather than in the heading so the heading stays a stable landmark for
+                    a screen reader instead of changing every time the shelf does. */}
+                <span className="shrink-0 text-[11.5px] text-[#8E8E93]">
+                  Added by hand · {curated.length}
+                </span>
+              </div>
+            </div>
+            {/* TWO TREATMENTS, SWITCHED BY WIDTH — and unlike the Spotlight above, the
+                horizontal one is the MOBILE half. Same reason, opposite conclusion: the Spotlight
+                shows two events, so its covers fit side by side on a laptop and have to stack on a
+                phone; this shelf shows up to six, so stacking them is what does not fit.
+
+                MEASURED, because the first attempt got it wrong. Five vertical rows are 877px, and
+                that pushed the first ranked row to y=1899 on a 375x812 screen — 2.34 screens of
+                scroll before the feed, worse than the y=1511 the Spotlight comment above already
+                calls out as too far. A horizontal shelf costs ONE card height instead of five.
+
+                A scroller rather than a shorter list, because hiding rows is not available here:
+                the memo REMOVES these events from "Coming up", so a row dropped on mobile is gone
+                from the phone entirely rather than merely deferred. Every card stays reachable —
+                swipe, or Tab, which scrolls the focused link into view.
+
+                `-mx-4 px-4` cancels the section padding so cards bleed to the screen edge and the
+                shelf reads as continuing past it, while the inner padding keeps the first card
+                aligned with the heading. Same idiom as the date chips. */}
+            <div className="-mx-4 flex snap-x snap-mandatory gap-3.5 overflow-x-auto overscroll-x-contain px-4 pb-1 no-scrollbar sm:hidden">
+              {curated.map(event => (
+                <div key={event._id} className="w-[262px] shrink-0 snap-start">
+                  <EventGridCard event={event} />
+                </div>
+              ))}
+            </div>
+            <div className="hidden rail sm:block">
+              {curated.map(event => (
                 <EventRow key={event._id} event={event} showDate />
               ))}
             </div>

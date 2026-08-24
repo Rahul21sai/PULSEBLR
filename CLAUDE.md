@@ -762,6 +762,70 @@ The scraper and source controls used to live in `/settings`, which every signed-
 > instead: the write persisted, `spotlight=true` matched it, an explicit null stopped matching, and
 > `0` of ~1500 documents carry the key when nothing is pinned.
 
+> **"Curated by us" is a SECOND curation surface, and it is not the Spotlight.** A pin promotes
+> something the scraper already found; this shelf shows supply the scraper never had —
+> `source: 'manual'`, which is what `POST /api/events` writes when a body names no source, i.e.
+> every event added by hand through `/add-event`. Those are the events platform coverage misses: an
+> invite-only company evening, a college fest, anything announced only in a WhatsApp group.
+>
+> **The measurement that justifies the section rather than just a badge.** With 5 hand-added
+> upcoming events in the corpus, the ranked first page rendered 28 rows and **not one of the 5 was
+> among them** — they do not score highly enough on `connectionScore` to reach page 1, so before
+> this they were reachable only by paging or by `?source=manual` in the URL. A badge alone would
+> have marked them without making them findable.
+>
+> Four things worth knowing:
+>
+> · **It sorts `soonest`, NOT `connections` — a deliberate exception to this app's own thesis.**
+>   Everywhere else the ranking is the product. Here a human already made the quality judgement by
+>   typing the event in, so re-ranking the shelf by `connectionScore` would second-guess the
+>   curation with a heuristic and could bury the event the admin most wanted seen. What a reader
+>   still needs is WHEN, so the shelf is chronological.
+> · **Precedence is enforced by SUBTRACTION at each step: live > spotlight > curated > coming up.**
+>   The sets are NOT disjoint — a hand-added event can be in progress, an admin can pin one, and it
+>   can rank onto page 1 on merit, so the same `_id` legitimately arrives from three requests.
+>   Whichever section claims it first wins.
+> · **`CURATED_COUNT` is capped at 6** so a burst of manual adds cannot push the ranked feed off
+>   the screen. It still goes through `buildParams`, so a hand-added event must be upcoming and
+>   still respects `techOnly` — being typed in by an admin does not exempt a row from the visible
+>   filters. All 5 current rows happen to be `isTechEvent: true`, so the default feed shows them;
+>   a manually-added NON-tech event would correctly be invisible until "show all events" is on.
+> · **The mobile treatment is a horizontal shelf, and the first attempt got it wrong.** Five
+>   vertical rows measured 877px and pushed the first ranked row to **y=1899 on 375x812 — 2.34
+>   screens of scroll before the feed**, worse than the y=1511 the note above already calls out as
+>   too far. A horizontal snap scroller costs one card height instead of five: section 877 -> 412px,
+>   feed start 1899 -> **1435px**. Note this is the OPPOSITE width-switch from the Spotlight (which
+>   is a grid on desktop and a rail on mobile) for the same reason — two covers fit side by side,
+>   six do not stack.
+>
+> **A shorter list was NOT an option, and this is the trap.** The memo REMOVES these events from
+> "Coming up" so nothing renders twice, so a row dropped on mobile is gone from the phone entirely
+> rather than merely deferred — the same mistake the Spotlight comment warns about. Every card in
+> the scroller stays reachable by swipe or by Tab.
+
+> **A stale service worker will serve you the OLD build, and it looks exactly like your change not
+> working.** Verifying this shelf, `next start` served markup with no shelf in it while the
+> production build on disk demonstrably contained it (`grep -rl overscroll-x-contain .next/static`
+> matched). Cause: `caches.keys()` held `pulseblr-static-v3` from an earlier session, and the SW
+> cache name is keyed on the **version string, not the build id**, so a rebuild under the same `v3`
+> keeps serving the cached document and the old chunk names it points at. Clearing it fixed it:
+> ```js
+> (await navigator.serviceWorker.getRegistrations()).forEach(r => r.unregister());
+> (await caches.keys()).forEach(k => caches.delete(k));
+> ```
+> Consequence for DEPLOYS, not just for verification: shipping new JS without bumping the `v3`
+> suffix in `public/sw.js` can leave returning visitors on the previous build until that cache is
+> evicted. Bump the version when a release must reach existing installs.
+
+> **`npm run build` does NOT disturb a running `next dev` on Next 16.3.2 — the earlier note in this
+> file was over-broad.** Dev artifacts live under `.next/dev/` (observable: `.next/dev/static/
+> chunks/`, `.next/dev/server/`), while a production build writes `.next/BUILD_ID`, `.next/static/`
+> and `.next/server/`. Verified directly: built while another session held port 3000 and that
+> server still answered 200 immediately afterwards. What a build DOES clobber is what a
+> **`next start`** server is serving — which is what the phantom-404 incident behind
+> `diag-api-auth.ts` actually was. So `pulseblr-verify` on 3100 is safe to use alongside another
+> chat's dev server; just rebuild before starting it, not while it runs.
+
 > **`/admin` is a server component and that is load-bearing.** `proxy.ts` can only see whether a session cookie exists; it cannot know whether that session is an admin. So the page re-checks the allowlist server-side and `redirect()`s a non-admin to `/` before any admin markup is generated. `session.user.isAdmin` (set in `auth.ts`) exists **only** to decide whether to draw the nav link — it is a courtesy, not authorisation, and editing it in devtools buys a 403 from `requireAdmin()`. `token.isAdmin` is recomputed on every JWT callback rather than written once at sign-in, so removing someone from `ADMIN_EMAILS` takes effect on their next request instead of whenever their weeks-long token happens to expire.
 
 `scripts/diag-admin-stats.ts` asserts the invariants the dashboard's UI assumes (bucket sums, `tech <= upcoming`, non-empty breakdowns) because the HTTP path cannot be exercised headlessly — Google OAuth can't complete.
