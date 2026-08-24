@@ -18,6 +18,14 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Agent worktrees (`git worktree` checkouts under `.claude/worktrees/`) are a second
+    // copy of this same repo, so linting them is duplicate work — and it FAILS: the
+    // `scripts/**/*.js` override above is anchored at the repo root, so the nested
+    // `…/worktrees/<id>/scripts/generate-icons.js` misses it and reports two
+    // `no-require-imports` errors. That made `npm run lint` exit non-zero purely because a
+    // parallel session happened to have a worktree open, on files that `.git/info/exclude`
+    // means can never be committed from here anyway.
+    ".claude/**",
   ]),
 ]);
 
