@@ -151,6 +151,12 @@ interface ProviderConfig {
    * model on the same provider recovers tagging instead of dropping to keywords.
    */
   fallbackModel?: string;
+  /**
+   * Name of the env var holding this provider's key, for the 401/403 log line
+   * only. A breaker message that names the variable to fix is actionable; one
+   * that says "credentials rejected" sends you reading source.
+   */
+  credentialEnv?: string;
 }
 
 /**
@@ -188,11 +194,106 @@ function recordTimeout(model: string, provider: string): void {
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// PROVIDER CIRCUIT BREAKER
+//
+// Why there is a breaker at all (the original measurement): with an expired ICA
+// key returning an instant 401 and a NVIDIA endpoint timing out at 45 s, EVERY
+// batch paid ~46 s before falling back to keywords. Across 105 batches that is 80
+// minutes of waiting to produce exactly the keyword tagging we'd have got for
+// free. So a provider that fails TRIP_AFTER times consecutively is dropped.
+//
+// Scoped to the PROCESS, like DEAD_MODELS and MODEL_TIMEOUTS above and for the
+// same reason: a fact learned by paying for a failed round-trip should only be
+// paid for once.
+//
+// It used to live inside tagEvents() while the log line claimed the provider was
+// "disabled for this run". For `npm run scrape` those coincide by accident —
+// pipeline.ts calls tagEvents() exactly once with the whole corpus. Nowhere else
+// do they: scripts/retag-events.ts chunks by 40, so `--all` over ~1000 events is
+// 25 calls and a dead provider was re-probed TRIP_AFTER times in every one (75
+// doomed requests to relearn one fact), and the Next.js server tags one event per
+// call on the manual add-event path.
+//
+// That server is also the reason a bare hoist is not enough: a breaker that never
+// reopens would take a provider out until the next deploy. So the disable is
+// scoped to the kind of evidence that caused it:
+//
+//   - Transient (timeouts, unparseable output) → cooldown, then re-probe.
+//   - Auth rejection (401/403) → the rest of the process. Credentials are read
+//     from process.env, which cannot change without a restart, so a retry can
+//     never succeed. This is the provider-level analogue of DEAD_MODELS on 404.
+// ─────────────────────────────────────────────────────────────────────────────
+const TRIP_AFTER = 3;
+
+/**
+ * How long a provider tripped on transient failures stays out.
+ *
+ * Longer than a full scrape (5–10 min) so a run that trips a provider early does
+ * not pay the strikes again near the end, but short enough that a long-lived
+ * server heals on its own instead of needing a restart.
+ */
+const BREAKER_COOLDOWN_MS = 10 * 60 * 1000;
+
+const PROVIDER_STRIKES = new Map<string, number>();
+/** Provider name → why it is out, and until when (`Infinity` = rest of the process). */
+const PROVIDER_DISABLED = new Map<string, { reason: string; until: number }>();
+
+function disableProvider(name: string, reason: string, until: number): void {
+  // Never downgrade a permanent disable back into a temporary one.
+  if (PROVIDER_DISABLED.get(name)?.until === Infinity) return;
+  PROVIDER_DISABLED.set(name, { reason, until });
+  const scope =
+    until === Infinity
+      ? 'for this process'
+      : `for ${Math.round(BREAKER_COOLDOWN_MS / 60000)} min`;
+  console.warn(`[${name}] disabled ${scope} — ${reason}`);
+}
+
+/** An auth rejection is never worth a retry, on any model, at any temperature. */
+function disableProviderForAuth(name: string, status: number, credentialEnv?: string): void {
+  PROVIDER_STRIKES.delete(name);
+  const fix = credentialEnv ? ` — check ${credentialEnv} in .env.local` : '';
+  disableProvider(name, `credentials rejected (HTTP ${status})${fix}`, Infinity);
+}
+
+function isProviderDisabled(name: string): boolean {
+  const entry = PROVIDER_DISABLED.get(name);
+  if (!entry) return false;
+  if (Date.now() < entry.until) return true;
+  // Cooldown elapsed — let it prove itself again from a clean slate.
+  PROVIDER_DISABLED.delete(name);
+  PROVIDER_STRIKES.delete(name);
+  console.warn(`[${name}] breaker cooldown elapsed — re-enabling`);
+  return false;
+}
+
+function recordProviderStrike(name: string): void {
+  // Already retired for good (bad credential) — the strike count is moot, and the
+  // caller records one on the same error that retired it.
+  if (PROVIDER_DISABLED.get(name)?.until === Infinity) return;
+  const next = (PROVIDER_STRIKES.get(name) ?? 0) + 1;
+  PROVIDER_STRIKES.set(name, next);
+  if (next >= TRIP_AFTER) {
+    disableProvider(name, `${next} consecutive failures`, Date.now() + BREAKER_COOLDOWN_MS);
+  }
+}
+
+/** A success means the provider is alive; the strike record no longer describes it. */
+function clearProviderStrikes(name: string): void {
+  PROVIDER_STRIKES.delete(name);
+}
+
+/** Providers currently out, for the summary line. Prunes expired entries. */
+function disabledProviders(): string[] {
+  return [...PROVIDER_DISABLED.keys()].filter(isProviderDisabled);
+}
+
 /** NVIDIA NIM model measured as fast and reliable for this classification task. */
 const NVIDIA_FAST_MODEL = 'meta/llama-3.1-8b-instruct';
 
 async function callOpenAICompatible(userPrompt: string, opts: ProviderConfig): Promise<string> {
-  const { apiKey, baseUrl, provider, timeoutMs = 45000, fallbackModel } = opts;
+  const { apiKey, baseUrl, provider, timeoutMs = 45000, fallbackModel, credentialEnv } = opts;
   const url = `${baseUrl.replace(/\/+$/, '')}/chat/completions`;
 
   // Try the configured model, then the provider's known-good fallback.
@@ -253,6 +354,17 @@ async function callOpenAICompatible(userPrompt: string, opts: ProviderConfig): P
         continue;
       }
 
+      if (response.status === 401 || response.status === 403) {
+        // Neither transient nor model-specific: no fallback model on this provider
+        // can succeed with a rejected credential, and no retry will change it.
+        // Retire the whole provider rather than pay TRIP_AFTER round-trips per
+        // tagEvents() call to relearn it. Throwing (not `continue`) is deliberate —
+        // trying the fallback model would waste one more request on the same key.
+        const body = (await response.text()).slice(0, 200);
+        disableProviderForAuth(provider, response.status, credentialEnv);
+        throw new Error(`${provider} error ${response.status}: ${body}`);
+      }
+
       if (!response.ok) {
         throw new Error(
           `${provider} error ${response.status}: ${(await response.text()).slice(0, 300)}`
@@ -281,13 +393,25 @@ async function callOpenAICompatible(userPrompt: string, opts: ProviderConfig): P
 async function callAnthropic(userPrompt: string): Promise<string> {
   const { default: Anthropic } = await import('@anthropic-ai/sdk');
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
-  const message = await anthropic.messages.create({
-    model: 'claude-3-5-sonnet-20241022',
-    max_tokens: 2000,
-    temperature: 0.2,
-    system: SYSTEM_PROMPT,
-    messages: [{ role: 'user', content: userPrompt }],
-  });
+  let message;
+  try {
+    message = await anthropic.messages.create({
+      model: 'claude-3-5-sonnet-20241022',
+      max_tokens: 2000,
+      temperature: 0.2,
+      system: SYSTEM_PROMPT,
+      messages: [{ role: 'user', content: userPrompt }],
+    });
+  } catch (error) {
+    // This path uses the SDK rather than callOpenAICompatible, so it needs its own
+    // hook into the breaker — otherwise a bad ANTHROPIC_API_KEY is the one
+    // credential failure still retried TRIP_AFTER times per call.
+    const status = (error as { status?: number })?.status;
+    if (status === 401 || status === 403) {
+      disableProviderForAuth('Anthropic', status, 'ANTHROPIC_API_KEY');
+    }
+    throw error;
+  }
   const content = message.content[0];
   if (content.type !== 'text') throw new Error('Unexpected Anthropic response type');
   return content.text;
@@ -386,6 +510,7 @@ function activeProviders(): Array<{ name: string; run: (prompt: string) => Promi
           baseUrl: process.env.ICA_BASE_URL!,
           model: process.env.ICA_MODEL!,
           provider: 'IBM ICA',
+          credentialEnv: 'ICA_API_KEY',
         }),
     });
   }
@@ -402,6 +527,7 @@ function activeProviders(): Array<{ name: string; run: (prompt: string) => Promi
           // small, well-specified task, so the 8B model is the right tool anyway.
           fallbackModel: NVIDIA_FAST_MODEL,
           provider: 'NVIDIA NIM',
+          credentialEnv: 'NVIDIA_API_KEY',
           // Deliberately tight: a batch that takes longer than this is slower than
           // just using keyword tagging for it.
           timeoutMs: 25000,
@@ -432,30 +558,26 @@ export async function tagEvents(inputs: TaggingInput[]): Promise<TaggingResult[]
   let llmTagged = 0;
   let batchFailures = 0;
 
-  // Sized from the provider we expect to serve most batches. If it trips the
-  // breaker mid-run the next provider simply receives larger batches than its
-  // ideal — which lenient parsing already tolerates.
-  const batchSize = batchSizeFor(providers[0]?.name);
+  // Sized from the first provider that will ACTUALLY serve a batch, not simply
+  // providers[0]. Sizing from a provider the breaker has already retired sent
+  // NVIDIA batches of 15 whenever ICA was out — triple the size it was measured
+  // to handle, and the exact condition that produced 8 LLM tags out of 840. If a
+  // provider trips *mid-call* the next one still inherits the larger batches,
+  // which lenient parsing tolerates; that part is unavoidable without re-batching.
+  const batchSize = batchSizeFor(providers.find(p => !isProviderDisabled(p.name))?.name);
 
-  // ── Circuit breaker ───────────────────────────────────────────────────────
-  // Measured failure mode: with an expired ICA key (instant 401) and a NVIDIA
-  // endpoint that timed out at 45 s, EVERY batch paid ~46 s before falling back
-  // to keywords. Across 105 batches that is 80 minutes of waiting to produce
-  // exactly the keyword tagging we'd have got for free. So a provider that fails
-  // this many times consecutively is dropped for the rest of the run.
-  const TRIP_AFTER = 3;
-  const strikes = new Map<string, number>();
-  const tripped = new Set<string>();
   let loggedSample = false;
   let partialBatches = 0;
 
   for (let offset = 0; offset < inputs.length; offset += batchSize) {
     const batch = inputs.slice(offset, offset + batchSize);
-    const available = providers.filter(p => !tripped.has(p.name));
+    const available = providers.filter(p => !isProviderDisabled(p.name));
 
     if (available.length === 0) {
-      // All providers are out. Keyword fallbacks are already in `results`, so
-      // stop calling out entirely rather than re-failing for every remaining batch.
+      // Every provider is out — possibly tripped by an earlier tagEvents() call,
+      // which is the whole point of the breaker living at module scope. Keyword
+      // fallbacks are already in `results`, so stop calling out entirely rather
+      // than re-failing for every remaining batch.
       batchFailures += Math.ceil((inputs.length - offset) / batchSize);
       break;
     }
@@ -468,7 +590,7 @@ export async function tagEvents(inputs: TaggingInput[]): Promise<TaggingResult[]
         const text = await provider.run(prompt);
         parsed = parseBatchResponse(text, batch.length);
         if (parsed) {
-          strikes.set(provider.name, 0); // a success clears the record
+          clearProviderStrikes(provider.name); // a success clears the record
           break;
         }
         // Show what actually came back the first time this happens. A bare
@@ -479,12 +601,12 @@ export async function tagEvents(inputs: TaggingInput[]): Promise<TaggingResult[]
             `[${provider.name}] unparseable batch response (first 240 chars): ${text.slice(0, 240).replace(/\s+/g, ' ')}`
           );
         }
-        recordStrike(provider.name);
+        recordProviderStrike(provider.name);
       } catch (error) {
         console.warn(
           `[${provider.name}] batch failed: ${error instanceof Error ? error.message : String(error)}`
         );
-        recordStrike(provider.name);
+        recordProviderStrike(provider.name);
       }
     }
 
@@ -541,24 +663,14 @@ export async function tagEvents(inputs: TaggingInput[]): Promise<TaggingResult[]
     }
   }
 
-  function recordStrike(name: string): void {
-    const next = (strikes.get(name) ?? 0) + 1;
-    strikes.set(name, next);
-    if (next >= TRIP_AFTER && !tripped.has(name)) {
-      tripped.add(name);
-      console.warn(
-        `[${name}] disabled for this run after ${next} consecutive failures — using the next provider`
-      );
-    }
-  }
-
   const summary =
     `Tagging: ${llmTagged}/${inputs.length} via LLM, ${inputs.length - llmTagged} via keywords` +
     (batchFailures > 0 ? ` (${batchFailures} batch(es) fell back` : '') +
     (partialBatches > 0 ? `${batchFailures > 0 ? ', ' : ' ('}${partialBatches} partial` : '') +
     (batchFailures > 0 || partialBatches > 0 ? ')' : '');
-  if (tripped.size > 0) {
-    console.warn(`${summary} — providers disabled: ${[...tripped].join(', ')}`);
+  const disabled = disabledProviders();
+  if (disabled.length > 0) {
+    console.warn(`${summary} — providers disabled: ${disabled.join(', ')}`);
   } else {
     console.log(summary);
   }
