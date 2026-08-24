@@ -115,6 +115,7 @@ verified. Duplicating those as unit tests would only produce slow, flaky copies.
 | `diag-hook-order.ts` | Proves `pre('validate')` runs before required-field validation and `pre('save')` does not. Scratch collection only. |
 | `diag-dupe.ts` / `diag-tagquality.ts` | Duplicate clusters, and how many events carry LLM vs keyword tags. |
 | `diag-keyword-tagging.ts` | Asserts `keywordTagging()` still classifies. Exits non-zero on regression — see the `\b` warning below. |
+| `diag-breaker-scope.ts` | Asserts the provider circuit breaker survives across `tagEvents()` calls and that a 401/403 retires a provider on the **first** rejection — for the SDK-based Anthropic tier as well as the two OpenAI-compatible ones. Points every provider at a local stub server; no credentials, no outbound network, no DB. Measured 5 doomed requests where the per-call breaker made 18. |
 | `diag-seed-integrity.ts` | Duplicate company names, name/alias collisions, duplicate seed handles, over-confident `strength`. Run after editing the registry or a seed list. |
 | `diag-api-auth.ts` | Hits every mutating endpoint signed-out and asserts 401/403/503, every public one and asserts 200, and every protected page and asserts a 307 to `/login`. Needs a dev server. Run after touching any route. |
 | `diag-admin-stats.ts` | Asserts the invariants `/admin` relies on (source buckets sum, `tech <= upcoming`, non-empty breakdowns). Read-only. |
@@ -242,7 +243,7 @@ Copy `.env.example` → `.env.local`. Required: `MONGODB_URI` (defaults to `mong
 
 LLM tagging cascades **IBM ICA → NVIDIA NIM → Anthropic → keyword heuristics**, and every tier is optional — with no key at all the pipeline still runs on keywords.
 
-> **`NVIDIA_MODEL` matters more than it looks.** Verified 2026-08-09: `z-ai/glm-5.2` and `meta/llama-3.3-70b-instruct` are both listed by `GET /models` on a valid key but never respond (>25 s timeout), while `meta/llama-3.1-8b-instruct` answers in ~376 ms. Classification is a small task, so the 8B model is the right fit. Run `scripts/check-nvidia-models.ts` before changing it. The tagger also fails over to a known-good model on its own and trips a circuit breaker after 3 consecutive provider failures, so a bad config degrades to keywords in seconds rather than adding ~46 s per batch.
+> **`NVIDIA_MODEL` matters more than it looks.** Verified 2026-08-09: `z-ai/glm-5.2` and `meta/llama-3.3-70b-instruct` are both listed by `GET /models` on a valid key but never respond (>25 s timeout), while `meta/llama-3.1-8b-instruct` answers in ~376 ms. Classification is a small task, so the 8B model is the right fit. Run `scripts/check-nvidia-models.ts` before changing it. The tagger also fails over to a known-good model on its own and trips a circuit breaker after 3 consecutive provider failures (process-scoped — see §3), so a bad config degrades to keywords in seconds rather than adding ~46 s per batch.
 
 > **`{"detail":"Model not found"}` from IBM ICA usually means the TEMPERATURE is missing, not the
 > model.** This is the most expensive error message in the stack, because it sends you to the
@@ -389,6 +390,22 @@ Both keys are derived in a **`pre('validate')`** hook, and that is not interchan
 `tagEvents(inputs)` classifies in **batches of 5** (measured: batch-of-8 with 600-char descriptions caused enough wrong-length responses that only 8 of 840 events got LLM tags). Parsing is deliberately lenient — a short array is applied positionally and the remainder keeps keyword tags, rather than discarding the whole batch. `keywordTagging` is the floor, so an event is never dropped for want of a classification.
 
 The category taxonomy (`EVENT_CATEGORIES`, 32 values) lives in `lib/models/Event.ts` and the system prompt is generated from it, so they cannot drift.
+
+> **The circuit breaker is scoped to the PROCESS, not to one `tagEvents()` call**, and
+> that distinction is not academic. It used to be per-call while logging that the
+> provider was "disabled for this run" — which happened to be true only for
+> `npm run scrape`, because `pipeline.ts` calls `tagEvents()` exactly **once** with the
+> whole corpus. Every other caller re-probed a dead provider `TRIP_AFTER` times per
+> call: `retag-events.ts` chunks by 40 (25 calls on `--all` over ~1000 events), and the
+> Next.js server tags one event per call on the manual add-event path. Two disable
+> scopes now match the two kinds of evidence — a **401/403 retires the provider for the
+> whole process on the first rejection** (a credential cannot heal without a restart,
+> so this is the provider-level analogue of the 404 → `DEAD_MODELS` rule), while
+> transient failures trip a 10-minute cooldown so a long-lived server heals instead of
+> needing a redeploy. The Anthropic tier needs its own hook because it calls the SDK
+> rather than `callOpenAICompatible`; it was the last tier still retrying a rejected
+> credential `TRIP_AFTER` times per call. Measured by `scripts/diag-breaker-scope.ts`:
+> 5 doomed requests across six calls where the per-call breaker spent 18.
 
 > Keyword regexes are load-bearing when the LLM is unavailable, and loose ones do real damage: a bare `\bpm\b` matched the "PM" in "6 PM" and tagged a fifth of the corpus `Product/Design`. Keep them specific.
 
