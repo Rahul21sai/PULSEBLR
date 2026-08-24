@@ -220,6 +220,44 @@ function nearestAreaByCoords(lat: number, lng: number): string | undefined {
 // it is ever stored, and no re-scrape recovers it, because merging only ever
 // fills gaps. That asymmetry is why the guards below exist and why anything
 // doubtful is `ambiguous`.
+//
+// ── WHAT THIS GATE CANNOT DO. Read before trusting it. ──
+//
+// It is a PRECISION instrument with no recall guarantee. "No off-city events in
+// the feed" is not something it can deliver, and five specific gaps are known:
+//
+//  1. IT CANNOT REACH STORED ROWS. It filters the incoming batch and never
+//     queries the collection. Measured 2026-08-24: 29 upcoming rows were already
+//     stored, 10 flagged isTechEvent. Worse, rejecting a re-sighting stops
+//     `lastSeenAt` being refreshed, so each of those rows is now FROZEN — it will
+//     not be corrected or cancelled either — and only becomes eligible for
+//     `pruneStale()` once its own start date has passed by a week. They drain
+//     over weeks, i.e. AFTER being shown. A cleanup is required, not optional.
+//
+//  2. NOTHING TO GO ON IS THE COMMON CASE. 523 of 1233 upcoming events name no
+//     city in any field. Any of them may be elsewhere; this says nothing about
+//     them, by design.
+//
+//  3. IT IS COUPLED TO THE ENRICHMENT BUDGET, which is the non-obvious one.
+//     Meetup's ICS carries no LOCATION, so `enrichMeetupEvents` is what fills
+//     venue/address/city/coords — and it takes candidates SORTED BY START DATE
+//     then slices to `meetupEnrichBudget` (800, against ~931 Meetup events per
+//     DEFAULTS). The overflow is therefore the FURTHEST-FUTURE events, and they
+//     reach this gate with only a title to judge. Raising or lowering that budget
+//     silently changes this gate's recall on the largest source in the corpus.
+//
+//  4. BENGALURU EVIDENCE IS AN UNCONDITIONAL VETO, including when the city value
+//     is the ORGANISER's home rather than the event's location. Three upcoming
+//     travel-group listings ("Get on the backroads of Bali", "Cycling Trip from
+//     Pisa to Florence") carry `city: 'Bangalore'` from the Meetup group and are
+//     kept. Overriding a positive city value with a venue string is a precedence
+//     rule no measurement here justifies, so it is left alone deliberately.
+//
+//  5. COORDINATES OUTSIDE THE CITY ARE NOT ACTED ON HERE — see
+//     hasBengaluruEvidence — and the gazetteer is a list, so a city absent from
+//     it passes. Prayagraj was absent until a touring Luma calendar was seeded.
+//     `scripts/diag-offcity.ts`'s UNRECOGNISED bucket is the only place the next
+//     one becomes visible; read it rather than trusting the reject count.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
