@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { dayKeyIST, istDaysSpanned, locationLabel } from '@/lib/format';
+import { dayKeyIST, istDaysSpanned, locationLabel, stripMarkdown } from '@/lib/format';
 
 /**
  * `istDaysSpanned` decides whether the time rail prints an end time or a `+Nd` badge, so getting
@@ -129,6 +129,94 @@ describe('locationLabel', () => {
   it('does not collapse distinct segments that merely look similar', () => {
     expect(locationLabel({ venue: 'Bengaluru Central, Bengaluru South' })).toBe(
       'Bengaluru Central, Bengaluru South'
+    );
+  });
+});
+
+/**
+ * THE NEGATIVE CASES ARE THE POINT. A stripper fails by over-matching, and the damage is silent:
+ * it does not throw, it just quietly corrupts somebody's description. `snake_case` losing its
+ * underscores and `2 * 3` losing its operator are the two that would be noticed last and matter
+ * most, so they are pinned first.
+ */
+describe('stripMarkdown', () => {
+  it('removes bold, both asterisk and underscore forms', () => {
+    expect(stripMarkdown('**What you will learn:**')).toBe('What you will learn:');
+    expect(stripMarkdown('__Details__')).toBe('Details');
+  });
+
+  it('removes heading hashes but keeps the heading text and its emoji', () => {
+    expect(stripMarkdown('## 🚀 Supercharging Agents with Built-in Tools')).toBe(
+      '🚀 Supercharging Agents with Built-in Tools'
+    );
+    expect(stripMarkdown('###### Deep heading')).toBe('Deep heading');
+  });
+
+  it('keeps the link text and drops the URL syntax', () => {
+    expect(stripMarkdown('Register [here](https://lu.ma/abc123) today')).toBe(
+      'Register here today'
+    );
+  });
+
+  it('keeps image alt text without a stray exclamation mark', () => {
+    expect(stripMarkdown('![Speaker photo](https://x.test/a.png)')).toBe('Speaker photo');
+  });
+
+  it('turns list markers into bullets rather than leaving asterisks', () => {
+    expect(stripMarkdown('* Why Agentic SDLC matters\n- Second point\n+ Third')).toBe(
+      '• Why Agentic SDLC matters\n• Second point\n• Third'
+    );
+  });
+
+  it('removes blockquote markers, inline code backticks and strikethrough', () => {
+    expect(stripMarkdown('> A quote')).toBe('A quote');
+    expect(stripMarkdown('Run `npm test` first')).toBe('Run npm test first');
+    expect(stripMarkdown('~~cancelled~~ rescheduled')).toBe('cancelled rescheduled');
+  });
+
+  it('removes horizontal rules without turning them into bullets', () => {
+    expect(stripMarkdown('Before\n---\nAfter')).toBe('Before\n\nAfter');
+  });
+
+  it('collapses the blank-line runs that stripping leaves behind', () => {
+    expect(stripMarkdown('One\n\n\n\n\nTwo')).toBe('One\n\nTwo');
+  });
+
+  // ── negatives ──────────────────────────────────────────────────────────────
+  it('does NOT damage snake_case identifiers', () => {
+    expect(stripMarkdown('call get_user_profile and set_flag_value')).toBe(
+      'call get_user_profile and set_flag_value'
+    );
+  });
+
+  it('does NOT eat a multiplication asterisk', () => {
+    expect(stripMarkdown('Tickets: 2 * 3 = 6 seats')).toBe('Tickets: 2 * 3 = 6 seats');
+  });
+
+  it('leaves a bare URL alone', () => {
+    expect(stripMarkdown('Details at https://lu.ma/abc123 — see you there')).toBe(
+      'Details at https://lu.ma/abc123 — see you there'
+    );
+  });
+
+  it('leaves ordinary prose untouched', () => {
+    const plain = 'Join us for an evening of talks. Food and drinks provided. Doors at 6.';
+    expect(stripMarkdown(plain)).toBe(plain);
+  });
+
+  it('handles a real Meetup description end to end', () => {
+    const raw =
+      '**🥂 The Ultimate Weekend Unwind 🏡✨**\n\n' +
+      '## What to expect\n\n' +
+      '* Live music\n' +
+      '* Rooftop views\n\n' +
+      'RSVP [on our page](https://meetup.com/x) — limited to 2 * 20 guests.';
+    expect(stripMarkdown(raw)).toBe(
+      '🥂 The Ultimate Weekend Unwind 🏡✨\n\n' +
+        'What to expect\n\n' +
+        '• Live music\n' +
+        '• Rooftop views\n\n' +
+        'RSVP on our page — limited to 2 * 20 guests.'
     );
   });
 });

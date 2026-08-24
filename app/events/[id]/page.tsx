@@ -18,6 +18,7 @@ import {
   priceLabel,
   dayLabelIST,
   isHappeningNow,
+  stripMarkdown,
 } from '@/lib/format';
 
 export default function EventDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -182,8 +183,13 @@ export default function EventDetailPage({ params }: { params: Promise<{ id: stri
                   About this event
                 </h2>
                 <div className="bg-white rounded-[18px] card-shadow p-5 md:p-6">
+                  {/* stripMarkdown, not the raw string: 494 of 1201 upcoming descriptions carry
+                      markdown syntax (491 of them from Meetup), and this <p> is plain text with
+                      `whitespace-pre-line`, so `**Details**` and `## Heading` reached the reader
+                      literally. Stripped rather than rendered because a description is untrusted
+                      scraped text — see the note on stripMarkdown in lib/format.ts. */}
                   <p className="text-[15px] leading-[1.65] text-[#3a3a3c] whitespace-pre-line">
-                    {event.description}
+                    {stripMarkdown(event.description)}
                   </p>
                 </div>
               </section>

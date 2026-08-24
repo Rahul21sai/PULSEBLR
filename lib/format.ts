@@ -194,6 +194,52 @@ export function priceLabel(event: {
 }
 
 /**
+ * Flatten the markdown syntax in a scraped description to readable plain text.
+ *
+ * Measured 2026-08-24: 494 of 1201 upcoming events (141 of them `isTechEvent`) carry `**bold**`,
+ * 271 carry `[text](url)` and 135 carry `#` headings — 491 of those from Meetup, the largest
+ * source. `app/events/[id]/page.tsx` renders the description in a `<p>` with `whitespace-pre-line`,
+ * so all of that syntax reached the reader literally: `**Details**`, `## 🚀 Supercharging Agents`,
+ * `Register [here](https://lu.ma/abc)`.
+ *
+ * STRIPPED RATHER THAN RENDERED, on purpose. Rendering would need a markdown library plus a
+ * sanitizer, and a description is untrusted third-party text scraped from a page we do not
+ * control — that is an HTML-injection surface this app has consistently refused to open (compare
+ * the CSV formula escaping in `lib/scan/csv.ts` and the SSRF guard). Stripping is a pure string
+ * transform: no dependency, nothing to sanitize, and it cannot execute anything.
+ *
+ * The order below matters. Links and images go first so their bracket text survives the emphasis
+ * pass; bold goes before italic so `**x**` is not seen as `*` + `x*`.
+ *
+ * What it deliberately does NOT touch, because over-stripping is the failure mode here:
+ *   · `snake_case_names` — `_` emphasis is not handled at all, only `__bold__`
+ *   · `2 * 3` — the italic pass requires the `*` to hug non-space text on both sides
+ *   · bare URLs — left intact and readable
+ */
+export function stripMarkdown(text: string): string {
+  return (
+    text
+      // Images before links: both are bracketed, and `!` must not survive as stray punctuation.
+      .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
+      .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+      // Horizontal rules, before the bullet pass can read `---` as a list marker.
+      .replace(/^[ \t]*([-*_])\1{2,}[ \t]*$/gm, '')
+      .replace(/^[ \t]*#{1,6}[ \t]+/gm, '')
+      .replace(/^[ \t]*>[ \t]?/gm, '')
+      .replace(/^[ \t]*[*+-][ \t]+/gm, '• ')
+      .replace(/\*\*([^*]+)\*\*/g, '$1')
+      .replace(/__([^_]+)__/g, '$1')
+      .replace(/~~([^~]+)~~/g, '$1')
+      .replace(/`([^`\n]+)`/g, '$1')
+      // Italic last, and only when the asterisks hug the text — so "2 * 3" is untouched.
+      .replace(/\*(\S[^*\n]*?\S|\S)\*/g, '$1')
+      // Stripping headings and rules leaves runs of blank lines behind.
+      .replace(/\n{3,}/g, '\n\n')
+      .trim()
+  );
+}
+
+/**
  * Drop comma-separated segments that an earlier segment already said.
  *
  * Scraped venue strings are address lines joined by the source, and several sources append the
