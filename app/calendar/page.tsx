@@ -185,7 +185,7 @@ export default function CalendarPage() {
                 onClick={() => setCurrentDate(subMonths(currentDate, 1))}
                 className="pressable grid h-10 w-10 place-items-center rounded-full bg-white text-[#1D1D1F] shadow-[inset_0_0_0_1px_var(--hairline)] hover:bg-[#F7F7F9]"
               >
-                <span className="material-symbols-outlined text-[20px]">chevron_left</span>
+                <span aria-hidden="true" className="material-symbols-outlined text-[20px]">chevron_left</span>
               </button>
               <button
                 type="button"
@@ -204,7 +204,7 @@ export default function CalendarPage() {
                 onClick={() => setCurrentDate(addMonths(currentDate, 1))}
                 className="pressable grid h-10 w-10 place-items-center rounded-full bg-white text-[#1D1D1F] shadow-[inset_0_0_0_1px_var(--hairline)] hover:bg-[#F7F7F9]"
               >
-                <span className="material-symbols-outlined text-[20px]">chevron_right</span>
+                <span aria-hidden="true" className="material-symbols-outlined text-[20px]">chevron_right</span>
               </button>
             </div>
           </div>
@@ -302,7 +302,7 @@ export default function CalendarPage() {
                 </div>
               ) : selectedDateEvents.length === 0 ? (
                 <div className="py-10 text-center">
-                  <span className="material-symbols-outlined mb-2 block text-[36px] text-[#d9d9de]">
+                  <span aria-hidden="true" className="material-symbols-outlined mb-2 block text-[36px] text-[#d9d9de]">
                     event_busy
                   </span>
                   <p className="text-[13.5px] text-[#8E8E93]">Nothing scheduled this day.</p>
@@ -334,7 +334,7 @@ export default function CalendarPage() {
                           </p>
                           {(event.area || event.venue) && (
                             <div className="flex items-center gap-1 mt-1 text-label-sm text-[#86868B]">
-                              <span className="material-symbols-outlined text-[12px]">location_on</span>
+                              <span aria-hidden="true" className="material-symbols-outlined text-[12px]">location_on</span>
                               {event.area || event.venue}
                             </div>
                           )}

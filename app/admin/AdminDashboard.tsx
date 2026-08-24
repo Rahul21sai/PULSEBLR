@@ -166,7 +166,7 @@ export default function AdminDashboard({
               onClick={load}
               className="shrink-0 flex items-center gap-1.5 rounded-full border border-[#e5e5ea] bg-white px-4 py-2 text-[12.5px] font-semibold text-[#1D1D1F] hover:bg-[#f3f3f5] transition-colors"
             >
-              <span className="material-symbols-outlined text-[15px]">refresh</span>
+              <span aria-hidden="true" className="material-symbols-outlined text-[15px]">refresh</span>
               Refresh
             </button>
           </div>
@@ -213,7 +213,7 @@ export default function AdminDashboard({
                     : 'bg-white text-[#1D1D1F] border-[#e5e5ea] hover:bg-[#f3f3f5]'
                 }`}
               >
-                <span className="material-symbols-outlined text-[16px]">{icon}</span>
+                <span aria-hidden="true" className="material-symbols-outlined text-[16px]">{icon}</span>
                 {label}
               </button>
             ))}
@@ -389,7 +389,7 @@ function ScraperPanel({ stats, onDone }: { stats: Stats | null; onDone: () => vo
             disabled={running !== null}
             className="flex items-center gap-1.5 rounded-full bg-[#0071E3] px-5 py-2.5 text-[13px] font-semibold text-white hover:bg-blue-600 disabled:opacity-50 transition-colors"
           >
-            <span className={`material-symbols-outlined text-[16px] ${running === 'fast' ? 'animate-spin' : ''}`}>
+            <span aria-hidden="true" className={`material-symbols-outlined text-[16px] ${running === 'fast' ? 'animate-spin' : ''}`}>
               bolt
             </span>
             {running === 'fast' ? 'Running…' : 'Fast scrape'}
@@ -400,7 +400,7 @@ function ScraperPanel({ stats, onDone }: { stats: Stats | null; onDone: () => vo
             disabled={running !== null}
             className="flex items-center gap-1.5 rounded-full bg-[#1D1D1F] px-5 py-2.5 text-[13px] font-semibold text-white hover:bg-black disabled:opacity-50 transition-colors"
           >
-            <span className={`material-symbols-outlined text-[16px] ${running === 'full' ? 'animate-spin' : ''}`}>
+            <span aria-hidden="true" className={`material-symbols-outlined text-[16px] ${running === 'full' ? 'animate-spin' : ''}`}>
               sync
             </span>
             {running === 'full' ? 'Running…' : 'Full scrape'}
@@ -510,7 +510,7 @@ function SourcesPanel({ stats, onChanged }: { stats: Stats; onChanged: () => voi
       <div className="flex flex-wrap items-center gap-2.5 pb-3">
         <label className="relative flex-1 min-w-[180px]">
           <span className="sr-only">Filter sources</span>
-          <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-[18px] text-[#a1a1a6]">
+          <span aria-hidden="true" className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-[18px] text-[#a1a1a6]">
             search
           </span>
           <input
@@ -699,7 +699,7 @@ function EventsPanel({ onChanged }: { onChanged: () => void }) {
     >
       <label className="relative block pb-3">
         <span className="sr-only">Search events</span>
-        <span className="material-symbols-outlined absolute left-3 top-[18px] -translate-y-1/2 text-[18px] text-[#a1a1a6]">
+        <span aria-hidden="true" className="material-symbols-outlined absolute left-3 top-[18px] -translate-y-1/2 text-[18px] text-[#a1a1a6]">
           search
         </span>
         <input

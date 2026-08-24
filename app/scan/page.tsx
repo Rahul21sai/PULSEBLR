@@ -229,7 +229,7 @@ function ScanScreen() {
           aria-label="Close the scanner"
           className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-white/15 text-white [touch-action:manipulation]"
         >
-          <span className="material-symbols-outlined text-[20px]">close</span>
+          <span aria-hidden="true" className="material-symbols-outlined text-[20px]">close</span>
         </Link>
 
         <button
@@ -237,9 +237,9 @@ function ScanScreen() {
           onClick={() => setChoosingFolder(true)}
           className="flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-full bg-white/15 px-4 py-2.5 text-[13px] font-semibold text-white [touch-action:manipulation]"
         >
-          <span className="material-symbols-outlined text-[17px]">folder</span>
+          <span aria-hidden="true" className="material-symbols-outlined text-[17px]">folder</span>
           <span className="truncate">{folder ? folder.name : 'Choose a folder'}</span>
-          <span className="material-symbols-outlined text-[17px]">expand_more</span>
+          <span aria-hidden="true" className="material-symbols-outlined text-[17px]">expand_more</span>
         </button>
 
         <Link
@@ -248,7 +248,7 @@ function ScanScreen() {
           title="Show my code"
           className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-white/15 text-white [touch-action:manipulation]"
         >
-          <span className="material-symbols-outlined text-[20px]">qr_code_2</span>
+          <span aria-hidden="true" className="material-symbols-outlined text-[20px]">qr_code_2</span>
         </Link>
       </div>
 
@@ -310,7 +310,7 @@ function ScanScreen() {
             onClick={syncNow}
             className="mx-auto flex items-center gap-2 rounded-full bg-white/95 px-4 py-2 text-[12px] font-semibold text-[#1D1D1F]"
           >
-            <span className="material-symbols-outlined text-[16px]">cloud_upload</span>
+            <span aria-hidden="true" className="material-symbols-outlined text-[16px]">cloud_upload</span>
             <span className="tnum">{pending}</span> waiting to upload — tap to retry
           </button>
         </div>
@@ -417,7 +417,7 @@ function ScanScreen() {
                   </span>
                 </span>
                 {option._id === folderId && (
-                  <span className="material-symbols-outlined shrink-0 text-[20px] text-[#0071E3]">
+                  <span aria-hidden="true" className="material-symbols-outlined shrink-0 text-[20px] text-[#0071E3]">
                     check_circle
                   </span>
                 )}

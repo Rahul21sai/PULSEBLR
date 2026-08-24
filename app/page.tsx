@@ -408,7 +408,7 @@ export default function Home() {
           aria-label="Open your tracker"
           className="text-[#86868B] hover:text-[#0071E3] transition-colors"
         >
-          <span className="material-symbols-outlined text-[24px]">bookmarks</span>
+          <span aria-hidden="true" className="material-symbols-outlined text-[24px]">bookmarks</span>
         </Link>
       </header>
 
@@ -422,7 +422,7 @@ export default function Home() {
         <div className="max-w-[1240px] mx-auto px-4 md:px-8">
           <div className="flex items-center gap-2 py-2.5">
             <div className="relative flex-1 min-w-0">
-              <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-[19px] text-[#86868B] pointer-events-none">
+              <span aria-hidden="true" className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-[19px] text-[#86868B] pointer-events-none">
                 search
               </span>
               <input
@@ -446,7 +446,7 @@ export default function Home() {
                   aria-label="Clear search"
                   className="absolute right-2.5 top-1/2 grid h-6 w-6 -translate-y-1/2 place-items-center rounded-full text-[#86868B] hover:bg-[#F0F0F2] hover:text-[#1D1D1F] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0071E3] [touch-action:manipulation]"
                 >
-                  <span className="material-symbols-outlined text-[18px]">close</span>
+                  <span aria-hidden="true" className="material-symbols-outlined text-[18px]">close</span>
                 </button>
               )}
             </div>
@@ -457,7 +457,7 @@ export default function Home() {
               onClick={() => setSheetOpen(true)}
               className="lg:hidden shrink-0 h-10 px-4 rounded-full bg-white border border-[#e5e5ea] text-[13px] font-semibold text-[#1D1D1F] flex items-center gap-1.5 hover:bg-[#f3f3f5] transition-colors"
             >
-              <span className="material-symbols-outlined text-[18px]">tune</span>
+              <span aria-hidden="true" className="material-symbols-outlined text-[18px]">tune</span>
               Filters
               {activeCount > 0 && (
                 <span className="bg-[#0071E3] text-white text-[10px] font-bold rounded-full min-w-4 h-4 px-1 flex items-center justify-center tnum">
@@ -478,7 +478,7 @@ export default function Home() {
                     view === mode ? 'bg-[#f3f3f5] text-[#1D1D1F]' : 'text-[#86868B] hover:text-[#1D1D1F]'
                   }`}
                 >
-                  <span className="material-symbols-outlined text-[18px]">
+                  <span aria-hidden="true" className="material-symbols-outlined text-[18px]">
                     {mode === 'rail' ? 'view_agenda' : 'grid_view'}
                   </span>
                 </button>
@@ -754,7 +754,7 @@ export default function Home() {
                 className="w-8 h-8 rounded-full bg-white flex items-center justify-center"
                 aria-label="Close filters"
               >
-                <span className="material-symbols-outlined text-[18px]">close</span>
+                <span aria-hidden="true" className="material-symbols-outlined text-[18px]">close</span>
               </button>
             </div>
             {/* min-h-0 is required: without it a flex child refuses to shrink below
@@ -835,7 +835,7 @@ function EmptyState({
 }) {
   return (
     <div className="bg-white rounded-2xl card-shadow py-16 px-6 text-center">
-      <span className="material-symbols-outlined text-[44px] text-[#d5d5da] block mb-3">{icon}</span>
+      <span aria-hidden="true" className="material-symbols-outlined text-[44px] text-[#d5d5da] block mb-3">{icon}</span>
       <p className="text-[17px] font-semibold text-[#1D1D1F]">{title}</p>
       <p className="text-[14px] text-[#6E6E73] mt-1.5 max-w-sm mx-auto">{body}</p>
       {action &&

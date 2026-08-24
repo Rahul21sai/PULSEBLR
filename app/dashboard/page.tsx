@@ -158,7 +158,7 @@ export default function DashboardPage() {
                     <div key={card.label} className={`${card.cardBg} rounded-[18px] p-5 card-shadow`}>
                       {/* Icon badge */}
                       <div className={`w-9 h-9 rounded-xl ${card.iconBg} flex items-center justify-center mb-3`}>
-                        <span className="material-symbols-outlined text-white text-[18px]"
+                        <span aria-hidden="true" className="material-symbols-outlined text-white text-[18px]"
                           style={{ fontVariationSettings: "'FILL' 1" }}>
                           {card.icon}
                         </span>
@@ -176,7 +176,7 @@ export default function DashboardPage() {
                 {/* Pending follow-ups */}
                 <section className="bg-white rounded-[18px] card-shadow p-6">
                   <div className="flex items-center gap-2 mb-5">
-                    <span className="material-symbols-outlined text-orange-500" style={{ fontVariationSettings: "'FILL' 1" }}>schedule</span>
+                    <span aria-hidden="true" className="material-symbols-outlined text-orange-500" style={{ fontVariationSettings: "'FILL' 1" }}>schedule</span>
                     <h2 className="text-[17px] font-bold text-[#1D1D1F]">Pending Follow-ups</h2>
                     {followUps.length > 0 && (
                       <span className="ml-auto bg-orange-100 text-orange-700 text-[11px] font-bold px-2 py-0.5 rounded-full">
@@ -187,7 +187,7 @@ export default function DashboardPage() {
 
                   {followUps.length === 0 ? (
                     <div className="text-center py-8">
-                      <span className="material-symbols-outlined text-[40px] text-[#e5e5e5]">check_circle</span>
+                      <span aria-hidden="true" className="material-symbols-outlined text-[40px] text-[#e5e5e5]">check_circle</span>
                       <p className="text-[#86868B] text-sm mt-2">All caught up!</p>
                     </div>
                   ) : (
@@ -221,7 +221,7 @@ export default function DashboardPage() {
                 {/* Repeat connections */}
                 <section className="bg-white rounded-[18px] card-shadow p-6">
                   <div className="flex items-center gap-2 mb-5">
-                    <span className="material-symbols-outlined text-purple-500" style={{ fontVariationSettings: "'FILL' 1" }}>group</span>
+                    <span aria-hidden="true" className="material-symbols-outlined text-purple-500" style={{ fontVariationSettings: "'FILL' 1" }}>group</span>
                     <h2 className="text-[17px] font-bold text-[#1D1D1F]">Repeat Connections</h2>
                     {repeatConnections.length > 0 && (
                       <span className="ml-auto bg-purple-100 text-purple-700 text-[11px] font-bold px-2 py-0.5 rounded-full">
@@ -232,7 +232,7 @@ export default function DashboardPage() {
 
                   {repeatConnections.length === 0 ? (
                     <div className="text-center py-8">
-                      <span className="material-symbols-outlined text-[40px] text-[#e5e5e5]">group_add</span>
+                      <span aria-hidden="true" className="material-symbols-outlined text-[40px] text-[#e5e5e5]">group_add</span>
                       <p className="text-[#86868B] text-sm mt-2">No repeat connections yet</p>
                     </div>
                   ) : (
@@ -276,7 +276,7 @@ export default function DashboardPage() {
           return (
             <a key={link.href} href={link.href}
               className={`flex flex-col items-center px-3 py-1 rounded-full transition-colors ${isActive ? 'bg-[#0071E3]/10' : 'hover:bg-[#f3f3f5]'}`}>
-              <span className={`material-symbols-outlined text-[22px] ${isActive ? 'text-[#0071E3]' : 'text-[#86868B]'}`}
+              <span aria-hidden="true" className={`material-symbols-outlined text-[22px] ${isActive ? 'text-[#0071E3]' : 'text-[#86868B]'}`}
                 style={{ fontVariationSettings: isActive ? "'FILL' 1" : "'FILL' 0" }}>
                 {link.icon}
               </span>

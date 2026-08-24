@@ -154,11 +154,20 @@ function AddEventForm() {
       <section className="bg-white rounded-[20px] card-shadow p-6">
         <div className="flex items-center gap-3 mb-4">
           <div className="w-8 h-8 rounded-xl bg-[#0071E3] flex items-center justify-center shrink-0">
-            <span className="material-symbols-outlined text-white text-[16px]" style={{ fontVariationSettings: "'FILL' 1" }}>link</span>
+            <span aria-hidden="true" className="material-symbols-outlined text-white text-[16px]" style={{ fontVariationSettings: "'FILL' 1" }}>link</span>
           </div>
           <div>
             <h2 className="text-label-md font-semibold text-[#1D1D1F]">Import from Link</h2>
-            <p className="text-label-sm text-[#86868B]">Paste a Luma, Meetup, or Hasgeek URL</p>
+            {/* The importer has NO host allowlist — `/api/scrape-url` runs safeFetch on any
+                http(s) URL and reads schema.org Event JSON-LD, falling back to <time datetime>.
+                The old copy named three sites, which told people not to try the many others that
+                work. Measured 2026-08-24 on real event pages: Meetup, Eventbrite, Luma,
+                events.canonical.com and events.linuxfoundation.org all return a usable Event node;
+                wearedevelopers.com and india.droidcon.com publish no structured data at all. So
+                the honest promise is "any page that publishes standard event data", not a list. */}
+            <p className="text-label-sm text-[#86868B]">
+              Paste any event URL — works when the page publishes standard event data
+            </p>
           </div>
         </div>
         <div className="flex gap-2">
@@ -166,7 +175,8 @@ function AddEventForm() {
             type="url"
             value={autoFillUrl}
             onChange={e => setAutoFillUrl(e.target.value)}
-            placeholder="https://lu.ma/…"
+            placeholder="https://…  (Luma, Meetup, Eventbrite, a conference site…)"
+            aria-label="Event URL to import"
             className={`flex-1 ${inputCls}`}
           />
           <button
@@ -175,7 +185,7 @@ function AddEventForm() {
             disabled={autoFilling || !autoFillUrl.trim()}
             className="shrink-0 bg-black text-white text-label-md px-5 py-3 rounded-xl hover:bg-gray-800 transition-colors disabled:opacity-40 flex items-center gap-2"
           >
-            <span className="material-symbols-outlined text-[16px]">auto_awesome</span>
+            <span aria-hidden="true" className="material-symbols-outlined text-[16px]">auto_awesome</span>
             {autoFilling ? 'Filling…' : 'Fill'}
           </button>
         </div>
@@ -335,7 +345,7 @@ function AddEventForm() {
             <div>
               <label className="block text-label-sm uppercase tracking-widest text-[#86868B] mb-2">Venue</label>
               <div className="relative">
-                <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-[#86868B] text-[18px] pointer-events-none">location_on</span>
+                <span aria-hidden="true" className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-[#86868B] text-[18px] pointer-events-none">location_on</span>
                 <input
                   type="text" value={formData.venue}
                   onChange={e => setFormData({ ...formData, venue: e.target.value })}
@@ -410,7 +420,7 @@ function AddEventForm() {
           <div className="mt-4">
             <label className="block text-label-sm uppercase tracking-widest text-[#86868B] mb-2">Price (₹)</label>
             <div className="relative">
-              <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-[#86868B] text-[18px] pointer-events-none">currency_rupee</span>
+              <span aria-hidden="true" className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-[#86868B] text-[18px] pointer-events-none">currency_rupee</span>
               <input
                 type="number" value={formData.price} min="0"
                 onChange={e => setFormData({ ...formData, price: e.target.value })}
@@ -427,7 +437,7 @@ function AddEventForm() {
           type="submit" disabled={saving}
           className="flex-1 bg-[#0071E3] text-white text-label-md font-semibold py-4 rounded-full hover:bg-blue-600 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
         >
-          <span className="material-symbols-outlined text-[18px]">save</span>
+          <span aria-hidden="true" className="material-symbols-outlined text-[18px]">save</span>
           {saving ? 'Adding Event…' : 'Save Event'}
         </button>
         <Link

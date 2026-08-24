@@ -103,7 +103,7 @@ export default function CompaniesPage() {
           {/* Controls */}
           <div className="flex flex-wrap items-center gap-2 mb-5">
             <div className="relative flex-1 min-w-[200px]">
-              <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-[18px] text-[#86868B] pointer-events-none">
+              <span aria-hidden="true" className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-[18px] text-[#86868B] pointer-events-none">
                 search
               </span>
               <input
@@ -152,14 +152,14 @@ export default function CompaniesPage() {
             </div>
           ) : error ? (
             <div className="bg-white rounded-[18px] card-shadow py-14 text-center">
-              <span className="material-symbols-outlined text-[40px] text-[#d5d5da] block mb-2">
+              <span aria-hidden="true" className="material-symbols-outlined text-[40px] text-[#d5d5da] block mb-2">
                 cloud_off
               </span>
               <p className="text-[15px] font-semibold text-[#1D1D1F]">{error}</p>
             </div>
           ) : visible.length === 0 ? (
             <div className="bg-white rounded-[18px] card-shadow py-14 text-center px-6">
-              <span className="material-symbols-outlined text-[40px] text-[#d5d5da] block mb-2">
+              <span aria-hidden="true" className="material-symbols-outlined text-[40px] text-[#d5d5da] block mb-2">
                 domain_disabled
               </span>
               <p className="text-[15px] font-semibold text-[#1D1D1F]">No companies match</p>

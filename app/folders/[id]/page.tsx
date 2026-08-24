@@ -215,7 +215,7 @@ export default function FolderPage({ params }: { params: Promise<{ id: string }>
           href="/folders"
           className="mb-3 inline-flex items-center gap-1 text-[13px] font-semibold text-[#0071E3] hover:underline"
         >
-          <span className="material-symbols-outlined text-[16px]">arrow_back</span>
+          <span aria-hidden="true" className="material-symbols-outlined text-[16px]">arrow_back</span>
           All folders
         </Link>
 
@@ -484,7 +484,7 @@ function ContactCards({
               aria-label={`Edit ${contact.name}`}
               className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[#F5F5F7] text-[#6E6E73]"
             >
-              <span className="material-symbols-outlined text-[18px]">edit</span>
+              <span aria-hidden="true" className="material-symbols-outlined text-[18px]">edit</span>
             </button>
           </div>
 
@@ -528,7 +528,7 @@ function ContactLinks({ contact }: { contact: ContactDTO }) {
           title={link.label}
           className="grid h-8 w-8 place-items-center rounded-full bg-[#F5F5F7] text-[#3a3a3c] hover:bg-[#EBF4FE] hover:text-[#0071E3]"
         >
-          <span className="material-symbols-outlined text-[17px]">{link.icon}</span>
+          <span aria-hidden="true" className="material-symbols-outlined text-[17px]">{link.icon}</span>
         </a>
       ))}
     </span>
@@ -542,7 +542,7 @@ function PendingDot() {
       title="Saved on this device, not uploaded yet"
       className="inline-flex shrink-0 items-center gap-1 rounded-full bg-[#F5F5F7] px-2 py-0.5 text-[10.5px] font-bold text-[#6E6E73]"
     >
-      <span className="material-symbols-outlined text-[12px]">cloud_off</span>
+      <span aria-hidden="true" className="material-symbols-outlined text-[12px]">cloud_off</span>
       local
     </span>
   );

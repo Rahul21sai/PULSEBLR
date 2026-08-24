@@ -116,7 +116,17 @@ export default function EventRow({
           />
 
           <div className="flex gap-3 md:gap-4 p-3 md:p-4 pl-4 md:pl-5">
-            <Link href={href} className="shrink-0 rounded-xl overflow-hidden" tabIndex={-1}>
+            {/* aria-hidden as well as tabIndex={-1}: this link duplicates the title link below
+                it and wraps a deliberately decorative cover (EventCover sets alt=""), so it has
+                no accessible name and a screen reader would announce it as an unlabelled link.
+                Safe to hide because it is already out of the tab order — hiding a FOCUSABLE
+                element is the anti-pattern, and this is not one. */}
+            <Link
+              href={href}
+              className="shrink-0 rounded-xl overflow-hidden"
+              tabIndex={-1}
+              aria-hidden="true"
+            >
               <EventCover
                 src={event.imageUrl}
                 title={event.title}
@@ -150,13 +160,13 @@ export default function EventRow({
                         className="w-4 h-4 rounded-full object-cover shrink-0"
                       />
                     ) : (
-                      <span className="material-symbols-outlined text-[14px] shrink-0">person</span>
+                      <span aria-hidden="true" className="material-symbols-outlined text-[14px] shrink-0">person</span>
                     )}
                     <span className="truncate max-w-[180px]">{event.organizer}</span>
                   </span>
                 )}
                 <span className="inline-flex items-center gap-1 min-w-0">
-                  <span className="material-symbols-outlined text-[14px] shrink-0">
+                  <span aria-hidden="true" className="material-symbols-outlined text-[14px] shrink-0">
                     {event.format === 'online' ? 'videocam' : 'location_on'}
                   </span>
                   <span className="truncate max-w-[220px]">{locationLabel(event)}</span>

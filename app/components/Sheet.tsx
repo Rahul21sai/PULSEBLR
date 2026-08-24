@@ -142,7 +142,7 @@ export default function Sheet({
             aria-label="Close"
             className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[#F5F5F7] text-[#6E6E73] hover:bg-[#EEEEF0] [touch-action:manipulation]"
           >
-            <span className="material-symbols-outlined text-[18px]">close</span>
+            <span aria-hidden="true" className="material-symbols-outlined text-[18px]">close</span>
           </button>
         </div>
 

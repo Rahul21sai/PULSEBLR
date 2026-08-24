@@ -123,7 +123,7 @@ export default function SettingsPage() {
                 />
               ) : (
                 <div className="w-12 h-12 rounded-full bg-[#f3f3f5] flex items-center justify-center shrink-0">
-                  <span className="material-symbols-outlined text-[#86868B] text-[26px]">person</span>
+                  <span aria-hidden="true" className="material-symbols-outlined text-[#86868B] text-[26px]">person</span>
                 </div>
               )}
               <div className="flex-1 min-w-0">
@@ -201,7 +201,7 @@ export default function SettingsPage() {
                 href="/admin"
                 className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-[#1D1D1F] px-4 py-2 text-[12.5px] font-semibold text-white hover:bg-black transition-colors"
               >
-                <span className="material-symbols-outlined text-[15px]">shield_person</span>
+                <span aria-hidden="true" className="material-symbols-outlined text-[15px]">shield_person</span>
                 Open Admin
               </Link>
             )}
@@ -294,7 +294,7 @@ function Permission({
           granted ? 'bg-[#e8f3ff] text-[#0071E3]' : 'bg-[#f3f3f5] text-[#a1a1a6]'
         }`}
       >
-        <span className="material-symbols-outlined text-[16px]">{icon}</span>
+        <span aria-hidden="true" className="material-symbols-outlined text-[16px]">{icon}</span>
       </span>
       <div className="min-w-0">
         <p className={`text-[13.5px] font-semibold ${granted ? 'text-[#1D1D1F]' : 'text-[#86868B]'}`}>

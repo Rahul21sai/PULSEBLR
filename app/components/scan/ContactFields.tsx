@@ -93,7 +93,7 @@ export default function ContactFields({
          */}
         {draft.nameIsGuess && (
           <span className="mt-1.5 flex items-center gap-1 text-[12px] text-[#A85B00]">
-            <span className="material-symbols-outlined text-[14px]">edit_note</span>
+            <span aria-hidden="true" className="material-symbols-outlined text-[14px]">edit_note</span>
             Guessed from their profile link — check it
           </span>
         )}

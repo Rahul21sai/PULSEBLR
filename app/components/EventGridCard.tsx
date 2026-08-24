@@ -20,7 +20,14 @@ export default function EventGridCard({ event }: { event: FeedEvent }) {
 
   return (
     <article className="group bg-white rounded-2xl card-shadow overflow-hidden flex flex-col transition-[transform,box-shadow] duration-200 hover:shadow-[0_10px_34px_rgba(0,0,0,0.08)] hover:-translate-y-0.5">
-      <Link href={href} className="relative block aspect-[16/9] overflow-hidden" tabIndex={-1}>
+      {/* aria-hidden as well as tabIndex={-1}: duplicates the title link and wraps a decorative
+          cover, so it has no accessible name. Already unfocusable, so hiding it is safe. */}
+      <Link
+        href={href}
+        className="relative block aspect-[16/9] overflow-hidden"
+        tabIndex={-1}
+        aria-hidden="true"
+      >
         <EventCover
           src={event.imageUrl}
           title={event.title}
@@ -53,7 +60,7 @@ export default function EventGridCard({ event }: { event: FeedEvent }) {
         </h3>
 
         <p className="text-[12.5px] text-[#6E6E73] flex items-center gap-1 min-w-0">
-          <span className="material-symbols-outlined text-[14px] shrink-0">
+          <span aria-hidden="true" className="material-symbols-outlined text-[14px] shrink-0">
             {event.format === 'online' ? 'videocam' : 'location_on'}
           </span>
           <span className="truncate">{locationLabel(event)}</span>

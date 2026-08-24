@@ -72,7 +72,7 @@ export default async function PublicCardPage({ params }: { params: Promise<{ tok
     return (
       <main className="grid min-h-screen place-items-center bg-[#F5F5F7] px-6">
         <div className="max-w-[360px] text-center">
-          <span className="material-symbols-outlined text-[40px] text-[#8E8E93]">link_off</span>
+          <span aria-hidden="true" className="material-symbols-outlined text-[40px] text-[#8E8E93]">link_off</span>
           <h1 className="t-title mt-3 text-[#1D1D1F]">That card is not available</h1>
           <p className="mt-2 text-[13.5px] leading-relaxed text-[#6E6E73]">
             The link may have been replaced, or its owner turned the card off. Ask them to show
@@ -132,7 +132,7 @@ export default async function PublicCardPage({ params }: { params: Promise<{ tok
                   rel={link.external ? 'noopener noreferrer' : undefined}
                   className="flex items-center gap-3 rounded-xl bg-[#F7F7F9] px-4 py-3 text-left text-[13.5px] font-medium text-[#1D1D1F] hover:bg-[#EEEEF0] pressable"
                 >
-                  <span className="material-symbols-outlined text-[19px] text-[#6E6E73]">
+                  <span aria-hidden="true" className="material-symbols-outlined text-[19px] text-[#6E6E73]">
                     {link.icon}
                   </span>
                   <span className="min-w-0 truncate">{link.label}</span>
@@ -149,7 +149,7 @@ export default async function PublicCardPage({ params }: { params: Promise<{ tok
             href={`/api/card/${token}?format=vcf`}
             className="mt-4 inline-flex h-11 w-full items-center justify-center gap-2 rounded-full bg-[#1D1D1F] text-[14px] font-semibold text-white hover:bg-black pressable"
           >
-            <span className="material-symbols-outlined text-[18px]">person_add</span>
+            <span aria-hidden="true" className="material-symbols-outlined text-[18px]">person_add</span>
             Save to contacts
           </a>
         </section>

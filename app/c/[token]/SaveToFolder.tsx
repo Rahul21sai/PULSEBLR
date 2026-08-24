@@ -81,7 +81,7 @@ export default function SaveToFolder({ card }: { card: PublicCardDTO }) {
   if (savedTo) {
     return (
       <section className="mt-4 rounded-[22px] bg-white p-5 text-center card-shadow">
-        <span className="material-symbols-outlined text-[28px] text-[#1D8A44]">check_circle</span>
+        <span aria-hidden="true" className="material-symbols-outlined text-[28px] text-[#1D8A44]">check_circle</span>
         <p className="mt-1.5 text-[14px] font-semibold text-[#1D1D1F]">
           Saved to {savedTo}
         </p>
@@ -92,7 +92,7 @@ export default function SaveToFolder({ card }: { card: PublicCardDTO }) {
           href="/card"
           className="mt-4 inline-flex h-11 items-center justify-center gap-2 rounded-full bg-[#0071E3] px-6 text-[14px] font-semibold text-white hover:bg-[#0061C3] pressable"
         >
-          <span className="material-symbols-outlined text-[18px]">qr_code_2</span>
+          <span aria-hidden="true" className="material-symbols-outlined text-[18px]">qr_code_2</span>
           Show them my code
         </Link>
       </section>
@@ -135,7 +135,7 @@ export default function SaveToFolder({ card }: { card: PublicCardDTO }) {
                   {folder.contactCount ?? 0} {folder.contactCount === 1 ? 'person' : 'people'}
                 </span>
               </span>
-              <span className="material-symbols-outlined shrink-0 text-[18px] text-[#0071E3]">
+              <span aria-hidden="true" className="material-symbols-outlined shrink-0 text-[18px] text-[#0071E3]">
                 add_circle
               </span>
             </button>
@@ -147,7 +147,7 @@ export default function SaveToFolder({ card }: { card: PublicCardDTO }) {
         href="/card"
         className="mt-3 flex h-11 items-center justify-center gap-2 rounded-full bg-[#F5F5F7] text-[13.5px] font-semibold text-[#1D1D1F] hover:bg-[#EEEEF0] pressable"
       >
-        <span className="material-symbols-outlined text-[18px]">qr_code_2</span>
+        <span aria-hidden="true" className="material-symbols-outlined text-[18px]">qr_code_2</span>
         Show them my code instead
       </Link>
     </section>

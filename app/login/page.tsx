@@ -82,7 +82,7 @@ export default function LoginPage() {
             ].map(item => (
               <li key={item.icon} className="flex items-start gap-3">
                 <span className="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-full bg-white shadow-[inset_0_0_0_1px_var(--hairline)]">
-                  <span className="material-symbols-outlined text-[16px] text-[#0071E3]">
+                  <span aria-hidden="true" className="material-symbols-outlined text-[16px] text-[#0071E3]">
                     {item.icon}
                   </span>
                 </span>
@@ -146,7 +146,7 @@ export default function LoginPage() {
             className="pressable mt-6 flex h-11 w-full items-center justify-center gap-1.5 rounded-full bg-white text-[13.5px] font-semibold text-[#1D1D1F] shadow-[inset_0_0_0_1px_var(--hairline-strong)] hover:bg-[#F7F7F9]"
           >
             Browse events without an account
-            <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
+            <span aria-hidden="true" className="material-symbols-outlined text-[16px]">arrow_forward</span>
           </Link>
 
           <p className="mt-5 text-[12px] leading-relaxed text-[#8E8E93]">

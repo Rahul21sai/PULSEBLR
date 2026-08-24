@@ -68,7 +68,7 @@ export default function IntakeForm({
   if (state === 'done') {
     return (
       <section className="rounded-[22px] bg-white p-6 text-center card-shadow">
-        <span className="material-symbols-outlined text-[34px] text-[#1D8A44]">check_circle</span>
+        <span aria-hidden="true" className="material-symbols-outlined text-[34px] text-[#1D8A44]">check_circle</span>
         <h2 className="t-sub mt-2 text-[#1D1D1F]">You&apos;re in</h2>
         <p className="mt-1.5 text-[13.5px] leading-relaxed text-[#6E6E73]">
           Added to {folderName}. Nothing else to do — enjoy the event.

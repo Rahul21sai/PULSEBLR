@@ -155,7 +155,7 @@ export function Button({
 } & React.ButtonHTMLAttributes<HTMLButtonElement>) {
   return (
     <button type="button" className={buttonClass(tone, size, full)} {...rest}>
-      {icon && <span className="material-symbols-outlined text-[17px]">{icon}</span>}
+      {icon && <span aria-hidden="true" className="material-symbols-outlined text-[17px]">{icon}</span>}
       {children}
     </button>
   );
@@ -182,14 +182,14 @@ export function ButtonLink({
   if (external) {
     return (
       <a href={href} target="_blank" rel="noopener noreferrer" className={cls}>
-        {icon && <span className="material-symbols-outlined text-[17px]">{icon}</span>}
+        {icon && <span aria-hidden="true" className="material-symbols-outlined text-[17px]">{icon}</span>}
         {children}
       </a>
     );
   }
   return (
     <Link href={href} className={cls}>
-      {icon && <span className="material-symbols-outlined text-[17px]">{icon}</span>}
+      {icon && <span aria-hidden="true" className="material-symbols-outlined text-[17px]">{icon}</span>}
       {children}
     </Link>
   );
@@ -304,7 +304,7 @@ export function EmptyState({
   return (
     <div className="flex flex-col items-center justify-center rounded-[18px] bg-white card-shadow px-6 py-14 text-center">
       <span className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-[#F5F5F7]">
-        <span className="material-symbols-outlined text-[24px] text-[#8E8E93]">{icon}</span>
+        <span aria-hidden="true" className="material-symbols-outlined text-[24px] text-[#8E8E93]">{icon}</span>
       </span>
       <h3 className="t-sub text-[#1D1D1F]">{title}</h3>
       {body && <p className="mt-1 max-w-[38ch] text-[13.5px] leading-relaxed text-[#6E6E73]">{body}</p>}

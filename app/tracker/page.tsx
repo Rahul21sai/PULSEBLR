@@ -235,7 +235,7 @@ export default function TrackerPage() {
     return (
       <Shell>
         <div className="max-w-[520px] mx-auto px-4 pt-24 text-center">
-          <span className="material-symbols-outlined text-[48px] text-[#d5d5da] block mb-3">
+          <span aria-hidden="true" className="material-symbols-outlined text-[48px] text-[#d5d5da] block mb-3">
             lock
           </span>
           <h1 className="text-[22px] font-bold text-[#1D1D1F]">Sign in to use your tracker</h1>
@@ -313,7 +313,7 @@ export default function TrackerPage() {
             <div className="h-1 bg-[#FF9500]" />
             <div className="p-4 md:p-5">
               <h2 className="text-[15px] font-bold text-[#1D1D1F] flex items-center gap-1.5 mb-3">
-                <span className="material-symbols-outlined text-[18px] text-[#FF9500]">
+                <span aria-hidden="true" className="material-symbols-outlined text-[18px] text-[#FF9500]">
                   notifications_active
                 </span>
                 {dueFollowUps.length} follow-up{dueFollowUps.length === 1 ? '' : 's'} due
@@ -380,7 +380,7 @@ export default function TrackerPage() {
           <BoardSkeleton />
         ) : entries.length === 0 ? (
           <div className="bg-white rounded-2xl card-shadow py-20 px-6 text-center">
-            <span className="material-symbols-outlined text-[44px] text-[#d5d5da] block mb-3">
+            <span aria-hidden="true" className="material-symbols-outlined text-[44px] text-[#d5d5da] block mb-3">
               bookmarks
             </span>
             <p className="text-[17px] font-semibold text-[#1D1D1F]">Nothing tracked yet</p>
@@ -489,7 +489,7 @@ export default function TrackerPage() {
                   aria-label="Close"
                   className="shrink-0 w-8 h-8 rounded-full bg-[#f3f3f5] flex items-center justify-center hover:bg-[#e8e8ea] transition-colors"
                 >
-                  <span className="material-symbols-outlined text-[18px]">close</span>
+                  <span aria-hidden="true" className="material-symbols-outlined text-[18px]">close</span>
                 </button>
               </div>
 
@@ -513,7 +513,7 @@ export default function TrackerPage() {
 
               <div className="bg-[#f9f9fb] rounded-xl p-4 mb-5 flex flex-col gap-2 text-[13.5px] text-[#3a3a3c]">
                 <span className="flex items-center gap-2">
-                  <span className="material-symbols-outlined text-[16px] text-[#86868B]">
+                  <span aria-hidden="true" className="material-symbols-outlined text-[16px] text-[#86868B]">
                     calendar_month
                   </span>
                   <span className="tnum">
@@ -522,7 +522,7 @@ export default function TrackerPage() {
                   </span>
                 </span>
                 <span className="flex items-center gap-2">
-                  <span className="material-symbols-outlined text-[16px] text-[#86868B]">
+                  <span aria-hidden="true" className="material-symbols-outlined text-[16px] text-[#86868B]">
                     location_on
                   </span>
                   {locationLabel(selected.eventId)}
@@ -691,13 +691,13 @@ function TrackerCard({
         <div className="flex items-center gap-3 mt-2 text-[11px] text-[#86868B]">
           {entry.connections.length > 0 && (
             <span className="inline-flex items-center gap-1 text-[#0071E3] font-semibold">
-              <span className="material-symbols-outlined text-[13px]">group</span>
+              <span aria-hidden="true" className="material-symbols-outlined text-[13px]">group</span>
               {entry.connections.length}
             </span>
           )}
           {entry.notes && (
             <span className="inline-flex items-center gap-1">
-              <span className="material-symbols-outlined text-[13px]">notes</span>
+              <span aria-hidden="true" className="material-symbols-outlined text-[13px]">notes</span>
               Notes
             </span>
           )}
@@ -766,7 +766,7 @@ function ListView({
             </button>
             {entry.connections.length > 0 && (
               <span className="hidden sm:inline-flex items-center gap-1 text-[11.5px] font-semibold text-[#0071E3] shrink-0">
-                <span className="material-symbols-outlined text-[14px]">group</span>
+                <span aria-hidden="true" className="material-symbols-outlined text-[14px]">group</span>
                 {entry.connections.length}
               </span>
             )}

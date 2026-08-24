@@ -64,7 +64,7 @@ export default function CardPage() {
           aria-label="Close"
           className="grid h-10 w-10 place-items-center rounded-full bg-[#F5F5F7] text-[#1D1D1F] [touch-action:manipulation]"
         >
-          <span className="material-symbols-outlined text-[20px]">close</span>
+          <span aria-hidden="true" className="material-symbols-outlined text-[20px]">close</span>
         </Link>
         <ButtonLink href="/settings#my-card" size="sm" tone="quiet" icon="edit">
           Edit
@@ -78,7 +78,7 @@ export default function CardPage() {
           <Banner tone="error">{error}</Banner>
         ) : !card?.enabled ? (
           <div className="max-w-[360px]">
-            <span className="material-symbols-outlined text-[40px] text-[#8E8E93]">qr_code_2</span>
+            <span aria-hidden="true" className="material-symbols-outlined text-[40px] text-[#8E8E93]">qr_code_2</span>
             <h1 className="t-title mt-3 text-[#1D1D1F]">Your card is off</h1>
             <p className="mt-2 text-[13.5px] leading-relaxed text-[#6E6E73]">
               Turn it on and anyone can scan your code with an ordinary phone camera — no app

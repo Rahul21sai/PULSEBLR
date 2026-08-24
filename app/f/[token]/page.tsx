@@ -58,7 +58,7 @@ export default async function IntakePage({ params }: { params: Promise<{ token: 
     return (
       <main className="grid min-h-screen place-items-center bg-[#F5F5F7] px-6">
         <div className="max-w-[360px] text-center">
-          <span className="material-symbols-outlined text-[40px] text-[#8E8E93]">link_off</span>
+          <span aria-hidden="true" className="material-symbols-outlined text-[40px] text-[#8E8E93]">link_off</span>
           <h1 className="t-title mt-3 text-[#1D1D1F]">This link is not active</h1>
           <p className="mt-2 text-[13.5px] leading-relaxed text-[#6E6E73]">
             Sign-up links expire after the event, and can be switched off at any time. Ask for a

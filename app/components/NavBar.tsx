@@ -76,7 +76,7 @@ export function DesktopNav() {
                 isActive('/admin') ? 'text-[#0071E3]' : 'text-[#1D1D1F] hover:text-[#0071E3]'
               }`}
             >
-              <span className="material-symbols-outlined text-[16px]">shield_person</span>
+              <span aria-hidden="true" className="material-symbols-outlined text-[16px]">shield_person</span>
               Admin
             </Link>
           )}
@@ -153,7 +153,7 @@ export function MobileBottomNav() {
               active ? 'bg-[#0071E3]/10' : 'hover:bg-[#f3f3f5]'
             }`}
           >
-            <span
+            <span aria-hidden="true"
               className={`material-symbols-outlined text-[21px] ${
                 active ? 'text-[#0071E3]' : 'text-[#86868B]'
               }`}

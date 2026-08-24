@@ -93,7 +93,7 @@ export default function EventDetailPage({ params }: { params: Promise<{ id: stri
     return (
       <Shell>
         <div className="max-w-[600px] mx-auto px-4 pt-20 text-center">
-          <span className="material-symbols-outlined text-[48px] text-[#d5d5da] block mb-3">
+          <span aria-hidden="true" className="material-symbols-outlined text-[48px] text-[#d5d5da] block mb-3">
             search_off
           </span>
           <h1 className="text-[22px] font-bold text-[#1D1D1F]">We couldn’t find that event</h1>
@@ -125,7 +125,7 @@ export default function EventDetailPage({ params }: { params: Promise<{ id: stri
           href="/"
           className="inline-flex items-center gap-1 text-[13px] font-semibold text-[#6E6E73] hover:text-[#1D1D1F] transition-colors mb-4"
         >
-          <span className="material-symbols-outlined text-[16px]">arrow_back</span>
+          <span aria-hidden="true" className="material-symbols-outlined text-[16px]">arrow_back</span>
           All events
         </Link>
 
@@ -267,7 +267,7 @@ export default function EventDetailPage({ params }: { params: Promise<{ id: stri
                           {locationLabel(item)}
                         </p>
                       </div>
-                      <span className="material-symbols-outlined text-[18px] text-[#c7c7cc] shrink-0">
+                      <span aria-hidden="true" className="material-symbols-outlined text-[18px] text-[#c7c7cc] shrink-0">
                         chevron_right
                       </span>
                     </Link>
@@ -287,7 +287,7 @@ export default function EventDetailPage({ params }: { params: Promise<{ id: stri
                 <div className="h-1" style={{ background: accent }} />
                 <div className="p-5 flex flex-col gap-4">
                   <div className="flex gap-3">
-                    <span className="material-symbols-outlined text-[20px] text-[#86868B] shrink-0 mt-0.5">
+                    <span aria-hidden="true" className="material-symbols-outlined text-[20px] text-[#86868B] shrink-0 mt-0.5">
                       calendar_month
                     </span>
                     <div className="min-w-0">
@@ -306,7 +306,7 @@ export default function EventDetailPage({ params }: { params: Promise<{ id: stri
                   </div>
 
                   <div className="flex gap-3">
-                    <span className="material-symbols-outlined text-[20px] text-[#86868B] shrink-0 mt-0.5">
+                    <span aria-hidden="true" className="material-symbols-outlined text-[20px] text-[#86868B] shrink-0 mt-0.5">
                       {event.format === 'online' ? 'videocam' : 'location_on'}
                     </span>
                     <div className="min-w-0">
@@ -339,7 +339,7 @@ export default function EventDetailPage({ params }: { params: Promise<{ id: stri
                           className="w-8 h-8 rounded-full object-cover shrink-0"
                         />
                       ) : (
-                        <span className="material-symbols-outlined text-[20px] text-[#86868B] shrink-0">
+                        <span aria-hidden="true" className="material-symbols-outlined text-[20px] text-[#86868B] shrink-0">
                           person
                         </span>
                       )}
@@ -353,7 +353,7 @@ export default function EventDetailPage({ params }: { params: Promise<{ id: stri
                   )}
 
                   <div className="flex gap-3 items-center">
-                    <span className="material-symbols-outlined text-[20px] text-[#86868B] shrink-0">
+                    <span aria-hidden="true" className="material-symbols-outlined text-[20px] text-[#86868B] shrink-0">
                       confirmation_number
                     </span>
                     <p className="text-[14px] font-semibold text-[#1D1D1F]">
@@ -363,7 +363,7 @@ export default function EventDetailPage({ params }: { params: Promise<{ id: stri
 
                   {event.registrationDeadline && (
                     <div className="flex gap-3 items-center">
-                      <span className="material-symbols-outlined text-[20px] text-[#FF9500] shrink-0">
+                      <span aria-hidden="true" className="material-symbols-outlined text-[20px] text-[#FF9500] shrink-0">
                         schedule
                       </span>
                       <p className="text-[13px] text-[#1D1D1F]">
@@ -389,7 +389,7 @@ export default function EventDetailPage({ params }: { params: Promise<{ id: stri
                         aria-label="Add to calendar"
                         className="w-11 h-11 rounded-full bg-[#f3f3f5] flex items-center justify-center text-[#1D1D1F] hover:bg-[#e8e8ea] transition-colors shrink-0"
                       >
-                        <span className="material-symbols-outlined text-[18px]">event_available</span>
+                        <span aria-hidden="true" className="material-symbols-outlined text-[18px]">event_available</span>
                       </a>
                       <button
                         type="button"
@@ -398,7 +398,7 @@ export default function EventDetailPage({ params }: { params: Promise<{ id: stri
                         aria-label="Share event"
                         className="w-11 h-11 rounded-full bg-[#f3f3f5] flex items-center justify-center text-[#1D1D1F] hover:bg-[#e8e8ea] transition-colors shrink-0"
                       >
-                        <span className="material-symbols-outlined text-[18px]">
+                        <span aria-hidden="true" className="material-symbols-outlined text-[18px]">
                           {copied ? 'check' : 'ios_share'}
                         </span>
                       </button>
@@ -415,7 +415,7 @@ export default function EventDetailPage({ params }: { params: Promise<{ id: stri
               {event.recruiterMentioned && (
                 <div className="bg-[#0071E3]/[0.06] border border-[#0071E3]/15 rounded-[18px] p-4">
                   <p className="text-[13px] font-semibold text-[#0060C0] flex items-center gap-1.5">
-                    <span className="material-symbols-outlined text-[16px]">work</span>
+                    <span aria-hidden="true" className="material-symbols-outlined text-[16px]">work</span>
                     Hiring signal
                   </p>
                   <p className="text-[12.5px] text-[#3a3a3c] mt-1">

@@ -311,7 +311,7 @@ export default function QrScanner({
         style={{ paddingBottom: 'max(20px, env(safe-area-inset-bottom))' }}
       >
         <label className="flex cursor-pointer items-center gap-2 rounded-full bg-white/95 px-4 py-2.5 text-[12.5px] font-semibold text-[#1D1D1F] [touch-action:manipulation]">
-          <span className="material-symbols-outlined text-[18px]">photo_camera</span>
+          <span aria-hidden="true" className="material-symbols-outlined text-[18px]">photo_camera</span>
           Photo
           {/**
            * Not a nicety. Three open WebKit bugs have the camera freezing or never starting
@@ -339,7 +339,7 @@ export default function QrScanner({
             aria-pressed={torchOn}
             className="flex items-center gap-2 rounded-full bg-white/95 px-4 py-2.5 text-[12.5px] font-semibold text-[#1D1D1F] [touch-action:manipulation]"
           >
-            <span className="material-symbols-outlined text-[18px]">
+            <span aria-hidden="true" className="material-symbols-outlined text-[18px]">
               {torchOn ? 'flashlight_off' : 'flashlight_on'}
             </span>
             {torchOn ? 'Light off' : 'Light'}

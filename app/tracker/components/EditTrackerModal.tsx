@@ -187,7 +187,7 @@ export default function EditTrackerModal({
             aria-label="Close without saving"
             className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[#F5F5F7] text-[#6E6E73] hover:bg-[#EEEEF0] [touch-action:manipulation]"
           >
-            <span className="material-symbols-outlined text-[18px]">close</span>
+            <span aria-hidden="true" className="material-symbols-outlined text-[18px]">close</span>
           </button>
         </div>
 
@@ -292,7 +292,7 @@ export default function EditTrackerModal({
                           aria-label={`Edit ${conn.name}`}
                           className="grid h-7 w-7 place-items-center rounded-full text-[#6E6E73] hover:bg-white [touch-action:manipulation]"
                         >
-                          <span className="material-symbols-outlined text-[16px]">edit</span>
+                          <span aria-hidden="true" className="material-symbols-outlined text-[16px]">edit</span>
                         </button>
                         <button
                           type="button"
@@ -300,7 +300,7 @@ export default function EditTrackerModal({
                           aria-label={`Remove ${conn.name}`}
                           className="grid h-7 w-7 place-items-center rounded-full text-[#FF3B30] hover:bg-white [touch-action:manipulation]"
                         >
-                          <span className="material-symbols-outlined text-[16px]">delete</span>
+                          <span aria-hidden="true" className="material-symbols-outlined text-[16px]">delete</span>
                         </button>
                       </div>
                     </div>
@@ -394,7 +394,7 @@ export default function EditTrackerModal({
               }}
               className="pressable mt-3 flex h-10 w-full items-center justify-center gap-1.5 rounded-full bg-white text-[13px] font-semibold text-[#0071E3] shadow-[inset_0_0_0_1px_var(--hairline-strong)] hover:bg-[#F7F7F9]"
             >
-              <span className="material-symbols-outlined text-[17px]">person_add</span>
+              <span aria-hidden="true" className="material-symbols-outlined text-[17px]">person_add</span>
               Add someone you met
             </button>
           )}

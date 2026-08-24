@@ -118,7 +118,7 @@ export default function SaveButton({
             : 'border-[#e5e5ea] bg-white text-[#86868B] hover:text-[#1D1D1F] hover:bg-[#f3f3f5]'
       }`}
     >
-      <span
+      <span aria-hidden="true"
         className="material-symbols-outlined text-[18px]"
         style={{ fontVariationSettings: `'FILL' ${saved ? 1 : 0}` }}
       >

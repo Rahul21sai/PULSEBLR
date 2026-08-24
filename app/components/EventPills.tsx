@@ -42,14 +42,14 @@ export default function EventPills({
 
       {event.hasFood === 'yes' && (
         <span className="pill pill-quiet">
-          <span className="material-symbols-outlined text-[13px]">restaurant</span>
+          <span aria-hidden="true" className="material-symbols-outlined text-[13px]">restaurant</span>
           Food
         </span>
       )}
 
       {typeof event.attendeeCount === 'number' && event.attendeeCount > 0 && (
         <span className="pill pill-quiet">
-          <span className="material-symbols-outlined text-[13px]">group</span>
+          <span aria-hidden="true" className="material-symbols-outlined text-[13px]">group</span>
           {event.attendeeCount} going
         </span>
       )}
@@ -58,7 +58,7 @@ export default function EventPills({
 
       {!compact && event.recruiterMentioned && (
         <span className="pill pill-quiet" title="This listing mentions hiring or recruiters">
-          <span className="material-symbols-outlined text-[13px]">work</span>
+          <span aria-hidden="true" className="material-symbols-outlined text-[13px]">work</span>
           Hiring
         </span>
       )}
