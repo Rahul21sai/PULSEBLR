@@ -311,6 +311,29 @@ export default function Home() {
   const activeCount = countActive(filters);
   const total = pagination?.total ?? 0;
 
+  /**
+   * Is the current sort CHRONOLOGICAL? Only `soonest` is.
+   *
+   * This decides whether the rail may group by IST day, and getting it wrong silently discards
+   * the ordering the user asked for. `days` buckets events by calendar day and then orders the
+   * buckets by date — so under any RANKED sort the API returns the right events in the right
+   * order and the rail immediately re-sorts them by date, throwing the ranking away.
+   *
+   * Measured in the browser at /?sort=connections before this fix: the API returned
+   * `Women In Tech Mixer` (connectionScore 100) first, and the page rendered it THIRD — below
+   * `Umbraco India Festival` on Fri 28 Aug and `Snowflake Bangalore User Group` (88) on
+   * Sat 29 Aug, purely because those dates come sooner. Day headings were still drawn under a
+   * ranked sort, which was the visible tell.
+   *
+   * So the app's flagship sort — the one signal Luma and Meetup cannot show — did not visibly
+   * rank anything. CLAUDE.md records that the connection meter was added because "that sort
+   * looked arbitrary"; as rendered, it was.
+   *
+   * `newest` and `popular` have the same problem, and `relevance` too when there is a query:
+   * all of them answer "in what ORDER", and a day grouping overrides the answer.
+   */
+  const chronological = sort === 'soonest';
+
   return (
     <div className="min-h-screen bg-[#F5F5F7]">
       <DesktopNav />
@@ -555,6 +578,17 @@ export default function Home() {
               <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5">
                 {events.map(event => (
                   <EventGridCard key={event._id} event={event} />
+                ))}
+              </div>
+            ) : !chronological ? (
+              /* Ranked sort: ONE FLAT LIST, in the order the API returned it. Grouping these by
+                 day would re-sort them chronologically and discard the ranking — see the
+                 `chronological` note above. The rail's vertical rule is kept so this reads as the
+                 same component; it just has no day headings, because under a ranked sort the date
+                 is no longer the thing the reader navigates by. */
+              <div className="rail">
+                {events.map(event => (
+                  <EventRow key={event._id} event={event} />
                 ))}
               </div>
             ) : (
