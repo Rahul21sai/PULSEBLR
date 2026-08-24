@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState } from 'react';
 import AppShell from '../components/AppShell';
 import Sheet from '../components/Sheet';
 import { Button, ButtonLink, Card, EmptyState, PageHeader, Banner } from '../components/ui';
-import { dayHeading, fullDateIST } from '@/lib/format';
+import { dayHeading } from '@/lib/format';
 import { drain, newClientId, pendingCount, startAutoDrain, subscribe } from '@/lib/scan/outbox';
 import type { FolderDTO } from '@/lib/contacts/types';
 
@@ -315,9 +315,6 @@ function NewFolderSheet({ onClose, onCreated }: { onClose: () => void; onCreated
         />
       </label>
 
-      <p className="mt-4 text-[12px] leading-relaxed text-[#8E8E93]">
-        Created on {fullDateIST(new Date())}. You can rename it later.
-      </p>
     </Sheet>
   );
 }
