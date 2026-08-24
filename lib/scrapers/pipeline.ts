@@ -42,6 +42,7 @@ import { scrapeHasgeek } from './adapters/hasgeek';
 import { scrapeFossUnited } from './adapters/fossunited';
 import { scrapeDistrict, DISTRICT_SOURCE_URL } from './adapters/district';
 import { scrapeUrlUniversal, COMPANY_EVENT_PAGES } from './adapters/universal';
+import { offCityReason } from './core/geo';
 import { normalizeEvents } from './normalizer';
 import { ingestEvents, IngestionResult, updateSource } from './ingestion';
 
@@ -579,6 +580,41 @@ export async function runPipeline(options: PipelineOptions = {}): Promise<Pipeli
   const rejected = collector.events.length - plausible.length;
   if (rejected > 0) console.log(`Rejected ${rejected} implausible listing(s)`);
   collector.events = plausible;
+
+  // ── 5c. Reject events in another city ─────────────────────────────────────
+  // The product is one city, and a wrong-city event is not noise a filter can rescue: no
+  // category and no `techOnly` toggle expresses "not in Bengaluru", so it sits in the feed
+  // looking exactly like a real option. Measured 2026-08-24 with scripts/diag-offcity.ts: 29
+  // upcoming events belonged to another city, and 10 of them were flagged isTechEvent — so
+  // they were in the DEFAULT feed. Six named their city in the TITLE alone ("Chennai - Build
+  // Your First AI Agent"), which is why the per-adapter gate missed them: `isBengaluru()` reads
+  // coordinates and location fields, never the title, and returns null when there is nothing to
+  // judge on — a verdict adapters must accept, because Meetup's ICS carries no LOCATION at all.
+  //
+  // HERE rather than in each adapter, because the leak was not one source's bug: the same
+  // Meetup group listing produces a Chennai row from the ICS feed and a Chennai row from the
+  // city fan-out. And BEFORE tagging (stage 7), so an off-city listing also costs no LLM call.
+  //
+  // The gate rejects only on a POSITIVE signal of another city — see lib/scrapers/core/geo.ts
+  // for why requiring a positive Bengaluru match instead would delete most of the corpus, and
+  // tests/off-city.test.ts for the false positives it is built to survive.
+  const offCity: string[] = [];
+  const inCity = collector.events.filter(event => {
+    const verdict = offCityReason(event);
+    if (!verdict) return true;
+    offCity.push(`${verdict.city} (${verdict.field}): ${event.title}`);
+    return false;
+  });
+  if (offCity.length > 0) {
+    // Named, not just counted. A silent drop is the failure mode this pipeline has already been
+    // bitten by twice (the source cap, the enrichment budget), and this one DELETES events.
+    // Deliberately NOT pushed to collector.errors: off-city rejections happen on every run, and
+    // a permanent entry in the error list is how a health report gets ignored.
+    console.log(`Rejected ${offCity.length} off-city listing(s):`);
+    for (const entry of offCity.slice(0, 12)) console.log(`  ! ${entry.slice(0, 110)}`);
+    if (offCity.length > 12) console.log(`  ! … and ${offCity.length - 12} more`);
+  }
+  collector.events = inCity;
 
   // ── 6. Collapse obvious in-run repeats before paying for LLM tagging ──────
   // Adapters overlap heavily (a Luma event appears in both the city feed and its
