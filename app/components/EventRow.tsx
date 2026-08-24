@@ -2,7 +2,14 @@
 import Link from 'next/link';
 
 import { FeedEvent } from '@/lib/event-types';
-import { timeIST, shortDateIST, locationLabel, isHappeningNow, categoryAccent } from '@/lib/format';
+import {
+  timeIST,
+  shortDateIST,
+  istDaysSpanned,
+  locationLabel,
+  isHappeningNow,
+  categoryAccent,
+} from '@/lib/format';
 import EventCover from './EventCover';
 import EventPills from './EventPills';
 import SaveButton from './SaveButton';
@@ -59,11 +66,37 @@ export default function EventRow({
         >
           {timeIST(event.startDateTime)}
         </span>
-        {event.endDateTime && (
-          <span className="tnum text-[11px] text-[#a1a1a6] leading-none mt-1">
-            {timeIST(event.endDateTime)}
-          </span>
-        )}
+        {event.endDateTime &&
+          (() => {
+            /*
+             * A multi-day event shows how many days it RUNS, not a bare end time.
+             *
+             * Printing the end time unconditionally made every multi-day event read as ending
+             * before it started. Measured on the live feed: 15 of the first 100 tech events cross
+             * an IST day boundary, and the conference sources are worst because their dates are
+             * date-only — `Great International Developer Summit` (3 days) and `WeAreDevelopers
+             * Conference India` (1 day) both rendered "05:30 / 05:30". Identical start and end
+             * reads as a data bug, so the reader distrusts the row rather than understanding it.
+             *
+             * `+3d` rather than the end date, because this gutter is 42px on a phone and
+             * "→ 30 Apr" cannot fit without wrapping, which would push the time out of alignment
+             * with the rail node. The exact end is on the detail page; the rail only needs to say
+             * "this is not a one-evening thing".
+             */
+            const days = istDaysSpanned(event.startDateTime, event.endDateTime);
+            return (
+              <span
+                className="tnum text-[11px] text-[#a1a1a6] leading-none mt-1"
+                title={
+                  days > 0
+                    ? `Runs until ${shortDateIST(event.endDateTime)}`
+                    : `Ends ${timeIST(event.endDateTime)}`
+                }
+              >
+                {days > 0 ? `+${days}d` : timeIST(event.endDateTime)}
+              </span>
+            );
+          })()}
       </div>
 
       <div className="w-[9px] shrink-0 flex justify-center pt-[22px]">

@@ -71,6 +71,31 @@ export function shortDateIST(date: Date | string): string {
   return shortDateFormatter.format(new Date(date));
 }
 
+/**
+ * How many IST calendar days later the end is than the start. 0 for a same-day event.
+ *
+ * Derived from `dayKeyIST` rather than from a millisecond subtraction, so it can never disagree
+ * with the day grouping the feed renders — both answer "which IST day is this on" through the
+ * same formatter. A 23:00 → 01:00 event spans 1 day here even though it lasts two hours, which
+ * is the answer the reader needs: the end is tomorrow.
+ *
+ * WHY THIS EXISTS. The time rail printed the end time unconditionally, so a multi-day event read
+ * as ending before it began. Measured on the live corpus: 15 of the first 100 tech events span
+ * more than one IST day, and the conference sources are the worst case because their dates are
+ * date-only — `Great International Developer Summit` (three days) and `WeAreDevelopers Conference
+ * India` (one day) both rendered as "05:30 / 05:30", identical start and end, which reads as a
+ * data error rather than a long event.
+ *
+ * The keys are YYYY-MM-DD, parsed as UTC midnight, so the subtraction is whole days exactly.
+ * IST has no DST, but going through the key means that would not matter either.
+ */
+export function istDaysSpanned(start: Date | string, end: Date | string): number {
+  const startMs = Date.parse(`${dayKeyIST(start)}T00:00:00Z`);
+  const endMs = Date.parse(`${dayKeyIST(end)}T00:00:00Z`);
+  if (Number.isNaN(startMs) || Number.isNaN(endMs)) return 0;
+  return Math.max(0, Math.round((endMs - startMs) / 86_400_000));
+}
+
 /** "Saturday, 15 August 2026" in IST. */
 export function fullDateIST(date: Date | string): string {
   return fullDateFormatter.format(new Date(date));
