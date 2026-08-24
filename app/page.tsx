@@ -39,6 +39,12 @@ function sameList(a: string[], b: string[]): boolean {
 
 export default function Home() {
   const [events, setEvents] = useState<FeedEvent[]>([]);
+  /**
+   * Events in progress right now, fetched SEPARATELY from the ranked page — see the note in
+   * `load()`. Kept apart from `events` so the ranked list is never reordered or de-duplicated
+   * against it; the two are rendered as two sections.
+   */
+  const [liveEvents, setLiveEvents] = useState<FeedEvent[]>([]);
   const [facets, setFacets] = useState<Facets | null>(null);
   const [pagination, setPagination] = useState<Pagination | null>(null);
   const [loading, setLoading] = useState(true);
@@ -269,9 +275,32 @@ export default function Home() {
     setPagination(null);
     try {
       const params = buildParams(1);
-      const [listRes, facetRes] = await Promise.all([
+
+      /*
+       * A THIRD REQUEST, ON PURPOSE — the live set cannot be derived from the ranked page.
+       *
+       * "Happening now" first shipped as a client-side partition of the events already loaded,
+       * which was wrong in a way that only showed up under measurement: the default sort is
+       * `connections`, so a live event appears on page 1 only if it happens to SCORE highly.
+       * Measured with techOnly off, when the city genuinely had events in progress: zero of the
+       * top 30 were live, so the section never rendered. It surfaced what is on now by luck.
+       *
+       * So ask for it directly. `sort=soonest` orders by start time across everything still
+       * upcoming, and `lib/events/query.ts` counts an in-progress event as upcoming — so
+       * anything currently running started earliest and sorts to the front. 20 is far more
+       * headroom than one city needs at one moment.
+       *
+       * Same filters as the main list (`buildParams`), so "Happening now" always agrees with the
+       * controls rather than showing rows the active filters exclude.
+       */
+      const liveParams = buildParams(1);
+      liveParams.set('sort', 'soonest');
+      liveParams.set('limit', '20');
+
+      const [listRes, facetRes, liveRes] = await Promise.all([
         fetch(`/api/events?${params.toString()}`),
         fetch(`/api/events/facets?${params.toString()}`),
+        fetch(`/api/events?${liveParams.toString()}`),
       ]);
       if (!listRes.ok) throw new Error('Could not load events');
 
@@ -281,6 +310,18 @@ export default function Home() {
 
       setEvents(list.events || []);
       setPagination(list.pagination || null);
+
+      // Live set is an enhancement, not content: a failure here must leave the feed intact.
+      if (liveRes.ok) {
+        const soonest = await liveRes.json();
+        if (generation === requestGeneration.current) {
+          setLiveEvents(
+            ((soonest.events || []) as FeedEvent[]).filter(e =>
+              isHappeningNow(e.startDateTime, e.endDateTime)
+            )
+          );
+        }
+      }
 
       // Facets are decoration, not content — a facet failure must not blank the feed.
       if (facetRes.ok) {
@@ -396,6 +437,38 @@ export default function Home() {
    * all of them answer "in what ORDER", and a day grouping overrides the answer.
    */
   const chronological = sort === 'soonest';
+
+  /**
+   * Split the ranked list into what is ON NOW and what is coming.
+   *
+   * The day-grouped view has always pinned a "Happening now" bucket above the days, because
+   * "can I still get to this tonight" is a different question from "what is worth going to".
+   * Making `connections` the default sort quietly lost that: a flat ranked list has no buckets,
+   * so a live event sat wherever its score put it and read as just another row.
+   *
+   * So the ranked view gets the same two-part shape — on now, then the ranking — using the
+   * existing `day-heading` device rather than a new one. Within each part the API's order is
+   * preserved, so the ranking still decides what comes first; this groups by state, it does not
+   * re-sort. That is the distinction the earlier bug got wrong.
+   *
+   * Only computed for the ranked view. Under `soonest` the day grouping already does this, and
+   * running it there would put the same events in two places.
+   */
+  const [liveNow, comingUp] = useMemo(() => {
+    if (chronological) return [[] as FeedEvent[], events];
+    // `liveEvents` comes from its own soonest-ordered request, so it is authoritative for what
+    // is on now. Live rows that ALSO happen to rank onto the page are folded in and de-duplicated
+    // by id, then removed from "coming up" so nothing is listed twice.
+    const seen = new Set<string>();
+    const live: FeedEvent[] = [];
+    for (const event of [...liveEvents, ...events]) {
+      if (!isHappeningNow(event.startDateTime, event.endDateTime)) continue;
+      if (seen.has(event._id)) continue;
+      seen.add(event._id);
+      live.push(event);
+    }
+    return [live, events.filter(event => !seen.has(event._id))];
+  }, [chronological, events, liveEvents]);
 
   return (
     <div className="min-h-screen bg-[#F5F5F7]">
@@ -644,18 +717,66 @@ export default function Home() {
                 ))}
               </div>
             ) : !chronological ? (
-              /* Ranked sort: ONE FLAT LIST, in the order the API returned it. Grouping these by
-                 day would re-sort them chronologically and discard the ranking — see the
-                 `chronological` note above. The rail's vertical rule is kept so this reads as the
-                 same component; it just has no day headings, because under a ranked sort the date
-                 is no longer the thing the reader navigates by. */
+              /* Ranked sort: TWO sections — on now, then the ranking — and inside each the API's
+                 order is untouched. Grouping by DAY here would re-sort chronologically and discard
+                 the ranking, which is the bug the `chronological` note above describes; grouping by
+                 STATE does not, because neither bucket is reordered.
+
+                 Headings are the same `day-heading` device the grouped view uses, so this reads as
+                 one component with two modes rather than two designs. They are also the page's only
+                 <h2>s, which is what gives the feed a real H1 -> H2 -> H3 outline. */
               <div className="rail">
-                {events.map(event => (
-                  /* showDate is REQUIRED here. This branch has no day headings, so without it the
-                     rail shows a bare "18:30" and the date appears nowhere on the row — measured on
-                     a 375px viewport, a reader could not tell tonight from three weeks away. */
-                  <EventRow key={event._id} event={event} showDate />
-                ))}
+                {liveNow.length > 0 && (
+                  <section className="mb-2">
+                    <div className="day-heading pt-2.5 pb-2 mb-1.5">
+                      <div className="flex items-center gap-2.5">
+                        <h2 className="t-label flex shrink-0 items-center gap-1.5 text-[#FF3B30]">
+                          <span className="live-dot w-1.5 h-1.5 rounded-full bg-[#FF3B30]" />
+                          Happening now
+                        </h2>
+                        <span aria-hidden="true" className="h-px flex-1 bg-[color:var(--hairline)]" />
+                        <span className="tnum shrink-0 text-[11.5px] text-[#8E8E93]">
+                          {liveNow.length}
+                        </span>
+                      </div>
+                    </div>
+                    {liveNow.map(event => (
+                      <EventRow key={event._id} event={event} showDate />
+                    ))}
+                  </section>
+                )}
+
+                {comingUp.length > 0 && (
+                  <section className="mb-2">
+                    {/* Rendered even when nothing is live. Two reasons, and the first was learned
+                        the hard way: suppressing it made the whole two-part structure vanish
+                        whenever the city happened to be quiet, which is most of a working day —
+                        so the change was invisible exactly when someone would check it. And it is
+                        the page's only <h2> in that state, so dropping it leaves the outline at
+                        H1 -> H3 with the level skipped. A section label that is always there is
+                        also just easier to scan against than one that appears and disappears. */}
+                    <div className="day-heading pt-2.5 pb-2 mb-1.5">
+                      <div className="flex items-center gap-2.5">
+                        <h2 className="t-label flex shrink-0 items-center gap-1.5 text-[#1D1D1F]">
+                          {liveNow.length > 0 ? 'Coming up' : 'Top events'}
+                        </h2>
+                        <span
+                          aria-hidden="true"
+                          className="h-px flex-1 bg-[color:var(--hairline)]"
+                        />
+                        <span className="tnum shrink-0 text-[11.5px] text-[#8E8E93]">
+                          {comingUp.length}
+                        </span>
+                      </div>
+                    </div>
+                    {comingUp.map(event => (
+                      /* showDate is REQUIRED here. Neither section carries day headings, so without
+                         it the rail shows a bare "18:30" and the date appears nowhere on the row —
+                         measured at 375px, a reader could not tell tonight from three weeks away. */
+                      <EventRow key={event._id} event={event} showDate />
+                    ))}
+                  </section>
+                )}
               </div>
             ) : (
               <div className="rail">

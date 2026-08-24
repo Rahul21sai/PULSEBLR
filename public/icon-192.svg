@@ -1,4 +1,22 @@
-<svg width="192" height="192" xmlns="http://www.w3.org/2000/svg">
-  <rect width="192" height="192" fill="#9333ea"/>
-  <text x="50%" y="50%" font-family="Arial, sans-serif" font-size="76.80000000000001" fill="white" text-anchor="middle" dominant-baseline="middle" font-weight="bold">P</text>
+<svg width="192" height="192" viewBox="0 0 192 192" xmlns="http://www.w3.org/2000/svg">
+  <!--
+    PulseBLR app tile. Replaces a placeholder that was the letter "P" in Arial on #9333ea — a
+    purple that appears nowhere in app/globals.css. This uses the one brand colour the design
+    system actually defines, --blue #0071E3.
+
+    MASKABLE SAFE ZONE. The manifest declares purpose "any maskable", so a launcher may crop
+    this to a circle or squircle: only the central 80% (a circle of diameter 153.6 centred at
+    96,96) is guaranteed visible. The trace below spans 116px of width, ~75% of that circle, so
+    nothing is clipped on any platform. The fill is full-bleed for the same reason — crop to any
+    shape and it is still a solid blue tile.
+
+    Geometry is the same path as app/components/Logo.tsx, scaled 5.6x and centred, so the tile
+    and the in-app mark are the same drawing rather than two that drifted.
+  -->
+  <rect width="192" height="192" fill="#0071E3"/>
+  <g transform="translate(28 26) scale(5.6)"
+     fill="none" stroke="#ffffff" stroke-width="2.1"
+     stroke-linecap="round" stroke-linejoin="round">
+    <path d="M1.8 14.1h4.1l2.2-6.6 3.1 9.9 2.3-5.2 1.7 1.9h5.1"/>
+  </g>
 </svg>

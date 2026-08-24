@@ -1,4 +1,16 @@
-<svg width="512" height="512" xmlns="http://www.w3.org/2000/svg">
-  <rect width="512" height="512" fill="#9333ea"/>
-  <text x="50%" y="50%" font-family="Arial, sans-serif" font-size="204.8" fill="white" text-anchor="middle" dominant-baseline="middle" font-weight="bold">P</text>
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <!--
+    PulseBLR app tile, 512. Same drawing as icon-192.svg and app/components/Logo.tsx, scaled
+    14.93x so the two tiles are identical at different resolutions rather than redrawn.
+
+    MASKABLE SAFE ZONE: the manifest declares purpose "any maskable", so only the central 80%
+    (a circle of diameter 409.6 centred at 256,256) is guaranteed visible. The trace spans 309px,
+    ~75% of that circle. Full-bleed fill so any crop shape still yields a solid blue tile.
+  -->
+  <rect width="512" height="512" fill="#0071E3"/>
+  <g transform="translate(74.6 70) scale(14.93)"
+     fill="none" stroke="#ffffff" stroke-width="2.1"
+     stroke-linecap="round" stroke-linejoin="round">
+    <path d="M1.8 14.1h4.1l2.2-6.6 3.1 9.9 2.3-5.2 1.7 1.9h5.1"/>
+  </g>
 </svg>

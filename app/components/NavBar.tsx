@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useSession } from 'next-auth/react';
+import Logo from './Logo';
 
 /**
  * The full navigation, as shown on desktop where there is room for all of it.
@@ -38,10 +39,13 @@ export function DesktopNav() {
   return (
     <nav className="hidden md:flex fixed top-0 w-full h-14 bg-white/96 glass-nav z-50 border-b border-black/5">
       <div className="flex justify-between items-center w-full max-w-[1240px] mx-auto px-8">
+        {/* The mark inherits this link's colour, so it goes ink -> blue on hover with the
+            wordmark rather than carrying a brand colour of its own. See app/components/Logo.tsx. */}
         <Link
           href="/"
-          className="text-xl font-bold tracking-[-0.02em] text-[#1D1D1F] hover:text-[#0071E3] transition-colors select-none"
+          className="flex items-center gap-2 text-xl font-bold tracking-[-0.02em] text-[#1D1D1F] hover:text-[#0071E3] transition-colors select-none"
         >
+          <Logo className="w-[22px] h-[22px] shrink-0" />
           PulseBLR
         </Link>
 
@@ -125,7 +129,11 @@ export function DesktopNav() {
 export function MobileHeader({ title }: { title?: string }) {
   return (
     <header className="md:hidden fixed top-0 w-full h-14 bg-white/96 glass-nav z-50 border-b border-black/5 flex items-center justify-between px-5">
-      <Link href="/" className="text-lg font-bold tracking-tight text-[#1D1D1F]">
+      <Link
+        href="/"
+        className="flex items-center gap-1.5 text-lg font-bold tracking-tight text-[#1D1D1F]"
+      >
+        <Logo className="w-[19px] h-[19px] shrink-0" />
         PulseBLR
       </Link>
       {title && <span className="text-[#86868B] text-label-md font-semibold">{title}</span>}
