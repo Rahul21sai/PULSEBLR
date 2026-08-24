@@ -876,6 +876,64 @@ and exposes no page↔worker channel.
 > account that has also used real Google, because its googleId is `devlogin:<email>` rather
 > than the Google `sub`. Found when `/api/me/card` returned 404 for a perfectly good session.
 
+> **WHAT THE SCAN FEATURE DOES NOT DO YET (measured 2026-08-24).** Capture works and has real
+> usage — an `"api days"` folder holding a `qr-linkedin` contact under a real Google `sub`,
+> captured through the production path. **Recall does not.** None of the following exists, and
+> every one is UI-only work against a data layer that already supports it:
+>
+> - **No cross-folder view of people, and no search.** `GET /api/contacts` already serves it
+>   (capped `.limit(2000)`, `app/api/contacts/route.ts:40`) and nothing consumes it — there is no
+>   `app/contacts` or `app/people` — so "who do I know at Razorpay" is unanswerable in the product.
+> - **Repeat connections are surfaced NOWHERE in the scan/folder UI.** `Contact.contactKey` exists
+>   precisely so "have I met this person before" is an index lookup rather than a lowercased-name
+>   guess, and its only consumer is the old `/dashboard`. The most valuable networking signal in
+>   the feature is invisible.
+> - **No folder rename, delete or archive.** `PATCH /api/folders/[id]` handles
+>   name/note/venue/eventDate/archive and `DELETE` cascades its contacts; the UI calls neither. The
+>   only `PATCH` calls anywhere in `app/` are `app/folders/[id]/page.tsx:138` and `:171`, both to
+>   `/api/contacts/`.
+> - **No move-contact-between-folders**, though `PATCH /api/contacts/[id]` already validates that
+>   the destination folder is yours.
+> - **`Contact.tags[]` has no input.** It is in the model and in the CSV export and is always
+>   empty; `ContactFields.tsx:28` types it and renders no field.
+> - **A pending (unsynced) capture cannot be edited or discarded** — the edit sheet blocks it by
+>   design, so a name mistyped offline stays wrong until it syncs.
+> - **CSV export is a bare `<a>`** — no loading or error state, so a 500 renders a raw error page.
+
+> **`Folder.eventId` IS ALWAYS NULL IN PRACTICE, WHICH MAKES CORRECT CODE UNREACHABLE.** Nothing in
+> the UI links a folder to a corpus event. So the `folder.eventId ?? folder._id` branch in
+> `detectRepeatConnections()` — added specifically so a migrated contact and its legacy twin are
+> not counted as two separate events — can never take its better half. Consequence today: two
+> folders for one event still count as two events, and one folder per event is the only shape that
+> behaves. The logic is right and is untestable through the product. **Any fix starts with a UI
+> that SETS `eventId`, not with the detection code** — that is the trap, because the detection code
+> is what looks wrong.
+
+> **`public/sw.js` v3 IS UNVERIFIED, AND CANNOT BE VERIFIED UNDER `npm run dev`.** `app/layout.tsx`
+> unregisters every service worker and deletes every cache in development, so offline behaviour
+> needs `npm run build && npm start` with `NEXTAUTH_URL` set. Three checks constitute verification:
+> (1) offline, a private API GET such as `/api/folders` must **fail** rather than serve a cached
+> copy — that is the fix working, and losing offline reads of private data is deliberate; (2) after
+> `signOut()`, `caches.keys()` is empty; (3) sign out, sign in with a **different** Google account,
+> go offline, and confirm the first account's contacts are unreadable — the leak v3 exists to
+> close. Two smaller gaps: `/tracker` was never re-checked under the global `viewportFit: 'cover'`,
+> and `lib/security/rate-limit.ts` was never driven to a live 429 (11 rapid POSTs to
+> `/api/intake/<token>` should give ten 201s then a 429 carrying `Retry-After`).
+
+> **VERIFYING IN ISOLATION WHEN OTHER SESSIONS SHARE THIS CHECKOUT.** **`git stash` is unsafe
+> here** — it silently captures other sessions' uncommitted work, and a later `pop` either
+> conflicts or reverts edits made in the meantime. Learned the hard way: a `--keep-index` snapshot
+> swallowed another session's `app/page.tsx` fix, and the `pop` failed because that file had moved
+> on. Use a throwaway worktree instead: `git worktree add --detach`, junction `node_modules` from
+> the main checkout, and **copy `.env.local` in** — a worktree otherwise reports every credential
+> unset. Then run **`next dev --webpack`**: Turbopack rejects a junctioned `node_modules` with
+> "Symlink … points out of the filesystem root" and every request hangs. **Warm the routes with
+> `curl` before running any diag script** — a cold webpack compile of `/api/auth/csrf` exceeds
+> their `AbortSignal.timeout(45000)` and reads as a failure. And **never `npm run build` against a
+> `.next` that a dev server is using**: it replaces the route manifest underneath, producing
+> phantom 404s on routes that exist (observed: 7 false FAILs in `diag-api-auth.ts` on
+> `/api/me/card` and `/api/folders/[id]*`).
+
 ### 10. Digest (`lib/notifications/`)
 
 `generateDailyDigest()` assembles new events (24 h), upcoming deadlines, tracker updates, follow-up reminders, and **unhealthy sources** — a source that silently stops producing events is reported rather than quietly shrinking the feed.
