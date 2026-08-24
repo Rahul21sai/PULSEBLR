@@ -42,9 +42,10 @@ Verification is **two-tier**, and the tiers have a deliberate boundary.
 
 `npm test` runs **vitest** (`vitest.config.mts`, suites in `tests/`), scoped by that
 config's own docblock to **pure functions only** — scoring, dedup and identity keys, the
-taxonomy, the search filter, the SSRF guard, QR payload parsing, CSV escaping, and the two
-city gates (`geo.test.ts` characterises `isBengaluru`/`resolveArea`; `off-city.test.ts` pins
-`offCityReason`). Nothing there touches MongoDB or the network.
+taxonomy, the search filter, the SSRF guard, QR payload parsing, CSV escaping, request-body
+validation for the tracker write path, and the two city gates (`geo.test.ts` characterises
+`isBengaluru`/`resolveArea`; `off-city.test.ts` pins `offCityReason`). Nothing there touches
+MongoDB or the network.
 
 > **`tests/off-city.test.ts` is mostly NEGATIVE cases, and that is the point.** A false
 > positive in the off-city gate does not mis-tag an event, it deletes it before storage, and
@@ -118,7 +119,7 @@ verified. Duplicating those as unit tests would only produce slow, flaky copies.
 | `diag-api-auth.ts` | Hits every mutating endpoint signed-out and asserts 401/403/503, every public one and asserts 200, and every protected page and asserts a 307 to `/login`. Needs a dev server. Run after touching any route. |
 | `diag-admin-stats.ts` | Asserts the invariants `/admin` relies on (source buckets sum, `tech <= upcoming`, non-empty breakdowns). Read-only. |
 | `diag-ssrf-guard.ts` | Asserts the SSRF guard blocks metadata IPs, loopback, private ranges, v4-mapped IPv6, decimal-encoded IPs and non-http schemes. No network calls. |
-| `diag-tracker-flow.ts` | Drives the whole tracker signed-in via the dev-only provider: create, kanban moves, record a person, follow-up complete, and cross-user isolation. **Writes then deletes** its own rows. Needs a dev server with `DEV_LOGIN=true`. |
+| `diag-tracker-flow.ts` | Drives the whole tracker signed-in via the dev-only provider: create, kanban moves, record a person, follow-up complete, cross-user isolation, and **that bad input is a 400 which names the field and leaks no Mongoose wording** (invalid and lowercase `status` on both POST and PUT, a malformed `eventId`, a nameless connection, a non-JSON body, then a read-back proving no rejected write was a partial update). **Writes then deletes** its own rows. Needs a dev server with `DEV_LOGIN=true`. |
 | `diag-contact-identity.ts` | Asserts the `Contact.contactKey` / `Folder.slug` derived-key hooks: that they run on `pre('validate')` (so a document that never supplied the key still validates), that the key upgrades when a LinkedIn slug arrives later, and that a legacy document self-heals. Read-only, **no DB and no server** — Mongoose runs document middleware in process. |
 | `diag-contact-flow.ts` | Drives the whole scan feature signed-in: create a folder, reject a duplicate name, **replay a `clientId` and assert exactly one contact**, drain the offline outbox (including a folder that only existed offline, and one bad record that must not fail the batch), upgrade a `nm:` key to `li:`, export CSV and assert the formula escaping and `no-store`, mint and revoke a public intake token, and eight cross-user isolation refusals. 48 checks. **Writes then deletes** its own rows. Needs a dev server with `DEV_LOGIN=true`. |
 | `migrate-connections-to-contacts.ts` | Move people out of `TrackerEntry.connections[]` into the `Contact` collection, one folder per event. Idempotent (deterministic `migrated:<entryId>:<index>` clientIds) and non-destructive — the legacy array is left in place, and `phase6.ts` reads both stores while suppressing the overlap. **Dry by default**, `--apply` to write. Verified end-to-end against a seeded legacy fixture, which is the only way to test it: a dry run over 0 rows never reaches the `.populate('eventId')` and so hid a `MissingSchemaError` for the unregistered `Event` model. |
@@ -492,6 +493,42 @@ Shared by `/api/events` and `/api/events/facets` so the list and the counts besi
 NextAuth v5 (Auth.js) config lives in the root `auth.ts`, imported as `@/auth`. Strategy is **JWT** (no DB session): the `jwt` callback stashes the Google `sub`/email/name/picture into the token *and* upserts the `User` doc by `googleId` on first sign-in; `session` surfaces `token.sub` as `session.user.id`. Server code uses `getCurrentUserId()` (`lib/auth-helpers.ts`). `proxy.ts` redirects `/dashboard`, `/tracker`, `/add-event` and `/settings` to `/login`. **Everything user-owned must be scoped by `userId`** — `TrackerEntry` has a compound-unique index `{ userId, eventId }`.
 
 > **`proxy.ts` protects NO API route.** Its matcher is `'/((?!api|_next/static|…).*)'` — `api` is the first negative-lookahead term, so the proxy never runs for `/api/*`. Every API guard must live in its own handler. Six endpoints were reachable with no credentials because of this (`POST /api/events`, `PUT`+`DELETE /api/events/[id]`, `POST /api/sources`, `PUT`+`DELETE /api/sources/[id]`, `POST /api/scrape`, `POST /api/scrape-url`, `POST`+`GET /api/notifications/send-digest`). `scripts/diag-api-auth.ts` hits every one signed-out and asserts a refusal; run it after touching any route.
+
+> **A route that hands the raw body to Mongoose reports the CALLER's mistake as a 500, and
+> pays for it twice.** Both tracker write paths did — `POST /api/tracker` via
+> `TrackerEntry.create({ ...body, userId })`, `PUT /api/tracker/[id]` via `{ $set: body }` with
+> `runValidators: true`. Either way a bad `status` raised a Mongoose ValidationError, which
+> reached the catch-all and was returned as **500 with `details: err.message`**:
+>
+> ```
+> TrackerEntry validation failed: status: `Ghosted` is not a valid enum value for path `status`.
+> ```
+>
+> Two defects in one response. A 5xx tells a client "server fault, retry" when retrying can
+> never work, and it hides a real fault behind the same code as a typo. And the body hands
+> back the model name and the schema path — free reconnaissance on the internal shape of the
+> data. The same four field classes all did it: the `status` enum, `appliedAt`'s date cast,
+> `connections[].name`'s `required`, and a malformed `eventId` reaching `Event.findById()` as
+> a CastError. A malformed JSON body did it one layer earlier, since `request.json()` throws.
+>
+> `lib/tracker/validate.ts` now runs **before** the write and before `connectDB()` — a bad
+> request needs no database to refuse. It is pure, so `tests/tracker-validation.test.ts` pins
+> it without a server, and `TRACKER_STATUSES` lives there for the schema enum to import, so
+> the list the API rejects against cannot drift from the list the schema enforces (the same
+> arrangement as `EVENT_CATEGORIES` in `lib/event-types.ts`).
+>
+> Two things to preserve if you touch it. **Do not make the validator stricter than the
+> schema where a client depends on the leniency:** a Date path casts `''` to null and
+> `EditTrackerModal`'s `EMPTY` draft sends `followUpAt: ''` for anyone recorded without a
+> follow-up date, so refusing `''` would 400 every save from the one screen that records
+> people. And the 500 branch **no longer carries `details`** — the only thing it ever held was
+> the message this fix exists to stop leaking, nothing read it, and the real wording is in the
+> server log. `isSchemaRejection()` catches a ValidationError that somehow still gets through
+> and answers 400 rather than letting it revert to a 500.
+>
+> **The same `details: err.message` shape is still on ~10 other routes** — `POST /api/events`
+> (whose `category` enum is the identical defect), `/api/contacts`, `/api/contacts/sync`,
+> `/api/folders`, `/api/me/card` and others. Not fixed here; the pattern to copy is above.
 
 **Two guard tiers** live in `lib/api-auth.ts`:
 
