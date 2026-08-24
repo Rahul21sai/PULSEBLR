@@ -8,9 +8,22 @@
  * isolation that keeps one user's contacts away from another's. This signs in through
  * the DEV-ONLY credentials provider (lib/dev-login.ts) and drives the real endpoints.
  *
+ * It also asserts that BAD input is a 400 which names the field and leaks no Mongoose
+ * wording. That belongs here rather than in diag-api-auth.ts, whose scope is refusals for
+ * UNAUTHENTICATED callers — these are refusals for an authenticated caller sending nonsense,
+ * which needs a real session to reach the validation layer at all. The validator itself is
+ * pinned by tests/tracker-validation.test.ts; what only a live server can prove is the
+ * STATUS CODE, and the status code was the bug.
+ *
  * Requires a dev server with DEV_LOGIN=true. It WRITES tracker data, then deletes
  * everything it created — and it only ever touches its own synthetic accounts, never a
  * real user's rows.
+ *
+ * NOTE ON RUNNING IT FROM A WORKTREE: DEV_LOGIN is gated on NODE_ENV !== 'production'
+ * (lib/dev-login.ts), so `next start` cannot sign in and this must run against `npm run dev`.
+ * A worktree also needs its own node_modules — Turbopack refuses to follow a junction out of
+ * its filesystem root, so either `npm ci` (never `npm install`, which rewrites the version
+ * pins) or `next dev --webpack`, which resolves upward and needs no install.
  *
  * Run: npx tsx scripts/diag-tracker-flow.ts
  */
@@ -156,6 +169,112 @@ async function main() {
       });
       check(`PUT status -> ${status}`, res.status < 300, `HTTP ${res.status}`);
     }
+
+    // ── Bad input is the CALLER's fault, and must not leak the schema ─────────
+    // Both write paths used to hand the raw body to Mongoose — POST via
+    // `TrackerEntry.create()`, PUT via `{ $set: body }` with `runValidators: true` — so a
+    // bad `status` became a ValidationError, fell through to the catch-all and was
+    // reported as 500 with `details: err.message`:
+    //
+    //   TrackerEntry validation failed: status: `Foo` is not a valid enum value for path `status`.
+    //
+    // Two defects: a client error reported as a server fault, and the model name plus the
+    // schema path echoed to the caller. The unit suite pins the validator
+    // (tests/tracker-validation.test.ts); these checks pin the STATUS CODES, which is the
+    // half a pure function cannot prove. Every request below writes nothing.
+    console.log('\nTracker: bad input is rejected with 400, not 500');
+
+    /** Assert a rejection is a 400 and that its body names the field without leaking. */
+    async function checkRejection(label: string, res: Response, mustName: string[]) {
+      const raw = await res.text();
+      check(`${label} → 400`, res.status === 400, `HTTP ${res.status}`);
+      const named = mustName.filter(s => raw.includes(s));
+      check(
+        `${label} names ${mustName.join(', ')}`,
+        named.length === mustName.length,
+        `body: ${raw.slice(0, 120)}`
+      );
+      // The exact phrases a Mongoose ValidationError / CastError message is built from.
+      const leaks = ['validation failed', 'is not a valid enum value', 'for path', 'Cast to']
+        .filter(p => raw.toLowerCase().includes(p.toLowerCase()));
+      check(`${label} leaks no Mongoose wording`, leaks.length === 0, leaks.join(', ') || 'clean');
+    }
+
+    await checkRejection(
+      'POST with an invalid status',
+      await admin.fetch('/api/tracker', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ eventId: event._id, status: 'Ghosted' }),
+      }),
+      ['status', 'Interested', 'Rejected']
+    );
+
+    await checkRejection(
+      'PUT with an invalid status (a stale kanban column id)',
+      await admin.fetch(`/api/tracker/${entryId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'Ghosted' }),
+      }),
+      ['status', 'Interested', 'Rejected']
+    );
+
+    // Capitalisation matters, so a lowercase client is the likeliest real typo.
+    await checkRejection(
+      'PUT with a lowercase status',
+      await admin.fetch(`/api/tracker/${entryId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'interested' }),
+      }),
+      ['status']
+    );
+
+    // A malformed id used to reach Event.findById() and throw a CastError — also a 500.
+    await checkRejection(
+      'POST with a malformed eventId',
+      await admin.fetch('/api/tracker', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ eventId: 'not-an-id', status: 'New' }),
+      }),
+      ['eventId']
+    );
+
+    // `ConnectionSchema.name` is required, so this was a 500 as well. The index must be
+    // named: the edit modal sends the whole array, so "a name is required" alone does not
+    // say which person is missing one.
+    await checkRejection(
+      'PUT with a nameless connection',
+      await admin.fetch(`/api/tracker/${entryId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ connections: [{ name: 'Fine' }, { role: 'SRE' }] }),
+      }),
+      ['connections[1].name']
+    );
+
+    // request.json() throws on a malformed body: the same 500-for-a-client-error, one layer up.
+    await checkRejection(
+      'POST with a body that is not JSON',
+      await admin.fetch('/api/tracker', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{"eventId": ',
+      }),
+      ['JSON']
+    );
+
+    // A rejected write must leave the entry untouched — the 400s above ran against the
+    // real entry, so this proves none of them was a partial update.
+    const afterRejects = await (await admin.fetch('/api/tracker')).json();
+    const stillThere = (afterRejects.entries || []).find((e: { _id: string }) => e._id === entryId);
+    check(
+      'the rejected writes changed nothing',
+      stillThere?.status === 'Attended',
+      `status=${stillThere?.status} (expected the last VALID PUT to have won)`
+    );
 
     // ── Record a person met, with a follow-up ───────────────────────────────
     console.log('\nTracker: record a person met');
