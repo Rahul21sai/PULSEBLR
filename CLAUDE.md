@@ -184,9 +184,23 @@ verified. Duplicating those as unit tests would only produce slow, flaky copies.
 >    `city`/`venue`/`address` all empty, `isTechEvent: true`. They are skipped, not judged. Its
 >    reasoning — a Bengaluru user can attend an online event hosted anywhere — is right in general
 >    and wrong for a city-scoped edition. **Change the predicate and keep line 57 and these four
->    still survive.** Safe to judge them on title: the same series also runs
->    `Bengaluru - Build Your First AI Agent` (5 upcoming, same online shape), and
->    `offCityReason()` spares those because naming Bengaluru is an unconditional veto.
+>    still survive.** So the fix is two changes, not one: use `offCityReason()` **and** stop
+>    exempting online events wholesale.
+>
+>    That the second change is safe is not a judgement call — the series is a natural controlled
+>    experiment. All **9** upcoming rows are `format: 'online'`, `onlineLink` set, `city`/`venue`/
+>    `address` empty and `isTechEvent: true`, differing only by one word of title:
+>
+>    ```
+>    KEEP                    Bengaluru - Build Your First AI Agent…   ×4
+>    KEEP                    Build Your First AI Agent…              ×1   (unprefixed → unknown, passes)
+>    REJECT Chennai (title)  Chennai - Build Your First AI Agent…     ×4
+>    ```
+>
+>    So the title rule is **necessary** — nothing else in these documents distinguishes a Chennai
+>    edition from a Bengaluru one — and **safe**, because the Bengaluru-evidence veto spares the
+>    siblings. "Attendable from anywhere" is the right rule for a venue-less event with no city
+>    signal and the wrong one when the title names the city it is scoped to.
 > 2. **`isBengaluru` never uses `city` to REJECT.** It reads `city` for a positive match only
 >    (`if (input.city && BLR_NAME.test(input.city)) return true`), then builds
 >    `location` from **venue + address alone** — `city` is not in it — and only
@@ -207,6 +221,17 @@ verified. Duplicating those as unit tests would only produce slow, flaky copies.
 > foreign and Karnataka-other cities, and reads the title) **and** narrow line 57 so an online
 > event is still judged on its title. Review the candidates in `diag-offcity.ts` §4 first — it
 > prints all 29 rejects and all 6 spares by name, because this deletes.
+>
+> **Do not copy `cleanup-duplicate-clusters.ts`'s referrer handling into this one.** They look
+> like siblings and are not. That script *repoints* `TrackerEntry` and `Folder.eventId` because a
+> surviving twin exists to repoint **to**; an off-city delete has no twin, so repointing is not
+> available and a **dangling soft ref is the correct outcome**, not a bug to engineer around.
+> `Folder.eventId` is deliberately soft — `pruneStale()` already deletes events 7 days past on
+> every scrape without touching referrers, so dangling is the steady state. This stopped being
+> hypothetical on 2026-08-23: there is now real user data in these collections (a `Folder` named
+> `"api days"` with one `qr-linkedin` `Contact`, under a real Google `sub`). Keep the existing skip
+> for events a user has **tracked**, and note that `getPendingFollowUps` still 500s on a dangling
+> ref by reading `entry.eventId.title` with no null guard.
 >
 > Why the backlog cannot be waited out: rejecting a re-sighting stops `lastSeenAt` refreshing, so
 > each stored off-city row is now **frozen** — a later scrape can no longer correct or cancel it —
