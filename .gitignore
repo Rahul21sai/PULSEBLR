@@ -77,3 +77,7 @@ digest_probe.json
 audit-report.md
 COMMIT_MSG.txt
 PR_BODY.md
+
+# gstack skill working directory: QA reports, screenshots and baselines. Local tool
+# output like the entries above, and the screenshots can be large.
+.gstack/
