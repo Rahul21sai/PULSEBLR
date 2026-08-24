@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { dayKeyIST, istDaysSpanned } from '@/lib/format';
+import { dayKeyIST, istDaysSpanned, locationLabel } from '@/lib/format';
 
 /**
  * `istDaysSpanned` decides whether the time rail prints an end time or a `+Nd` badge, so getting
@@ -68,5 +68,67 @@ describe('istDaysSpanned', () => {
 
   it('handles a span across a month boundary', () => {
     expect(istDaysSpanned('2026-09-30T15:00:00Z', '2026-10-02T15:00:00Z')).toBe(2);
+  });
+});
+
+/**
+ * `locationLabel` feeds six render sites (feed row, grid card, tracker x2, event detail x2), so a
+ * regression here is visible almost everywhere. The repeated-segment cases below are REAL stored
+ * venue strings, not invented fixtures — sources join address lines and several append the city
+ * more than once.
+ */
+describe('locationLabel', () => {
+  it('collapses a city repeated three times — the worst real case', () => {
+    expect(
+      locationLabel({ venue: 'To Be Announced, Bangalore, Bangalore, Bangalore', area: 'Other' })
+    ).toBe('To Be Announced, Bangalore · Other');
+  });
+
+  it('collapses a single trailing repeat', () => {
+    expect(
+      locationLabel({
+        venue: 'Nokia L5 Manyata Business Park, Nagavara, Bengaluru, Bengaluru',
+        area: 'Hebbal',
+      })
+    ).toBe('Nokia L5 Manyata Business Park, Nagavara, Bengaluru · Hebbal');
+  });
+
+  it('is case-insensitive, because sources vary the casing of the same segment', () => {
+    expect(locationLabel({ venue: 'Some Hall, Bengaluru, BENGALURU, bengaluru' })).toBe(
+      'Some Hall, Bengaluru'
+    );
+  });
+
+  it('keeps the FIRST occurrence, preserving the order the source chose', () => {
+    expect(locationLabel({ venue: 'Bengaluru, Indiranagar, Bengaluru' })).toBe(
+      'Bengaluru, Indiranagar'
+    );
+  });
+
+  it('leaves a venue with no repeats untouched', () => {
+    const venue = 'Reckonsys Tech Labs Pvt Ltd, Sector 6, Bengaluru';
+    expect(locationLabel({ venue, area: 'HSR Layout' })).toBe(`${venue} · HSR Layout`);
+  });
+
+  it('does not append the area when the venue already names it', () => {
+    expect(locationLabel({ venue: 'WeWork Galaxy, Residency Road', area: 'Residency Road' })).toBe(
+      'WeWork Galaxy, Residency Road'
+    );
+  });
+
+  it('says Online for an online event, whatever the venue holds', () => {
+    expect(locationLabel({ format: 'online', venue: 'Bangalore, Bangalore' })).toBe('Online');
+  });
+
+  it('falls back through area then city then the city name', () => {
+    expect(locationLabel({ area: 'Koramangala' })).toBe('Koramangala');
+    expect(locationLabel({ city: 'Bengaluru' })).toBe('Bengaluru');
+    expect(locationLabel({})).toBe('Bengaluru');
+  });
+
+  it('does not collapse distinct segments that merely look similar', () => {
+    expect(locationLabel({ venue: 'Bengaluru Central, Bengaluru South' })).toBe(
+      'Bengaluru Central, Bengaluru South'
+    );
   });
 });

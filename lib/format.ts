@@ -193,6 +193,37 @@ export function priceLabel(event: {
   return `${symbol}${event.price}`;
 }
 
+/**
+ * Drop comma-separated segments that an earlier segment already said.
+ *
+ * Scraped venue strings are address lines joined by the source, and several sources append the
+ * city more than once. Measured 2026-08-24: 10 upcoming events, ALL of them `isTechEvent`, so
+ * all of them in the default feed — `To Be Announced, Bangalore, Bangalore, Bangalore` and
+ * `Nokia L5 Manyata Business Park, …, Bengaluru, Bengaluru`. On a card truncated at 220px the
+ * repetition is often the only part still visible, so the location line reads as broken.
+ *
+ * Cleaned at DISPLAY time rather than at ingest, on purpose. The repetition is in the stored
+ * `venue` for rows already in the database, and ingestion merges rather than replaces — a
+ * scraper-side fix would leave every existing row dirty until a backfill, while this corrects
+ * all six render sites at once and cannot corrupt data because it writes nothing.
+ *
+ * First occurrence wins so the order the source chose is preserved; comparison is
+ * case-insensitive because sources vary the casing of the same segment.
+ */
+function dropRepeatedSegments(text: string): string {
+  const seen = new Set<string>();
+  const kept: string[] = [];
+  for (const raw of text.split(',')) {
+    const segment = raw.trim();
+    if (!segment) continue;
+    const key = segment.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    kept.push(segment);
+  }
+  return kept.join(', ');
+}
+
 /** Best available single-line location string. */
 export function locationLabel(event: {
   format?: string;
@@ -201,10 +232,11 @@ export function locationLabel(event: {
   city?: string | null;
 }): string {
   if (event.format === 'online') return 'Online';
-  if (event.venue && event.area && !event.venue.includes(event.area)) {
-    return `${event.venue} · ${event.area}`;
+  const venue = event.venue ? dropRepeatedSegments(event.venue) : '';
+  if (venue && event.area && !venue.includes(event.area)) {
+    return `${venue} · ${event.area}`;
   }
-  return event.venue || event.area || event.city || 'Bengaluru';
+  return venue || event.area || event.city || 'Bengaluru';
 }
 
 /**
