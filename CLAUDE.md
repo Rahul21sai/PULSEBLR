@@ -803,19 +803,29 @@ The scraper and source controls used to live in `/settings`, which every signed-
 > rather than merely deferred — the same mistake the Spotlight comment warns about. Every card in
 > the scroller stays reachable by swipe or by Tab.
 
-> **A stale service worker will serve you the OLD build, and it looks exactly like your change not
-> working.** Verifying this shelf, `next start` served markup with no shelf in it while the
-> production build on disk demonstrably contained it (`grep -rl overscroll-x-contain .next/static`
-> matched). Cause: `caches.keys()` held `pulseblr-static-v3` from an earlier session, and the SW
-> cache name is keyed on the **version string, not the build id**, so a rebuild under the same `v3`
-> keeps serving the cached document and the old chunk names it points at. Clearing it fixed it:
+> **When verifying a rebuild in a browser that has this PWA installed, clear the service worker
+> first — a stale build looks exactly like your change not working.** Verifying this shelf,
+> `next start` rendered markup with no shelf in it while the production build on disk demonstrably
+> contained it (`grep -rl overscroll-x-contain .next/static` matched, and the source line was
+> there). Unregistering the SW and emptying Cache Storage fixed it:
 > ```js
 > (await navigator.serviceWorker.getRegistrations()).forEach(r => r.unregister());
-> (await caches.keys()).forEach(k => caches.delete(k));
+> (await caches.keys()).forEach(k => caches.delete(k));  // held pulseblr-static-v3 + -dynamic-v3
 > ```
-> Consequence for DEPLOYS, not just for verification: shipping new JS without bumping the `v3`
-> suffix in `public/sw.js` can leave returning visitors on the previous build until that cache is
-> evicted. Bump the version when a release must reach existing installs.
+> **The exact mechanism was NOT established, and the obvious explanation is ruled out by the code.**
+> `sw.js:78` is `if (url.pathname.startsWith('/_next/')) return;` — the worker never touches Next
+> build assets at all — and `sw.js:97` makes navigations **network-first**, with cache used only as
+> an offline fallback. So the chunks cannot have come from Cache Storage, and the document is only
+> served from cache when the network fetch **fails**. The most likely reading is that the navigation
+> landed inside the `next start` stop/restart window, failed, and took the `sw.js:107` offline
+> fallback to the previous HTML. The fix is also confounded: the reload that worked used a new query
+> string, so it busted the browser's own HTTP cache at the same time.
+>
+> **So do NOT conclude that deploys fail to reach users.** An earlier draft of this note claimed the
+> `v3` cache name pins returning visitors to the previous build until the version is bumped. That is
+> wrong for this worker, for the two reasons above — and `sw.js:5` records that serving navigations
+> cache-first was the **v1** bug, already fixed. A version bump is not required for a release to
+> reach existing installs.
 
 > **`npm run build` does NOT disturb a running `next dev` on Next 16.3.2 — the earlier note in this
 > file was over-broad.** Dev artifacts live under `.next/dev/` (observable: `.next/dev/static/
