@@ -34,6 +34,7 @@ function AddEventForm() {
   const [formData, setFormData] = useState({
     title: '',
     description: '',
+    imageUrl: '',
     organizer: '',
     sourceUrl: '',
     category: [] as string[],
@@ -125,6 +126,10 @@ function AddEventForm() {
           ...prev,
           title: data.event.title || prev.title,
           description: data.event.description || prev.description,
+          // The cover. `/api/scrape-url` reads schema.org `image` first and falls back to
+          // og:image — for an event page the former is the event's own artwork and the latter
+          // is often a site-wide banner, so the order matters.
+          imageUrl: data.event.imageUrl || prev.imageUrl,
           organizer: data.event.organizer || prev.organizer,
           sourceUrl: data.event.sourceUrl || autoFillUrl.trim(),
           startDateTime: data.event.startDateTime || prev.startDateTime,
@@ -215,6 +220,47 @@ function AddEventForm() {
             className={`${inputCls} resize-none`}
             placeholder="What's this event about?"
           />
+        </div>
+
+        {/* Cover image. There was NO field for this at all, so even once the importer started
+            returning one there was nowhere to put it, and every manually added event fell back to
+            the category-tinted monogram. Editable rather than read-only: the importer gets it
+            wrong sometimes — a site-wide banner instead of the event artwork — and pasting a
+            better URL is faster than accepting a bad one. */}
+        <div>
+          <label className="block text-label-sm uppercase tracking-widest text-[#86868B] mb-2">
+            Cover image URL
+          </label>
+          <input
+            type="url"
+            value={formData.imageUrl}
+            onChange={e => setFormData({ ...formData, imageUrl: e.target.value })}
+            className={inputCls}
+            placeholder="https://… — filled automatically when you import a link"
+          />
+          {formData.imageUrl && (
+            <div className="mt-2.5 flex items-start gap-3">
+              {/* Plain <img>, matching the feed: covers come from a long and growing list of
+                  third-party CDNs, and next/image's remotePatterns would break every time a
+                  source changed host. onError hides it so a dead URL shows nothing rather than a
+                  browser's broken-image glyph. */}
+              {/* eslint-disable-next-line @next/next/no-img-element -- third-party CDNs, same
+                  reason as app/components/EventCover.tsx: remotePatterns would break whenever a
+                  source changes host, and this preview accepts an arbitrary pasted URL. */}
+              <img
+                src={formData.imageUrl}
+                alt=""
+                className="h-[72px] w-[128px] shrink-0 rounded-lg object-cover bg-[#f0f0f2]"
+                onError={e => {
+                  (e.currentTarget as HTMLImageElement).style.display = 'none';
+                }}
+              />
+              <p className="text-[12px] leading-relaxed text-[#86868B]">
+                Preview. If nothing appears the URL is not reachable or is not an image — the card
+                will fall back to a category monogram.
+              </p>
+            </div>
+          )}
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
