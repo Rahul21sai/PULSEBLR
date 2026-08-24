@@ -164,6 +164,19 @@ body {
   letter-spacing: -0.035em;
   font-weight: 700;
 }
+/* One step ABOVE .t-display, for the home page hero only.
+   .t-display tops out at 40px, which is right for a page title sitting above a list but
+   reads as a heading rather than a statement. A landing headline is the one place worth
+   more. Tracking follows the rule above rather than being copied: -0.035em at 40px
+   becomes -0.042em here, because it is set larger. Clamped so it never wraps a two-word
+   line on a 375px phone. */
+.t-hero {
+  font-family: var(--font-display);
+  font-size: clamp(33px, 6.2vw, 58px);
+  line-height: 1.02;
+  letter-spacing: -0.042em;
+  font-weight: 700;
+}
 .t-title   { font-family: var(--font-display); font-size: 24px;   line-height: 1.15; letter-spacing: -0.028em; font-weight: 700; }
 .t-head    { font-family: var(--font-display); font-size: 19px;   line-height: 1.26; letter-spacing: -0.021em; font-weight: 600; }
 .t-sub     { font-family: var(--font-display); font-size: 16px;   line-height: 1.32; letter-spacing: -0.016em; font-weight: 600; }

@@ -32,6 +32,14 @@ const SORTS = [
 
 type ViewMode = 'rail' | 'grid';
 
+/**
+ * How many events the spotlight promotes. Two, because they sit side by side at 16:9 on desktop
+ * and a third would either shrink the covers below the point of having them or push the first
+ * ranked row off a laptop screen. The cover image is the only colour this design system allows,
+ * so the spotlight earns its space by showing two of them large.
+ */
+const SPOTLIGHT_COUNT = 2;
+
 /** Same members in the same order. Used to keep `filters` identity stable — see below. */
 function sameList(a: string[], b: string[]): boolean {
   return a.length === b.length && a.every((v, i) => v === b[i]);
@@ -454,8 +462,8 @@ export default function Home() {
    * Only computed for the ranked view. Under `soonest` the day grouping already does this, and
    * running it there would put the same events in two places.
    */
-  const [liveNow, comingUp] = useMemo(() => {
-    if (chronological) return [[] as FeedEvent[], events];
+  const [liveNow, spotlight, comingUp] = useMemo(() => {
+    if (chronological) return [[] as FeedEvent[], [] as FeedEvent[], events];
     // `liveEvents` comes from its own soonest-ordered request, so it is authoritative for what
     // is on now. Live rows that ALSO happen to rank onto the page are folded in and de-duplicated
     // by id, then removed from "coming up" so nothing is listed twice.
@@ -467,8 +475,25 @@ export default function Home() {
       seen.add(event._id);
       live.push(event);
     }
-    return [live, events.filter(event => !seen.has(event._id))];
-  }, [chronological, events, liveEvents]);
+    const ranked = events.filter(event => !seen.has(event._id));
+
+    /*
+     * SPOTLIGHT: the highest-scoring events, given the room to be seen.
+     *
+     * Only on the untouched landing view. Once someone searches or narrows the filters they have
+     * said what they want, and promoting two rows above their own query is noise, not curation.
+     * `countActive(filters) <= 1` is the test because `techOnly` is on by default and counts as
+     * one — so this means "nothing beyond the default".
+     *
+     * The events are the top of the SAME ranking the list below uses, not a separate hand-picked
+     * set. That is the difference from the site this was compared against, where the spotlight is
+     * editorial and paid ("FLAGSHIP", "INVITE ONLY", "GET TICKETS"): ours is just the ranking
+     * being honest about its own top result, so it cannot disagree with the list underneath it.
+     */
+    const featured =
+      !query && countActive(filters) <= 1 ? ranked.slice(0, SPOTLIGHT_COUNT) : [];
+    return [live, featured, featured.length ? ranked.slice(featured.length) : ranked];
+  }, [chronological, events, liveEvents, query, filters]);
 
   return (
     <div className="min-h-screen bg-[#F5F5F7]">
@@ -631,16 +656,30 @@ export default function Home() {
             No card, no gradient, no new elevation: globals.css keeps one accent and one live
             state, and a hero is not a reason to spend either. The only colour is the live dot,
             and only when something is actually on. */}
-        <div className="max-w-[1240px] mx-auto px-4 md:px-8 pt-1 pb-6 md:pb-8">
-          <h1 className="t-display max-w-[19ch] text-[#1D1D1F] md:max-w-none">
+        <div className="max-w-[1240px] mx-auto px-4 md:px-8 pt-2 pb-7 md:pb-9">
+          {/* Eyebrow: a short rule then letterspaced caps. `.t-label` is +0.055em because the
+              type scale sets POSITIVE tracking for small caps — tight small caps are unreadable,
+              which is the same rule that gives the headline below its negative tracking. */}
+          <div className="flex items-center gap-3">
+            <span aria-hidden="true" className="h-px w-8 bg-[color:var(--hairline-strong)]" />
+            <p className="t-label text-[#8E8E93]">
+              Meetups · Conferences · Hackathons · Workshops
+            </p>
+          </div>
+
+          <h1 className="t-hero mt-3.5 max-w-[22ch] text-[#1D1D1F]">
             Bengaluru tech events, ranked by who you’ll meet
           </h1>
-          <p className="mt-2.5 max-w-[62ch] text-[14.5px] leading-[1.55] text-[#3a3a3c]">
-            Every developer meetup, conference, hackathon and workshop in the city, in one place.
-            Sorted by whether you’ll leave with useful contacts — not just by what’s on soonest.
-            Scan a badge and keep the people you met.
+
+          <p className="mt-4 max-w-[64ch] text-[15px] leading-[1.55] text-[#3a3a3c]">
+            Every{' '}
+            <strong className="font-semibold text-[#1D1D1F]">
+              developer meetup, conference, hackathon and workshop
+            </strong>{' '}
+            in the city, in one place — sorted by whether you’ll leave with useful contacts, not
+            just by what’s on soonest. Scan a badge and keep the people you met.
           </p>
-          <div className="mt-3.5 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[12.5px] text-[#6E6E73]">
+          <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[12.5px] text-[#6E6E73]">
             <span>
               <span className="tnum font-semibold text-[#1D1D1F]">
                 {total.toLocaleString('en-IN')}
@@ -658,6 +697,52 @@ export default function Home() {
             </Link>
           </div>
         </div>
+
+        {/* ── Spotlight ──────────────────────────────────────────────────────
+            Full width, above the filters, so two covers get room to be seen. It uses the SAME
+            `EventGridCard` as grid view rather than a bespoke feature card: the cover image is
+            the only colour this design system permits, so a card that leads with the cover is
+            already the strongest treatment available — and reusing it means the spotlight cannot
+            drift from the rest of the feed.
+
+            Deliberately NOT the gradient panel the compared site uses. globals.css removed eight
+            category gradients on purpose, so that the covers are the only colourful thing on
+            screen; a magenta-to-orange hero card would spend exactly the attention those covers
+            are supposed to get. */}
+        {spotlight.length > 0 && (
+          <section className="max-w-[1240px] mx-auto px-4 md:px-8 pb-8">
+            <div className="day-heading pb-2 mb-3.5">
+              <div className="flex items-center gap-2.5">
+                <h2 className="t-label shrink-0 text-[#1D1D1F]">Spotlight</h2>
+                <span aria-hidden="true" className="h-px flex-1 bg-[color:var(--hairline)]" />
+                <span className="shrink-0 text-[11.5px] text-[#8E8E93]">
+                  Best for connections right now
+                </span>
+              </div>
+            </div>
+            {/* TWO PRESENTATIONS OF THE SAME TWO EVENTS, chosen by width — not two different
+                sets, and the section is never hidden. It cannot be: the memo REMOVES these from
+                "Coming up" so nothing is listed twice, so CSS-hiding the section would delete the
+                two best events from a phone entirely. That is the trap here, and it is why this
+                switches the treatment rather than the visibility.
+
+                Cover cards use HORIZONTAL room, which is the whole reason they earn their space —
+                two 16:9 covers side by side. A 375px screen has none, so there they stack at 391px
+                each and pushed the first ranked row to y=1511, nearly two full screens of scroll
+                before the feed. Measured. So phones get the compact rail rows instead: same events,
+                same heading above them, ~192px each. */}
+            <div className="hidden gap-5 sm:grid sm:grid-cols-2">
+              {spotlight.map(event => (
+                <EventGridCard key={event._id} event={event} />
+              ))}
+            </div>
+            <div className="rail sm:hidden">
+              {spotlight.map(event => (
+                <EventRow key={event._id} event={event} showDate />
+              ))}
+            </div>
+          </section>
+        )}
 
         <div className="max-w-[1240px] mx-auto px-4 md:px-8 flex gap-8">
           {/* Desktop filter rail */}
