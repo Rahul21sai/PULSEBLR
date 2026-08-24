@@ -2,7 +2,7 @@
 import Link from 'next/link';
 
 import { FeedEvent } from '@/lib/event-types';
-import { timeIST, locationLabel, isHappeningNow, categoryAccent } from '@/lib/format';
+import { timeIST, shortDateIST, locationLabel, isHappeningNow, categoryAccent } from '@/lib/format';
 import EventCover from './EventCover';
 import EventPills from './EventPills';
 import SaveButton from './SaveButton';
@@ -16,7 +16,25 @@ import SaveButton from './SaveButton';
  * as a schedule you can scan vertically. Putting the time inside each card (the
  * obvious choice) forces the eye to re-find it on every row.
  */
-export default function EventRow({ event }: { event: FeedEvent }) {
+export default function EventRow({
+  event,
+  showDate = false,
+}: {
+  event: FeedEvent;
+  /**
+   * Render the DATE above the time in the rail gutter.
+   *
+   * Off by default, because in the day-grouped feed the section heading above already says which
+   * day it is and repeating it on every row is noise.
+   *
+   * It must be ON for any ungrouped list — currently the ranked sorts, which are the DEFAULT view.
+   * Those deliberately have no day headings (grouping a ranked list by day would re-sort it
+   * chronologically and discard the ranking), and without this the rail showed "18:30 / 21:30" with
+   * the date appearing nowhere on the row at all. Verified on a 375px viewport: a reader could not
+   * tell whether the top event was tonight or in three weeks.
+   */
+  showDate?: boolean;
+}) {
   const live = isHappeningNow(event.startDateTime, event.endDateTime);
   const primaryCategory = event.category?.[0];
   const accent = categoryAccent(primaryCategory);
@@ -26,6 +44,14 @@ export default function EventRow({ event }: { event: FeedEvent }) {
     <div className="flex items-stretch gap-3 md:gap-4">
       {/* Time + rail node */}
       <div className="w-[42px] md:w-[58px] shrink-0 pt-4 flex flex-col items-end">
+        {showDate && (
+          /* Above the time, and quieter than it: under a ranked sort the date is context, not the
+             thing being scanned. `whitespace-nowrap` because "15 Aug" must not wrap to two lines
+             in a 42px gutter and push the time out of alignment with the rail node. */
+          <span className="t-label whitespace-nowrap text-[10px] leading-none text-[#86868B] mb-1">
+            {shortDateIST(event.startDateTime)}
+          </span>
+        )}
         <span
           className={`tnum text-[13px] md:text-[15px] font-semibold leading-none ${
             live ? 'text-[#FF3B30]' : 'text-[#1D1D1F]'

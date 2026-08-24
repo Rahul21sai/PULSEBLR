@@ -63,9 +63,17 @@ const SOCIAL_CATEGORIES = new Set([
  *   · "… Demo at <institute>" / "Demo Class" — a sales session. This is the one to penalise.
  * Alternation is ordered, so the explicit `demo class` / `demo lecture` / `demo day for` branches
  * are tried before the guarded bare `demo`.
+ *
+ * `\d+%\s*off` was added after reading the actual first page of the default feed, which carried
+ * BOTH "2 Hours to Freedom: Build a Fleet of AI Agents" and "25% OFF: 2 Hours to Freedom: Build a
+ * Job Hunt AI Agent" — the same paid course, listed twice, once with the discount in the title.
+ * A percentage discount in an event title is about as unambiguous as this list gets: community
+ * meetups, conferences and user groups do not mark themselves down, because they are free or
+ * priced at cost. Early-bird pricing is deliberately NOT matched — legitimate conferences use it,
+ * and "early bird" says nothing about whether you end up in a room or an audience.
  */
 const FUNNEL_PATTERN =
-  /\b(certifi\w*|cohort|bootcamp|training|masterclass|course|webinar|free workshop|crash course|placement|internship drive|batch \d|enroll\w*|trial class|coaching cent(?:re|er)|demo class|demo lecture|demo day for|demo(?!\s*(?:day|night|s\b)))\b/i;
+  /\b(certifi\w*|cohort|bootcamp|training|masterclass|course|webinar|free workshop|crash course|placement|internship drive|batch \d|enroll\w*|trial class|coaching cent(?:re|er)|\d+%\s*off|demo class|demo lecture|demo day for|demo(?!\s*(?:day|night|s\b)))\b/i;
 
 /** Titles that signal genuine practitioner gatherings. */
 const PEER_PATTERN =

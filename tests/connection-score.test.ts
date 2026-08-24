@@ -71,9 +71,21 @@ describe('connectionScore', () => {
       'Free Gen AI & Agentic AI Demo at eMexo',
       'Enrollment open — Full Stack Trial Class',
       'Best Software Testing Coaching Center Electronic City',
+      // Both of these were on the live feed's first page, the same paid course listed twice.
+      '25% OFF: 2 Hours to Freedom: Build a Job Hunt AI Agent',
+      '50% off Early Access — Agentic AI Masterclass',
     ]) {
       expect(connectionScore({ ...base, title }), title).toBeLessThan(peer);
     }
+  });
+
+  it('does not read a legitimate conference price signal as a funnel', () => {
+    // "early bird" is normal conference pricing and says nothing about audience-vs-room, so it
+    // must NOT be penalised. Guards the `\d+%\s*off` addition from being widened into pricing
+    // language generally.
+    const plain = connectionScore({ ...base, title: 'Some Event' });
+    expect(connectionScore({ ...base, title: 'Early bird tickets — Bengaluru Rust Meetup' }))
+      .toBeGreaterThanOrEqual(plain);
   });
 
   it('does NOT penalise demo nights, demos or demo days — those are peer events', () => {

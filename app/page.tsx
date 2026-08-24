@@ -18,9 +18,14 @@ const WHEN_TABS = [
   { id: '', label: 'All upcoming' },
 ] as const;
 
+/**
+ * "Best for connections" is FIRST because it is the default (see the `sort` state below).
+ * A select whose first option is not its current value reads as though the default were
+ * arbitrary, which is exactly the impression this app's ranking should not give.
+ */
 const SORTS = [
-  { id: 'soonest', label: 'Soonest' },
   { id: 'connections', label: 'Best for connections' },
+  { id: 'soonest', label: 'Soonest' },
   { id: 'popular', label: 'Most popular' },
   { id: 'newest', label: 'Just added' },
 ] as const;
@@ -38,7 +43,32 @@ export default function Home() {
   const [searchInput, setSearchInput] = useState('');
   const [query, setQuery] = useState('');
   const [when, setWhen] = useState<string>('');
-  const [sort, setSort] = useState<string>('soonest');
+  /**
+   * DEFAULT SORT IS THE RANKING, NOT THE CALENDAR — and the measurement is why.
+   *
+   * `connectionScore` is the one signal this app has that Luma and Meetup do not, it is computed
+   * for every event, and it is rendered as the three-bar meter on every card. It was then ignored
+   * by the view every user lands on, which made the meter decorative.
+   *
+   * Measured on the live corpus 2026-08-24, first 20 rows of the tech feed:
+   *
+   *   sort=soonest      median score 20, avg 28   15 of 20 ONLINE
+   *   format=offline    median score 69, avg 68
+   *   sort=connections  median score 88, avg 91    0 of 20 online
+   *
+   * The tech corpus is near-evenly split (163 in-person, 174 online), so that gap is not a supply
+   * problem. Online events are posted more often and at shorter notice, so a chronological sort
+   * systematically favours them — the default page was "25% OFF: 2 Hours to Freedom…" and
+   * "Free Gen AI & Agentic AI Demo at eMexo" at score 15, while a 100-scoring in-person mixer sat
+   * out of sight. Soonest-first does not merely fail to rank; it actively selects the worst
+   * quartile of what we hold.
+   *
+   * The cost, stated plainly: the feed no longer opens as "what's on tonight". That is why the
+   * when-chips (Today / Tomorrow / This weekend) stay in the command bar and why `soonest` remains
+   * one click away — a user asking "what's on tonight" is asking a DIFFERENT question from "where
+   * should I go", and only the second one is what this product is for.
+   */
+  const [sort, setSort] = useState<string>('connections');
   // Tech-only is the DEFAULT view, not an option you have to find. This app exists
   // to surface Bengaluru SOFTWARE and HARDWARE events worth attending for the
   // connections; the other ~70% of the corpus (concerts, treks, book clubs) is
@@ -135,7 +165,11 @@ export default function Home() {
     const p = new URLSearchParams();
     if (query) p.set('q', query);
     if (when) p.set('when', when);
-    if (sort !== 'soonest') p.set('sort', sort);
+    // Must track the DEFAULT above, not a hardcoded 'soonest'. This writer omits default values so
+    // a clean view stays a clean "/" — so if it omitted the wrong one, opening "/" would render
+    // ranked while the URL said nothing, and "?sort=soonest" would be written for the default and
+    // dropped for the non-default. Exactly inverted.
+    if (sort !== 'connections') p.set('sort', sort);
     if (view !== 'rail') p.set('view', view);
     if (filters.categories.length) p.set('category', filters.categories.join(','));
     if (filters.areas.length) p.set('area', filters.areas.join(','));
@@ -588,7 +622,10 @@ export default function Home() {
                  is no longer the thing the reader navigates by. */
               <div className="rail">
                 {events.map(event => (
-                  <EventRow key={event._id} event={event} />
+                  /* showDate is REQUIRED here. This branch has no day headings, so without it the
+                     rail shows a bare "18:30" and the date appears nowhere on the row — measured on
+                     a 375px viewport, a reader could not tell tonight from three weeks away. */
+                  <EventRow key={event._id} event={event} showDate />
                 ))}
               </div>
             ) : (

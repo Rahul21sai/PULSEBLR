@@ -37,6 +37,20 @@ const dayKeyFormatter = new Intl.DateTimeFormat('en-CA', {
   day: '2-digit',
 });
 
+/**
+ * No weekday, for the 42px-wide time rail on a phone.
+ *
+ * `dayLabelIST` ("Sat, 15 Aug") is the right label above a day GROUP, where there is a full row
+ * to put it in. It does not fit the rail gutter, and the gutter is the only place a date can go
+ * under a RANKED sort — that view has no day headings, because grouping a ranked list by day
+ * would re-sort it chronologically and throw the ranking away.
+ */
+const shortDateFormatter = new Intl.DateTimeFormat('en-IN', {
+  timeZone: IST,
+  day: 'numeric',
+  month: 'short',
+});
+
 /** 24-hour clock time in IST, e.g. "19:30". */
 export function timeIST(date: Date | string): string {
   return timeFormatter.format(new Date(date));
@@ -50,6 +64,11 @@ export function dayKeyIST(date: Date | string): string {
 /** "Sat, 15 Aug" in IST. */
 export function dayLabelIST(date: Date | string): string {
   return dayLabelFormatter.format(new Date(date));
+}
+
+/** "15 Aug" in IST — the compact form, for the time rail. See shortDateFormatter. */
+export function shortDateIST(date: Date | string): string {
+  return shortDateFormatter.format(new Date(date));
 }
 
 /** "Saturday, 15 August 2026" in IST. */
