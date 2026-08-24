@@ -222,6 +222,16 @@ JS: `node scripts/generate-icons.js`.
 > they surface as duplicate cards in the feed. If the feed shows doubles, run
 > `diag-legacy-docs.ts` before suspecting the dedup logic.
 
+> **Treat commit attribution in this repo as unverified unless you check `git log`.** Six agent
+> sessions worked the same tree on 2026-08-24, and at least one had its context compacted
+> mid-run — it could attest to 5 of the 10 commits credited to it and no more. Git records the
+> same author and committer on all of them, so it cannot distinguish sessions either: any
+> session-to-commit mapping in a summary was reconstructed, not observed. Some warnings in this
+> file were also written up by a session relaying a measurement another had taken. None of that
+> makes the measurements wrong — they were re-run before landing — but "who did this" is the one
+> thing here that was inferred, and a confident guess about it is what made a day of
+> reconciliation necessary in the first place.
+
 ## Environment
 
 Copy `.env.example` → `.env.local`. Required: `MONGODB_URI` (defaults to `mongodb://localhost:27017/pulseblr`), `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`, `NEXTAUTH_SECRET`, `NEXTAUTH_URL`. `RESEND_API_KEY` is optional (email digests).
@@ -233,6 +243,27 @@ Copy `.env.example` → `.env.local`. Required: `MONGODB_URI` (defaults to `mong
 LLM tagging cascades **IBM ICA → NVIDIA NIM → Anthropic → keyword heuristics**, and every tier is optional — with no key at all the pipeline still runs on keywords.
 
 > **`NVIDIA_MODEL` matters more than it looks.** Verified 2026-08-09: `z-ai/glm-5.2` and `meta/llama-3.3-70b-instruct` are both listed by `GET /models` on a valid key but never respond (>25 s timeout), while `meta/llama-3.1-8b-instruct` answers in ~376 ms. Classification is a small task, so the 8B model is the right fit. Run `scripts/check-nvidia-models.ts` before changing it. The tagger also fails over to a known-good model on its own and trips a circuit breaker after 3 consecutive provider failures, so a bad config degrades to keywords in seconds rather than adding ~46 s per batch.
+
+> **`{"detail":"Model not found"}` from IBM ICA usually means the TEMPERATURE is missing, not the
+> model.** This is the most expensive error message in the stack, because it sends you to the
+> wrong place: you check `ICA_MODEL` against `GET /models`, find it present and correct, and
+> conclude the catalogue is lying. Measured 2026-08-24 against the live endpoint with
+> `claude-sonnet-5`, varying only the request body:
+>
+> | request | response |
+> | --- | --- |
+> | `temperature` omitted | **400 `{"detail":"Model not found"}`** |
+> | `temperature: 0.2` | 400, and honest about it — "only temperature=1 is supported" |
+> | `temperature: 1` | 200 |
+>
+> So the model name is a red herring: ICA rejects the *request shape* and blames the model. Send
+> `temperature: 1` explicitly on this provider. `max_tokens: 4000` is fine either way.
+>
+> **Worse, the model-level fallback cannot rescue it.** `tagger.ts` falls through to
+> `fallbackModel` on a **404** but THROWS on a **400**, so an ICA failure of this shape skips the
+> model chain entirely and drops to the next provider. The chain looks configured and is
+> unreachable on this path — which is how `check-llm.ts` can report "2/2 via LLM" while none of it
+> came from ICA. If you fix the temperature, also decide whether a 400 should fall through.
 
 > `README.md` predates the current architecture. Trust the code and this file where they disagree.
 
@@ -388,6 +419,18 @@ The category taxonomy (`EVENT_CATEGORIES`, 32 values) lives in `lib/models/Event
 > self-contradicting documents took disagreement to 0.6% while leaving consistent documents
 > their richer tags. `diag-flagship-events.ts` then confirms 0 marquee events hidden.
 
+> **That `--inconsistent` choice was a decision about a MODEL, not a law — re-decide it when the
+> provider changes.** The measurement above is specific to `llama-3.1-8b`: it fixes `isTechEvent`
+> well but returns FEWER categories, losing a correct Event-type tag the filter rail depends on.
+> That trade-off is a property of an 8B model. A frontier model on the ICA path may well invert
+> it, which would make `--all` strictly better and would reach the *agreed-upon* errors
+> `--inconsistent` is structurally blind to (see the next warning).
+>
+> Re-measure with `diag-retag-preview.ts` before switching — it writes nothing, and its rule is
+> that FIXED must clearly exceed BROKE with no control regressing. **Fix the ICA temperature
+> defect documented under Environment first**, or the preview silently measures NVIDIA again and
+> tells you nothing about the model you are actually asking about.
+
 > **Consistency-based selection is structurally blind to agreed-upon errors, and that blind
 > spot has now bitten twice.** `--inconsistent` finds documents whose two "tech" signals
 > contradict each other. A board-game night tagged `[Web/Mobile]` with `isTechEvent: true` is
@@ -406,6 +449,33 @@ The category taxonomy (`EVENT_CATEGORIES`, 32 values) lives in `lib/models/Event
 > separately for this reason. Same story for the coaching-centre adverts — `connectionScore`
 > buries them correctly, but the default sort is soonest, so the penalty never reached the page.
 
+> **UPDATE to the warning above — the default sort is no longer `soonest`, it is `connections`**
+> (`8b0b247`). Read the paragraph above as the history that motivated the change, not as current
+> behaviour. The measurement that drove it, first 20 rows of the default tech feed: `soonest` gave
+> median score 20 with 15 of 20 ONLINE and 14 of 20 clean; `connections` gives median 88, 0 online,
+> 19 of 20 clean. The corpus is near-evenly split (163 in-person / 174 online), so that gap is not
+> supply — online events post more often and at shorter notice, so chronological ordering does not
+> merely fail to rank, it actively selects the worst quartile. `diag-tech-fp.ts` now reports 0 of
+> 20 on the first page.
+
+> **Triage a leak by RANK, not by what was reported.** Because the default sort is `connections`
+> and `connectionScore` penalises online hard while rewarding in-person-with-a-venue, a leak is
+> never uniform in visibility. Measured 2026-08-24 with `diag-offcity.ts`: of 10 off-city tech
+> rows, `KONG API + AI Summit 2026` (Los Angeles) scored a flat 100 and sat at **#2 in the entire
+> tech feed**, while the four `Chennai - Build Your First AI Agent` rows that prompted the gate
+> scored 15 and sat at **#279–#301**, where nobody scrolls. The rows a user actually meets were
+> close to the inverse of the rows that got reported, so a partial cleanup triaged by complaint
+> would have fixed the invisible ones and left the prominent one. The general form: **a diagnostic
+> that names rows without ranking them under-reports severity.** `diag-offcity.ts` now prints
+> `feed#N score S` per row plus a severity block, ranked via `buildSort('connections')` — the
+> feed's own sort function, not a copy, for the same reason `CATEGORY_KEYWORDS` is exported.
+
+> **`diag-tech-fp.ts` reporting 0 of 20 on page 1 is CONSISTENT with off-city rows sitting in the
+> feed, not in tension with it.** Only 1 of those 10 rows was in the top 20, and a Los Angeles
+> developer summit is a *true* positive for "is this tech" — that probe measures topic, not
+> geography. The two numbers read as contradictory and are not, which is precisely why geo needed
+> its own diagnostic rather than being folded into the tech-precision one.
+
 > **`isTechEvent` excludes course selling EVEN WHEN THE SESSION IS FREE.** The prompt used to say
 > "**paid** certification or course-selling sessions", and "paid" was exactly what let "Free
 > DevOps Demo Class in Electronic City" and "Java Training with Placement" into the tech feed.
@@ -421,6 +491,15 @@ The category taxonomy (`EVENT_CATEGORIES`, 32 values) lives in `lib/models/Event
 > Sunday and a design-thinking workshop into the tech feed. Two causes, both fixed: the
 > keyword `gaming` matched "Board**Gaming**", and the prompt never said the category means
 > games *engineering*. `scripts/retag-category.ts "Gaming/XR"` re-decided all seven.
+
+> **An `Agents` / `GenAI` split is the one recommendation from `HEAPHEAPHURRAY-AUDIT.md` that was
+> not built, and it cannot be done cheaply.** The corpus is saturated with agentic-AI events and
+> they all collapse into a single `AI/ML` chip, so someone wanting agent engineering and someone
+> wanting classical ML get the same filter. The obvious cheap fix — surface the `tags` already
+> collected — does not exist to be surfaced: `diag-tag-supply.ts` measured 32 of 1212 upcoming
+> events carrying any tag, **8 of 334** tech ones, and six distinct values in the whole corpus.
+> Tags would have to be GENERATED by the tagger, competing for the same batch budget as the
+> categories that already work. A real feature, not a tidy-up.
 
 > **Never edit `tagger.ts` through a shell heredoc.** Doing so once rewrote all 70 `\b`
 > word boundaries as literal **0x08 BACKSPACE bytes**, so `/\b(ai|...)\b/i` became
