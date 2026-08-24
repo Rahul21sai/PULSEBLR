@@ -253,6 +253,23 @@ Copy `.env.example` → `.env.local`. Required: `MONGODB_URI` (defaults to `mong
 
 > **`NEXTAUTH_URL` is not optional once deployed.** Auth.js v5 auto-trusts only Vercel. On any other host every `/api/auth/*` route returns 500 with `[auth][error] UntrustedHost: Host must be trusted` — reproduced with `next start` under `NODE_ENV=production`, where `/api/auth/providers`, `/api/auth/csrf` and the Google callback all failed, making sign-in impossible. It is invisible in development because dev mode trusts localhost. `auth.ts` sets `trustHost: true` to fix it and logs an error at boot if `NEXTAUTH_URL` is unset in production, because `trustHost` without a pinned origin lets a spoofed `Host` header into generated links.
 
+> **`vercel.json` MUST NOT contain `//`-prefixed comment keys.** Vercel validates the file against
+> a strict schema and rejects any property it does not know, so the import fails before the build
+> with `Invalid request: should NOT have additional property '//regions'`. JSON has no comments; the
+> reasoning lives here instead:
+>
+> · **`regions: ["bom1"]` (Mumbai) is not cosmetic.** Every user is in Bengaluru, the Atlas cluster
+>   and the whole corpus are India-region, and `lib/format.ts` pins all formatting to Asia/Kolkata.
+>   A US default region adds a round trip to every query for no benefit.
+> · **There are deliberately NO Vercel crons.** `daily-scrape.yml` and `daily-digest.yml` run
+>   `npm run scrape` / `npm run send-digest` directly on a GitHub runner rather than calling an API
+>   route — so there is no shared secret to leak and no serverless timeout to fight. A full scrape is
+>   5-10 minutes and ~700 upstream requests, far past any serverless limit. This is the thing that
+>   makes hosting the app on serverless viable at all.
+> · **Never set `DEV_LOGIN` on a deployed environment.** `lib/dev-login.ts` also requires
+>   `NODE_ENV !== 'production'`, so it cannot activate on Vercel — but do not rely on one guard.
+> · Set env vars in the Vercel project, never in this file: it is committed.
+
 **`ADMIN_EMAILS` is required to use the Settings page** — a comma-separated list of Google account emails allowed to run the scraper and edit events/sources. It fails closed: unset means every admin endpoint returns 503 with a message naming the variable, so a 503 from `/api/scrape` is a configuration problem, not a bug.
 
 LLM tagging cascades **IBM ICA → NVIDIA NIM → Anthropic → keyword heuristics**, and every tier is optional — with no key at all the pipeline still runs on keywords.
