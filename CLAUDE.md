@@ -42,8 +42,18 @@ Verification is **two-tier**, and the tiers have a deliberate boundary.
 
 `npm test` runs **vitest** (`vitest.config.mts`, suites in `tests/`), scoped by that
 config's own docblock to **pure functions only** — scoring, dedup and identity keys, the
-taxonomy, the search filter, the SSRF guard, QR payload parsing, CSV escaping. Nothing
-there touches MongoDB or the network.
+taxonomy, the search filter, the SSRF guard, QR payload parsing, CSV escaping, and the two
+city gates (`geo.test.ts` characterises `isBengaluru`/`resolveArea`; `off-city.test.ts` pins
+`offCityReason`). Nothing there touches MongoDB or the network.
+
+> **`tests/off-city.test.ts` is mostly NEGATIVE cases, and that is the point.** A false
+> positive in the off-city gate does not mis-tag an event, it deletes it before storage, and
+> no re-scrape recovers it because merging only ever fills gaps. So the suite pins the things
+> that must **survive**: `city: 'BENGALURU'`, `city: 'Karnataka'`, the suburb `Hebbagodi`, an
+> empty `{}`, Delhivery against `\bdelhi\b`, Goan against `\bgoa\b`, Mysore **Road**, an
+> RCB-vs-CSK screening, and a Bengaluru meetup whose description names five other cities. It
+> also pins the `RawEvent` → gate seam, where every field is optional and a rename would
+> silently stop matching rather than fail.
 
 > **`tests/scan-decode-e2e.test.ts` is the exception worth knowing about.** It encodes real QR
 > PNGs with `qrcode`, decodes them through the production `zxing-wasm` engine, and runs the result
@@ -86,6 +96,7 @@ verified. Duplicating those as unit tests would only produce slow, flaky copies.
 | `retag-events.ts` | Re-tag stored events with the LLM, **replacing** categories. `--ongoing`, `--all`, `--limit N`, `--dry`, **`--inconsistent`** (only documents whose two "tech" signals contradict each other — usually the right flag; see the warning under §3). |
 | `migrate-events.ts` | Backfill documents written before `clusterKey` / `lastSeenAt` / `isTechEvent` existed. |
 | `cleanup-implausible.ts` | Delete evergreen adverts and impossible date ranges. |
+| `cleanup-non-bengaluru.ts` | Delete stored events that are not in Bengaluru. The stage-5c gate stops new ones arriving but filters the incoming batch only — it never queries the collection, so everything that got in while `meetup.ts`'s guard was dead code stays in the feed forever. Judges on coordinates / `city` / `venue` / `address` and **never the description**, because deleting on "lessons from our Chennai rollout" would be the tagger's `\bpm\b` over-match with a DELETE attached. **Destructive** — dry by default, `--apply` to write. |
 | `backfill-companies.ts` | Recompute `Event.companies` from the registry. Run after editing it. |
 | `diag-organizers.ts` | Which hosts and known companies appear in the corpus. |
 | `diag-overtagged.ts` | Documents with more categories than the tagger emits. `--fix` / `--trim`. |
@@ -117,6 +128,8 @@ verified. Duplicating those as unit tests would only produce slow, flaky copies.
 | `probe-district.ts` / `-round2.ts` / `-round3.ts` | How District went from "dismissed" to the city-breadth source. Round 1 starts at robots.txt instead of guessing paths; round 2 follows the events sitemap; round 3 measures what fraction are REAL dated events versus always-on attractions, and whether the slug can pre-filter the fetch list. Read-only. |
 | `test-district.ts` | Live smoke test: pins `districtSlugDate()` against the real slug forms, then asserts the scrape returns dated Bengaluru events with no evergreen listings. Exits non-zero on regression. No DB writes. |
 | `diag-district-precision.ts` | Asserts District did not cost tech precision — prints every District row flagged `isTechEvent` so each is judged by eye, not by an aggregate. Read-only. |
+| `probe-heapheaphurray.ts` / `-hhh-round2.ts` / `-round3.ts` / `-round4.ts` | Recon on `events.heapheaphurray.com`, a direct competitor ("Tech Events in India"). Kept because the rounds narrow rather than repeat: round 1 separates the PRODUCT question from the SOURCE question, round 2 gets the data and the IA, round 3 finds every event `url` points **off-site** to lu.ma / devfolio — both of which we already scrape, so it is a different *selection* over the same supply, not new supply — and round 4 reduces the whole site to the two Bengaluru events we lacked. Conclusion in `HEAPHEAPHURRAY-AUDIT.md`. Read-only. |
+| `verify-hhh-calendar.ts` | The seed gate applied to the one candidate that audit produced: fetch the Luma calendar with the **production** mechanism and seed it only if it returns upcoming events. Read-only. |
 | `probe-hardware-bodies.ts` / `-round2.ts` | Hardware via the PROFESSIONAL BODIES rather than the consumer platforms: IEEE vTools, IEEE Bangalore, IESA, SEMI, Hackster, IISc, IIIT-B. Round 2 follows the leads round 1 was too quick to dismiss (a `tribe_events` route answering 200 means the plugin is installed, not that events exist). Read-only. |
 | `diag-hardware-vocabulary.ts` | Asserts the Hardware/Robotics floor recognises `vlsi`/`verilog`/`risc-v`/`asic` AND still refuses the ambiguous near-misses. **The negative half is the important half** — a widened regex fails by over-matching, which no aggregate count reveals. Exits non-zero on regression. |
 | `diag-hardware-corpus-delta.ts` | Runs the OLD and NEW hardware patterns over the live corpus and names every newly-matched event, so over-matching is caught against real scraped copy rather than synthetic titles. Read-only. |
@@ -128,6 +141,10 @@ verified. Duplicating those as unit tests would only produce slow, flaky copies.
 | `retag-category.ts` | Re-tag a SUBSET, replacing categories. By category name, for when a category has gone bad; or **`--match=<title regex>`** for when a category is being *missed* and the documents carry no marker to select on. `--dry`, `--all`. |
 | `diag-scorecard.ts` | **The product scorecard as measurements, not estimates.** Each dimension is a criterion a query decides. Two rules keep it honest: CAPABILITY and SUPPLY are never averaged (hardware is externally capped, so mixing it with a code metric hides what you can act on), and no dimension scores itself on a proxy that cannot fail. Ratios with a denominator under 10 are printed but **not judged** — a supply cap must not be reported as a code defect. Exits non-zero only on a capability shortfall with enough evidence to call it one. |
 | `diag-source-caps.ts` | Are the per-run caps silently dropping discovered sources? This is what found 80 of 200 Meetup groups being skipped on every run. Read-only. |
+| `diag-offcity.ts` | Replays the real `offCityReason()` predicate over the stored corpus and **names every row on both sides** — the rejects and the spares — so the gate's false positives can be argued with rather than trusted. Run it after touching the gazetteer. Read-only. |
+| `diag-meetup-geo-leak.ts` | Proves the Meetup adapter's city guard **cannot reject anything** (its `=== false` is unsatisfiable, because `isBengaluru`'s only text-driven `false` sits inside `if (location)` and ICS emits no LOCATION), and measures what got in: 23 of 886 upcoming events, 19 in-person, 9 in the default tech feed. Read-only. |
+| `diag-city-spelling-dupes.ts` | Does cross-source dedup survive **Bangalore** vs **Bengaluru**? `clusterKey` is a normalized title + IST day, so if normalization does not fold the two spellings the same event listed on Luma and Meetup becomes two cards. Read-only. |
+| `diag-tag-supply.ts` | Could `Event.tags` back a topic-tag facet? **No, and that is the finding** — 32 of 1212 upcoming events carry any tag, only 8 of 334 tech ones do, and there are six distinct values in the whole corpus. A tag facet would have to be GENERATED by the tagger; the harvested supply is not there. Read-only. |
 | `diag-cap-victims.ts` | Which specific named handles the old cap dropped, and which the new ordering rescues. Read-only, does not scrape. |
 | `diag-tech-fp.ts` | Tech-feed false positives **with the organiser and description head**, plus how many land on the first 20 — because the default sort is soonest, so 2% of the corpus can be 10% of what a user sees. A count is not a ranking. Read-only. |
 | `diag-deploy-readiness.ts` | Every production failure that is **invisible locally**, grouped by consequence and stating what BREAKS rather than naming a variable. Detects a dev environment and reports `DEV_LOGIN` / localhost `NEXTAUTH_URL` as "set this on the host" rather than as failures — they are correct locally. No network, no DB; safe in CI. |
