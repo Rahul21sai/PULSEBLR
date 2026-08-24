@@ -212,9 +212,34 @@ export async function scrapeMeetupGroup(slug: string): Promise<ScrapeResult> {
     });
 
     for (const event of events) {
-      // ICS gives no venue (see header note), so the only geo signal available
-      // here is the description. Reject an event that positively names another
-      // city; keep everything else for the enrichment + geo pass downstream.
+      /*
+       * THIS GUARD IS INERT, AND IS LEFT HERE DELIBERATELY. The real city gate is pipeline
+       * stage 5c (`offCityReason`, lib/scrapers/core/geo.ts) — it runs AFTER enrichment, which
+       * is what finally gives this source a real venue, and it serves every adapter. Do not
+       * "fix" the line below and do not delete it without reading the rest of this note: a
+       * per-adapter gate here is the wrong shape, and re-introducing one is the specific
+       * mistake this comment exists to prevent.
+       *
+       * This guard CANNOT REJECT ANYTHING. `isBengaluru`'s only text-driven `return false` sits
+       * inside `if (location)`, where location is built from venue + address — and this adapter's
+       * own file header documents that Meetup's ICS emits no LOCATION, so both are always absent
+       * here. With only `text` the function returns `true` or `null`, so `=== false` is never
+       * satisfied. It reads as a working city filter and is dead code.
+       *
+       * Measured consequence (scripts/diag-meetup-geo-leak.ts, 2026-08-24): 23 of 886 upcoming
+       * Meetup events name another city in their title/venue/address without naming Bengaluru —
+       * 19 in-person, 9 in the DEFAULT tech feed, including "Anthropic - Code - Coffee : Chennai
+       * Edition", "… Coimbatore Edition", "KONG API + AI Summit 2026" (Los Angeles), "FounderX
+       * Silicon Valley" and "Umbraco India Festival 2026" (Kochi).
+       *
+       * Those events are gone from new runs — stage 5c rejects them, and it reads the TITLE,
+       * which is where six of them named their city and which `isBengaluru` never looks at. It
+       * cannot reach the ones already stored, though, because it filters the incoming batch and
+       * never queries the collection; `scripts/cleanup-non-bengaluru.ts` is what removes those.
+       *
+       * See scripts/diag-meetup-geo-leak.ts for the reproduction and HEAPHEAPHURRAY-AUDIT.md for
+       * how it was found.
+       */
       if (isBengaluru({ text: event.description }) === false) continue;
       result.events.push(event);
     }

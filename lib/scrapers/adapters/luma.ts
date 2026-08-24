@@ -395,6 +395,26 @@ export const LUMA_SEED_CALENDARS: Array<{ handle: string; label: string }> = [
   { handle: 'cal-fEGIAmlfowdozHG', label: 'Zeta' },
   { handle: 'cal-bBzYKgrZdjYZyKQ', label: 'Rippling' },
   { handle: 'cal-qP8i8yj42XnYWCs', label: 'Y Combinator' },
+
+  // ── TOURING SERIES, found by auditing events.heapheaphurray.com ────────────
+  // That audit compared its 20 curated pan-India tech events against our corpus: 14 were in
+  // other cities, 5 we already had, and 1 was a same-day Bengaluru event we lacked. So it is
+  // not a source worth an adapter (see HEAPHEAPHURRAY-AUDIT.md) — but it did surface these
+  // two hosts, and the reason to seed them is specifically that they TOUR.
+  //
+  // Both currently show ZERO upcoming Bengaluru events (verify-hhh-calendar.ts, 2026-08-24):
+  // JumpStart Bharat is in Kolkata / Guwahati / Lucknow / Prayagraj, AIBoomi in Chennai /
+  // Delhi / Hyderabad. Each had a Bengaluru edition days ago and will have another. That makes
+  // them the case a seed exists for: we caught AIBoomi's Bengaluru event ONLY because the city
+  // discover feed happened to rank it that day, which is luck, whereas a seed is scraped every
+  // run. The geo gate drops the other cities, so the cost is one request each per run.
+  //
+  // Deliberately NOT seeded from the same audit: `cal-3aH7Cvqdyre9u3j` (Founders Running Club).
+  // 50 upcoming events for exactly 1 in Bengaluru — Ho Chi Minh, Tokyo, Singapore, Dubai,
+  // Istanbul — and it is a running club, so `isTechEvent` is false regardless. We already have
+  // its Bengaluru edition via Meetup.
+  { handle: 'cal-uoe6JLx8HnATkBp', label: 'JumpStart Bharat — touring, incl. BLR edition' },
+  { handle: 'cal-ZEzAGxvFU094YU2', label: 'AIBoomi — touring AI/founder series, incl. BLR' },
 ];
 
 // ── Enrichment ──────────────────────────────────────────────────────────────
