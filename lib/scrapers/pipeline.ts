@@ -126,6 +126,16 @@ export const DEFAULTS: Required<PipelineOptions> = {
   // so enrichment is the ONLY thing that gets them, and a cover is one of the four fields the
   // event card renders. Costs one event-page fetch each, so this is the expensive knob in the
   // run; re-check with diag-scorecard.ts ("Feed data the UI renders") before raising it further.
+  //
+  // THIS KNOB ALSO GOVERNS THE RECALL OF THE STAGE-5c CITY GATE, which is not obvious from
+  // either end and is why it is written down here rather than only in geo.ts. Meetup's ICS
+  // carries no LOCATION, so enrichment is what fills venue/address/city/coords — and
+  // `enrichMeetupEvents` builds its candidate list by sorting ascending on start date and THEN
+  // truncating to the budget. So the overflow is not a random sample: it is specifically the
+  // furthest-future events, and each one reaches stage 5c with no city, no venue and no
+  // address, leaving only its title to be judged on. At 800 against ~931 Meetup events that
+  // tail is real. Lowering this number silently lowers off-city recall on the largest source in
+  // the corpus; it does not merely cost cover images.
   meetupEnrichBudget: 800,
   // Sized ABOVE the known set with headroom, because discovery compounds and a cap that bites
   // is a permanent blind spot (see loadDiscovered). Measured 2026-08-23: 200 Meetup groups and
