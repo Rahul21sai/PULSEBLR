@@ -614,6 +614,8 @@ interface AdminEvent {
   isTechEvent?: boolean;
   category?: string[];
   connectionScore?: number;
+  /** ISO string when this was pinned to the home page Spotlight. Absent/null = not pinned. */
+  spotlightAt?: string | null;
 }
 
 function EventsPanel({ onChanged }: { onChanged: () => void }) {
@@ -659,6 +661,49 @@ function EventsPanel({ onChanged }: { onChanged: () => void }) {
       onChanged();
     } catch (err) {
       setNote({ ok: false, text: `Could not delete (${err instanceof Error ? err.message : 'failed'}).` });
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  /**
+   * Pin or unpin an event to the home page Spotlight.
+   *
+   * Unpinning sends `spotlightAt: null` rather than deleting the key, because the route does a
+   * plain `$set` and cannot express `$unset`. That is fine and deliberate: the feed filters on
+   * `spotlightAt: { $type: 'date' }`, so an explicit null is not a date and does not match. Using
+   * `$exists` there instead would have made this null read as "pinned".
+   *
+   * Only upcoming, and only two get shown — the home page requests `spotlight=true` through the
+   * same filter builder as every other query, so a pin cannot resurrect a finished event. Pinning
+   * a third is allowed here and simply does not display; that is worth knowing before wondering
+   * why nothing changed.
+   */
+  async function toggleSpotlight(e: AdminEvent) {
+    const pinned = Boolean(e.spotlightAt);
+    setBusy(e._id);
+    setNote(null);
+    try {
+      const nextValue = pinned ? null : new Date().toISOString();
+      const res = await fetch(`/api/events/${e._id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ spotlightAt: nextValue }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setEvents(prev => prev.map(x => (x._id === e._id ? { ...x, spotlightAt: nextValue } : x)));
+      setNote({
+        ok: true,
+        text: pinned
+          ? `“${e.title}” removed from the Spotlight.`
+          : `“${e.title}” pinned to the Spotlight. It shows on the home page while it is upcoming.`,
+      });
+      onChanged();
+    } catch (err) {
+      setNote({
+        ok: false,
+        text: `Could not update (${err instanceof Error ? err.message : 'failed'}).`,
+      });
     } finally {
       setBusy(null);
     }
@@ -737,6 +782,35 @@ function EventsPanel({ onChanged }: { onChanged: () => void }) {
                     {[e.source, e.organizer, (e.category || []).join(', ')].filter(Boolean).join(' · ')}
                   </p>
                 </div>
+                {/* Star, not the word "Spotlight": the row already carries a date, a title, a
+                    source line and two other controls, and a third word-button turns it into a
+                    wall of text. `aria-pressed` is what makes an icon toggle legible to a screen
+                    reader — it says the state, which the glyph alone cannot. */}
+                <button
+                  type="button"
+                  onClick={() => toggleSpotlight(e)}
+                  disabled={busy === e._id}
+                  aria-pressed={Boolean(e.spotlightAt)}
+                  aria-label={
+                    e.spotlightAt
+                      ? `Remove ${e.title} from the Spotlight`
+                      : `Pin ${e.title} to the Spotlight`
+                  }
+                  title={
+                    e.spotlightAt
+                      ? 'Pinned to the home page Spotlight — click to remove'
+                      : 'Pin to the home page Spotlight (shows the two most recently pinned)'
+                  }
+                  className={`shrink-0 rounded-full px-2.5 py-1.5 text-[12px] font-semibold disabled:opacity-50 ${
+                    e.spotlightAt
+                      ? 'bg-[#1D1D1F] text-white hover:bg-black'
+                      : 'border border-[#e5e5ea] bg-white text-[#86868B] hover:bg-[#f3f3f5]'
+                  }`}
+                >
+                  <span aria-hidden="true" className="material-symbols-outlined text-[15px] leading-none align-[-2px]">
+                    {e.spotlightAt ? 'star' : 'star_outline'}
+                  </span>
+                </button>
                 <button
                   type="button"
                   onClick={() => toggleTech(e)}

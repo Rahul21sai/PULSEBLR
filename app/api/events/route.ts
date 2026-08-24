@@ -46,7 +46,8 @@ export async function GET(request: NextRequest) {
         'title source sourceUrl slug organizer hostAvatarUrl category tags format hasFood ' +
           'isFree price priceMax currency soldOut venue area city lat lng onlineLink imageUrl ' +
           'startDateTime endDateTime applyLink registrationDeadline attendeeCount capacity ' +
-          'isTechEvent companies connectionScore isTargetCompany recruiterMentioned seenInSources createdAt'
+          'isTechEvent companies connectionScore isTargetCompany recruiterMentioned seenInSources ' +
+          'spotlightAt createdAt'
       )
       .sort(buildSort(sort, hasTextSearch))
       .skip(skip)

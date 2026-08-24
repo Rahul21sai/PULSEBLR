@@ -717,6 +717,34 @@ Interactive surfaces **press** (`.pressable`, `scale(0.978)`) rather than lift: 
 
 The scraper and source controls used to live in `/settings`, which every signed-in user can open — that was the boundary problem in one page. `/settings` is now purely per-user (account, digest, a "your permissions" list that names what is admin-only) and links to `/admin` only for admins.
 
+> **The home page Spotlight has TWO modes, and the fallback is the point.** `Event.spotlightAt`
+> is a date an admin sets from the star toggle in `/admin`'s events panel. With any upcoming event
+> pinned, the Spotlight is editorial and the caption reads "Hand-picked"; with none pinned — the
+> normal state — it falls back to the top of the same `connectionScore` ranking the feed below uses
+> and reads "Best for connections right now". Falling back rather than hiding is deliberate: an
+> empty pin set is not a misconfiguration, so the feature has to look finished on a database where
+> nobody has ever opened `/admin`.
+>
+> Four things that are easy to get wrong here:
+>
+> · **`spotlightAt` is EDITORIAL, not derived.** `connectionScore`, `companies` and `isTechEvent`
+>   are all recomputable, so backfills rewrite them freely. A human chose this one, so nothing may
+>   recompute or clear it. `mergeInto()` is already safe because it uses an explicit allowlist of
+>   SCRAPED fields — keep it that way.
+> · **The filter is `{ $type: 'date' }`, not `$exists`.** Unpinning sends `spotlightAt: null`,
+>   because `PUT /api/events/[id]` does a plain `$set` and cannot express `$unset`. Under `$exists`
+>   that null would read as "pinned". Verified both directions.
+> · **It is a query FILTER (`?spotlight=true`), not a separate endpoint**, so a pin is narrowed by
+>   the same `techOnly` and upcoming-window logic as everything else — an event pinned in August
+>   cannot resurface in October. A bespoke endpoint would be a second definition of "upcoming".
+> · **Only two render** (`SPOTLIGHT_COUNT`), most recently pinned first. Pinning a third is allowed
+>   and simply does not show, which is worth knowing before wondering why nothing changed.
+>
+> Adding this field hit the warning at the top of this file — a field on an EXISTING model, where a
+> dev server holding a stale schema silently drops the write. Verified from a fresh `tsx` process
+> instead: the write persisted, `spotlight=true` matched it, an explicit null stopped matching, and
+> `0` of ~1500 documents carry the key when nothing is pinned.
+
 > **`/admin` is a server component and that is load-bearing.** `proxy.ts` can only see whether a session cookie exists; it cannot know whether that session is an admin. So the page re-checks the allowlist server-side and `redirect()`s a non-admin to `/` before any admin markup is generated. `session.user.isAdmin` (set in `auth.ts`) exists **only** to decide whether to draw the nav link — it is a courtesy, not authorisation, and editing it in devtools buys a 403 from `requireAdmin()`. `token.isAdmin` is recomputed on every JWT callback rather than written once at sign-in, so removing someone from `ADMIN_EMAILS` takes effect on their next request instead of whenever their weeks-long token happens to expire.
 
 `scripts/diag-admin-stats.ts` asserts the invariants the dashboard's UI assumes (bucket sums, `tech <= upcoming`, non-empty breakdowns) because the HTTP path cannot be exercised headlessly — Google OAuth can't complete.

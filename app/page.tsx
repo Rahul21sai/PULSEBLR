@@ -53,6 +53,12 @@ export default function Home() {
    * against it; the two are rendered as two sections.
    */
   const [liveEvents, setLiveEvents] = useState<FeedEvent[]>([]);
+  /**
+   * Events an admin pinned to the Spotlight (`Event.spotlightAt`). Empty is the normal case and
+   * is not a failure — it means nobody has pinned anything, and the Spotlight falls back to the
+   * top of the ranking. Kept separate from `events` so a pin can never reorder the ranked list.
+   */
+  const [pinnedEvents, setPinnedEvents] = useState<FeedEvent[]>([]);
   const [facets, setFacets] = useState<Facets | null>(null);
   const [pagination, setPagination] = useState<Pagination | null>(null);
   const [loading, setLoading] = useState(true);
@@ -305,10 +311,23 @@ export default function Home() {
       liveParams.set('sort', 'soonest');
       liveParams.set('limit', '20');
 
-      const [listRes, facetRes, liveRes] = await Promise.all([
+      /*
+       * The pinned Spotlight, asked for ONLY when the Spotlight would actually render — the
+       * untouched landing view under a ranked sort. Requesting it while someone is searching
+       * would spend a round trip on markup that is not going to be drawn. `spotlight=true` runs
+       * through the same filter builder as everything else, so a pin still respects `techOnly`
+       * and the upcoming window: an event pinned in August cannot resurface in October.
+       */
+      const wantsSpotlight = !query && countActive(filters) <= 1 && sort !== 'soonest';
+      const pinnedParams = buildParams(1);
+      pinnedParams.set('spotlight', 'true');
+      pinnedParams.set('limit', String(SPOTLIGHT_COUNT));
+
+      const [listRes, facetRes, liveRes, pinnedRes] = await Promise.all([
         fetch(`/api/events?${params.toString()}`),
         fetch(`/api/events/facets?${params.toString()}`),
         fetch(`/api/events?${liveParams.toString()}`),
+        wantsSpotlight ? fetch(`/api/events?${pinnedParams.toString()}`) : Promise.resolve(null),
       ]);
       if (!listRes.ok) throw new Error('Could not load events');
 
@@ -318,6 +337,18 @@ export default function Home() {
 
       setEvents(list.events || []);
       setPagination(list.pagination || null);
+
+      // Also an enhancement: if the pinned request fails or was skipped, the Spotlight simply
+      // falls back to the top of the ranking rather than disappearing.
+      if (pinnedRes?.ok) {
+        const pinned = await pinnedRes.json();
+        if (generation === requestGeneration.current) {
+          setPinnedEvents((pinned.events || []) as FeedEvent[]);
+        }
+      } else if (!wantsSpotlight && generation === requestGeneration.current) {
+        // Clear on a filtered/searched view so a stale pin cannot reappear when filters relax.
+        setPinnedEvents([]);
+      }
 
       // Live set is an enhancement, not content: a failure here must leave the feed intact.
       if (liveRes.ok) {
@@ -343,7 +374,11 @@ export default function Home() {
     } finally {
       if (generation === requestGeneration.current) setLoading(false);
     }
-  }, [buildParams]);
+    // `query`, `filters` and `sort` are listed even though `buildParams` already closes over all
+    // three, so `load` would change anyway. Naming them is not redundant: `wantsSpotlight` reads
+    // them DIRECTLY now, and depending on that only transitively means the day someone narrows
+    // `buildParams`'s own deps, this callback goes stale with no warning. The lint rule was right.
+  }, [buildParams, query, filters, sort]);
 
   // Deferred by a tick rather than called synchronously. Two reasons: React's
   // compiler rules (correctly) reject a synchronous setState inside an effect, and
@@ -490,10 +525,29 @@ export default function Home() {
      * editorial and paid ("FLAGSHIP", "INVITE ONLY", "GET TICKETS"): ours is just the ranking
      * being honest about its own top result, so it cannot disagree with the list underneath it.
      */
-    const featured =
-      !query && countActive(filters) <= 1 ? ranked.slice(0, SPOTLIGHT_COUNT) : [];
-    return [live, featured, featured.length ? ranked.slice(featured.length) : ranked];
-  }, [chronological, events, liveEvents, query, filters]);
+    const eligible = !query && countActive(filters) <= 1;
+    /*
+     * AN ADMIN PIN WINS OVER THE RANKING, and the fallback is the ranking rather than nothing.
+     *
+     * Two states, one component. With pins, the Spotlight is editorial — an admin decided.
+     * Without any, it is the top of the same ranking the list below uses. Falling back rather
+     * than hiding matters: an empty pin set is the NORMAL state, not a misconfiguration, so the
+     * feature has to look finished on a database where nobody has ever opened /admin.
+     *
+     * Pinned rows already in the live set are dropped instead of shown twice — "happening now"
+     * is the more urgent fact about an event than "an admin liked it".
+     */
+    const featured = !eligible
+      ? []
+      : pinnedEvents.length
+        ? pinnedEvents.filter(event => !seen.has(event._id)).slice(0, SPOTLIGHT_COUNT)
+        : ranked.slice(0, SPOTLIGHT_COUNT);
+
+    // Filter by id rather than slicing: a pinned event need not be at the top of the ranked page,
+    // or on it at all, so `slice` would remove the wrong rows.
+    const featuredIds = new Set(featured.map(event => event._id));
+    return [live, featured, ranked.filter(event => !featuredIds.has(event._id))];
+  }, [chronological, events, liveEvents, pinnedEvents, query, filters]);
 
   return (
     <div className="min-h-screen bg-[#F5F5F7]">
@@ -715,8 +769,11 @@ export default function Home() {
               <div className="flex items-center gap-2.5">
                 <h2 className="t-label shrink-0 text-[#1D1D1F]">Spotlight</h2>
                 <span aria-hidden="true" className="h-px flex-1 bg-[color:var(--hairline)]" />
+                {/* Says which of the two modes produced this. Not decoration: "hand-picked" and
+                    "top of the ranking" are different claims, and a reader who cannot tell which
+                    one they are looking at has no way to judge it. */}
                 <span className="shrink-0 text-[11.5px] text-[#8E8E93]">
-                  Best for connections right now
+                  {pinnedEvents.length > 0 ? 'Hand-picked' : 'Best for connections right now'}
                 </span>
               </div>
             </div>

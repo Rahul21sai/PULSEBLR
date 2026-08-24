@@ -145,6 +145,20 @@ export interface IEvent extends Document {
    */
   connectionScore: number;
   /**
+   * When an admin pinned this event to the home page Spotlight. Absent = not pinned.
+   *
+   * A DATE RATHER THAN A BOOLEAN, for two reasons. It orders the Spotlight deterministically
+   * (most recently pinned first) without a second field, and it records WHEN the call was made,
+   * which a boolean throws away — the same reason `lastSeenAt` is a date.
+   *
+   * EDITORIAL, NOT DERIVED, and that distinction decides how everything else treats it.
+   * `connectionScore`, `companies` and `isTechEvent` are all recomputable from the document, so
+   * backfills rewrite them freely. This one cannot be recomputed from anything — a human chose
+   * it. So `mergeInto()` must never touch it (it uses an explicit allowlist of SCRAPED fields,
+   * which is why re-scraping is already safe), and no backfill may clear it.
+   */
+  spotlightAt?: Date;
+  /**
    * Canonical company names this event is attributable to, resolved from the
    * host/title/tags by lib/companies/resolve.ts. Empty for the many community
    * events no company runs — that absence is meaningful, not missing data.
@@ -212,6 +226,10 @@ const EventSchema = new Schema<IEvent>(
     isTechEvent: { type: Boolean, default: true },
     companies: { type: [String], default: [], index: true },
     connectionScore: { type: Number, default: 20, min: 0, max: 100 },
+    // No default: ABSENT means "not pinned". A `default: null` would store an explicit null on
+    // every one of the ~1500 documents, and the query filters on `$type: 'date'` — which is also
+    // the shape that avoids the compound-sparse trap documented in CLAUDE.md §9.
+    spotlightAt: { type: Date },
     tagConfidence: { type: Number, default: 0.6, min: 0, max: 1 },
     isTargetCompany: { type: Boolean, default: false },
     recruiterMentioned: { type: Boolean, default: false },
@@ -236,6 +254,19 @@ EventSchema.index({ source: 1 });
 EventSchema.index({ createdAt: -1 });
 EventSchema.index({ isTargetCompany: 1 });
 EventSchema.index({ lastSeenAt: -1 });
+/**
+ * The home page Spotlight query: pinned events that have not happened yet, newest pin first.
+ *
+ * PARTIAL, not sparse. A single-field sparse index would work here, but the whole point of a
+ * pinned set is that it is tiny — a handful of documents out of ~1500 — and a partial index only
+ * stores those. It also states the intent in the index itself: this exists to find pinned rows,
+ * not to order every row by a field most of them do not have. Same `$type: 'date'` predicate the
+ * query filters on, so the index is actually usable by it.
+ */
+EventSchema.index(
+  { spotlightAt: -1, startDateTime: 1 },
+  { partialFilterExpression: { spotlightAt: { $type: 'date' } } }
+);
 // Free-text search over the fields users actually type into a search box.
 // Weights favour the title so "python" ranks a Python meetup above an event that
 // merely mentions Python in its description.

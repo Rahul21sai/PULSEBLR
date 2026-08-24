@@ -40,6 +40,8 @@ export interface FeedEvent {
   companies?: string[];
   connectionScore?: number;
   isTechEvent?: boolean;
+  /** ISO string when an admin pinned this to the home page Spotlight. Absent = not pinned. */
+  spotlightAt?: string | null;
   isTargetCompany?: boolean;
   recruiterMentioned?: boolean;
   seenInSources?: string[];

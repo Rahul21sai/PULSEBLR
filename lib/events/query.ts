@@ -24,6 +24,14 @@ export interface EventQueryParams {
   hasFood?: string;
   isFree?: boolean;
   techOnly?: boolean;
+  /**
+   * Only events an admin has pinned to the home page Spotlight.
+   *
+   * A filter rather than a bespoke endpoint, so a pinned set is narrowed by the SAME
+   * `techOnly` / area / company / time-window logic as everything else. A separate query
+   * would be a second definition of "upcoming" to keep in step with this one.
+   */
+  spotlight?: boolean;
   /** Inclusive lower bound on start time. */
   from?: Date;
   /** Exclusive upper bound on start time. */
@@ -51,6 +59,7 @@ export function parseEventParams(searchParams: URLSearchParams): EventQueryParam
     format: searchParams.get('format') || undefined,
     hasFood: searchParams.get('hasFood') || undefined,
     techOnly: searchParams.get('techOnly') === 'true',
+    spotlight: searchParams.get('spotlight') === 'true',
     includePast: searchParams.get('includePast') === 'true' || searchParams.get('includeAll') === 'true',
     includeOngoing: searchParams.get('includeOngoing') !== 'false',
   };
@@ -154,6 +163,10 @@ export function buildEventFilter(params: EventQueryParams): EventFilter {
   if (params.hasFood) filter.hasFood = params.hasFood;
   if (params.isFree !== undefined) filter.isFree = params.isFree;
   if (params.techOnly) filter.isTechEvent = true;
+  // `$type: 'date'` rather than `$exists` or `$ne: null`: it matches the partial index on
+  // `spotlightAt` exactly, so the query can use it, and it cannot be satisfied by a stray
+  // explicit null left behind by some future write path.
+  if (params.spotlight) filter.spotlightAt = { $type: 'date' };
 
   const now = new Date();
   const lowerBound = params.from ?? (params.includePast ? undefined : now);
