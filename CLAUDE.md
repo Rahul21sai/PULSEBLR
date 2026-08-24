@@ -162,6 +162,19 @@ verified. Duplicating those as unit tests would only produce slow, flaky copies.
 | `cleanup-duplicate-clusters.ts` | Collapse documents sharing a `clusterKey`; keeps the most complete, repoints `TrackerEntry` rows, gap-fills only. **Destructive** — dry by default, `--apply` to write. |
 | `cleanup-past.ts` / `cleanup-seed.ts` / `cleanup-dryrun.ts` | Older one-off cleanups, kept for reference. |
 
+> **OUTSTANDING as of 2026-08-24: `cleanup-non-bengaluru.ts --apply` has NOT been run.** The script
+> is fixed and verified; the database is not cleaned. Its dry run reports **39 rows total, 29
+> upcoming, 10 in the default tech feed**, and all of them are still stored — including
+> `KONG API + AI Summit 2026` (`city: Los Angeles`, `connectionScore` 100), which
+> `diag-offcity.ts` ranks **#2 in the entire tech feed**. Do not read "the off-city work landed" as
+> "the feed is clean": the ingest gate stops new arrivals from the next scrape onward, and nothing
+> has deleted the backlog. Run `diag-offcity.ts` first — it names all 29 rejects and all 6 spares —
+> then `--apply`.
+>
+> Why it cannot be waited out: rejecting a re-sighting stops `lastSeenAt` refreshing, so each
+> stored row is **frozen** — a later scrape can no longer correct or cancel it — and `pruneStale()`
+> only removes it a week after its own start date. They drain **after** being shown.
+
 > **WHY THE CLEANUP SELECTS ON `offCityReason()`, AND WHY IT JUDGES ONLINE EVENTS.** Both were
 > defects, fixed 2026-08-24; this records the evidence, because both look like things a later
 > "simplification" would undo.
@@ -656,6 +669,21 @@ NextAuth v5 (Auth.js) config lives in the root `auth.ts`, imported as `@/auth`. 
 - `requireAdmin()` — email must be in the `ADMIN_EMAILS` allowlist. For anything **global**: creating/editing/deleting events, adding/removing sources, triggering a scrape, sending the digest email. Google sign-in is open to anyone with a Google account, so "signed in" is not a bar for operations that affect everyone — a stranger could otherwise empty the corpus or loop `/api/scrape` and burn the LLM quota.
 
 `requireAdmin()` **fails closed**: with `ADMIN_EMAILS` unset every admin route returns 503, never "any signed-in user". Neither cron needs it — `daily-scrape.yml` and `daily-digest.yml` run `npm run scrape` / `npm run send-digest` directly rather than calling the API, so there is no shared secret to leak.
+
+> **GUARD FIRST, VALIDATE SECOND — in that order, in every route.** The guard must return
+> 401/403 before any body parsing or validation runs. Get it backwards and an anonymous caller
+> sending a bad payload receives **400 instead of 401**, which tells a stranger their body parsed
+> and validated far enough to be judged — free information about the shape of your API, handed to
+> someone with no credentials. It also breaks the contract `scripts/diag-api-auth.ts` asserts,
+> which is that *every* mutating route refuses an un-authed request with a refusal code.
+>
+> This is easy to get wrong precisely when you are doing the right thing. Adding input validation
+> to a route is an improvement, and the natural place to put it is at the top of the handler —
+> which is above the guard. The tracker write paths were the first routes here to gain a real
+> validator, and the ordering is why `diag-api-auth.ts` now probes them with a **deliberately
+> invalid body**: a 400 on those two cases means validation outran the guard, and the assertions
+> say so in their own labels. Copy that pattern when you add a validator to any of the ~10 routes
+> still returning `details: err.message`.
 
 `POST /api/scrape-url` fetches a URL the caller supplies, which made it an SSRF. It now goes through `lib/security/safe-fetch.ts`: http(s) only, no embedded credentials, and every **resolved** address checked against loopback/private/link-local/CGNAT/multicast ranges (including v4-mapped IPv6 and decimal-encoded forms), with redirects followed manually so each hop is re-validated. `scripts/diag-ssrf-guard.ts` asserts the bypasses. Full DNS-rebinding protection would need connection pinning and is documented as out of scope in the module header.
 
