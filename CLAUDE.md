@@ -1012,6 +1012,27 @@ and exposes no page↔worker channel.
 > that SETS `eventId`, not with the detection code** — that is the trap, because the detection code
 > is what looks wrong.
 
+> **UPDATE — a UI that sets it now exists, so the paragraph above is history for NEW folders only.**
+> Moving a tracker entry to **Confirmed** or **Attended** auto-creates a folder for that event via
+> `ensureFolderForEvent()` (`lib/contacts/service.ts`), wired into `PUT /api/tracker/[id]`, and that
+> path DOES set `eventId`. So `detectRepeatConnections()`'s better branch is finally reachable — for
+> folders created that way. Every folder made by hand still has `eventId: null`, and the three in the
+> database as of 2026-08-24 all do, so the trap above still applies to them. There is no backfill:
+> guessing which event a hand-named folder meant is not something a script should decide.
+>
+> `ensureFolderForEvent` has three outcomes and the third is the interesting one — **`adopted`**.
+> `{ userId, slug }` is unique, so if the user already made a folder with that event's name by hand,
+> creating would throw E11000; it links the existing folder to the event instead. The manual and
+> automatic paths converge on one folder per event rather than racing to own it, and nobody ends up
+> with "Databricks Hackathon (2)". The other two are `created` and `linked` (already linked, do
+> nothing — idempotent, so Confirmed → Attended → Confirmed makes exactly one folder).
+>
+> It is **non-fatal by design**: the status change has already committed and is what the user asked
+> for, so a folder failure is logged, not turned into a 500 that makes a successful move look broken.
+> And note the side effect on tooling — `diag-tracker-flow.ts` moves through Confirmed and Attended,
+> so it now creates a folder and had to learn to delete it (matched on `eventId`, never on name,
+> which would also delete a hand-made folder for the same event).
+
 > **`public/sw.js` v3 IS UNVERIFIED, AND CANNOT BE VERIFIED UNDER `npm run dev`.** `app/layout.tsx`
 > unregisters every service worker and deletes every cache in development, so offline behaviour
 > needs `npm run build && npm start` with `NEXTAUTH_URL` set. Three checks constitute verification:

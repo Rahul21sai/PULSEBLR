@@ -68,6 +68,14 @@ export default function TrackerPage() {
   const [loading, setLoading] = useState(true);
   const [unauthorized, setUnauthorized] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /**
+   * Set when moving an entry to Confirmed/Attended produced a folder, so the move is
+   * ACKNOWLEDGED rather than silent. Something appearing under People without explanation is
+   * worse than nothing appearing: the user has to work out where it came from.
+   */
+  const [folderNote, setFolderNote] = useState<{ id: string; name: string; adopted: boolean } | null>(
+    null
+  );
   const [view, setView] = useState<ViewMode>('board');
   const [selected, setSelected] = useState<TrackerEntry | null>(null);
   const [editing, setEditing] = useState<TrackerEntry | null>(null);
@@ -161,6 +169,16 @@ export default function TrackerPage() {
           body: JSON.stringify({ status }),
         });
         if (!res.ok) throw new Error('rejected');
+        // The route returns `folder` only when it ensured one — Confirmed or Attended, and
+        // `outcome: 'linked'` means it already existed, which is not news worth a banner.
+        const data = await res.json().catch(() => null);
+        if (data?.folder && data.folder.outcome !== 'linked') {
+          setFolderNote({
+            id: String(data.folder._id),
+            name: String(data.folder.name),
+            adopted: data.folder.outcome === 'adopted',
+          });
+        }
       } catch {
         setEntries(previous);
         setError('Couldn’t save that change. Please try again.');
@@ -304,6 +322,35 @@ export default function TrackerPage() {
         {error && (
           <div className="mb-4 bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-[13px] text-red-700">
             {error}
+          </div>
+        )}
+
+        {/* No auto-dismiss, unlike the error above. This one carries a LINK, and a banner that
+            vanishes after four seconds takes the link with it — the whole point is that you can
+            go straight to the folder and start scanning. Dismissed by hand instead. */}
+        {folderNote && (
+          <div className="mb-4 flex items-center gap-3 rounded-xl border border-[#c9e7d2] bg-[#f2fbf5] px-4 py-3 text-[13px] text-[#1d6b39]">
+            <span aria-hidden="true" className="material-symbols-outlined text-[18px]">
+              folder_check
+            </span>
+            <p className="min-w-0 flex-1">
+              {folderNote.adopted ? 'Linked to your folder ' : 'Folder ready for '}
+              <Link
+                href={`/folders/${folderNote.id}`}
+                className="font-semibold underline hover:no-underline"
+              >
+                {folderNote.name}
+              </Link>
+              {' '}— scan people straight into it.
+            </p>
+            <button
+              type="button"
+              onClick={() => setFolderNote(null)}
+              aria-label="Dismiss"
+              className="shrink-0 text-[#1d6b39]/60 hover:text-[#1d6b39]"
+            >
+              <span aria-hidden="true" className="material-symbols-outlined text-[18px]">close</span>
+            </button>
           </div>
         )}
 

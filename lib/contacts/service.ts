@@ -20,7 +20,7 @@
 import mongoose from 'mongoose';
 import connectDB from '../mongodb';
 import Contact, { IContact, CAPTURED_VIA } from '../models/Contact';
-import Folder, { IFolder } from '../models/Folder';
+import Folder, { IFolder, folderSlug } from '../models/Folder';
 import User, { DEFAULT_TARGET_COMPANIES } from '../models/User';
 import { resolveCompanies } from '../companies/resolve';
 import { coerceLinkedInInput } from '../scan/linkedin';
@@ -188,6 +188,81 @@ export function isValidId(id: string): boolean {
 export async function findOwnedFolder(userId: string, id: string) {
   if (!isValidId(id)) return null;
   return Folder.findOne({ _id: id, userId });
+}
+
+/** Tracker statuses that mean "I am going to this", and so should have a folder ready. */
+export const FOLDER_ON_TRACKER_STATUS = ['Confirmed', 'Attended'] as const;
+
+/**
+ * Get or create this user's folder for a corpus event. Idempotent.
+ *
+ * WHY IT EXISTS. Folders were manual only, so confirming an event in the tracker and then
+ * arriving to scan people meant creating the folder by hand at the door. Worse, nothing in the
+ * product ever set `Folder.eventId` — every folder had it null — which made the
+ * `folder.eventId ?? folder._id` branch in `detectRepeatConnections()` unreachable: two folders
+ * for one event counted as two events. This is the path that finally populates it.
+ *
+ * THREE OUTCOMES, and the third is the one worth reading:
+ *
+ *   · already linked  — a folder with this `eventId` exists, so return it and touch nothing.
+ *   · created         — the normal case.
+ *   · ADOPTED         — a folder with the same NAME already exists, because the user made one by
+ *     hand. `{ userId, slug }` is unique, so creating would throw E11000. Adopting it — linking
+ *     the existing folder to the event — is strictly better than either failing or inventing
+ *     "Databricks Hackathon (2)". The manual and automatic paths converge on one folder per event
+ *     instead of racing to own it.
+ *
+ * Deliberately NOT transactional. The caller's primary action (a status change, a scan) must
+ * succeed even if this does not, so every caller treats a throw as non-fatal.
+ */
+export async function ensureFolderForEvent(
+  userId: string,
+  event: {
+    _id: mongoose.Types.ObjectId | string;
+    title?: string;
+    startDateTime?: Date | string;
+    venue?: string | null;
+    area?: string | null;
+  }
+): Promise<{ folder: IFolder; outcome: 'linked' | 'created' | 'adopted' }> {
+  await connectDB();
+
+  const existing = await Folder.findOne({ userId, eventId: event._id });
+  if (existing) return { folder: existing, outcome: 'linked' };
+
+  // Denormalised on purpose, matching the manual create path: `pruneStale()` deletes events a
+  // week after they finish without touching referrers, so a folder that read its name through the
+  // join would lose it. `eventId` is a soft link.
+  const name = (event.title || '').trim() || 'Untitled event';
+  const doc = {
+    userId,
+    name,
+    eventId: event._id,
+    eventDate: event.startDateTime ? new Date(event.startDateTime) : undefined,
+    venue: event.venue || event.area || undefined,
+  };
+
+  try {
+    return { folder: await Folder.create(doc), outcome: 'created' };
+  } catch (error) {
+    const err = error as { code?: number; keyPattern?: Record<string, unknown> };
+    // Only the name clash is recoverable, and only by adopting. Anything else is a real failure
+    // and belongs to the caller — see the { userId, clientId } story in CLAUDE.md §9 for why a
+    // duplicate-key handler must check WHICH index it was.
+    if (err.code === 11000 && err.keyPattern && 'slug' in err.keyPattern) {
+      const byName = await Folder.findOne({ userId, slug: folderSlug(name) });
+      if (byName) {
+        if (!byName.eventId) {
+          byName.eventId = event._id as mongoose.Types.ObjectId;
+          if (!byName.eventDate && doc.eventDate) byName.eventDate = doc.eventDate;
+          if (!byName.venue && doc.venue) byName.venue = doc.venue;
+          await byName.save();
+        }
+        return { folder: byName, outcome: 'adopted' };
+      }
+    }
+    throw error;
+  }
 }
 
 /**

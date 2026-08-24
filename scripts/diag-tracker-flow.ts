@@ -416,6 +416,37 @@ async function main() {
     console.log('\nCleanup');
     const del = await admin.fetch(`/api/tracker/${entryId}`, { method: 'DELETE' });
     check('DELETE removes the entry', del.status < 300, `HTTP ${del.status}`);
+
+    /*
+     * DELETE THE FOLDER THIS RUN CAUSED. Moving to Confirmed/Attended above now auto-creates a
+     * folder for the event (`ensureFolderForEvent`, wired into PUT /api/tracker/[id]), so this
+     * script has a side effect it did not have when it was written. Without this, every run left
+     * a stray folder in the account — a diagnostic that writes and does not clean up is a slow
+     * leak, and this one is aimed at a real user's data.
+     *
+     * Matched on `eventId`, not on name: the folder is named after the event, and matching on a
+     * title would also delete a folder the user had made by hand for the same event.
+     */
+    const foldersRes = await admin.fetch('/api/folders');
+    if (foldersRes.status === 200) {
+      const { folders = [] } = await foldersRes.json();
+      const caused = folders.filter(
+        (f: { _id: string; eventId?: string | null }) => f.eventId === String(event._id)
+      );
+      for (const f of caused) {
+        const r = await admin.fetch(`/api/folders/${f._id}`, { method: 'DELETE' });
+        check('DELETE removes the auto-created folder', r.status < 300, `HTTP ${r.status}`);
+      }
+      if (caused.length === 0) {
+        check(
+          'auto-created folder was found to clean up',
+          false,
+          'none matched this event — the Confirmed hook may have stopped firing'
+        );
+      }
+    } else {
+      check('GET /api/folders for cleanup', false, `HTTP ${foldersRes.status}`);
+    }
   }
 
   console.log(`\n${failures === 0 ? 'All checks passed.' : `${failures} check(s) FAILED.`}`);

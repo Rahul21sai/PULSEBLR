@@ -8,6 +8,7 @@ import {
   trackerValidationError,
   isSchemaRejection,
 } from '@/lib/tracker/validate';
+import { ensureFolderForEvent, FOLDER_ON_TRACKER_STATUS } from '@/lib/contacts/service';
 
 // GET /api/tracker/[id]
 export async function GET(
@@ -82,7 +83,52 @@ export async function PUT(
     ).populate('eventId');
 
     if (!entry) return NextResponse.json({ error: 'Not found' }, { status: 404 });
-    return NextResponse.json(entry);
+
+    /*
+     * Confirming an event gets you a folder to scan people into.
+     *
+     * Before this, folders were manual only — you confirmed an event here, then created the
+     * folder by hand at the door. It also does something no other path did: it SETS
+     * `Folder.eventId`. Every folder in the product had that null, which made the
+     * `folder.eventId ?? folder._id` branch in `detectRepeatConnections()` unreachable and
+     * counted two folders for one event as two events.
+     *
+     * `Attended` as well as `Confirmed`, because jumping straight there is a real path — you
+     * went, and now you want to record who you met. `ensureFolderForEvent` is idempotent, so
+     * moving Confirmed -> Attended -> Confirmed makes exactly one folder.
+     *
+     * NON-FATAL BY DESIGN. The status change is what the user asked for and it has already
+     * committed; the folder is a convenience on top. So a failure here is logged rather than
+     * turned into a 500 that makes a successful move look broken.
+     */
+    let folder: { _id: string; name: string; outcome: string } | undefined;
+    const nextStatus = typeof update.status === 'string' ? update.status : undefined;
+    if (
+      nextStatus &&
+      (FOLDER_ON_TRACKER_STATUS as readonly string[]).includes(nextStatus) &&
+      entry.eventId
+    ) {
+      try {
+        const event = entry.eventId as unknown as {
+          _id: mongoose.Types.ObjectId;
+          title?: string;
+          startDateTime?: Date;
+          venue?: string | null;
+          area?: string | null;
+        };
+        const result = await ensureFolderForEvent(userId, event);
+        folder = {
+          _id: String(result.folder._id),
+          name: result.folder.name,
+          outcome: result.outcome,
+        };
+      } catch (folderError) {
+        console.error('Tracker status changed but folder creation failed:', folderError);
+      }
+    }
+
+    // `folder` is present only when one was ensured, so the client can link straight to it.
+    return NextResponse.json(folder ? { ...entry.toObject(), folder } : entry);
   } catch (error) {
     console.error('Error updating tracker entry:', error);
     // Unreachable while the validator and the schema agree; a 400 rather than a 500 if they
