@@ -32,6 +32,11 @@ const SORTS = [
 
 type ViewMode = 'rail' | 'grid';
 
+/** Same members in the same order. Used to keep `filters` identity stable — see below. */
+function sameList(a: string[], b: string[]): boolean {
+  return a.length === b.length && a.every((v, i) => v === b[i]);
+}
+
 export default function Home() {
   const [events, setEvents] = useState<FeedEvent[]>([]);
   const [facets, setFacets] = useState<Facets | null>(null);
@@ -123,16 +128,40 @@ export default function Home() {
       // link without the param would silently flip the default.
       const techOnly = p.get('techOnly');
 
-      setFilters(prev => ({
-        ...prev,
-        companies: company ? company.split(',').filter(Boolean) : prev.companies,
-        categories: category ? category.split(',').filter(Boolean) : prev.categories,
-        areas: area ? area.split(',').filter(Boolean) : prev.areas,
-        format: format ?? prev.format,
-        freeOnly: p.get('isFree') === 'true' ? true : prev.freeOnly,
-        foodOnly: p.get('hasFood') === 'yes' ? true : prev.foodOnly,
-        techOnly: techOnly === null ? prev.techOnly : techOnly !== 'false',
-      }));
+      /*
+       * RETURN `prev` UNCHANGED WHEN NOTHING CAME FROM THE URL. This spread used to run
+       * unconditionally, which produced a NEW object every time even on a bare "/" where no
+       * param exists — and object identity is load-bearing here: `buildParams` depends on
+       * `filters`, `load` depends on `buildParams`, and the fetching effect depends on `load`.
+       * So a fresh-but-identical `filters` re-ran the whole chain and fired the feed query a
+       * SECOND time with byte-identical params.
+       *
+       * Measured on a production build (so not StrictMode's double-invoke): 6 API requests per
+       * page load where 3 would do — `/api/events` twice and `/api/events/facets` twice. Both
+       * are the expensive ones: the feed query and the facet aggregation. Every visitor paid
+       * double, and it was invisible because the second response is identical to the first.
+       */
+      setFilters(prev => {
+        const next = {
+          ...prev,
+          companies: company ? company.split(',').filter(Boolean) : prev.companies,
+          categories: category ? category.split(',').filter(Boolean) : prev.categories,
+          areas: area ? area.split(',').filter(Boolean) : prev.areas,
+          format: format ?? prev.format,
+          freeOnly: p.get('isFree') === 'true' ? true : prev.freeOnly,
+          foodOnly: p.get('hasFood') === 'yes' ? true : prev.foodOnly,
+          techOnly: techOnly === null ? prev.techOnly : techOnly !== 'false',
+        };
+        const unchanged =
+          next.format === prev.format &&
+          next.freeOnly === prev.freeOnly &&
+          next.foodOnly === prev.foodOnly &&
+          next.techOnly === prev.techOnly &&
+          sameList(next.companies, prev.companies) &&
+          sameList(next.categories, prev.categories) &&
+          sameList(next.areas, prev.areas);
+        return unchanged ? prev : next;
+      });
 
       // Only now may the URL be written back.
       hydratedFromUrl.current = true;
