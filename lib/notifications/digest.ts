@@ -7,15 +7,11 @@ import {
 import connectDB from '../mongodb';
 import TrackerEntry from '../models/TrackerEntry';
 import { IEvent } from '../models/Event';
-
-/** A connection as stored on a tracker entry. */
-interface DigestConnection {
-  name: string;
-  company?: string;
-  role?: string;
-  followUpAt?: Date | string;
-  followedUp?: boolean;
-}
+import { getPendingFollowUps, type PendingFollowUp } from '../helpers/phase6';
+// Dates in an email MUST go through here. This digest is sent by a GitHub Actions runner in
+// UTC at 8 AM IST (02:30 UTC), so `toLocaleDateString()` on the ambient locale reports the
+// PREVIOUS day. lib/format.ts is pinned to Asia/Kolkata.
+import { dayLabelIST, fullDateIST } from '../format';
 
 /** A tracker entry with its event populated, as the digest queries it. */
 interface DigestTrackerEntry {
@@ -23,7 +19,6 @@ interface DigestTrackerEntry {
   notes?: string;
   updatedAt?: Date | string;
   eventId: { title: string };
-  connections: DigestConnection[];
 }
 
 // Base URL for links in the digest. In production this must be the deployed
@@ -34,7 +29,19 @@ export interface DigestData {
   newEvents: IEvent[];
   upcomingDeadlines: IEvent[];
   trackerUpdates: DigestTrackerEntry[];
-  followUpReminders: DigestTrackerEntry[];
+  /**
+   * People who need following up — overdue, plus the next three days.
+   *
+   * Now a unified `PendingFollowUp[]` from `lib/helpers/phase6.ts` rather than a list of
+   * TrackerEntry documents, so it covers BOTH the `Contact` collection and the legacy
+   * `TrackerEntry.connections[]` subdocuments in one shape.
+   *
+   * The query it replaces had three defects: it lacked `$elemMatch`, so two DIFFERENT array
+   * elements could each satisfy one bound and an entry matched with nothing actually in window;
+   * it did not filter `followedUp`, so completed items were re-emailed forever; and its window
+   * was future-only, so an OVERDUE follow-up reached the dashboard but never the inbox.
+   */
+  followUpReminders: PendingFollowUp[];
   unhealthySources: UnhealthySource[];
 }
 
@@ -74,19 +81,9 @@ export async function generateDailyDigest(userId: string): Promise<DigestData> {
     .sort({ updatedAt: -1 })
     .lean();
 
-  // Get connections with follow-up dates in next 3 days
-  const threeDaysFromNow = new Date();
-  threeDaysFromNow.setDate(threeDaysFromNow.getDate() + 3);
-
-  const followUpReminders = await TrackerEntry.find({
-    userId,
-    'connections.followUpAt': {
-      $gte: new Date(),
-      $lte: threeDaysFromNow,
-    },
-  })
-    .populate('eventId')
-    .lean();
+  // People to follow up with: overdue AND the next three days, from both stores. One call, so
+  // the dashboard and the inbox can no longer disagree about what "due" means.
+  const followUpReminders = await getPendingFollowUps(userId, { includeUpcomingDays: 3 });
 
   // Sources that have gone quiet or errored — so scraper breakage is visible
   // instead of silently shrinking the event feed.
@@ -98,7 +95,7 @@ export async function generateDailyDigest(userId: string): Promise<DigestData> {
     // Both queries .populate('eventId'), so at runtime eventId is the full event
     // document even though the schema types the field as an ObjectId reference.
     trackerUpdates: trackerUpdates as unknown as DigestTrackerEntry[],
-    followUpReminders: followUpReminders as unknown as DigestTrackerEntry[],
+    followUpReminders,
     unhealthySources,
   };
 }
@@ -111,12 +108,7 @@ export function formatDigestAsText(digest: DigestData): string {
 
   lines.push('═══════════════════════════════════════════');
   lines.push('PulseBLR Daily Digest');
-  lines.push(new Date().toLocaleDateString('en-IN', { 
-    weekday: 'long', 
-    year: 'numeric', 
-    month: 'long', 
-    day: 'numeric' 
-  }));
+  lines.push(fullDateIST(new Date()));
   lines.push('═══════════════════════════════════════════');
   lines.push('');
 
@@ -137,10 +129,7 @@ export function formatDigestAsText(digest: DigestData): string {
     Object.entries(byCategory).forEach(([category, events]) => {
       lines.push(`\n${category}:`);
       events.forEach(event => {
-        const date = new Date(event.startDateTime).toLocaleDateString('en-IN', {
-          month: 'short',
-          day: 'numeric',
-        });
+        const date = dayLabelIST(event.startDateTime);
         const location = event.format === 'online' ? '🌐 Online' : 
                         event.area ? `📍 ${event.area}` : '📍 Bangalore';
         const food = event.hasFood === 'yes' ? ' 🍕' : '';
@@ -157,10 +146,7 @@ export function formatDigestAsText(digest: DigestData): string {
     lines.push('─'.repeat(47));
     digest.upcomingDeadlines.forEach(event => {
       // The query filters on registrationDeadline existing, so this is always set.
-      const deadline = new Date(event.registrationDeadline!).toLocaleDateString('en-IN', {
-        month: 'short',
-        day: 'numeric',
-      });
+      const deadline = dayLabelIST(event.registrationDeadline!);
       lines.push(`  • ${event.title}`);
       lines.push(`    Deadline: ${deadline}`);
     });
@@ -183,20 +169,19 @@ export function formatDigestAsText(digest: DigestData): string {
 
   // Follow-up Reminders
   if (digest.followUpReminders.length > 0) {
-    lines.push(`👥 FOLLOW-UP REMINDERS (${digest.followUpReminders.length})`);
+    lines.push(`👥 PEOPLE TO FOLLOW UP (${digest.followUpReminders.length})`);
     lines.push('─'.repeat(47));
-    digest.followUpReminders.forEach((entry: DigestTrackerEntry) => {
-      entry.connections.forEach((conn: DigestConnection) => {
-        if (conn.followUpAt) {
-          const followUpDate = new Date(conn.followUpAt);
-          const today = new Date();
-          if (followUpDate >= today) {
-            lines.push(`  • ${conn.name} (${entry.eventId.title})`);
-            if (conn.company) lines.push(`    ${conn.company}`);
-            lines.push(`    Follow up: ${followUpDate.toLocaleDateString('en-IN')}`);
-          }
-        }
-      });
+    digest.followUpReminders.forEach(followUp => {
+      const where = followUp.eventTitle ? ` (${followUp.eventTitle})` : '';
+      lines.push(`  • ${followUp.connection.name}${where}${followUp.overdue ? '  ← OVERDUE' : ''}`);
+      if (followUp.connection.company) lines.push(`    ${followUp.connection.company}`);
+      if (followUp.connection.context) {
+        lines.push(`    ${followUp.connection.context.substring(0, 80)}`);
+      }
+      // IST, via lib/format.ts. A UTC GitHub Actions runner formatting with the ambient locale
+      // puts this on the wrong day — the digest is sent at 8 AM IST, i.e. 02:30 UTC.
+      lines.push(`    Follow up: ${dayLabelIST(followUp.connection.followUpAt)}`);
+      if (followUp.connection.linkedin) lines.push(`    ${followUp.connection.linkedin}`);
     });
     lines.push('');
   }
@@ -255,7 +240,7 @@ export function formatDigestAsHTML(digest: DigestData): string {
 <body>
   <div class="header">
     <h1>🎯 PulseBLR Daily Digest</h1>
-    <p>${new Date().toLocaleDateString('en-IN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
+    <p>${escapeHtml(fullDateIST(new Date()))}</p>
   </div>
 `);
 
@@ -277,7 +262,7 @@ export function formatDigestAsHTML(digest: DigestData): string {
     Object.entries(byCategory).forEach(([category, events]) => {
       html.push(`<div class="category-group"><div class="category-name">${category}</div>`);
       events.forEach(event => {
-        const date = new Date(event.startDateTime).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' });
+        const date = dayLabelIST(event.startDateTime);
         const location = event.format === 'online' ? '🌐 Online' : event.area ? `📍 ${event.area}` : '📍 Bangalore';
         const food = event.hasFood === 'yes' ? ' 🍕' : '';
         html.push(`
@@ -301,11 +286,65 @@ export function formatDigestAsHTML(digest: DigestData): string {
 `);
     digest.upcomingDeadlines.forEach(event => {
       // The query filters on registrationDeadline existing, so this is always set.
-      const deadline = new Date(event.registrationDeadline!).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' });
+      const deadline = dayLabelIST(event.registrationDeadline!);
       html.push(`
     <div class="event-card">
       <div class="event-title">${event.title}</div>
       <div class="event-meta">Deadline: ${deadline}</div>
+    </div>
+`);
+    });
+    html.push(`</div>`);
+  }
+
+  /**
+   * People to follow up.
+   *
+   * THIS SECTION WAS MISSING ENTIRELY. `email.ts`'s `hasContent` counted
+   * `followUpReminders.length` when deciding whether to send, while this formatter rendered
+   * nothing for it — so a digest whose only content was follow-ups sent an effectively empty
+   * email. Adding the data was not enough; the section had to exist.
+   *
+   * EVERY value here is escaped. Names, companies and "how we met" notes originate in a QR code
+   * somebody else generated or in free text, and they are interpolated straight into HTML.
+   */
+  if (digest.followUpReminders.length > 0) {
+    html.push(`
+  <div class="section">
+    <div class="section-title">👥 People to follow up (${digest.followUpReminders.length})</div>
+`);
+    digest.followUpReminders.forEach(followUp => {
+      const meta = [
+        followUp.connection.company,
+        followUp.eventTitle,
+        `follow up ${dayLabelIST(followUp.connection.followUpAt)}`,
+      ]
+        .filter(Boolean)
+        .map(part => escapeHtml(String(part)))
+        .join(' · ');
+
+      const overdue = followUp.overdue
+        ? ' style="border-left-color: #dd6b20; background: #fffaf0;"'
+        : '';
+
+      html.push(`
+    <div class="event-card"${overdue}>
+      <div class="event-title">${escapeHtml(followUp.connection.name)}${
+        followUp.overdue ? ' — overdue' : ''
+      }</div>
+      <div class="event-meta">${meta}</div>${
+        followUp.connection.context
+          ? `\n      <div class="event-meta">${escapeHtml(
+              followUp.connection.context.substring(0, 140)
+            )}</div>`
+          : ''
+      }${
+        followUp.connection.linkedin
+          ? `\n      <div class="event-meta"><a href="${escapeHtml(
+              followUp.connection.linkedin
+            )}">Open LinkedIn</a></div>`
+          : ''
+      }
     </div>
 `);
     });
@@ -351,7 +390,7 @@ export function formatDigestAsHTML(digest: DigestData): string {
  * Source names and error strings come from external feeds, so escape them to
  * avoid injecting stray markup into the rendered email.
  */
-function escapeHtml(input: string): string {
+export function escapeHtml(input: string): string {
   return input
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')

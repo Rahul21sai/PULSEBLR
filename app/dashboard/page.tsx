@@ -22,7 +22,12 @@ interface FollowUp {
     company?: string;
     followUpAt: string;
   };
-  trackerEntryId: string;
+  /** Which store this came from. See lib/helpers/phase6.ts. */
+  source?: 'contact' | 'tracker';
+  /** Present for a Contact row — the precise id to complete. */
+  contactId?: string;
+  /** Present for a legacy TrackerEntry subdocument. */
+  trackerEntryId?: string;
 }
 
 interface RepeatConnection {
@@ -81,11 +86,24 @@ export default function DashboardPage() {
   }, []);
 
 
-  const markFollowUpComplete = async (trackerEntryId: string, connectionName: string) => {
+  /**
+   * Complete a follow-up.
+   *
+   * Prefers `contactId`, which addresses ONE row. The legacy `(trackerEntryId, connectionName)`
+   * pair matches the first person with that name inside the entry, so with two people called
+   * Rahul the button silently no-ops on the second one forever. Rows still living in
+   * `TrackerEntry.connections[]` have no id to use instead, which is why both paths exist until
+   * `scripts/migrate-connections-to-contacts.ts` has run.
+   */
+  const markFollowUpComplete = async (followUp: FollowUp) => {
     await fetch('/api/phase6/follow-ups', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ trackerEntryId, connectionName }),
+      body: JSON.stringify(
+        followUp.contactId
+          ? { contactId: followUp.contactId }
+          : { trackerEntryId: followUp.trackerEntryId, connectionName: followUp.connection.name }
+      ),
     });
     fetchData();
   };
@@ -189,7 +207,7 @@ export default function DashboardPage() {
                             </p>
                           </div>
                           <button
-                            onClick={() => markFollowUpComplete(fu.trackerEntryId, fu.connection.name)}
+                            onClick={() => markFollowUpComplete(fu)}
                             className="ml-4 bg-green-500 text-white text-[11px] font-bold px-3 py-1.5 rounded-full hover:bg-green-600 transition-colors shrink-0"
                           >
                             Done

@@ -5,6 +5,7 @@ import connectDB from '@/lib/mongodb';
 import User from '@/lib/models/User';
 import { isAdminEmail } from '@/lib/admin';
 import { devLoginEnabled, devUserId } from '@/lib/dev-login';
+import { ensureUser } from '@/lib/user-record';
 
 /**
  * `trustHost: true` below is only safe when the canonical origin is pinned, so refuse to
@@ -98,13 +99,18 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         token.picture = undefined;
         try {
           await connectDB();
-          await User.findOneAndUpdate(
-            { googleId: token.sub },
-            { name: token.name, email: token.email, googleId: token.sub },
-            { upsert: true, new: true }
-          );
+          /**
+           * `ensureUser`, not a bare upsert.
+           *
+           * `User.email` is UNIQUE, and a dev-login googleId is `devlogin:<email>` rather than the
+           * Google `sub`. So on an account that has ALSO signed in with real Google,
+           * `findOneAndUpdate({ googleId }, { email }, { upsert: true })` throws E11000 every
+           * single time — and the old catch here swallowed it, leaving NO user row and a log line
+           * nobody reads. Measured: it silently broke `/api/me/card` for the whole session.
+           */
+          await ensureUser(token.sub, token.email, token.name);
         } catch (err) {
-          console.error('Error upserting dev-login user:', err);
+          console.error('Error ensuring dev-login user:', err);
         }
       }
 

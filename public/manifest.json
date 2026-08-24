@@ -5,7 +5,7 @@
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",
-  "theme_color": "#9333ea",
+  "theme_color": "#F5F5F7",
   "orientation": "portrait-primary",
   "icons": [
     {
@@ -37,6 +37,30 @@
     }
   ],
   "shortcuts": [
+    {
+      "name": "Scan a code",
+      "short_name": "Scan",
+      "description": "Capture somebody you just met",
+      "url": "/scan",
+      "icons": [
+        {
+          "src": "/icon-192.svg",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
+      "name": "Show my code",
+      "short_name": "My code",
+      "description": "Let somebody scan your details",
+      "url": "/card",
+      "icons": [
+        {
+          "src": "/icon-192.svg",
+          "sizes": "192x192"
+        }
+      ]
+    },
     {
       "name": "View Feed",
       "short_name": "Feed",

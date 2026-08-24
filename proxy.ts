@@ -9,7 +9,26 @@ import { NextRequest, NextResponse } from 'next/server';
 //
 // NOTE: the matcher below deliberately excludes `api`, so NOTHING here protects an API
 // route. Every /api guard lives in its own handler. See lib/api-auth.ts.
-const PROTECTED = ['/dashboard', '/tracker', '/add-event', '/settings', '/admin'];
+// NOTE ON PREFIX MATCHING: the check below is `pathname.startsWith(p)`, so each entry also
+// covers every sibling beginning with those characters. That is why the public pages of the
+// scan feature live at deliberately different top-level segments:
+//
+//   /folders, /scan, /card   PRIVATE — listed here
+//   /c/<token>               PUBLIC  — somebody's card, opened from a QR by a stranger
+//   /f/<token>               PUBLIC  — "add yourself to this folder"
+//
+// `'/c/abc'.startsWith('/card')` is false, so `/card` does not accidentally capture `/c/…`.
+// Never add a bare `/c` or `/f` here, and never nest a public page under a listed prefix.
+const PROTECTED = [
+  '/dashboard',
+  '/tracker',
+  '/add-event',
+  '/settings',
+  '/admin',
+  '/folders',
+  '/scan',
+  '/card',
+];
 
 export default function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
