@@ -613,6 +613,52 @@ export default function Home() {
       {/* `feed-main` supplies padding-top from --feed-offset, the same variable the
           sticky day headings use, so content can never sit under the fixed bars. */}
       <main className="feed-main pb-24 md:pb-16">
+        {/* ── Hero ───────────────────────────────────────────────────────────
+            WHY THIS EXISTS. The page used to open on a search box, a filter button, five date
+            chips and a sort dropdown, then a title and a list. A first-time visitor got the
+            controls before they got an explanation, and the one thing that makes this app
+            different from Luma or Meetup — that it ranks by who you will meet rather than by
+            what is soonest — appeared only as a six-word aside under the heading.
+
+            So the H1 states the proposition, and the numbers under it are LIVE rather than
+            marketing copy: a real count is evidence, a paragraph is a claim. The competitor this
+            was compared against spends a static paragraph here; we have the figures, so we use
+            them.
+
+            It sits above the flex row on purpose, which also puts the H1 first in the document —
+            before the filter rail — so the heading outline finally starts where it should.
+
+            No card, no gradient, no new elevation: globals.css keeps one accent and one live
+            state, and a hero is not a reason to spend either. The only colour is the live dot,
+            and only when something is actually on. */}
+        <div className="max-w-[1240px] mx-auto px-4 md:px-8 pt-1 pb-6 md:pb-8">
+          <h1 className="t-display max-w-[19ch] text-[#1D1D1F] md:max-w-none">
+            Bengaluru tech events, ranked by who you’ll meet
+          </h1>
+          <p className="mt-2.5 max-w-[62ch] text-[14.5px] leading-[1.55] text-[#3a3a3c]">
+            Every developer meetup, conference, hackathon and workshop in the city, in one place.
+            Sorted by whether you’ll leave with useful contacts — not just by what’s on soonest.
+            Scan a badge and keep the people you met.
+          </p>
+          <div className="mt-3.5 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[12.5px] text-[#6E6E73]">
+            <span>
+              <span className="tnum font-semibold text-[#1D1D1F]">
+                {total.toLocaleString('en-IN')}
+              </span>{' '}
+              upcoming
+            </span>
+            {liveNow.length > 0 && (
+              <span className="inline-flex items-center gap-1.5 font-semibold text-[#FF3B30]">
+                <span className="live-dot h-1.5 w-1.5 rounded-full bg-[#FF3B30]" />
+                <span className="tnum">{liveNow.length}</span> happening now
+              </span>
+            )}
+            <Link href="/folders" className="font-semibold text-[#0071E3] hover:underline">
+              Keep the people you meet →
+            </Link>
+          </div>
+        </div>
+
         <div className="max-w-[1240px] mx-auto px-4 md:px-8 flex gap-8">
           {/* Desktop filter rail */}
           <aside className="hidden lg:block w-[248px] shrink-0">
@@ -637,14 +683,19 @@ export default function Home() {
 
                 The title states the ACTIVE VIEW, so it doubles as a readout of the
                 filters — which is why it earns the space. */}
+            {/* An H2, not the H1 — the hero above owns the page's subject. This one names the
+                ACTIVE VIEW and updates as filters change, which is why it keeps `aria-live`: it is
+                a readout, not a title. Demoting it is also what closes the heading outline, since
+                the page now runs H1 (hero) -> H2 (this) -> H2 (section) -> H3 (card) with nothing
+                skipped. Visual weight is unchanged: `.t-display` does the sizing, not the tag. */}
             <div className="mb-5" aria-live="polite" aria-atomic="true">
-              <h1 className="t-display text-[#1D1D1F]">
+              <h2 className="t-display text-[#1D1D1F]">
                 {query
                   ? `“${query}”`
                   : filters.techOnly
                     ? 'Tech events in Bengaluru'
                     : 'Events in Bengaluru'}
-              </h1>
+              </h2>
               <p id="search-hint" className="mt-1.5 text-[13px] text-[#6E6E73] tracking-[0]">
                 {loading ? (
                   'Searching…'

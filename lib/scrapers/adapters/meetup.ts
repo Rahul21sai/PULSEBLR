@@ -237,8 +237,9 @@ export async function scrapeMeetupGroup(slug: string): Promise<ScrapeResult> {
        * cannot reach the ones already stored, though, because it filters the incoming batch and
        * never queries the collection; `scripts/cleanup-non-bengaluru.ts` is what removes those.
        *
-       * See scripts/diag-meetup-geo-leak.ts for the reproduction and HEAPHEAPHURRAY-AUDIT.md for
-       * how it was found.
+       * See scripts/diag-meetup-geo-leak.ts for the reproduction. It was found while auditing a
+       * competitor index against this corpus, which is also how the touring Luma seeds in luma.ts
+       * were found.
        */
       if (isBengaluru({ text: event.description }) === false) continue;
       result.events.push(event);

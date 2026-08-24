@@ -399,7 +399,8 @@ export const LUMA_SEED_CALENDARS: Array<{ handle: string; label: string }> = [
   // ── TOURING SERIES, found by auditing events.heapheaphurray.com ────────────
   // That audit compared its 20 curated pan-India tech events against our corpus: 14 were in
   // other cities, 5 we already had, and 1 was a same-day Bengaluru event we lacked. So it is
-  // not a source worth an adapter (see HEAPHEAPHURRAY-AUDIT.md) — but it did surface these
+  // not a source worth an adapter — its upstreams are Luma and Devfolio, which we already
+  // scrape — but it did surface these
   // two hosts, and the reason to seed them is specifically that they TOUR.
   //
   // Both currently show ZERO upcoming Bengaluru events (verify-hhh-calendar.ts, 2026-08-24):

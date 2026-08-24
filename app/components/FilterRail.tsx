@@ -80,7 +80,7 @@ export default function FilterRail({
     <div className="flex flex-col gap-6">
       {/* Quick toggles */}
       <section>
-        <h3 className="text-label-sm uppercase tracking-widest text-[#86868B] mb-2.5">Quick filters</h3>
+        <h2 className="text-label-sm uppercase tracking-widest text-[#86868B] mb-2.5">Quick filters</h2>
         <div className="flex flex-wrap gap-2">
           {/* On by default. Labelled as the thing it lets you do — see everything —
               because a toggle that is already active reads as a filter you can drop. */}
@@ -111,7 +111,7 @@ export default function FilterRail({
           counts. A 2x2 grid of buttons gives each option a full half-width, so the
           label and count always fit and nothing overlaps at any rail width. */}
       <section>
-        <h3 className="text-label-sm uppercase tracking-widest text-[#86868B] mb-2.5">Format</h3>
+        <h2 className="text-label-sm uppercase tracking-widest text-[#86868B] mb-2.5">Format</h2>
         <div className="grid grid-cols-2 gap-1.5">
           {FORMAT_OPTIONS.map(({ value, label }) => {
             const active = filters.format === value;
@@ -154,7 +154,7 @@ export default function FilterRail({
           tail folded away behind a disclosure. */}
       <section>
         <div className="flex items-center justify-between mb-1">
-          <h3 className="text-label-sm uppercase tracking-widest text-[#86868B]">Category</h3>
+          <h2 className="text-label-sm uppercase tracking-widest text-[#86868B]">Category</h2>
           {filters.categories.length > 0 && (
             <button
               type="button"
@@ -252,7 +252,7 @@ export default function FilterRail({
       {companies.length > 0 && (
         <section>
           <div className="flex items-center justify-between mb-2.5">
-            <h3 className="text-label-sm uppercase tracking-widest text-[#86868B]">Company</h3>
+            <h2 className="text-label-sm uppercase tracking-widest text-[#86868B]">Company</h2>
             {filters.companies.length > 0 && (
               <button
                 type="button"
@@ -282,7 +282,7 @@ export default function FilterRail({
       {/* Areas */}
       <section>
         <div className="flex items-center justify-between mb-2.5">
-          <h3 className="text-label-sm uppercase tracking-widest text-[#86868B]">Area</h3>
+          <h2 className="text-label-sm uppercase tracking-widest text-[#86868B]">Area</h2>
           {filters.areas.length > 0 && (
             <button
               type="button"

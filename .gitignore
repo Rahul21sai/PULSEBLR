@@ -81,3 +81,10 @@ PR_BODY.md
 # gstack skill working directory: QA reports, screenshots and baselines. Local tool
 # output like the entries above, and the screenshots can be large.
 .gstack/
+
+# Competitor research and product idea notes. Working documents, not repo documentation:
+# they describe someone else's site and our unbuilt plans, both of which go stale fast.
+# Anything from them that turns out to be load-bearing belongs in CLAUDE.md instead, which
+# is why no committed file may cite these by name.
+HEAPHEAPHURRAY-AUDIT.md
+IMPROVEMENT-IDEAS.md
