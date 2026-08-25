@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useEffect, useState, use } from 'react';
 import { DesktopNav, MobileBottomNav } from '../../components/NavBar';
 import EventCover from '../../components/EventCover';
+import EventHeroCover from '../../components/EventHeroCover';
 import EventPills from '../../components/EventPills';
 import SaveButton from '../../components/SaveButton';
 import { FeedEvent } from '@/lib/event-types';
@@ -132,21 +133,18 @@ export default function EventDetailPage({ params }: { params: Promise<{ id: stri
         <div className="flex flex-col lg:flex-row gap-8">
           {/* ── Main column ─────────────────────────────────────────────── */}
           <div className="flex-1 min-w-0">
-            <div className="relative rounded-[18px] overflow-hidden mb-6 bg-white card-shadow">
-              <EventCover
-                src={event.imageUrl}
-                title={event.title}
-                category={event.category?.[0]}
-                className="w-full aspect-[2/1] max-h-[380px]"
-                monogramSize="text-6xl"
-              />
+            <EventHeroCover
+              src={event.imageUrl}
+              title={event.title}
+              category={event.category?.[0]}
+            >
               {live && (
                 <span className="absolute left-4 top-4 pill pill-live shadow-sm bg-white">
                   <span className="live-dot w-1.5 h-1.5 rounded-full bg-[#FF3B30]" />
                   Happening now
                 </span>
               )}
-            </div>
+            </EventHeroCover>
 
             {/* Category as a dot plus a label, not a filled block. Saturated chips
                 stacked directly above the title made the taxonomy the loudest thing on
@@ -188,7 +186,21 @@ export default function EventDetailPage({ params }: { params: Promise<{ id: stri
                       `whitespace-pre-line`, so `**Details**` and `## Heading` reached the reader
                       literally. Stripped rather than rendered because a description is untrusted
                       scraped text — see the note on stripMarkdown in lib/format.ts. */}
-                  <p className="text-[15px] leading-[1.65] text-[#3a3a3c] whitespace-pre-line">
+                  {/* `break-words` is load-bearing, and this was a REAL defect: scraped
+                      descriptions carry bare URLs, and a URL is one unbreakable word. With
+                      the default `overflow-wrap: normal` a 56-character WhatsApp invite link
+                      measured 442px inside a 318px column and pushed the whole DOCUMENT to
+                      scrollWidth 478 on a 390px viewport — 88px of horizontal page scroll,
+                      at rest, on every event whose description mentions a link. Measured on
+                      `North Bengaluru Startup…`, which carries two
+                      (`https://chat.whatsapp.com/…` and a channel link).
+
+                      It is the same class of bug the Stitch redesign audit flagged as
+                      clipped text, arriving from the opposite direction: there the text was
+                      cut off, here it silently widens the page. `whitespace-pre-line`
+                      preserves the author's newlines but does nothing for a long token, so
+                      the two properties are both required. */}
+                  <p className="text-[15px] leading-[1.65] text-[#3a3a3c] whitespace-pre-line break-words">
                     {stripMarkdown(event.description)}
                   </p>
                 </div>
@@ -245,12 +257,16 @@ export default function EventDetailPage({ params }: { params: Promise<{ id: stri
                 <h2 className="t-sub text-[#1D1D1F] mb-3">
                   Similar events
                 </h2>
+                {/* Rows use `raise pressable`, not a one-off `hover:shadow-[0_6px_24px_…]`:
+                    see the note in EventGridCard — a single diffuse shadow is the fog the
+                    --lift tokens exist to replace, and a hover-only affordance does nothing
+                    on the phone where most of this app is used. */}
                 <div className="flex flex-col gap-2">
                   {related.map(item => (
                     <Link
                       key={item._id}
                       href={`/events/${item._id}`}
-                      className="group flex items-center gap-3 bg-white rounded-xl card-shadow p-3 hover:shadow-[0_6px_24px_rgba(0,0,0,0.07)] transition-shadow"
+                      className="group flex items-center gap-3 bg-white rounded-xl card-shadow raise pressable p-3"
                     >
                       <EventCover
                         src={item.imageUrl}

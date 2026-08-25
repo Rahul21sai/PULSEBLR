@@ -18,8 +18,19 @@ export default function EventGridCard({ event }: { event: FeedEvent }) {
   const primaryCategory = event.category?.[0];
   const href = `/events/${event._id}`;
 
+  /*
+   * `raise pressable` rather than a bespoke hover treatment, and that is a CORRECTION
+   * rather than a tidy-up. This element carried `hover:-translate-y-0.5` and
+   * `hover:shadow-[0_10px_34px_rgba(0,0,0,0.08)]`, which broke two of globals.css's rules
+   * at once: a hover-LIFT has no touch equivalent on the phone where most of this app is
+   * used, and a single 34px blur is precisely the "fog" the --lift tokens exist to replace
+   * — no defined edge, barely separated from the page. `.raise` supplies the ring-plus-lift
+   * on hover, `.pressable` supplies the press, and both already carry the app's one easing
+   * curve, so the hand-rolled `transition-[transform,box-shadow] duration-200` was
+   * redundant as well as wrong.
+   */
   return (
-    <article className="group bg-white rounded-2xl card-shadow overflow-hidden flex flex-col transition-[transform,box-shadow] duration-200 hover:shadow-[0_10px_34px_rgba(0,0,0,0.08)] hover:-translate-y-0.5">
+    <article className="group bg-white rounded-2xl card-shadow raise pressable spatial-rise overflow-hidden flex flex-col">
       {/* aria-hidden as well as tabIndex={-1}: duplicates the title link and wraps a decorative
           cover, so it has no accessible name. Already unfocusable, so hiding it is safe. */}
       <Link

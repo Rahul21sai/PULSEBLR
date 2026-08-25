@@ -121,9 +121,15 @@ export default function EventRow({
                 no accessible name and a screen reader would announce it as an unlabelled link.
                 Safe to hide because it is already out of the tab order — hiding a FOCUSABLE
                 element is the anti-pattern, and this is not one. */}
+            {/* `contact-shadow` gives the cover its own plane — it reads as resting ON the
+                card rather than printed into it, which is where this row's depth comes
+                from. Deliberately the transform-free utility, not `.lift-object`: infinite
+                scroll can put hundreds of these on the page and a translateZ on each would
+                promote hundreds of compositing layers for an effect a shadow already
+                delivers. */}
             <Link
               href={href}
-              className="shrink-0 rounded-xl overflow-hidden"
+              className="shrink-0 rounded-xl overflow-hidden contact-shadow"
               tabIndex={-1}
               aria-hidden="true"
             >

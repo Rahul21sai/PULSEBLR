@@ -691,12 +691,221 @@ h1, h2, h3 { font-family: var(--font-display); }
 .kanban-card:active { cursor: grabbing; }
 .kanban-card[data-dragging='true'] { opacity: 0.4; }
 
-/* ─── Event card accent bars ─────────────────────────────────────────────── */
-.card-bar-ai         { background: linear-gradient(90deg, #0071E3 0%, #00C6FF 100%); }
-.card-bar-fintech     { background: linear-gradient(90deg, #34C759 0%, #30D158 100%); }
-.card-bar-networking  { background: linear-gradient(90deg, #FF9500 0%, #FFCC00 100%); }
-.card-bar-cyber       { background: linear-gradient(90deg, #FF3B30 0%, #FF6B6B 100%); }
-.card-bar-cloud       { background: linear-gradient(90deg, #5AC8FA 0%, #007AFF 100%); }
-.card-bar-data        { background: linear-gradient(90deg, #5856D6 0%, #AF52DE 100%); }
-.card-bar-hackathon   { background: linear-gradient(90deg, #FF2D55 0%, #FF6CAB 100%); }
-.card-bar-default     { background: linear-gradient(90deg, #8E8E93 0%, #636366 100%); }
+/* ─── Event card accent bars: DELETED, and they must not come back ─────────
+   Eight category gradients used to live here (`.card-bar-ai` … `.card-bar-default`).
+   They were unreferenced — `grep -rn "card-bar" app/ lib/` matched nothing outside this
+   file — and they were re-introduced by `f373bef "implement Stitch design system across
+   all pages"`, which is the fossil of a regression rather than a feature: this file had
+   already removed eight category gradients on purpose, so that the COVER IMAGES are the
+   only colourful thing on screen (rule 4).
+
+   `categoryAccent()` in lib/format.ts is the sanctioned mechanism, and EventRow uses it
+   for a single 3px left edge at 70% opacity. That is the whole category cue. A saturated
+   90-degree gradient across the top of a card spends exactly the attention the cover is
+   supposed to get.
+
+   If you are about to add a per-category colour: don't. Add it to CATEGORY_ACCENTS and
+   let the 3px edge carry it. */
+
+/* ═════════════════════════════════════════════════════════════════════════════
+   THE SPATIAL LAYER — depth that is real, not a hover trick.
+   ═════════════════════════════════════════════════════════════════════════════
+
+   WHY THIS EXISTS. An audit of 27 Stitch-generated "3D" screens found the 3D was mostly
+   absent (only 5 of 22 rendered screens initialised a live WebGL context; the flagship
+   "World-Class Storefront (3D)" was a flat CSS gradient) while four of this file's rules
+   were being broken to fake the impression of depth: 40 large-blur shadows in 20 files —
+   the exact "fog" the --lift tokens replaced — plus 24 hover-grow transforms and pure
+   black full-bleed sections. And 0 of 27 honoured prefers-reduced-motion.
+
+   So depth here is built from the principles this file already has, not against them:
+
+     1. ELEVATION STAYS A RING PLUS A LIFT. --lift-3 continues the --lift-1/--lift-2
+        series rather than inventing a new blur. Three rungs is a z-ORDER, which is what
+        makes layering legible; a fourth grey shadow is how depth turns to mud, for the
+        same reason this file ships exactly three ink levels.
+
+     2. DEPTH IS STATIC LAYERING, NOT A HOVER EFFECT. Interactive surfaces still PRESS
+        (.pressable, scale(0.978)). A hover-grow has no touch equivalent and most of this
+        app is used on a phone, so a tilt-on-mouse-move would be depth that literally
+        does not exist for most users. Instead the cover sits on its own plane above the
+        card with its own contact shadow — which is true at every viewport and needs no
+        pointer.
+
+     3. MOTION IS SCROLL-DRIVEN AND CSS-ONLY. `animation-timeline: view()` means no
+        scroll listener, no rAF, nothing to jank. Guarded by @supports so a browser
+        without it gets the static composition — which is the finished design, not a
+        degraded one — and wrapped in `prefers-reduced-motion: no-preference` so the
+        setting is honoured by CONSTRUCTION. Note the global reduce block below sets
+        `animation-duration: .001ms !important`, which cannot be relied on to disable a
+        timeline-driven animation, so opting IN is the only safe shape.
+
+     4. ONE ACCENT, STILL RATIONED. Nothing here introduces a hue. The WebGL field draws
+        in --ink at ≤0.26 alpha and touches --blue on ~12% of nodes, where blue already
+        means "actionable". Covers remain the only colour. */
+
+:root {
+  /* The third rung: a genuinely floating layer, for the spotlight cover and the event
+     hero. Same construction as --lift-1/2 — hairline ring for the edge, stacked offset
+     shadows for the height — so all three read as one family seen from further away. */
+  --lift-3: 0 0 0 0.5px rgba(0,0,0,0.055), 0 3px 6px rgba(0,0,0,0.05),
+            0 12px 22px -10px rgba(0,0,0,0.10), 0 30px 60px -24px rgba(0,0,0,0.16);
+
+  /* A contact shadow: what an object resting ON another object casts. Tight and dark
+     rather than broad and pale — the opposite of the fog, and the thing that makes a
+     cover read as sitting above its card rather than printed on it. */
+  --contact: 0 1px 2px rgba(0,0,0,0.10), 0 3px 8px -3px rgba(0,0,0,0.14);
+
+  /* Recessed, for wells the eye should read as BELOW the surface. */
+  --inset-1: inset 0 1px 2px rgba(0,0,0,0.06), inset 0 0 0 0.5px rgba(0,0,0,0.04);
+}
+
+/* ─── Ambient cover halo ───────────────────────────────────────────────────
+   THE DEPTH MATERIAL IS THE COVER ITSELF, and that is the whole idea. A procedural WebGL
+   field was built for this slot and then deleted, for two reasons worth recording so it is
+   not re-attempted: the feed hero ALREADY renders a real, data-driven connection graph
+   (components/graph/), so a decorative field beside it is a duplicate that says less; and
+   rule 4 does not permit a new hue for ornament.
+
+   Blurring the event's own cover behind a crisp copy of it adds depth while adding NOTHING
+   new — the light comes from the one element this design system already calls the only
+   colourful thing on screen. It is also free: the same URL, already in cache, so the
+   backdrop costs no extra request.
+
+   `--halo-blur` is large on purpose. Under about 30px the backdrop reads as a second,
+   badly-scaled copy of the image rather than as light coming off it. */
+.cover-halo {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  /* Contain paint so a 60px blur cannot extend the scrollable area — the defect that left
+     one audited Stitch export overflowing horizontally by 336px at 1440. */
+  contain: paint;
+  border-radius: inherit;
+}
+.cover-halo img {
+  position: absolute;
+  /* Inset NEGATIVELY by more than the blur radius: a blurred image sampled to its own edge
+     fades to transparent there and draws a visible pale border inside the container. */
+  inset: -12%;
+  width: 124%;
+  height: 124%;
+  object-fit: cover;
+  filter: blur(var(--halo-blur, 44px)) saturate(1.45);
+  transform: scale(1.06);
+  opacity: 0.55;
+}
+/* Fade the halo out downward so it becomes light on the page rather than a coloured band
+   with an edge. */
+.cover-halo::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(245,245,247,0) 42%, rgba(245,245,247,0.72) 100%);
+}
+
+/* ─── Spatial stage ───────────────────────────────────────────────────────
+   A perspective container. `preserve-3d` on the stage plus translateZ on the children is
+   what makes the browser composite them as separated planes — without the perspective the
+   Z values are inert and you are back to flat boxes with shadows drawn on them. */
+.stage {
+  perspective: 1400px;
+  perspective-origin: 50% 22%;
+  transform-style: preserve-3d;
+}
+.plane-back  { transform: translateZ(-26px); }
+.plane-mid   { transform: translateZ(0); }
+.plane-front { transform: translateZ(28px); }
+
+/* An object resting on a card: its own plane, its own contact shadow. This is the whole
+   "3D card" — no hover, no tilt, true at every viewport and on every input device. */
+.lift-object {
+  box-shadow: var(--contact);
+  transform: translateZ(18px);
+}
+
+/* ─── Scroll-driven depth ─────────────────────────────────────────────────
+   Opt-in only, and only where motion is welcome. Each keyframe set moves a DIFFERENT
+   amount, which is the entire point of parallax: equal movement is just a transition. */
+@keyframes spatial-rise {
+  from { opacity: 0; transform: translate3d(0, 26px, 0) scale(0.984); }
+  to   { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
+}
+@keyframes spatial-recede {
+  from { transform: translate3d(0, 42px, 0); }
+  to   { transform: translate3d(0, -22px, 0); }
+}
+@keyframes spatial-settle {
+  from { opacity: 0; transform: translate3d(0, 14px, 0); }
+  to   { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+/* The halo needs its OWN keyframes rather than reusing .spatial-recede, because the
+   backdrop's `scale(1.06)` lives on `transform` and an animation on the same property
+   would silently drop it — leaving the blurred edges exposed inside the container. Keeping
+   the scale in every keyframe is the fix; percentages so it is resolution-independent. */
+@keyframes cover-halo-drift {
+  from { transform: scale(1.06) translate3d(0, -2.5%, 0); }
+  to   { transform: scale(1.06) translate3d(0,  2.5%, 0); }
+}
+
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    /* Content arriving: rises and resolves as it enters, finishing well before centre so
+       it is settled by the time it is being read. */
+    .spatial-rise {
+      animation: spatial-rise linear both;
+      animation-timeline: view();
+      animation-range: entry 4% entry 62%;
+    }
+    /* A quieter version for list items, where 40 rows all rising 26px would read as
+       seasickness rather than depth. */
+    .spatial-settle {
+      animation: spatial-settle linear both;
+      animation-timeline: view();
+      animation-range: entry 2% entry 40%;
+    }
+    /* The background plane, moving AGAINST the scroll. Only for decorative layers — this
+       is the one that would make text unreadable if applied to content. */
+    .spatial-recede {
+      animation: spatial-recede linear both;
+      animation-timeline: view();
+      animation-range: cover 0% cover 100%;
+    }
+    /* Applied to the IMAGE, never to .cover-halo itself: the halo is the clip box, and
+       transforming a `contain: paint` box moves its clipping region too, which would let
+       the page show through at the edges. Moving the image inside a fixed box is what
+       parallax actually is. */
+    .cover-halo img {
+      animation: cover-halo-drift linear both;
+      animation-timeline: view();
+      animation-range: cover 0% cover 100%;
+    }
+  }
+}
+
+/* ─── The connection meter, given depth ───────────────────────────────────
+   The signature element (see the meter block above) now reads as three physical bars
+   rather than three rectangles: a hairline ring defines each edge, an inset highlight
+   catches light on the top, and the lit bars sit on a --blue base with a contact shadow.
+   Semantics, data-level API and the sr-only label are untouched — this is purely the
+   material the same component is made of. */
+.meter i {
+  box-shadow: inset 0 0.5px 0 rgba(255,255,255,0.55), 0 0 0 0.5px rgba(0,0,0,0.05);
+}
+.meter[data-level='1'] i:nth-child(1),
+.meter[data-level='2'] i:nth-child(-n+2),
+.meter[data-level='3'] i {
+  box-shadow: inset 0 0.5px 0 rgba(255,255,255,0.42), 0 1px 1.5px rgba(0,113,227,0.30);
+}
+
+/* ─── Depth utility escape hatches ───────────────────────────────────────── */
+.lift-3 { box-shadow: var(--lift-3); }
+.inset-1 { box-shadow: var(--inset-1); }
+
+/* A contact shadow WITHOUT a transform, for the thousands-of-instances case.
+   `.lift-object` carries `translateZ`, which promotes the element to its own compositing
+   layer — correct for one hero, wrong for a feed row cover when infinite scroll can put
+   hundreds on the page. This gets the same "resting on the card" read from the shadow
+   alone, so the cost stays at one extra box-shadow. */
+.contact-shadow { box-shadow: var(--contact); }
