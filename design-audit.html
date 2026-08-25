@@ -1,0 +1,557 @@
+<title>Four Rules, Four Breaks</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&family=JetBrains+Mono:wght@400;500;700&display=swap">
+
+<style>
+  /* ───────────────────────────────────────────────────────────────────────
+     This page obeys the four rules it audits. That is the argument: a design
+     critique that broke its own recommendations would refute itself.
+       1. tracking is a function of size   -> the ramp below varies it
+       2. elevation is a ring PLUS a lift  -> --lift-*, never one blur
+       3. hairlines are ALPHA              -> --hairline composites on both grounds
+       4. one accent, rationed             -> --signal means "verified"; pass/fail
+                                              are SEMANTIC and separate
+     ─────────────────────────────────────────────────────────────────────── */
+
+  :root {
+    /* Neutrals with a deliberate cool bias — the subject's world is ink greys,
+       and a pure mid-grey would read as inherited rather than chosen. */
+    --paper:    #FBFBFD;
+    --surface:  #FFFFFF;
+    --well:     #F4F5F8;
+    --ink:      #16181D;
+    --ink-2:    #5A6070;
+    /* --ink-3 carries every small uppercase label (eyebrows, table headers, stat
+       captions, the footer). At #8B92A3 it measured 3.02:1 on this ground — fine for
+       large text, a fail for 11px. Darkened until it clears 4.5:1. */
+    --ink-3:    #676F80;
+
+    /* Rule 3: alpha, so one value is correct on white AND on the page ground. */
+    --hairline:        rgba(22, 24, 29, 0.09);
+    --hairline-strong: rgba(22, 24, 29, 0.16);
+
+    /* Rule 4: ONE accent. Deliberately not the subject's own #0071E3 — this is
+       the auditor's voice, not a clone of the thing being audited. */
+    --signal: #0B62D6;
+
+    /* Semantic, and separate from the accent by design. */
+    --fail: #B3261E;
+    --good: #14713F;
+    --warn: #8A5A00;
+    --fail-wash: rgba(179, 38, 30, 0.09);
+    --good-wash: rgba(20, 113, 63, 0.10);
+    --warn-wash: rgba(138, 90, 0, 0.10);
+
+    /* Rule 2: a hairline ring for the edge, a soft offset shadow for the height. */
+    --lift-1: 0 0 0 0.5px rgba(22,24,29,0.06), 0 1px 2px rgba(22,24,29,0.04),
+              0 6px 16px -10px rgba(22,24,29,0.10);
+    --lift-2: 0 0 0 0.5px rgba(22,24,29,0.07), 0 2px 5px rgba(22,24,29,0.05),
+              0 18px 36px -18px rgba(22,24,29,0.16);
+
+    --display: 'Archivo', system-ui, -apple-system, sans-serif;
+    --body:    'Newsreader', Georgia, 'Times New Roman', serif;
+    --mono:    'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+
+    --ease: cubic-bezier(0.32, 0.72, 0, 1);
+  }
+
+  /* System-dark (no stamp) — tokens only, guarded so an explicit light choice wins. */
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper:   #0E1014;
+      --surface: #171A21;
+      --well:    #1E222B;
+      --ink:     #EEF0F4;
+      --ink-2:   #A3AAB9;
+      --ink-3:   #757D8D;
+      --hairline:        rgba(255, 255, 255, 0.11);
+      --hairline-strong: rgba(255, 255, 255, 0.20);
+      --signal: #6BA6F7;
+      --fail:   #F2857C;
+      --good:   #5FCB90;
+      --warn:   #E0B25E;
+      --fail-wash: rgba(242, 133, 124, 0.13);
+      --good-wash: rgba(95, 203, 144, 0.13);
+      --warn-wash: rgba(224, 178, 94, 0.13);
+      --lift-1: 0 0 0 0.5px rgba(255,255,255,0.08), 0 1px 2px rgba(0,0,0,0.4),
+                0 6px 16px -10px rgba(0,0,0,0.6);
+      --lift-2: 0 0 0 0.5px rgba(255,255,255,0.10), 0 2px 5px rgba(0,0,0,0.45),
+                0 18px 36px -18px rgba(0,0,0,0.7);
+    }
+  }
+  /* Explicit dark stamp — so the toggle wins in the other direction too. */
+  :root[data-theme="dark"] {
+    --paper:   #0E1014;
+    --surface: #171A21;
+    --well:    #1E222B;
+    --ink:     #EEF0F4;
+    --ink-2:   #A3AAB9;
+    --ink-3:   #757D8D;
+    --hairline:        rgba(255, 255, 255, 0.11);
+    --hairline-strong: rgba(255, 255, 255, 0.20);
+    --signal: #6BA6F7;
+    --fail:   #F2857C;
+    --good:   #5FCB90;
+    --warn:   #E0B25E;
+    --fail-wash: rgba(242, 133, 124, 0.13);
+    --good-wash: rgba(95, 203, 144, 0.13);
+    --warn-wash: rgba(224, 178, 94, 0.13);
+    --lift-1: 0 0 0 0.5px rgba(255,255,255,0.08), 0 1px 2px rgba(0,0,0,0.4),
+              0 6px 16px -10px rgba(0,0,0,0.6);
+    --lift-2: 0 0 0 0.5px rgba(255,255,255,0.10), 0 2px 5px rgba(0,0,0,0.45),
+              0 18px 36px -18px rgba(0,0,0,0.7);
+  }
+
+  *, *::before, *::after { box-sizing: border-box; }
+
+  body {
+    /* Explicit, from a token: the artifact composites over a ground the viewer
+       paints in ITS theme, so a transparent body borrows the host's. */
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--body);
+    font-size: 18px;
+    line-height: 1.62;
+    margin: 0;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 0 24px 120px; }
+
+  /* ── Type ramp. Tracking tightens as size grows, loosens for small caps. ── */
+  h1, h2, h3, .eyebrow, .verdict-word, th, .chip, .stat-n {
+    font-family: var(--display);
+  }
+  h1 {
+    font-size: clamp(2.4rem, 6.2vw, 4.35rem);
+    line-height: 1.02;
+    letter-spacing: -0.038em;
+    font-weight: 700;
+    margin: 0;
+    text-wrap: balance;
+  }
+  h2 {
+    font-size: clamp(1.5rem, 3vw, 2.05rem);
+    line-height: 1.12;
+    letter-spacing: -0.026em;
+    font-weight: 700;
+    margin: 0;
+    text-wrap: balance;
+  }
+  h3 {
+    font-size: 1.16rem;
+    line-height: 1.24;
+    letter-spacing: -0.016em;
+    font-weight: 600;
+    margin: 0;
+  }
+  .eyebrow {
+    font-size: 0.685rem;
+    font-weight: 600;
+    letter-spacing: 0.16em;   /* positive tracking at the small end of the ramp */
+    text-transform: uppercase;
+    color: var(--ink-3);
+    margin: 0;
+  }
+  p { margin: 0; max-width: 66ch; }
+  .lede { font-size: 1.24rem; line-height: 1.52; color: var(--ink-2); max-width: 60ch; }
+  strong { font-weight: 500; color: var(--ink); }
+  em { font-style: italic; }
+  code, .mono { font-family: var(--mono); font-size: 0.855em; font-variant-ligatures: none; }
+  code {
+    background: var(--well);
+    padding: 0.12em 0.36em;
+    border-radius: 4px;
+    color: var(--ink);
+  }
+  a { color: var(--signal); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+  :focus-visible { outline: 2px solid var(--signal); outline-offset: 3px; border-radius: 2px; }
+
+  /* ── Layout: a forensic dossier. Numbered rail only where the content is a
+        genuine defined set (the four named rules), never as decoration. ── */
+  header.masthead {
+    padding: 88px 0 clamp(40px, 6vw, 68px);
+    border-bottom: 1px solid var(--hairline);
+    display: flex; flex-direction: column; gap: 26px;
+  }
+  .masthead-meta {
+    display: flex; flex-wrap: wrap; gap: 10px 26px;
+    font-family: var(--mono); font-size: 0.74rem; letter-spacing: 0.02em;
+    color: var(--ink-3);
+  }
+  .masthead-meta b { color: var(--ink-2); font-weight: 500; }
+
+  section { padding-top: clamp(52px, 7vw, 84px); display: flex; flex-direction: column; gap: 22px; }
+  .section-head { display: flex; flex-direction: column; gap: 10px; }
+
+  /* ── Verdict banner ── */
+  .verdict {
+    background: var(--surface);
+    box-shadow: var(--lift-2);
+    border-radius: 16px;
+    padding: clamp(24px, 3.4vw, 38px);
+    display: grid; gap: 26px;
+    grid-template-columns: minmax(0, 1fr);
+  }
+  @media (min-width: 860px) { .verdict { grid-template-columns: 1.32fr 1fr; gap: 44px; } }
+  .verdict-word {
+    font-size: clamp(1.7rem, 3.4vw, 2.5rem);
+    line-height: 1.06; letter-spacing: -0.03em; font-weight: 700;
+    margin: 0 0 12px;
+  }
+  .verdict-word span { color: var(--fail); }
+
+  .stats { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 18px 22px; align-content: start; }
+  .stat { display: flex; flex-direction: column; gap: 2px; }
+  .stat-n {
+    font-size: 2.1rem; font-weight: 700; letter-spacing: -0.03em; line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+  .stat-l { font-family: var(--display); font-size: 0.7rem; font-weight: 500; letter-spacing: 0.09em; text-transform: uppercase; color: var(--ink-3); line-height: 1.3; }
+  .stat.is-fail .stat-n { color: var(--fail); }
+  .stat.is-good .stat-n { color: var(--good); }
+
+  /* ── Rule cards, on the numbered rail ── */
+  .rules { display: flex; flex-direction: column; gap: 14px; }
+  .rule {
+    background: var(--surface);
+    box-shadow: var(--lift-1);
+    border-radius: 13px;
+    padding: 22px 24px;
+    display: grid; gap: 6px 20px;
+    grid-template-columns: 40px minmax(0,1fr);
+    align-items: start;
+    transition: box-shadow 260ms var(--ease);
+  }
+  .rule:hover { box-shadow: var(--lift-2); }
+  .rule-n {
+    font-family: var(--mono); font-size: 0.76rem; font-weight: 700;
+    color: var(--ink-3); padding-top: 4px; font-variant-numeric: tabular-nums;
+  }
+  .rule-body { display: flex; flex-direction: column; gap: 9px; }
+  .rule-top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 14px; }
+  .rule p { font-size: 0.985rem; line-height: 1.55; color: var(--ink-2); }
+  .rule .found {
+    font-family: var(--mono); font-size: 0.8rem; line-height: 1.5;
+    color: var(--ink); background: var(--well);
+    padding: 9px 12px; border-radius: 7px;
+  }
+
+  .chip {
+    font-size: 0.655rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;
+    padding: 4px 9px; border-radius: 999px; white-space: nowrap;
+  }
+  .chip.fail { background: var(--fail-wash); color: var(--fail); }
+  .chip.good { background: var(--good-wash); color: var(--good); }
+  .chip.warn { background: var(--warn-wash); color: var(--warn); }
+
+  /* ── Tables: wide content scrolls in its own container ── */
+  .table-scroll { overflow-x: auto; border-radius: 12px; box-shadow: var(--lift-1); background: var(--surface); }
+  table { border-collapse: collapse; width: 100%; min-width: 620px; font-family: var(--display); }
+  caption { caption-side: bottom; text-align: left; padding: 12px 18px 0; font-family: var(--body); font-size: 0.88rem; color: var(--ink-3); }
+  th, td { text-align: left; padding: 13px 18px; border-bottom: 1px solid var(--hairline); font-size: 0.9rem; }
+  th { font-size: 0.68rem; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3); }
+  td { color: var(--ink-2); font-weight: 500; }
+  td:first-child { color: var(--ink); }
+  tr:last-child td { border-bottom: none; }
+  td.num { font-family: var(--mono); font-variant-numeric: tabular-nums; font-weight: 400; }
+  td.bad { color: var(--fail); }
+  td.good { color: var(--good); }
+
+  /* ── Findings list ── */
+  .findings { display: grid; gap: 14px; grid-template-columns: minmax(0,1fr); }
+  @media (min-width: 760px) { .findings { grid-template-columns: repeat(2, minmax(0,1fr)); } }
+  .finding {
+    background: var(--surface); box-shadow: var(--lift-1); border-radius: 13px;
+    padding: 20px 22px; display: flex; flex-direction: column; gap: 8px;
+  }
+  .finding p { font-size: 0.95rem; line-height: 1.55; color: var(--ink-2); max-width: none; }
+
+  .note {
+    border-left: 2px solid var(--hairline-strong);
+    padding: 4px 0 4px 20px;
+    color: var(--ink-2);
+    font-size: 1.03rem;
+  }
+  .note strong { color: var(--ink); }
+
+  ul.plain { margin: 0; padding-left: 22px; display: flex; flex-direction: column; gap: 9px; }
+  ul.plain li { color: var(--ink-2); font-size: 1rem; line-height: 1.55; max-width: 64ch; }
+  ul.plain li strong { color: var(--ink); }
+
+  footer {
+    margin-top: clamp(56px, 8vw, 96px); padding-top: 26px;
+    border-top: 1px solid var(--hairline);
+    font-family: var(--mono); font-size: 0.75rem; color: var(--ink-3);
+    display: flex; flex-direction: column; gap: 7px;
+  }
+
+  /* Scroll-driven reveal — the exact technique this audit's fix ships, gated the
+     way the audit says it must be. 0 of 27 audited screens did this. */
+  @supports (animation-timeline: view()) {
+    @media (prefers-reduced-motion: no-preference) {
+      @keyframes settle { from { opacity: 0; transform: translate3d(0, 15px, 0); } to { opacity: 1; transform: none; } }
+      .rule, .finding, .table-scroll, .verdict {
+        animation: settle linear both;
+        animation-timeline: view();
+        animation-range: entry 3% entry 46%;
+      }
+    }
+  }
+</style>
+
+<div class="wrap">
+
+  <header class="masthead">
+    <p class="eyebrow">PulseBLR · Design audit</p>
+    <h1>Four rules, four breaks.</h1>
+    <p class="lede">
+      Twenty-seven Stitch-generated “3D” screens, measured against the design system
+      PulseBLR already has. The screens are not badly drawn. They break the four rules the
+      codebase documents as fixes — which is why implementing them faithfully made the app
+      look worse.
+    </p>
+    <div class="masthead-meta">
+      <span><b>Scope</b> 27 screens tagged (3D), of 51</span>
+      <span><b>Method</b> Playwright at 1440×900 / 390×844</span>
+      <span><b>Date</b> 25 Aug 2026</span>
+      <span><b>Branch</b> feat/spatial-redesign-and-tech-precision</span>
+    </div>
+  </header>
+
+  <section>
+    <div class="verdict">
+      <div>
+        <p class="eyebrow" style="margin-bottom:12px">Verdict</p>
+        <p class="verdict-word">Competent template output with <span>real bugs</span>, designed for a product that doesn’t exist.</p>
+        <p style="font-size:1.02rem;color:var(--ink-2)">
+          The repo’s own design system is the stronger artefact. It was hard-won: every rule
+          in it records a measurement. The Stitch screens undo four of them, and the earlier
+          implementation attempt carried that regression into the codebase.
+        </p>
+      </div>
+      <div class="stats">
+        <div class="stat is-fail"><span class="stat-n">5</span><span class="stat-l">of 22 rendered screens get a live WebGL context</span></div>
+        <div class="stat is-fail"><span class="stat-n">0</span><span class="stat-l">of 27 honour prefers-reduced-motion</span></div>
+        <div class="stat is-fail"><span class="stat-n">40</span><span class="stat-l">single-blur shadows, across 20 files</span></div>
+        <div class="stat is-fail"><span class="stat-n">336<span style="font-size:0.5em">px</span></span><span class="stat-l">worst horizontal overflow at 1440</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <p class="eyebrow">The spine of the audit</p>
+      <h2>The four rules, and what the screens did to them</h2>
+      <p>
+        These are numbered because they are a defined set of four named rules in
+        <code>app/globals.css</code> — not a sequence invented for this page. Each one exists
+        because something was measured and then fixed.
+      </p>
+    </div>
+
+    <div class="rules">
+      <article class="rule">
+        <div class="rule-n">01</div>
+        <div class="rule-body">
+          <div class="rule-top"><h3>Tracking is a function of size</h3><span class="chip fail">Broken</span></div>
+          <p>
+            The repo’s ramp spans <code>-0.042em</code> at display sizes to <code>+0.11em</code> on
+            uppercase labels, and display text uses Inter Tight rather than Inter. One
+            letter-spacing across a whole ramp is the tell of a default type scale.
+          </p>
+          <p class="found">Inter Tight in 0 of 27 files. Headline, body and label all set to plain Inter.</p>
+        </div>
+      </article>
+
+      <article class="rule">
+        <div class="rule-n">02</div>
+        <div class="rule-body">
+          <div class="rule-top"><h3>Elevation is a ring plus a lift, never one blur</h3><span class="chip fail">Broken</span></div>
+          <p>
+            A single diffuse shadow reads as fog: no defined edge, barely separated from the
+            page. The fix stacks a 0.5px hairline ring for the boundary with a soft offset
+            shadow for the height.
+          </p>
+          <p class="found">40 large-blur shadows in 20 files — the exact construction the --lift tokens replaced.</p>
+        </div>
+      </article>
+
+      <article class="rule">
+        <div class="rule-n">03</div>
+        <div class="rule-body">
+          <div class="rule-top"><h3>Hairlines are alpha, not solid grey</h3><span class="chip good">Held</span></div>
+          <p>
+            A solid <code>#E5E5EA</code> border looks like a light line on white and a darker
+            line on the page grey — the same border reading as two weights. Alpha composites
+            correctly on both.
+          </p>
+          <p class="found">33 alpha borders, 0 solid-grey borders. The one rule the exports respected.</p>
+        </div>
+      </article>
+
+      <article class="rule">
+        <div class="rule-n">04</div>
+        <div class="rule-body">
+          <div class="rule-top"><h3>One accent, rationed</h3><span class="chip fail">Broken</span></div>
+          <p>
+            Blue means “you can act on this” and is never decoration. Rationing one hue is
+            what leaves the cover images — real content — as the only colourful thing on
+            screen. Eight category gradients were deleted for this reason.
+          </p>
+          <p class="found">20 pure-black references in 8 files; category colour bars back on cards; blue used decoratively in 4+ places.</p>
+        </div>
+      </article>
+
+      <article class="rule">
+        <div class="rule-n">+1</div>
+        <div class="rule-body">
+          <div class="rule-top"><h3>Interactive surfaces press, they don’t lift</h3><span class="chip fail">Broken</span></div>
+          <p>
+            A hover-grow has no equivalent on a touch screen, and most of this app is used on
+            a phone. Scaling <em>down</em> on <code>:active</code> reads as physical on both.
+          </p>
+          <p class="found">24 hover-grow transforms against 64 press-downs — and one live in the repo already.</p>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <p class="eyebrow">Beyond the rules</p>
+      <h2>The 3D mostly isn’t there</h2>
+      <p>
+        Stitch’s own screenshots are 512px thumbnails, which cannot show type, spacing or
+        hairlines — so every export was re-rendered at real resolution instead. That is where
+        the gap between the name and the artefact showed up.
+      </p>
+    </div>
+
+    <div class="table-scroll">
+      <table>
+        <caption>Rendered at 1440×900 (desktop) or 390×844 (mobile), 3.5s settle for shader init.</caption>
+        <thead>
+          <tr><th>Screen</th><th>Live WebGL</th><th>Page height</th><th>Defect</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>World-Class Storefront (3D)</td><td class="num bad">0 / 0</td><td class="num">3231px</td><td>Flat CSS gradient; headline clips to “Bangal…”</td></tr>
+          <tr><td>Event Intelligence (3D Refined)</td><td class="num bad">0 / 0</td><td class="num">1115px</td><td>Map tiles duplicated — two Bengaluru labels</td></tr>
+          <tr><td>Dynamic Feed (3D)</td><td class="num good">1 / 1</td><td class="num">1118px</td><td>Renders raw three.js shader source as body text</td></tr>
+          <tr><td>Tracker Board (3D)</td><td class="num bad">0 / 0</td><td class="num">900px</td><td class="bad">Overflows horizontally by 336px</td></tr>
+          <tr><td>Dynamic User Dashboard (3D)</td><td class="num bad">0 / 0</td><td class="num">2206px</td><td class="bad">16px overflow + 2 console errors</td></tr>
+          <tr><td>Mobile Feed (3D)</td><td class="num bad">0 / 0</td><td class="num">1774px</td><td>Search placeholder clips to “…or peopl”</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="findings">
+      <article class="finding">
+        <h3>22 of 27 depend on a CDN</h3>
+        <p>27 external <code>&lt;script&gt;</code> tags and 68 Google Fonts references. PulseBLR is a PWA with a service worker; a design that only renders with third-party network access isn’t implementable here.</p>
+      </article>
+      <article class="finding">
+        <h3>Three different logos</h3>
+        <p>A raster PNG with a visible white box on black, a waveform mark, and a dotted grid — across three screens of one product.</p>
+      </article>
+      <article class="finding">
+        <h3>The navigation is invented</h3>
+        <p><em>Ecosystem / Analytics</em>, <em>Venues / Speakers / Community</em>. One export matches the stale <code>NAV_LINKS</code> array the repo already fixed as a bug.</p>
+      </article>
+      <article class="finding">
+        <h3>Marketing where the product goes</h3>
+        <p>The storefront is a SaaS landing page for an app whose home is a signed-in feed. Mobile spends the entire first screen on a hero pitch, above the first event.</p>
+      </article>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <p class="eyebrow">The expensive one</p>
+      <h2>The best-looking screen is designed for a product that doesn’t exist</h2>
+    </div>
+    <p class="note">
+      <strong>Event Intelligence</strong> shows “12,450 Active Attendees”, “42 Concurrent
+      Sessions”, “84% saturation”, “speaker velocity”. PulseBLR collects none of it. Building
+      that screen means either fabricating numbers in the product or building substantial new
+      data infrastructure.
+    </p>
+    <p>
+      Meanwhile the signals PulseBLR <em>does</em> have — and that Luma and Meetup cannot show —
+      appear on <strong>zero</strong> screens: <code>connectionScore</code>,
+      <code>isTechEvent</code>, company attribution, area clustering, source health, the
+      contact graph. The connection meter, documented as the app’s signature element, is
+      absent from all 27.
+    </p>
+    <p class="note">
+      That is the whole gap between a competent redesign and a $10k one. The design should be
+      built on the one claim nobody else can make: <strong>that you’ll leave having met
+      someone worth meeting.</strong>
+    </p>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <p class="eyebrow">What shipped instead</p>
+      <h2>Depth built from the rules, not against them</h2>
+      <p>
+        Spatial treatment on the feed and event detail, using the principles already in the
+        file rather than breaking them to fake the impression of depth.
+      </p>
+    </div>
+    <ul class="plain">
+      <li><strong>A third elevation rung.</strong> <code>--lift-3</code> continues the existing ring-plus-lift series instead of inventing a new blur. Three rungs is a z-order, which is what makes layering legible.</li>
+      <li><strong>Depth is static layering, not a hover effect.</strong> A perspective stage plus <code>translateZ</code> puts the event cover on its own plane — true at every viewport and on every input device, unlike a pointer tilt.</li>
+      <li><strong>The depth material is the cover itself.</strong> A heavily blurred copy behind a crisp one. The light comes from real content, so it adds no new hue and costs no extra request. Suppressed when an event has no image, because blurring a flat category tint is a smear.</li>
+      <li><strong>Motion is scroll-driven and CSS-only,</strong> wrapped in <code>prefers-reduced-motion: no-preference</code> so the setting is honoured by construction — verified to resolve to <code>none</code> under <em>reduce</em>, not merely to a 0.001ms duration.</li>
+      <li><strong>A procedural WebGL field was built for the hero and then deleted.</strong> The feed already renders a real data-driven connection graph, so a decorative one beside it would have said less.</li>
+    </ul>
+
+    <div class="table-scroll">
+      <table>
+        <caption>scripts/diag-spatial-layer.mjs, against a production build. Overlap probe is clip-aware and excludes fixed/sticky ancestors.</caption>
+        <thead><tr><th>Check</th><th>Desktop 1440</th><th>Mobile 390</th></tr></thead>
+        <tbody>
+          <tr><td>Content-only overlaps, scroll-top &amp; scrolled</td><td class="num good">0</td><td class="num good">0</td></tr>
+          <tr><td>Horizontal overflow</td><td class="num good">none</td><td class="num good">none</td></tr>
+          <tr><td>Reduced-motion opt-out</td><td class="good">animation-name: none</td><td class="good">animation-name: none</td></tr>
+          <tr><td>Hero elevation layers</td><td class="num good">4 stacked</td><td class="num good">4 stacked</td></tr>
+          <tr><td>Connection meter</td><td class="good">3 bars, level intact</td><td class="good">3 bars, level intact</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <p class="eyebrow">Found while verifying</p>
+      <h2>Two regressions already in the codebase</h2>
+    </div>
+    <div class="findings">
+      <article class="finding">
+        <div class="rule-top"><h3>A hover-lift and a 34px blur</h3><span class="chip fail">Fixed</span></div>
+        <p><code>EventGridCard</code> carried <code>hover:-translate-y-0.5</code> and <code>hover:shadow-[0_10px_34px_…]</code> — both audit defects, live, from commit <code>f373bef</code>. Now <code>raise pressable</code>.</p>
+      </article>
+      <article class="finding">
+        <div class="rule-top"><h3>Eight resurrected gradients</h3><span class="chip fail">Deleted</span></div>
+        <p>The <code>.card-bar-*</code> category gradients were back as unreferenced dead code, from the same commit that “implemented the Stitch design system across all pages”.</p>
+      </article>
+      <article class="finding">
+        <div class="rule-top"><h3>88px of horizontal page scroll</h3><span class="chip warn">Pre-existing, fixed</span></div>
+        <p>The detail page’s description had <code>overflow-wrap: normal</code>, so a bare URL — one unbreakable word — pushed the document to <code>scrollWidth 478</code> on a 390px viewport. On every event whose description mentions a link.</p>
+      </article>
+      <article class="finding">
+        <div class="rule-top"><h3>Four more single-blur shadows</h3><span class="chip warn">Out of scope</span></div>
+        <p>Two remain in <code>companies/page.tsx</code> and <code>tracker/page.tsx</code>. Same one-line correction; left alone because this pass was scoped to feed and event detail.</p>
+      </article>
+    </div>
+  </section>
+
+  <footer>
+    <span>Audit harness: scripts/render-stitch-screens.mjs · Verification: scripts/diag-spatial-layer.mjs</span>
+    <span>tsc clean · eslint 0 errors · 530 tests in 22 files · production build succeeds</span>
+    <span>This page obeys the four rules it audits — a critique that broke its own recommendations would refute itself.</span>
+  </footer>
+
+</div>

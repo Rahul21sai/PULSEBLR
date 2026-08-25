@@ -25,7 +25,6 @@
 
 import { useMemo, useRef, useState } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
-import { Instance, Instances } from '@react-three/drei';
 import * as THREE from 'three';
 import type { EventGraph, GraphNode } from '@/lib/graph/build-graph';
 import { edgeLabel } from '@/lib/graph/build-graph';
@@ -40,6 +39,43 @@ import { edgeLabel } from '@/lib/graph/build-graph';
  * the spec's value was chosen for blue-on-white, where it is a link colour, and at 6px on dark it
  * reads muddy without the lift.
  */
+/*
+ * WORLD-UNIT SCALE FOR NODE RADII, and it is not cosmetic - without it the nodes are invisible.
+ *
+ * `build-graph.ts` emits `r` in the range 0.075-0.16 as an ABSTRACT ranking value, and the two
+ * renderers have to convert it to their own units. GraphFallback.tsx:93 does `n.r * 105` to get
+ * SVG pixels. This scene was using `r` RAW as three.js world units - but node x spans +/-13, so a
+ * 0.075-0.16 radius is 3-6 PIXELS on a 503px canvas, then dimmed by `settled` on a near-black
+ * field. Edges meanwhile use lineBasicMaterial, which draws a crisp 1px line at any distance.
+ *
+ * So the hierarchy was exactly inverted: the edges (support) were the only thing visible and the
+ * nodes (the events, the subject of the legend's "sized by connection score") were sub-pixel
+ * noise. The band read as a random wireframe tangle.
+ *
+ * 3.5 puts the on-screen radius at 4.9-10.4px. That is SMALLER than GraphFallback's 7.9-16.8px,
+ * deliberately: the fallback spreads nodes across the FULL box by mapping x and y extents
+ * independently, while SCENE_FIT scales uniformly and so packs them toward the middle. At the
+ * fallback's radius, 30 nodes at that density were overlapping blobs. Derived, then checked by eye:
+ *
+ *   visible height = 2 * 9 * tan(25deg) = 8.39 world units over a 252px canvas -> 30.0 px/unit
+ *   on-screen r    = r * NODE_SCALE * SCENE_FIT * 30.0
+ *                  = 0.075 * 3.5 * 0.62 * 30.0 = 4.9px  ..  0.16 -> 10.4px
+ *
+ * CHANGE THE CAMERA OR SCENE_FIT AND YOU MUST REDO THIS. Two earlier attempts overshot: 5.6
+ * without SCENE_FIT gave 12-27px blobs that swallowed the edges and clipped at the frame, and 5.7
+ * with it still overlapped badly. Both were visibly worse than the bug they were fixing.
+ *
+ * Do NOT fix this by widening `r` in build-graph - that field is shared, and the SVG's * 105 is
+ * calibrated against the current range.
+ */
+const NODE_SCALE = 3.5;
+
+/**
+ * Shrinks the whole scene so build-graph's x spread of +/- 13 fits the z=9 frustum's +/- 8.4.
+ * Applied to ONE group wrapping the edges and the nodes, so positions and radii scale together.
+ */
+const SCENE_FIT = 0.62;
+
 const NODE = '#3D93FF';
 const NODE_LIT = '#CFE6FF';
 const EDGE = '#4DA3FF';
@@ -112,11 +148,40 @@ function Edges({ graph, hovered }: { graph: EventGraph; hovered: number | null }
 
   return (
     <lineSegments ref={meshRef} geometry={geometry}>
-      <lineBasicMaterial vertexColors transparent opacity={0.95} />
+      {/* 0.62, down from 0.95: with the nodes finally at a legible size the edges only have to
+          carry the relationships, and at full strength ~90 of them flatten the picture into a
+          mesh - the failure this file already warns about for edge WEIGHTING. */}
+      <lineBasicMaterial vertexColors transparent opacity={0.62} />
     </lineSegments>
   );
 }
 
+/**
+ * The event nodes.
+ *
+ * WHY THIS IS A CORE <instancedMesh> AND NOT drei's <Instances>/<Instance>.
+ *
+ * It used to be drei, and the nodes DID NOT RENDER AT ALL - at any radius, on a healthy WebGL
+ * context, with the edges beside them drawing perfectly. So the band read as a random wireframe
+ * tangle: the edges (support) were the only visible thing, and the events themselves - the subject
+ * of the legend's "sized by connection score" - were absent. The entire point of the hero was
+ * missing, which is why it looked like a static line drawing rather than a graph.
+ *
+ * Isolated by experiment rather than guessed: a plain core <mesh> with <sphereGeometry> and a
+ * magenta <meshBasicMaterial>, dropped into this same scene, rendered immediately while the drei
+ * instances beside it stayed invisible. So the fault is drei's instancing against this version set
+ * - @react-three/drei 10.7.8 with @react-three/fiber 9.7.0 and three 0.185.1 - and not the
+ * geometry, camera, material, colours or sizes, all of which were suspected first.
+ *
+ * <instancedMesh> is a fiber intrinsic over THREE.InstancedMesh, so it takes exactly the same core
+ * path as the edges. Still one draw call, as drei intended; the per-instance matrix and colour are
+ * written by hand, which costs a dozen lines and removes a dependency from the most load-bearing
+ * element in the app.
+ *
+ * If you are tempted to restore drei here: run the magenta-sphere experiment first. And note that
+ * GraphFallback.tsx renders this same graph as SVG and was the ONLY reason the feature looked
+ * finished while this was broken - a working fallback can hide a dead primary indefinitely.
+ */
 function Nodes({
   graph,
   hovered,
@@ -130,75 +195,73 @@ function Nodes({
   onSelect: (s: GraphSelection) => void;
   reducedMotion: boolean;
 }) {
-  return (
-    <Instances limit={graph.nodes.length} castShadow={false} receiveShadow={false}>
-      {/* One sphere, low poly. At this size on screen nobody can tell 16 segments from 64, and
-          the difference is real vertex count across 48 instances. */}
-      <sphereGeometry args={[1, 16, 16]} />
-      <meshBasicMaterial color={NODE} transparent />
-      {graph.nodes.map((node, i) => (
-        <NodeInstance
-          key={node.id}
-          node={node}
-          index={i}
-          isHovered={hovered === i}
-          onHover={setHovered}
-          onSelect={onSelect}
-          reducedMotion={reducedMotion}
-        />
-      ))}
-    </Instances>
-  );
-}
-
-function NodeInstance({
-  node,
-  index,
-  isHovered,
-  onHover,
-  onSelect,
-  reducedMotion,
-}: {
-  node: GraphNode;
-  index: number;
-  isHovered: boolean;
-  onHover: (i: number | null) => void;
-  onSelect: (s: GraphSelection) => void;
-  reducedMotion: boolean;
-}) {
-  const ref = useRef<THREE.Object3D>(null);
+  const meshRef = useRef<THREE.InstancedMesh>(null);
+  // Scratch objects, allocated once: a fresh Object3D and Color per node per frame would churn
+  // ~1800 allocations a second at 30 nodes and 60fps.
+  const dummy = useMemo(() => new THREE.Object3D(), []);
+  const tint = useMemo(() => new THREE.Color(), []);
+  const count = graph.nodes.length;
 
   useFrame(({ clock }) => {
-    if (!ref.current) return;
-    // A node with no edges sits dimmer; hover overrides everything.
-    const settled = node.degree === 0 ? 0.42 : 0.7 + Math.min(node.degree, 3) * 0.08;
-    const breath = reducedMotion
-      ? 1
-      : 1 + Math.sin(clock.elapsedTime * 0.9 + index * 0.7) * 0.12;
-    const scale = node.r * (isHovered ? 1.9 : 1) * breath;
-    ref.current.scale.setScalar(scale);
+    const mesh = meshRef.current;
+    if (!mesh) return;
 
-    // Instances share a material, so per-node brightness has to ride on the instance colour.
-    const inst = ref.current as THREE.Object3D & { color?: THREE.Color };
-    if (inst.color) {
-      inst.color.set(isHovered ? NODE_LIT : NODE).multiplyScalar(isHovered ? 1 : settled);
+    for (let i = 0; i < count; i++) {
+      const node = graph.nodes[i];
+      const isHovered = hovered === i;
+
+      // 0.62 rather than 0.42 for an unconnected node: still clearly secondary, but at 0.42 on a
+      // near-black field it was effectively gone, which made the "in graph" count a lie.
+      const settled = node.degree === 0 ? 0.62 : 0.78 + Math.min(node.degree, 3) * 0.07;
+      const breath = reducedMotion
+        ? 1
+        : 1 + Math.sin(clock.elapsedTime * 0.9 + i * 0.7) * 0.12;
+
+      dummy.position.set(node.x, node.y, node.z);
+      // NODE_SCALE converts the abstract ranking radius into world units - see its definition.
+      dummy.scale.setScalar(node.r * NODE_SCALE * (isHovered ? 1.55 : 1) * breath);
+      dummy.updateMatrix();
+      mesh.setMatrixAt(i, dummy.matrix);
+
+      tint.set(isHovered ? NODE_LIT : NODE).multiplyScalar(isHovered ? 1 : settled);
+      mesh.setColorAt(i, tint);
     }
+
+    mesh.instanceMatrix.needsUpdate = true;
+    // setColorAt allocates instanceColor on first use, so this is null only before the first pass.
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
   });
 
   return (
-    <Instance
-      ref={ref}
-      position={[node.x, node.y, node.z]}
+    <instancedMesh
+      ref={meshRef}
+      // args are constructor-time, so the count is keyed: a graph with a different node count needs
+      // a new InstancedMesh rather than a resized one.
+      key={count}
+      args={[undefined, undefined, count]}
       onPointerOver={e => {
         e.stopPropagation();
-        onHover(index);
+        // Raycasting an InstancedMesh reports which instance was hit, and that index IS the node
+        // index - which is what makes hover work without a mesh per node.
+        if (e.instanceId != null) setHovered(e.instanceId);
       }}
-      onPointerOut={() => onHover(null)}
+      onPointerOut={() => setHovered(null)}
       onClick={e => {
         e.stopPropagation();
-        onSelect({ id: node.id, title: node.title });
+        const i = e.instanceId;
+        if (i == null) return;
+        const node = graph.nodes[i];
+        if (node) onSelect({ id: node.id, title: node.title });
       }}
-    />
+    >
+      {/* One sphere, low poly. At this size nobody can tell 16 segments from 64, and the difference
+          is real vertex count across every instance. */}
+      <sphereGeometry args={[1, 16, 16]} />
+      {/* Material colour stays WHITE: three multiplies it by the per-instance colour, so tinting it
+          here would darken every node twice. toneMapped={false} keeps the accent exactly #3D93FF
+          instead of letting tone mapping desaturate it. */}
+      <meshBasicMaterial toneMapped={false} />
+    </instancedMesh>
   );
 }
 
@@ -235,6 +298,21 @@ export default function ConnectionGraph({
       <Canvas
         // Capped: this is a background, and a 3x-DPR phone would render 9x the pixels of a laptop.
         dpr={[1, 1.5]}
+        /*
+         * LEAVE THIS AT z=9. The clipping it causes is fixed by SCENE_FIT below, not here.
+         *
+         * The graph WAS clipped: build-graph spreads nodes across x +/- 13, while z=9 with fov 50 on
+         * a 503x252 canvas sees only +/- 8.4 world units across - so 36% of the layout's width sat
+         * outside the frustum. The obvious fix is to pull the camera back to z=16, which frames it
+         * exactly. Do not: moving it to 16 made the scene render NOTHING - not the nodes, not even
+         * the edges that had always drawn - and the cause was never established. Verified from the
+         * built bundle (`position:[0,0,16]` was really shipped) with the graph populated
+         * (`IN GRAPH 30`), no console errors, and a live context.
+         *
+         * So the camera stays where it is known to work and the SCENE is scaled to fit instead,
+         * which is equivalent for an orthographic-looking band like this one and has no mystery in
+         * it.
+         */
         camera={{ position: [0, 0, 9], fov: 50 }}
         // No alpha buffer needed — the band has a solid base colour behind it.
         gl={{ antialias: true, alpha: true, powerPreference: 'low-power' }}
@@ -262,14 +340,29 @@ export default function ConnectionGraph({
         resize={{ scroll: false, debounce: 0 }}
       >
         <CameraDrift enabled={!reducedMotion} />
-        <Edges graph={graph} hovered={hovered} />
-        <Nodes
-          graph={graph}
-          hovered={hovered}
-          setHovered={setHovered}
-          onSelect={onSelect}
-          reducedMotion={reducedMotion}
-        />
+        {/*
+          SCENE_FIT — one group scaling BOTH the edges and the nodes, which is the whole reason it
+          works. build-graph spreads nodes across x +/- 13 and the camera at z=9 sees +/- 8.4, so a
+          third of the layout was outside the frustum: events at the edges were absent and the rest
+          were crowded, which is a large part of why the band read as a tangle.
+
+          Scaling the group rather than the camera keeps the one arrangement that is known to
+          render (see the camera note above), and scaling positions and radii TOGETHER is what makes
+          it safe — the picture is identical, just smaller, so NODE_SCALE stays meaningful.
+
+          0.62 puts x at +/- 8.06 inside the +/- 8.4 frustum, so nothing clips and there is a little
+          margin. Derived from 8.4/13 with ~4% headroom, not chosen by eye.
+        */}
+        <group scale={SCENE_FIT}>
+          <Edges graph={graph} hovered={hovered} />
+          <Nodes
+            graph={graph}
+            hovered={hovered}
+            setHovered={setHovered}
+            onSelect={onSelect}
+            reducedMotion={reducedMotion}
+          />
+        </group>
       </Canvas>
 
       {/*
