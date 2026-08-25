@@ -140,83 +140,95 @@ export default function EventGraphHero({
   const linked = graph.nodes.filter(n => n.degree > 0).length;
 
   return (
-    <section
-      className="night relative overflow-hidden"
-      // Not `aria-hidden`: the text inside is real content. The canvas itself is decorative and
-      // marks itself so.
-      aria-label="Connection graph"
-    >
-      {/* A single soft radial wash, the only gradient in the app. It exists to keep the node field
-          from floating on flat black, and it is one layer rather than a stack. */}
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-0"
-        style={{
-          background:
-            'radial-gradient(120% 80% at 22% 0%, rgba(255,158,61,0.10) 0%, rgba(255,158,61,0) 55%), radial-gradient(90% 70% at 88% 100%, rgba(53,196,196,0.08) 0%, rgba(53,196,196,0) 60%)',
-        }}
-      />
+    <section className="glass-canvas relative overflow-hidden" aria-label="Connection graph">
+      <div className="relative mx-auto max-w-[1240px] px-4 py-8 md:px-8 md:py-12">
+        {/*
+          THE LAYERED GLASS the spec asks for: a frosted panel on the washed canvas, holding a
+          DEEP panel for the graph. Two layers is the whole idea — one sheet of glass is a card.
 
-      <div className="relative mx-auto max-w-[1240px] px-4 pb-7 pt-9 md:px-8 md:pb-9 md:pt-12">
-        <div className="flex flex-wrap items-end justify-between gap-x-8 gap-y-3">
-          <div className="min-w-0">
-            <p className="t-eyebrow">Bengaluru · live network</p>
-            <h1 className="t-graph-title mt-2 max-w-[19ch]">
-              Ranked by who you&rsquo;ll meet
-            </h1>
+          Text left, visual right, matching the client's hero. That split is also what keeps the
+          band short: side by side, the headline and the graph share one band's height instead of
+          stacking into two.
+        */}
+        <div className="glass-panel p-5 sm:p-7 md:p-9">
+          <div className="grid items-center gap-7 md:grid-cols-[1.02fr_1fr] md:gap-10">
+            <div className="min-w-0">
+              {/* The spec's pill badge: light accent fill, uppercase label. */}
+              <span className="inline-flex items-center gap-2 rounded-full bg-[#0071E3]/10 px-3.5 py-1.5">
+                <span aria-hidden="true" className="node-dot breathe" />
+                <span className="t-eyebrow !text-[#0059B5]">Bengaluru live network</span>
+              </span>
+
+              {/* Two-tone headline, straight from their hero: ink for the frame of the sentence,
+                  the accent gradient on the words that name the subject. The accent is confined
+                  to a span, so it stays rationed rather than becoming a coloured headline. */}
+              <h1 className="t-graph-title mt-4 max-w-[20ch] text-[#1D1D1F]">
+                Ranked by{' '}
+                <span className="t-accent-fill">who you&rsquo;ll meet</span>
+              </h1>
+
+              <p className="mt-3.5 max-w-[46ch] text-[15px] leading-[1.55] text-[#3a3a3c]">
+                Every developer meetup, conference, hackathon and workshop in the city — joined
+                wherever two of them put you in front of the same people.
+              </p>
+
+              {/* Big accent numerals, per the client's Mission Control screen. `tabular-nums`
+                  does the job the mono face was there for: fixed digit widths, so a ticking
+                  count cannot shift the layout beside it. */}
+              <dl className="mt-6 flex flex-wrap items-end gap-x-8 gap-y-4">
+                <div>
+                  <dt className="t-eyebrow">upcoming</dt>
+                  <dd className="mt-1 text-[30px] font-bold leading-none tracking-[-0.03em] tabular-nums text-[#1D1D1F]">
+                    {loading ? '—' : totalUpcoming.toLocaleString('en-IN')}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="t-eyebrow">in graph</dt>
+                  <dd className="mt-1 text-[30px] font-bold leading-none tracking-[-0.03em] tabular-nums text-[#1D1D1F]">
+                    {graph.nodes.length}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="t-eyebrow">connected</dt>
+                  <dd className="mt-1 text-[30px] font-bold leading-none tracking-[-0.03em] tabular-nums text-[#0071E3]">
+                    {linked}
+                  </dd>
+                </div>
+              </dl>
+            </div>
+
+            {/*
+              The deep panel. The graph needs a dark field — emissive blue points on white have
+              almost no contrast, which is why the spec's own "dark-to-light rhythm" earns its
+              keep here rather than being atmosphere.
+
+              Fixed heights so the swap from SVG to canvas cannot shift the page.
+            */}
+            <div className="glass-deep relative overflow-hidden p-3">
+              <div className="relative h-[188px] w-full sm:h-[224px] md:h-[252px]">
+                {canRender3D ? (
+                  <ConnectionGraph graph={graph} onSelect={handleSelect} />
+                ) : (
+                  <GraphFallback graph={graph} />
+                )}
+              </div>
+
+              {/* The legend states the mapping in words. Without it, two blues are decoration. */}
+              <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1.5 px-1 pb-1 text-[11px] text-[color:var(--deep-muted)]">
+                <span className="inline-flex items-center gap-1.5">
+                  <span aria-hidden="true" className="node-dot" />
+                  event · sized by connection score
+                </span>
+                <span className="inline-flex items-center gap-1.5">
+                  <span aria-hidden="true" className="inline-block h-px w-4 bg-[#4DA3FF]" />
+                  shares a host, company or topic
+                </span>
+                {graph.omitted > 0 && (
+                  <span className="tabular-nums">+{graph.omitted} more below</span>
+                )}
+              </div>
+            </div>
           </div>
-
-          {/* Counts in mono, because they change: a proportional face shifts the layout by a pixel
-              or two every time the number ticks. */}
-          <dl className="flex shrink-0 items-center gap-6 font-[family-name:var(--font-mono)] text-[color:var(--n-muted)]">
-            <div>
-              <dt className="t-eyebrow">upcoming</dt>
-              <dd className="mt-1 text-[19px] tabular-nums text-[color:var(--n-text)]">
-                {loading ? '—' : totalUpcoming}
-              </dd>
-            </div>
-            <div>
-              <dt className="t-eyebrow">in graph</dt>
-              <dd className="mt-1 text-[19px] tabular-nums text-[color:var(--n-text)]">
-                {graph.nodes.length}
-              </dd>
-            </div>
-            <div>
-              <dt className="t-eyebrow">connected</dt>
-              <dd className="mt-1 text-[19px] tabular-nums text-[color:var(--n-pulse)]">{linked}</dd>
-            </div>
-          </dl>
-        </div>
-
-        {/* The graph itself. Fixed height so the first event row lands at a predictable place and
-            the swap from SVG to canvas does not shift the page. */}
-        <div className="relative mt-5 h-[196px] w-full sm:h-[236px] md:h-[268px]">
-          {canRender3D ? (
-            <ConnectionGraph graph={graph} onSelect={handleSelect} />
-          ) : (
-            <GraphFallback graph={graph} />
-          )}
-        </div>
-
-        {/* The legend is the key to reading the picture, so it states the mapping in words. Without
-            it, two accent colours are decoration. */}
-        <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-[11.5px] text-[color:var(--n-muted)]">
-          <span className="inline-flex items-center gap-2">
-            <span aria-hidden="true" className="node-dot" />
-            event, sized by connection score
-          </span>
-          <span className="inline-flex items-center gap-2">
-            <span
-              aria-hidden="true"
-              className="inline-block h-px w-5 bg-[color:var(--n-connect)]"
-            />
-            shares a host, company or topic
-          </span>
-          {graph.omitted > 0 && (
-            <span className="font-[family-name:var(--font-mono)]">
-              +{graph.omitted} more in the list below
-            </span>
-          )}
         </div>
       </div>
     </section>

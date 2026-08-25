@@ -65,7 +65,7 @@ export default function GraphFallback({
       preserveAspectRatio="xMidYMid slice"
     >
       {/* Edges first, so nodes sit on top of them. */}
-      <g stroke="var(--n-connect)" fill="none">
+      <g stroke="#4DA3FF" fill="none">
         {edges.map((e, i) => {
           const a = project(nodes[e.a].x, nodes[e.a].y);
           const b = project(nodes[e.b].x, nodes[e.b].y);
@@ -86,7 +86,7 @@ export default function GraphFallback({
         })}
       </g>
 
-      <g fill="var(--n-pulse)">
+      <g fill="#3D93FF">
         {nodes.map((n, i) => {
           const { cx, cy } = project(n.x, n.y);
           // r is authored in world units; scale to the viewBox and lift slightly with z.

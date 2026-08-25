@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Inter, Inter_Tight, Bricolage_Grotesque, IBM_Plex_Mono } from "next/font/google";
+import { Inter, Inter_Tight } from "next/font/google";
 import "./globals.css";
 import Script from "next/script";
 import Providers from "./providers";
@@ -26,39 +26,19 @@ const interTight = Inter_Tight({
   display: "swap",
 });
 
-/**
- * The graph headline, and nothing else.
+/*
+ * TWO FACES, DELIBERATELY — Bricolage Grotesque and IBM Plex Mono were REMOVED.
  *
- * Bricolage Grotesque has real character at display sizes — slightly irregular widths, a
- * grotesque that does not read as the geometric sans every developer tool reaches for. That
- * only works as a contrast, so it is scoped to `.t-graph-title`: one headline per page. Used
- * more widely it would fight Inter, which is doing the actual work of making 1200 dense rows
- * scannable.
+ * They were added for the graph headline and for tabular counts, and both were defensible in
+ * isolation. Then the client supplied `pulseblr_design_system/DESIGN.md`, which names Inter for
+ * every single type role. A display face and a mono face the spec does not ask for are exactly the
+ * kind of flourish that makes a build feel like the designer's taste rather than the brand's, and
+ * they cost two extra font downloads on a phone to boot.
  *
- * One weight, because one weight is all a single headline needs — the whole family would be
- * several files for no benefit.
+ * What the spec actually wants at display size is TIGHT TRACKING, not a different family — so
+ * `.t-graph-title` uses Inter Tight at -0.035em, and the counts use `tabular-nums`, which fixes
+ * the digit-width reflow that Plex Mono was there to solve. Same problem, no extra payload.
  */
-const bricolage = Bricolage_Grotesque({
-  subsets: ["latin"],
-  weight: ["700"],
-  variable: "--font-display-alt",
-  display: "swap",
-});
-
-/**
- * Counts, timestamps, connection scores, badges.
- *
- * A mono face here is functional rather than stylistic: these are TABULAR values that update
- * live ("341 tech events", a ticking count), and a proportional face makes the surrounding
- * layout shift by a pixel or two on every change. Plex Mono also sets narrower than JetBrains
- * Mono, so it fits inside a pill without shrinking the label.
- */
-const plexMono = IBM_Plex_Mono({
-  subsets: ["latin"],
-  weight: ["400", "500"],
-  variable: "--font-mono",
-  display: "swap",
-});
 
 export const metadata: Metadata = {
   title: "PulseBLR - Bangalore Tech Events",
@@ -101,7 +81,7 @@ export default function RootLayout({
     <html
       lang="en"
       translate="no"
-      className={`${inter.variable} ${interTight.variable} ${bricolage.variable} ${plexMono.variable} h-full`}
+      className={`${inter.variable} ${interTight.variable} h-full`}
     >
       <head>
         <meta name="google" content="notranslate" />

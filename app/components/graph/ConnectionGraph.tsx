@@ -30,8 +30,20 @@ import * as THREE from 'three';
 import type { EventGraph, GraphNode } from '@/lib/graph/build-graph';
 import { edgeLabel } from '@/lib/graph/build-graph';
 
-const PULSE = '#FF9E3D';
-const CONNECT = '#35C4C4';
+/*
+ * The client's design system pins ONE accent, #0071E3, so the graph reads in blue rather than the
+ * amber/teal pair this started with. Two shades of the same hue still separate the two things that
+ * must never look alike: NODE is the accent itself (an event), EDGE is a lighter tint of it (a
+ * connection between events). Monochromatic depth is also what their write-up asks for by name.
+ *
+ * NODE is lifted slightly off #0071E3 because these are emissive points on a near-black field —
+ * the spec's value was chosen for blue-on-white, where it is a link colour, and at 6px on dark it
+ * reads muddy without the lift.
+ */
+const NODE = '#3D93FF';
+const NODE_LIT = '#CFE6FF';
+const EDGE = '#4DA3FF';
+const EDGE_LIT = '#EAF4FF';
 
 /** What the hero needs back when someone picks a node. */
 export interface GraphSelection {
@@ -79,8 +91,8 @@ function Edges({ graph, hovered }: { graph: EventGraph; hovered: number | null }
     if (!attr) return;
     const colors = attr.array as Float32Array;
 
-    const base = new THREE.Color(CONNECT);
-    const lit = new THREE.Color('#EAFEFE');
+    const base = new THREE.Color(EDGE);
+    const lit = new THREE.Color(EDGE_LIT);
     for (let i = 0; i < graph.edges.length; i++) {
       const edge = graph.edges[i];
       const isLit = hovered !== null && (edge.a === hovered || edge.b === hovered);
@@ -123,7 +135,7 @@ function Nodes({
       {/* One sphere, low poly. At this size on screen nobody can tell 16 segments from 64, and
           the difference is real vertex count across 48 instances. */}
       <sphereGeometry args={[1, 16, 16]} />
-      <meshBasicMaterial color={PULSE} transparent />
+      <meshBasicMaterial color={NODE} transparent />
       {graph.nodes.map((node, i) => (
         <NodeInstance
           key={node.id}
@@ -169,7 +181,7 @@ function NodeInstance({
     // Instances share a material, so per-node brightness has to ride on the instance colour.
     const inst = ref.current as THREE.Object3D & { color?: THREE.Color };
     if (inst.color) {
-      inst.color.set(isHovered ? '#FFD8A8' : PULSE).multiplyScalar(isHovered ? 1 : settled);
+      inst.color.set(isHovered ? NODE_LIT : NODE).multiplyScalar(isHovered ? 1 : settled);
     }
   });
 
@@ -266,11 +278,11 @@ export default function ConnectionGraph({
         a title alone would just repeat what the list already shows.
       */}
       {active && (
-        <div className="pointer-events-none absolute bottom-3 left-3 max-w-[min(420px,80%)] rounded-xl bg-[color:var(--n-surface)]/95 px-3.5 py-2.5 shadow-lg ring-1 ring-[color:var(--n-hairline)]">
-          <p className="truncate text-[13px] font-semibold text-[color:var(--n-text)]">
+        <div className="pointer-events-none absolute bottom-3 left-3 max-w-[min(420px,80%)] rounded-xl bg-[#0B1220]/92 px-3.5 py-2.5 shadow-lg ring-1 ring-[color:var(--deep-line)] backdrop-blur-md">
+          <p className="truncate text-[13px] font-semibold text-[color:var(--deep-text)]">
             {active.title}
           </p>
-          <p className="mt-0.5 text-[11.5px] text-[color:var(--n-muted)]">
+          <p className="mt-0.5 text-[11.5px] text-[color:var(--deep-muted)]">
             {activeEdges.length === 0
               ? 'no shared host, company or topic yet'
               : `${activeEdges.length} connection${activeEdges.length === 1 ? '' : 's'} · ` +

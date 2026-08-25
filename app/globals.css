@@ -82,96 +82,157 @@
   --feed-offset: calc(var(--topbar-h) + var(--commandbar-h));
 }
 
-/* ══════════════════════════════════════════════════════════════════════════════
-   MONSOON SODIUM — the night-radar surface the connection graph lives on.
-   ══════════════════════════════════════════════════════════════════════════════
+/* ═════════════════════════════════════════════════════════════════════════════
+   THE GLASS LAYER — the surface the connection graph and the premium panels sit on.
+   ═════════════════════════════════════════════════════════════════════════════
 
-   SCOPED, NOT GLOBAL, and that is the whole design decision. This app's value is
-   scanning a dense list fast; inverting 1200 rows of it would cost legibility to buy
-   atmosphere. So the dark palette applies only where the GRAPH lives — the hero band on
-   the feed and the People graph — and the lists below stay light, dense and unchanged.
-   Apply with `class="night"`; never on <body>.
+   THIS REPLACED A DARK "MONSOON SODIUM" PALETTE (amber on graphite), and the reason is
+   worth keeping: that palette was proposed before the client supplied a design system.
+   `pulseblr_design_system/DESIGN.md` and 14 screens then pinned the direction explicitly
+   — minimalist glassmorphism, light canvas, ONE blue accent — and a pinned direction beats
+   a proposal made in its absence. Re-introducing a warm accent here would fight the spec.
 
-   Named for what it is drawn from rather than from a palette generator: Bengaluru's
-   sodium-vapour street lighting over wet monsoon asphalt. That gives the primary accent a
-   WARM cast, which inverts the cool-accent-on-dark convention of every developer dashboard
-   and is the reason this does not read as a template.
+   The happy part: the spec is ~80% what this app already was. `#F5F5F7` canvas, `#FFFFFF`
+   cards, `#1D1D1F` / `#86868B` text tiers, `#0071E3` accent, 20px card radii, pill
+   buttons, glass nav and negative display tracking were all already in this file. So the
+   genuinely NEW material is small and specific, and that is all this block adds:
 
-   THE TWO ACCENTS ENCODE THE DATA MODEL, they are not a colour scheme:
-     --pulse   sodium amber — an EVENT, and anything live
-     --connect signal teal  — a PERSON, and every edge between them
-   The product's thesis is "ranked by who you'll meet", so events and people must never be
-   the same colour. Keep it that way: a third accent would break the mapping.
+     · a LAYERED glass panel (not just the nav bar)
+     · a soft blue-lavender wash on the canvas, so white glass has something to sit on
+     · a large, very soft lift — "10% opacity, 30-40px blur" per the spec
 
-   The light theme's rule still holds here — cover images are the only other colour. */
-.night {
-  --n-base:    #14161A;   /* wet asphalt — not pure black, so shadows still read */
-  --n-surface: #1E2126;   /* a raised card on that asphalt */
-  --n-pulse:   #FF9E3D;   /* sodium vapour — events, live state */
-  --n-connect: #35C4C4;   /* signal teal — people, edges */
-  --n-text:    #E9EAEC;
-  --n-muted:   #8A9099;
+   ONE ACCENT STILL, RATIONED. The spec agrees with the rule this file already had:
+   `--blue` means "you can act on this". Glass supplies depth; it must not smuggle in a
+   second hue. Cover images remain the only other colour on screen. */
 
-  /* Hairlines invert: on dark, a light alpha line reads as an edge where a dark one
-     disappears. Same reasoning as --hairline being alpha rather than solid grey. */
-  --n-hairline: rgba(255, 255, 255, 0.09);
-
-  background-color: var(--n-base);
-  color: var(--n-text);
+/* The wash. A near-white blue-violet gradient rather than flat #F5F5F7, because a white
+   glass panel on a flat white page has nothing to refract and the effect disappears. Kept
+   under 4% saturation — at the point it reads as "blue background" it has become
+   decoration, which is what the one-accent rule exists to prevent. */
+.glass-canvas {
+  background:
+    radial-gradient(120% 90% at 15% 0%,   rgba(0, 113, 227, 0.055) 0%, rgba(0, 113, 227, 0) 58%),
+    radial-gradient(100% 80% at 92% 12%,  rgba(120, 130, 255, 0.05) 0%, rgba(120, 130, 255, 0) 60%),
+    linear-gradient(180deg, #F7F8FC 0%, #F5F5F7 46%, #F3F4F9 100%);
 }
 
-/* The eyebrow above the graph: mono, wide-tracked, quiet. IBM Plex Mono is doing a real
-   job here — counts and timestamps are tabular data, and a mono face stops them
-   reflowing as the live count ticks. */
-.night .t-eyebrow {
-  font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 11px;
-  letter-spacing: 0.14em;
+/* The glass panel itself.
+   `saturate(1.6)` alongside the blur is what separates real glassmorphism from "a
+   translucent white box": frosted glass concentrates the colour behind it, and without the
+   saturation boost the panel greys out whatever it covers. */
+.glass-panel {
+  /* Opaque by DEFAULT. The transparency is added back inside the @supports block below, so a
+     browser that cannot blur never gets a 62%-transparent panel with text on it. */
+  background: rgba(255, 255, 255, 0.96);
+  /* A hairline INSIDE the panel plus a broad soft lift outside. The inset top highlight is
+     the detail that makes it read as glass rather than as paper: real glass catches light
+     on its top edge. */
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.85),
+    0 1px 0 rgba(0, 0, 0, 0.02),
+    0 22px 55px -20px rgba(16, 24, 48, 0.16);
+  border-radius: 24px;
+}
+
+/* THE BLUR MUST LIVE INSIDE @supports, AND THE STANDARD PROPERTY MUST COME LAST.
+   This repeats the pattern established for `.glass-nav` further down this file, because the
+   first version of this rule ignored it and reproduced the exact bug that note warns about.
+
+   Measured on the built CSS: a bare `backdrop-filter` + `-webkit-backdrop-filter` pair was
+   collapsed by the optimiser (Lightning CSS via Tailwind v4) into the `-webkit-` form ALONE —
+   `.glass-panel{-webkit-backdrop-filter:blur(22px)saturate(1.6);…}`. Current Chrome reports
+   `CSS.supports('-webkit-backdrop-filter','blur(4px)') === false` while the standard property
+   is supported, so the panel rendered as flat 62% white with NO blur: glassmorphism entirely
+   absent, and invisible in a component test because the class was present and the background
+   was right.
+
+   `saturate` before `blur` is deliberate — frosted glass concentrates the colour behind it,
+   and without it the panel greys out whatever it covers. */
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .glass-panel {
+    background: rgba(255, 255, 255, 0.62);
+    -webkit-backdrop-filter: saturate(160%) blur(22px);
+    backdrop-filter: saturate(160%) blur(22px);
+  }
+}
+
+/* The dark counterpart, used ONLY inside the graph so the node field has contrast to live
+   against. The spec's own "dark-to-light scroll rhythm", and its `dark-gradient-bg`
+   (#000000 → #001b3f) is where the navy comes from. */
+.glass-deep {
+  --deep-text:  #F2F5FA;
+  --deep-muted: #93A0B8;
+  --deep-line:  rgba(255, 255, 255, 0.10);
+  background: linear-gradient(165deg, #04070F 0%, #0A1225 52%, #001B3F 100%);
+  color: var(--deep-text);
+  border-radius: 24px;
+}
+
+/* The eyebrow above a section: wide-tracked caps. Positive tracking, because the type
+   scale in this file sets POSITIVE tracking for small caps — tight small caps are
+   unreadable, the same rule that gives the display sizes their negative tracking. */
+.t-eyebrow {
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.11em;
   text-transform: uppercase;
-  color: var(--n-muted);
+  color: #86868B;
 }
+.glass-deep .t-eyebrow { color: var(--deep-muted); }
 
-/* Display face for the graph headline only — used once per page, which is what keeps it
-   characterful rather than noisy. */
-.night .t-graph-title {
-  font-family: var(--font-display-alt), var(--font-display), system-ui, sans-serif;
+/* The graph headline. Inter Tight at the spec's display weight and tracking — the spec
+   names Inter for every role, so the earlier Bricolage display face was dropped rather
+   than kept as a flourish the client did not ask for. */
+.t-graph-title {
+  font-family: var(--font-display);
   font-weight: 700;
-  font-size: clamp(28px, 4.4vw, 44px);
+  font-size: clamp(30px, 4.6vw, 50px);
   line-height: 1.02;
-  letter-spacing: -0.03em;
-  color: var(--n-text);
+  letter-spacing: -0.035em;
 }
 
-/* A node in the legend and in the HTML fallback — the same two-colour mapping the 3D
-   scene uses, so the static path teaches the same thing the animated one does. */
-.night .node-dot {
+/* The two-tone headline from the client's hero: ink, then the accent on the words that
+   name the subject. A gradient FILL rather than a flat blue, which is the "depth-charged
+   blue" in their write-up — and it is confined to a span, so the accent stays rationed. */
+.t-accent-fill {
+  background: linear-gradient(135deg, #0071E3 0%, #0059B5 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* A node in the legend and in the SVG fallback. Blue is an EVENT; the lighter blue is a
+   connection. Same mapping in both the 3D scene and the static one, so the fallback
+   teaches what the animated version teaches. */
+.node-dot {
+  display: inline-block;
   width: 7px;
   height: 7px;
   border-radius: 999px;
-  background: var(--n-pulse);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--n-pulse) 22%, transparent);
+  background: #0071E3;
+  box-shadow: 0 0 0 3px rgba(0, 113, 227, 0.22);
 }
-.night .node-dot--person {
-  background: var(--n-connect);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--n-connect) 22%, transparent);
+.glass-deep .node-dot {
+  background: #4DA3FF;
+  box-shadow: 0 0 0 3px rgba(77, 163, 255, 0.24);
 }
 
-/* The ambient breathing of the fallback graph. Deliberately slow: this sits behind a
+/* The ambient breathing of the fallback graph. Deliberately slow: it sits behind a
    headline someone is reading, and anything faster competes with the text. */
-@keyframes sodium-breathe {
-  0%, 100% { opacity: 0.35; transform: scale(1); }
-  50%      { opacity: 0.9;  transform: scale(1.35); }
+@keyframes node-breathe {
+  0%, 100% { opacity: 0.4; transform: scale(1); }
+  50%      { opacity: 0.95; transform: scale(1.3); }
 }
-.night .breathe {
-  animation: sodium-breathe 4.5s var(--ease) infinite;
+.breathe {
+  animation: node-breathe 4.5s var(--ease) infinite;
 }
 
 /* QUALITY FLOOR, not an afterthought: reduced motion stops the ambient loop outright
    rather than slowing it. The 3D scene checks the same query in JS and never mounts. */
 @media (prefers-reduced-motion: reduce) {
-  .night .breathe {
+  .breathe {
     animation: none;
-    opacity: 0.7;
+    opacity: 0.75;
   }
 }
 
