@@ -3,6 +3,7 @@ import { Inter, Inter_Tight } from "next/font/google";
 import "./globals.css";
 import Script from "next/script";
 import Providers from "./providers";
+import ProtectedRouteGate from "./components/ProtectedRouteGate";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -80,7 +81,11 @@ export default function RootLayout({
       </head>
       <body className="min-h-full antialiased">
         <Providers>
-        {children}
+        {/* Inside Providers because it needs the SessionProvider. This replaced the cookie-name
+            check in proxy.ts, which had no secret to verify a token with and so could only ask
+            "is a cookie present" — no security, and it locked out users whose session was
+            demonstrably valid. See lib/protected-routes.ts. */}
+        <ProtectedRouteGate>{children}</ProtectedRouteGate>
         </Providers>
         <Script id="register-sw" strategy="afterInteractive">
           {process.env.NODE_ENV === "production"

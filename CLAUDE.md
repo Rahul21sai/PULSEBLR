@@ -643,6 +643,57 @@ Shared by `/api/events` and `/api/events/facets` so the list and the counts besi
 
 NextAuth v5 (Auth.js) config lives in the root `auth.ts`, imported as `@/auth`. Strategy is **JWT** (no DB session): the `jwt` callback stashes the Google `sub`/email/name/picture into the token *and* upserts the `User` doc by `googleId` on first sign-in; `session` surfaces `token.sub` as `session.user.id`. Server code uses `getCurrentUserId()` (`lib/auth-helpers.ts`). `proxy.ts` redirects `/dashboard`, `/tracker`, `/add-event` and `/settings` to `/login`. **Everything user-owned must be scoped by `userId`** — `TrackerEntry` has a compound-unique index `{ userId, eventId }`.
 
+> **`proxy.ts` NO LONGER GATES PAGES, AND EVERY PROXY NOTE BELOW IS NOW HISTORY.** Read the two
+> warnings that follow as the record of why this layer was removed, not as current behaviour.
+>
+> The check looked for an Auth.js session cookie BY NAME in the edge runtime. Two independent
+> problems, neither fixable there:
+>
+> · **It secured nothing.** The edge has no secret to verify a JWT with, so it could only ask "is a
+>   cookie present". Measured against production: `Cookie: __Secure-authjs.session-token=dummy`
+>   returned **200** on all eight protected paths. A stranger walked past it by inventing a cookie.
+>   Putting the secret in the edge to make it real is the wrong trade too - getting that wrong
+>   signs out every user at once.
+> · **It locked out users who were signed in.** Confirmed from the app's own screen, which is the
+>   only reason this was finally provable: `/login?callbackUrl=%2Ffolders` rendered "You're already
+>   signed in as <the address>". So the browser held a session `/api/auth/session` could decode
+>   while the proxy had just refused the navigation that led there. Only `proxy.ts` writes that URL
+>   shape, so the redirect was unambiguously from there.
+>
+> A check that cannot refuse an attacker but does refuse a real user has negative value. **Two
+> earlier attempts to fix this by tuning the cookie matching (chunked-cookie support, then
+> forwarding `callbackUrl`) were both real defects and neither was this bug** - which is the lesson
+> worth keeping: the instrument was wrong, not its calibration.
+>
+> **Where the gate lives now.** Authorisation is unchanged: `requireUser()` / `requireAdmin()` on
+> every private API route, and `/admin`'s own server-component session + allowlist check, which
+> still `redirect()`s and is still asserted by `diag-api-auth.ts`. What to DRAW is
+> `app/components/ProtectedRouteGate.tsx`, mounted inside `Providers` in the root layout, which
+> asks `useSession()` - the same session the API routes see - so the page and its data cannot
+> disagree. `lib/protected-routes.ts` holds the path list, and `tests/protected-routes.test.ts`
+> pins the prefix-matching trap that `/c/<token>` and `/f/<token>` depend on.
+>
+> **`loading` renders the page, deliberately.** `useSession()` starts as `loading` on every hard
+> navigation, and treating that as signed-out would flash a sign-in wall at a signed-in user - the
+> same false-negative class, moved to the client. Only a settled `unauthenticated` gates, so the
+> gate fails OPEN.
+>
+> **Consequence for `diag-api-auth.ts`: a 200 on those seven pages is now CORRECT.** They are all
+> client components, so no user data is in the HTML; the script asserts that separately by scanning
+> the anonymous response for an email address. Its canary needs an ALPHABETIC TLD - a looser
+> pattern matched `FILL@100..700` from the Material Symbols URL in `app/layout.tsx` and reported
+> all seven as leaking, and a canary that cries wolf everywhere gets switched off.
+
+> **`/dashboard` HAD ITS OWN NAV AND ITS OWN HERO, WHICH IS WHY IT LOOKED LIKE A DIFFERENT APP.**
+> It hand-rolled a desktop nav, a mobile header and a bottom bar from a local `NAV_LINKS` array,
+> and that array had gone **stale**: it offered Feed / Calendar / Tracker / Add / Settings and was
+> missing Companies, People and Dashboard itself. So opening the dashboard changed the whole chrome
+> AND dropped links the rest of the app has. It also drew a full-bleed **black** hero, the loudest
+> element in the product, on exactly one page - against the globals.css rule that keeps everything
+> greyscale so cover images are the only colour. Now uses the shared `DesktopNav` /
+> `MobileBottomNav`. A second copy of the nav cannot stay in step with the first; do not reintroduce
+> one.
+
 > **THE LOGIN PAGE THREW AWAY THE `callbackUrl`, WHICH IS WHY SIGNING IN LOOKED LIKE IT FAILED.**
 > `proxy.ts` carefully appends `?callbackUrl=<path>` when it bounces a signed-out visitor, and
 > `app/login/page.tsx` passed a hard-coded `signIn('google', { callbackUrl: '/' })`. So the

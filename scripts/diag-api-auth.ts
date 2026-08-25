@@ -106,12 +106,36 @@ const MUST_REFUSE: Case[] = [
 ];
 
 /**
- * Pages that must redirect (307) to /login rather than render. proxy.ts can only check
- * that a session cookie EXISTS — /admin additionally re-checks the allowlist server-side,
- * because the proxy cannot know whether a session belongs to an admin.
+ * Private pages, checked signed-out.
+ *
+ * THE EXPECTATION CHANGED, and the reason is the point. This used to assert a 307 to /login from
+ * `proxy.ts`. That check was removed: it looked for a session cookie BY NAME in the edge runtime,
+ * where there is no secret to verify a token with, so it could only ask "is a cookie present" —
+ * `Cookie: __Secure-authjs.session-token=dummy` returned 200 on every one of these paths in
+ * production — while producing false negatives that locked out users whose session was
+ * demonstrably valid (`/login` itself reported "You're already signed in as <address>").
+ *
+ * So a 200 here is now CORRECT for the eight client pages: they render a shell and
+ * `ProtectedRouteGate` draws a sign-in prompt once `useSession()` settles as unauthenticated. No
+ * user data is in that HTML — every one of them is a client component that fetches from an API
+ * enforcing `requireUser()`, which the section above already asserts.
+ *
+ * `/admin` is the exception and still MUST redirect, because it is a server component that
+ * re-checks the session and the allowlist itself before emitting any admin markup. That check is
+ * real (it has the secret), so a regression there is a genuine authorisation failure rather than
+ * a cosmetic one — which is why it is asserted separately below.
  */
 const MUST_REDIRECT = [
   '/admin',
+];
+
+/**
+ * Pages that legitimately return 200 signed-out and gate on the client.
+ *
+ * Asserted so that a future change cannot quietly start server-rendering user data into one of
+ * them: the guarantee being pinned is "reachable, and carries nothing private".
+ */
+const CLIENT_GATED = [
   '/settings',
   '/dashboard',
   '/tracker',
@@ -222,7 +246,7 @@ async function main() {
     }
   }
 
-  console.log('\nPAGES THAT MUST REDIRECT TO /login (307)\n');
+  console.log('\nSERVER-CHECKED PAGES THAT MUST REDIRECT TO /login (307)\n');
   for (const path of MUST_REDIRECT) {
     try {
       const res = await fetch(BASE + path, {
@@ -231,9 +255,46 @@ async function main() {
         signal: AbortSignal.timeout(30000),
       });
       const location = res.headers.get('location') || '';
-      const ok = res.status === 307 && location.includes('/login');
+      const ok = (res.status === 307 || res.status === 302) && location.includes('/login');
       if (!ok) failures++;
       console.log(`  ${ok ? 'PASS' : 'FAIL'}  ${res.status}  ${path.padEnd(14)} -> ${location.replace(BASE, '') || '(no redirect)'}`);
+    } catch (err) {
+      failures++;
+      console.log(`  FAIL  ERR  ${path} — ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  /*
+   * The client-gated pages. A 200 is correct — see the comment on CLIENT_GATED — but the HTML
+   * must not contain private data, since it is served to anyone. Checked by asserting the
+   * signed-in shell markers are ABSENT and the gate's own prompt is reachable: these pages are
+   * client components, so their user data arrives later from an API that answers 401.
+   */
+  console.log('\nCLIENT-GATED PAGES: reachable signed-out, and carry nothing private\n');
+  for (const path of CLIENT_GATED) {
+    try {
+      const res = await fetch(BASE + path, {
+        headers: { Accept: 'text/html' },
+        redirect: 'manual',
+        signal: AbortSignal.timeout(30000),
+      });
+      const body = res.ok ? await res.text() : '';
+      /*
+       * A canary, not a proof: an email address in server-rendered HTML on a page served to an
+       * anonymous caller would mean somebody's session leaked into the document.
+       *
+       * THE TLD MUST BE ALPHABETIC, and that is not pedantry — a looser `[\w.]+` tail matched
+       * `FILL@100..700` from the Material Symbols font URL in `app/layout.tsx` and reported all
+       * seven pages as leaking. A canary that cries wolf on every page is worse than none,
+       * because the next person turns it off.
+       */
+      const EMAIL_IN_HTML = /[\w.+-]+@[\w-]+\.[A-Za-z]{2,24}(?![\w.-])/;
+      const leaksEmail = EMAIL_IN_HTML.test(body.replace(/onboarding@resend\.dev/g, ''));
+      const ok = res.status === 200 && !leaksEmail;
+      if (!ok) failures++;
+      console.log(
+        `  ${ok ? 'PASS' : 'FAIL'}  ${res.status}  ${path.padEnd(14)} ${leaksEmail ? '<- LEAKS AN EMAIL ADDRESS' : 'no private data in HTML'}`
+      );
     } catch (err) {
       failures++;
       console.log(`  FAIL  ERR  ${path} — ${err instanceof Error ? err.message : String(err)}`);
