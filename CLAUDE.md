@@ -643,6 +643,37 @@ Shared by `/api/events` and `/api/events/facets` so the list and the counts besi
 
 NextAuth v5 (Auth.js) config lives in the root `auth.ts`, imported as `@/auth`. Strategy is **JWT** (no DB session): the `jwt` callback stashes the Google `sub`/email/name/picture into the token *and* upserts the `User` doc by `googleId` on first sign-in; `session` surfaces `token.sub` as `session.user.id`. Server code uses `getCurrentUserId()` (`lib/auth-helpers.ts`). `proxy.ts` redirects `/dashboard`, `/tracker`, `/add-event` and `/settings` to `/login`. **Everything user-owned must be scoped by `userId`** — `TrackerEntry` has a compound-unique index `{ userId, eventId }`.
 
+> **THE LOGIN PAGE THREW AWAY THE `callbackUrl`, WHICH IS WHY SIGNING IN LOOKED LIKE IT FAILED.**
+> `proxy.ts` carefully appends `?callbackUrl=<path>` when it bounces a signed-out visitor, and
+> `app/login/page.tsx` passed a hard-coded `signIn('google', { callbackUrl: '/' })`. So the
+> sequence was: tap **Tracker**, get sent to `/login`, sign in with Google, and land on the **home
+> page**. Nothing tells the user the sign-in worked, and the page they asked for never opens - which
+> is indistinguishable from being refused, and is exactly how it was reported ("clicking on the
+> tracker and people it redirects to sign in").
+>
+> **Forwarding the parameter is not the whole fix, because the value is attacker-chosen.** Passing
+> it through raw is a textbook open redirect: `…/login?callbackUrl=https://evil.example/login` gives
+> a real sign-in on the real domain that lands on somebody else's page - better phishing than a
+> lookalike domain, because every signal up to the final hop is genuine. `lib/auth-callback-url.ts`
+> allows exactly one shape, a same-origin absolute path, and `tests/auth-callback-url.test.ts` pins
+> the rejections that a `startsWith('/')` check would wave through: `//evil.example` and
+> `/\evil.example` (browsers read both as a HOST), their percent-encoded forms - which is why
+> decoding happens BEFORE inspection - and control characters, since browsers strip tab/CR/LF while
+> parsing a URL so `/<TAB>/evil.example` would BECOME protocol-relative.
+>
+> It also refuses `/login` itself. Otherwise the proxy sends you to `/login`, `/login` sends you to
+> `/login`, forever.
+>
+> **The second half: `/login` now says when you are ALREADY signed in.** Reaching it with a live
+> session is not hypothetical - the proxy decides on the session COOKIE while the page reads the
+> session through `/api/auth/session`, and when those disagree the user is shown a "Sign in" button
+> while holding a perfectly good session. It now names the account and offers **Continue**.
+> Deliberately a BUTTON, not an auto-redirect: if the proxy is going to bounce that navigation
+> again, redirecting automatically turns one confusing screen into an infinite loop, which is
+> strictly worse. Verified end to end against the production build - `callbackUrl=%2Ftracker`
+> reaches Auth.js as `/tracker` where it used to be `/`, and `%2F%2Fevil.example%2Fsteal` is
+> coerced to `/`.
+
 > **`proxy.ts` WAS BLIND TO A CHUNKED SESSION COOKIE, and that failure mode is a total sign-out
 > that looks like the app forgetting you.** It compared the cookie name against two exact strings.
 > `@auth/core/lib/utils/cookie.js` splits the session cookie once the value passes

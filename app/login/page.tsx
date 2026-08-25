@@ -1,8 +1,10 @@
 'use client';
 
 import Link from 'next/link';
-import { signIn } from 'next-auth/react';
-import { useState } from 'react';
+import { signIn, useSession } from 'next-auth/react';
+import { useSearchParams } from 'next/navigation';
+import { Suspense, useState } from 'react';
+import { safeCallbackUrl } from '@/lib/auth-callback-url';
 
 /**
  * Sign-in.
@@ -18,21 +20,58 @@ import { useState } from 'react';
  * is a real link rather than a dead end. It also drops the two `href="#"` Terms and
  * Privacy links, which pointed nowhere — a fake legal link is worse than none.
  */
-export default function LoginPage() {
+/**
+ * `useSearchParams()` suspends, so the page body is split out and wrapped in a Suspense
+ * boundary by the default export below. Without that, a statically rendered route that reads
+ * search params fails the build.
+ */
+function LoginBody() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const searchParams = useSearchParams();
+  const { data: session, status } = useSession();
+
+  /*
+   * WHERE TO GO AFTER SIGNING IN.
+   *
+   * This used to be a hard-coded `'/'`, which silently discarded the `?callbackUrl=` that
+   * `proxy.ts` attaches when it bounces someone off a protected page. The effect: tap
+   * "Tracker", sign in, and land on the HOME page — which is indistinguishable from the
+   * sign-in having failed, and is why this was reported as "clicking the tracker just sends
+   * me to the sign-in page".
+   *
+   * `safeCallbackUrl` is not decoration: the value comes from the URL, so forwarding it
+   * unchecked would be an open redirect. See `lib/auth-callback-url.ts`.
+   */
+  const callbackUrl = safeCallbackUrl(searchParams.get('callbackUrl'));
 
   async function handleGoogleSignIn() {
     setLoading(true);
     setError(null);
     try {
-      await signIn('google', { callbackUrl: '/' });
+      await signIn('google', { callbackUrl });
     } catch {
       // signIn normally navigates away, so reaching here means it never got started.
       setError('Could not reach Google. Check your connection and try again.');
       setLoading(false);
     }
   }
+
+  /*
+   * ALREADY SIGNED IN — show that, rather than a sign-in form.
+   *
+   * Reaching this page with a live session is not a hypothetical: `proxy.ts` decides on the
+   * presence of the session COOKIE, while this component reads the session through
+   * `/api/auth/session`. When those two disagree the user is bounced here holding a perfectly
+   * good session and shown a "Sign in" button, which reads as the app having forgotten them.
+   *
+   * Deliberately a BUTTON, not an automatic redirect. If the proxy is going to bounce this
+   * navigation again, an auto-redirect turns one confusing screen into an infinite loop — a
+   * strictly worse failure. A button makes the state legible and leaves the user in control,
+   * and naming the account they are signed in as is what turns "it keeps asking me to sign in"
+   * into something diagnosable from the screen alone.
+   */
+  const signedIn = status === 'authenticated' && Boolean(session?.user);
 
   return (
     <div className="min-h-screen bg-[#F5F5F7] px-5 py-12 md:py-0 md:grid md:min-h-screen md:place-items-center">
@@ -97,11 +136,39 @@ export default function LoginPage() {
 
         {/* ── The action ─────────────────────────────────────────────────── */}
         <div className="rounded-[22px] bg-white card-shadow-lg p-7 md:p-8">
-          <h2 className="t-head text-[#1D1D1F]">Sign in</h2>
+          <h2 className="t-head text-[#1D1D1F]">
+            {signedIn ? 'You’re already signed in' : 'Sign in'}
+          </h2>
           <p className="mt-1 text-[13.5px] leading-relaxed text-[#6E6E73]">
-            One tap with Google. No password to remember.
+            {signedIn ? (
+              <>
+                as{' '}
+                <span className="font-semibold text-[#1D1D1F]">
+                  {session?.user?.email || session?.user?.name}
+                </span>
+                . If you were sent here from another page, continue below.
+              </>
+            ) : (
+              'One tap with Google. No password to remember.'
+            )}
           </p>
 
+          {/* Signed in already: offer the way onward instead of a second sign-in. A plain link,
+              so it is a fresh navigation the proxy re-evaluates — and if it bounces back here,
+              the loop is visible to the user rather than spinning invisibly. */}
+          {signedIn && (
+            <Link
+              href={callbackUrl}
+              className="pressable mt-6 flex h-12 w-full items-center justify-center gap-2 rounded-full bg-[#0071E3] px-6 text-[14.5px] font-semibold text-white hover:bg-blue-600"
+            >
+              Continue
+              <span aria-hidden="true" className="material-symbols-outlined text-[18px]">
+                arrow_forward
+              </span>
+            </Link>
+          )}
+
+          {!signedIn && (
           <button
             type="button"
             onClick={handleGoogleSignIn}
@@ -127,6 +194,7 @@ export default function LoginPage() {
               </>
             )}
           </button>
+          )}
 
           {error && (
             <p className="mt-3 rounded-xl bg-[#FFF1F0] px-3.5 py-2.5 text-[12.5px] text-[#C7362D]" role="alert">
@@ -156,5 +224,20 @@ export default function LoginPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * The Suspense boundary `useSearchParams()` requires.
+ *
+ * The fallback is the page background rather than a spinner: this route resolves in a tick, and
+ * a flash of loading chrome on the sign-in screen reads as a failure to a user who has already
+ * been told twice that they need to sign in.
+ */
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-[#F5F5F7]" />}>
+      <LoginBody />
+    </Suspense>
   );
 }
