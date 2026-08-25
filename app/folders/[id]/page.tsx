@@ -388,7 +388,7 @@ function ContactTable({
   onEdit: (contact: ContactDTO) => void;
 }) {
   return (
-    <div className="hidden overflow-hidden rounded-[18px] bg-white card-shadow md:block">
+    <div className="hidden overflow-hidden rounded-[18px] glass-card card-shadow md:block">
       <div className="overflow-x-auto">
         <table className="w-full border-collapse text-left">
           <thead>
@@ -465,7 +465,7 @@ function ContactCards({
   return (
     <div className="flex flex-col gap-2 md:hidden">
       {rows.map(contact => (
-        <div key={contact._id} className="rounded-[18px] bg-white p-4 card-shadow">
+        <div key={contact._id} className="rounded-[18px] glass-card p-4 card-shadow">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <p className="flex items-center gap-2 text-[15px] font-semibold text-[#1D1D1F]">

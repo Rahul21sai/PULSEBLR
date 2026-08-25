@@ -151,14 +151,14 @@ export default function CompaniesPage() {
               ))}
             </div>
           ) : error ? (
-            <div className="bg-white rounded-[18px] card-shadow py-14 text-center">
+            <div className="glass-card rounded-[18px] card-shadow py-14 text-center">
               <span aria-hidden="true" className="material-symbols-outlined text-[40px] text-[#d5d5da] block mb-2">
                 cloud_off
               </span>
               <p className="text-[15px] font-semibold text-[#1D1D1F]">{error}</p>
             </div>
           ) : visible.length === 0 ? (
-            <div className="bg-white rounded-[18px] card-shadow py-14 text-center px-6">
+            <div className="glass-card rounded-[18px] card-shadow py-14 text-center px-6">
               <span aria-hidden="true" className="material-symbols-outlined text-[40px] text-[#d5d5da] block mb-2">
                 domain_disabled
               </span>
@@ -176,7 +176,7 @@ export default function CompaniesPage() {
                     key={company.slug}
                     href={hasEvents ? `/?company=${encodeURIComponent(company.name)}` : '/companies'}
                     aria-disabled={!hasEvents}
-                    className={`group bg-white rounded-[18px] card-shadow p-4 flex flex-col gap-2 transition-[transform,box-shadow] ${
+                    className={`group glass-card rounded-[18px] card-shadow p-4 flex flex-col gap-2 transition-[transform,box-shadow] ${
                       hasEvents
                         ? 'hover:shadow-[0_8px_28px_rgba(0,0,0,0.08)] hover:-translate-y-px'
                         : 'opacity-55 pointer-events-none'

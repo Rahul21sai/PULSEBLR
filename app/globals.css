@@ -33,7 +33,12 @@
   --live:      #FF3B30;
   --live-wash: #FFF1F0;
 
-  --good:      #1D8A44;
+  /* Darkened from #1D8A44, which measured 4.0:1 against --good-wash - an AA FAILURE for the
+     11.5px "Free" pill that uses it, found by scripts/diag-spatial-app.mjs. Pre-existing and
+     unrelated to the glass work (the pill paints its own opaque wash), but real. #166F36 is
+     5.68:1 on the wash and 6.25:1 on white, so it holds on both surfaces the pill appears on.
+     Chosen over the minimum passing value (#177A3B, 4.91:1) for headroom. */
+  --good:      #166F36;
   --good-wash: #EBF7EF;
 
   /* ── Motion: one curve ──────────────────────────────────────────────────

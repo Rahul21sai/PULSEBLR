@@ -164,7 +164,7 @@ export default function DashboardPage() {
               {/* Two-column panels */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {/* Pending follow-ups */}
-                <section className="bg-white rounded-[18px] card-shadow p-6">
+                <section className="glass-card rounded-[18px] card-shadow p-6">
                   <div className="flex items-center gap-2 mb-5">
                     <span aria-hidden="true" className="material-symbols-outlined text-orange-500" style={{ fontVariationSettings: "'FILL' 1" }}>schedule</span>
                     <h2 className="text-[17px] font-bold text-[#1D1D1F]">Pending Follow-ups</h2>
@@ -209,7 +209,7 @@ export default function DashboardPage() {
                 </section>
 
                 {/* Repeat connections */}
-                <section className="bg-white rounded-[18px] card-shadow p-6">
+                <section className="glass-card rounded-[18px] card-shadow p-6">
                   <div className="flex items-center gap-2 mb-5">
                     <span aria-hidden="true" className="material-symbols-outlined text-purple-500" style={{ fontVariationSettings: "'FILL' 1" }}>group</span>
                     <h2 className="text-[17px] font-bold text-[#1D1D1F]">Repeat Connections</h2>

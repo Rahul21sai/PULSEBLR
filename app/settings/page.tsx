@@ -112,7 +112,7 @@ export default function SettingsPage() {
           </div>
 
           {/* ── Account ─────────────────────────────────────────────────── */}
-          <section className="bg-white rounded-2xl card-shadow p-5">
+          <section className="glass-card rounded-2xl card-shadow p-5">
             <div className="flex items-center gap-4">
               {session?.user?.image ? (
                 // eslint-disable-next-line @next/next/no-img-element -- Google avatar CDN
@@ -171,7 +171,7 @@ export default function SettingsPage() {
           {session?.user && <MyCardSection />}
 
           {/* ── What you can do ─────────────────────────────────────────── */}
-          <section className="bg-white rounded-2xl card-shadow p-5">
+          <section className="glass-card rounded-2xl card-shadow p-5">
             <h2 className="text-[16px] font-bold text-[#1D1D1F]">Your permissions</h2>
             <p className="text-[13px] text-[#6E6E73] mt-0.5">
               {isAdmin
@@ -208,7 +208,7 @@ export default function SettingsPage() {
           </section>
 
           {/* ── Digest ──────────────────────────────────────────────────── */}
-          <section className="bg-white rounded-2xl card-shadow p-5">
+          <section className="glass-card rounded-2xl card-shadow p-5">
             <h2 className="text-[16px] font-bold text-[#1D1D1F]">Daily digest</h2>
             <p className="text-[13px] text-[#6E6E73] mt-1">
               A summary of new events, deadlines and follow-ups goes out at 8 AM IST via a
@@ -245,7 +245,7 @@ export default function SettingsPage() {
           </section>
 
           {/* ── About ───────────────────────────────────────────────────── */}
-          <section className="bg-white rounded-2xl card-shadow p-5">
+          <section className="glass-card rounded-2xl card-shadow p-5">
             <h2 className="text-[16px] font-bold text-[#1D1D1F]">About</h2>
             <dl className="mt-3 text-[13px] text-[#3a3a3c] space-y-2">
               <div className="flex justify-between gap-4">

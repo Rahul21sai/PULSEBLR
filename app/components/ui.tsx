@@ -2,7 +2,7 @@
  * Shared UI vocabulary.
  *
  * WHY THIS FILE EXISTS: before it, every page hand-rolled its own
- * `bg-white rounded-2xl card-shadow p-5` shell, its own heading sizes, its own button
+ * `glass-card rounded-2xl card-shadow p-5` shell, its own heading sizes, its own button
  * paddings. Nine pages, nine slightly different interpretations — which is precisely
  * how an app stops looking designed and starts looking assembled. The tokens in
  * globals.css set the vocabulary; these components make it the path of least
@@ -92,7 +92,7 @@ export function Card({
   const pad = padding === 'none' ? '' : padding === 'tight' ? 'p-4' : 'p-5';
   return (
     <section
-      className={`rounded-[18px] bg-white card-shadow ${pad} ${
+      className={`rounded-[18px] glass-card card-shadow ${pad} ${
         interactive ? 'raise pressable' : ''
       } ${className}`}
     >
@@ -302,7 +302,7 @@ export function EmptyState({
   action?: ReactNode;
 }) {
   return (
-    <div className="flex flex-col items-center justify-center rounded-[18px] bg-white card-shadow px-6 py-14 text-center">
+    <div className="flex flex-col items-center justify-center rounded-[18px] glass-card card-shadow px-6 py-14 text-center">
       <span className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-[#F5F5F7]">
         <span aria-hidden="true" className="material-symbols-outlined text-[24px] text-[#8E8E93]">{icon}</span>
       </span>

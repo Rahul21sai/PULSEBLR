@@ -356,7 +356,7 @@ export default function TrackerPage() {
 
         {/* Follow-ups due — the tracker's reason to exist, so it leads. */}
         {dueFollowUps.length > 0 && (
-          <section className="mb-5 bg-white rounded-2xl card-shadow overflow-hidden">
+          <section className="mb-5 glass-card rounded-2xl card-shadow overflow-hidden">
             <div className="h-1 bg-[#FF9500]" />
             <div className="p-4 md:p-5">
               <h2 className="text-[15px] font-bold text-[#1D1D1F] flex items-center gap-1.5 mb-3">
@@ -426,7 +426,7 @@ export default function TrackerPage() {
         {loading ? (
           <BoardSkeleton />
         ) : entries.length === 0 ? (
-          <div className="bg-white rounded-2xl card-shadow py-20 px-6 text-center">
+          <div className="glass-card rounded-2xl card-shadow py-20 px-6 text-center">
             <span aria-hidden="true" className="material-symbols-outlined text-[44px] text-[#d5d5da] block mb-3">
               bookmarks
             </span>
@@ -782,7 +782,7 @@ function ListView({
   );
 
   return (
-    <div className="bg-white rounded-2xl card-shadow overflow-hidden">
+    <div className="glass-card rounded-2xl card-shadow overflow-hidden">
       {sorted.map((entry, index) => {
         const event = entry.eventId!;
         const column = COLUMNS.find(c => c.id === entry.status);
@@ -841,7 +841,7 @@ function ListView({
 
 function Stat({ label, value }: { label: string; value: number }) {
   return (
-    <div className="bg-white rounded-xl card-shadow px-4 py-3">
+    <div className="glass-card rounded-xl card-shadow px-4 py-3">
       <p className="tnum text-[24px] font-bold leading-none text-[#1D1D1F]">{value}</p>
       <p className="text-[12px] text-[#86868B] mt-1">{label}</p>
     </div>

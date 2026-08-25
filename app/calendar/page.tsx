@@ -210,7 +210,7 @@ export default function CalendarPage() {
           </div>
 
           <div className="flex flex-col lg:flex-row gap-6">
-            <div className="flex-1 min-w-0 rounded-[18px] bg-white card-shadow p-4 md:p-5">
+            <div className="flex-1 min-w-0 rounded-[18px] glass-card card-shadow p-4 md:p-5">
               {/* Weekday labels */}
               <div className="grid grid-cols-7 mb-2">
                 {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => (
@@ -280,7 +280,7 @@ export default function CalendarPage() {
             </div>
 
             {/* ── Day events panel ── */}
-            <div className="bg-white rounded-[20px] card-shadow p-6">
+            <div className="glass-card rounded-[20px] card-shadow p-6">
               <h3 className="text-headline-md text-[#1D1D1F] mb-1">
                 {selectedDate ? format(selectedDate, 'MMMM d') : 'Select a date'}
               </h3>
