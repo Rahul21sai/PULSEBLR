@@ -20,7 +20,11 @@ const NAV_LINKS = [
   { href: '/calendar', label: 'Calendar', icon: 'calendar_today', mobile: true },
   { href: '/tracker', label: 'Tracker', icon: 'bookmarks', mobile: true },
   { href: '/folders', label: 'People', icon: 'groups', mobile: true },
-  { href: '/add-event', label: 'Add', icon: 'add_circle', mobile: false },
+  // ADMIN ONLY. `POST /api/events` is gated by requireAdmin(), so offering this to everyone was
+  // a dead end: a regular user could fill in the whole form and only learn on submit that the
+  // write was refused. Adding an event by hand is also a curation act — it feeds the home page's
+  // "Curated by us" shelf — so it belongs to the operator, not the reader.
+  { href: '/add-event', label: 'Add', icon: 'add_circle', mobile: false, adminOnly: true },
   { href: '/settings', label: 'Settings', icon: 'settings', mobile: true },
 ];
 
@@ -50,7 +54,7 @@ export function DesktopNav() {
         </Link>
 
         <div className="flex items-center gap-7">
-          {NAV_LINKS.map(link => {
+          {NAV_LINKS.filter(link => !link.adminOnly || session?.user?.isAdmin).map(link => {
             const active = isActive(link.href);
             return (
               <Link

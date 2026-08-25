@@ -3,7 +3,45 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useSession } from 'next-auth/react';
-import { isProtectedPath } from '@/lib/protected-routes';
+import { isAdminOnlyPath, isProtectedPath } from '@/lib/protected-routes';
+
+/**
+ * Shown to a signed-in user who is not an admin. Deliberately explains WHY rather than just
+ * refusing: "adding events is an operator task" is actionable information, "403" is not.
+ */
+function AdminOnlyNotice() {
+  return (
+    <div className="min-h-screen bg-[#F5F5F7]">
+      <div className="mx-auto max-w-[520px] px-5 pt-24 text-center">
+        <span
+          aria-hidden="true"
+          className="material-symbols-outlined mb-3 block text-[48px] text-[#d5d5da]"
+        >
+          shield_person
+        </span>
+        <h1 className="t-head text-[#1D1D1F]">Admins only</h1>
+        <p className="mt-2 text-[14px] leading-relaxed text-[#6E6E73]">
+          Adding events by hand changes what everyone sees, so it is limited to this
+          deployment&apos;s operators. Everything else in your account is unaffected.
+        </p>
+        <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+          <Link
+            href="/"
+            className="pressable inline-flex h-11 items-center justify-center rounded-full bg-[#0071E3] px-6 text-[13.5px] font-semibold text-white hover:bg-blue-600"
+          >
+            Back to events
+          </Link>
+          <Link
+            href="/tracker"
+            className="pressable inline-flex h-11 items-center justify-center rounded-full bg-white px-6 text-[13.5px] font-semibold text-[#1D1D1F] shadow-[inset_0_0_0_1px_var(--hairline-strong)] hover:bg-[#F7F7F9]"
+          >
+            Your tracker
+          </Link>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 /**
  * The signed-in gate for private pages, replacing the cookie-name check in `proxy.ts`.
@@ -33,9 +71,27 @@ import { isProtectedPath } from '@/lib/protected-routes';
  */
 export default function ProtectedRouteGate({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const { status } = useSession();
+  const { data: session, status } = useSession();
 
   if (!isProtectedPath(pathname)) return <>{children}</>;
+
+  /*
+   * ADMIN-ONLY PAGES: refuse a signed-in NON-admin here rather than at submit time.
+   *
+   * `/add-event` used to be offered to everyone while `POST /api/events` is gated by
+   * `requireAdmin()` — so a regular user could fill in the entire form and only learn on submit
+   * that the write was refused. Saying so up front is the difference between a boundary and a
+   * trap. `/admin` does not rely on this (it re-checks server-side and redirects), so this is
+   * belt-and-braces there.
+   *
+   * Checked only once the session is SETTLED and authenticated: during `loading`, `isAdmin` is
+   * simply absent, and treating that as "not an admin" would flash this panel at an admin on
+   * every hard navigation — the same false-negative bug that made the proxy gate unusable.
+   */
+  if (status === 'authenticated' && isAdminOnlyPath(pathname) && !session?.user?.isAdmin) {
+    return <AdminOnlyNotice />;
+  }
+
   if (status !== 'unauthenticated') return <>{children}</>;
 
   // Carry the current path so signing in returns here rather than the home page — the whole

@@ -50,3 +50,27 @@ export function isProtectedPath(pathname: string | null | undefined): boolean {
   if (!pathname) return false;
   return PROTECTED_PATHS.some(p => pathname === p || pathname.startsWith(`${p}/`) || pathname.startsWith(`${p}?`));
 }
+
+/**
+ * Pages that require an ADMIN, not merely a signed-in user.
+ *
+ * `/add-event` belongs here and was previously offered to everyone. That was a dead end rather
+ * than a feature: `POST /api/events` is gated by `requireAdmin()`, so a regular user could fill
+ * the whole form and only discover on submit that the write was refused — the worst possible
+ * moment to be told. Adding events by hand is a curation act (it feeds the "Curated by us"
+ * shelf on the home page), so it is an operator task, not a user one.
+ *
+ * `/admin` is listed for completeness, but it does NOT depend on this: it is a server component
+ * that re-checks the session and the `ADMIN_EMAILS` allowlist and `redirect()`s before any admin
+ * markup is generated. Both entries here are a COURTESY — they decide what to draw. The real
+ * boundary is `requireAdmin()` on each route, so editing `isAdmin` in devtools buys a 403.
+ */
+export const ADMIN_ONLY_PATHS = ['/add-event', '/admin'] as const;
+
+/** Does this path require an admin? */
+export function isAdminOnlyPath(pathname: string | null | undefined): boolean {
+  if (!pathname) return false;
+  return ADMIN_ONLY_PATHS.some(
+    p => pathname === p || pathname.startsWith(`${p}/`) || pathname.startsWith(`${p}?`)
+  );
+}
