@@ -82,6 +82,138 @@
   --feed-offset: calc(var(--topbar-h) + var(--commandbar-h));
 }
 
+/* ══════════════════════════════════════════════════════════════════════════════
+   MONSOON SODIUM — the night-radar surface the connection graph lives on.
+   ══════════════════════════════════════════════════════════════════════════════
+
+   SCOPED, NOT GLOBAL, and that is the whole design decision. This app's value is
+   scanning a dense list fast; inverting 1200 rows of it would cost legibility to buy
+   atmosphere. So the dark palette applies only where the GRAPH lives — the hero band on
+   the feed and the People graph — and the lists below stay light, dense and unchanged.
+   Apply with `class="night"`; never on <body>.
+
+   Named for what it is drawn from rather than from a palette generator: Bengaluru's
+   sodium-vapour street lighting over wet monsoon asphalt. That gives the primary accent a
+   WARM cast, which inverts the cool-accent-on-dark convention of every developer dashboard
+   and is the reason this does not read as a template.
+
+   THE TWO ACCENTS ENCODE THE DATA MODEL, they are not a colour scheme:
+     --pulse   sodium amber — an EVENT, and anything live
+     --connect signal teal  — a PERSON, and every edge between them
+   The product's thesis is "ranked by who you'll meet", so events and people must never be
+   the same colour. Keep it that way: a third accent would break the mapping.
+
+   The light theme's rule still holds here — cover images are the only other colour. */
+.night {
+  --n-base:    #14161A;   /* wet asphalt — not pure black, so shadows still read */
+  --n-surface: #1E2126;   /* a raised card on that asphalt */
+  --n-pulse:   #FF9E3D;   /* sodium vapour — events, live state */
+  --n-connect: #35C4C4;   /* signal teal — people, edges */
+  --n-text:    #E9EAEC;
+  --n-muted:   #8A9099;
+
+  /* Hairlines invert: on dark, a light alpha line reads as an edge where a dark one
+     disappears. Same reasoning as --hairline being alpha rather than solid grey. */
+  --n-hairline: rgba(255, 255, 255, 0.09);
+
+  background-color: var(--n-base);
+  color: var(--n-text);
+}
+
+/* The eyebrow above the graph: mono, wide-tracked, quiet. IBM Plex Mono is doing a real
+   job here — counts and timestamps are tabular data, and a mono face stops them
+   reflowing as the live count ticks. */
+.night .t-eyebrow {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--n-muted);
+}
+
+/* Display face for the graph headline only — used once per page, which is what keeps it
+   characterful rather than noisy. */
+.night .t-graph-title {
+  font-family: var(--font-display-alt), var(--font-display), system-ui, sans-serif;
+  font-weight: 700;
+  font-size: clamp(28px, 4.4vw, 44px);
+  line-height: 1.02;
+  letter-spacing: -0.03em;
+  color: var(--n-text);
+}
+
+/* A node in the legend and in the HTML fallback — the same two-colour mapping the 3D
+   scene uses, so the static path teaches the same thing the animated one does. */
+.night .node-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--n-pulse);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--n-pulse) 22%, transparent);
+}
+.night .node-dot--person {
+  background: var(--n-connect);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--n-connect) 22%, transparent);
+}
+
+/* The ambient breathing of the fallback graph. Deliberately slow: this sits behind a
+   headline someone is reading, and anything faster competes with the text. */
+@keyframes sodium-breathe {
+  0%, 100% { opacity: 0.35; transform: scale(1); }
+  50%      { opacity: 0.9;  transform: scale(1.35); }
+}
+.night .breathe {
+  animation: sodium-breathe 4.5s var(--ease) infinite;
+}
+
+/* QUALITY FLOOR, not an afterthought: reduced motion stops the ambient loop outright
+   rather than slowing it. The 3D scene checks the same query in JS and never mounts. */
+@media (prefers-reduced-motion: reduce) {
+  .night .breathe {
+    animation: none;
+    opacity: 0.7;
+  }
+}
+
+/* ── The row a graph node points at ────────────────────────────────────────────────
+   Picking a node scrolls its event into view, and the row has to say "this one" once it
+   arrives — a scroll alone leaves the user hunting for what changed.
+
+   A ring, NOT a background wash: the rows carry cover images, and tinting the surface
+   behind one would fight the image. The ring uses --blue rather than the graph's sodium
+   accent on purpose — this is happening on the LIGHT feed, where --blue already means
+   "you can act on this", and importing a second accent across that boundary would make
+   the palette mean two things at once. */
+/* OUTLINE, NOT BOX-SHADOW, and this was a real bug caught by reading the rendered row.
+   The cards are `card-shadow` with a `transition-[box-shadow]` and a `hover:shadow-…`, so
+   animating box-shadow here REPLACES the card's own elevation for 1.6s — the card visibly
+   flattens at the exact moment it is meant to be drawing attention. `outline` sits outside
+   that cascade, costs no layout, and stacks over the shadow instead of fighting it.
+
+   Longhand rather than the `animation:` shorthand: a shorthand containing a var() is
+   parsed at computed-value time as a unit, so one unresolvable token silently drops the
+   whole declaration — including the duration. The longhands fail independently. */
+.graph-focus {
+  animation-name: graph-focus-ring;
+  animation-duration: 1.6s;
+  animation-timing-function: var(--ease);
+  animation-fill-mode: forwards;
+  border-radius: 16px;
+}
+@keyframes graph-focus-ring {
+  0%   { outline: 2px solid rgba(0, 113, 227, 0);    outline-offset: 7px; }
+  18%  { outline: 2px solid rgba(0, 113, 227, 0.85); outline-offset: 2px; }
+  100% { outline: 2px solid rgba(0, 113, 227, 0);    outline-offset: 2px; }
+}
+/* Reduced motion still gets the answer, just without the pulse: a brief static ring. */
+@media (prefers-reduced-motion: reduce) {
+  .graph-focus {
+    animation-name: none;
+    outline: 2px solid rgba(0, 113, 227, 0.5);
+    outline-offset: 2px;
+  }
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);

@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Inter, Inter_Tight } from "next/font/google";
+import { Inter, Inter_Tight, Bricolage_Grotesque, IBM_Plex_Mono } from "next/font/google";
 import "./globals.css";
 import Script from "next/script";
 import Providers from "./providers";
@@ -23,6 +23,40 @@ const interTight = Inter_Tight({
   subsets: ["latin"],
   weight: ["600", "700"],
   variable: "--font-inter-tight",
+  display: "swap",
+});
+
+/**
+ * The graph headline, and nothing else.
+ *
+ * Bricolage Grotesque has real character at display sizes — slightly irregular widths, a
+ * grotesque that does not read as the geometric sans every developer tool reaches for. That
+ * only works as a contrast, so it is scoped to `.t-graph-title`: one headline per page. Used
+ * more widely it would fight Inter, which is doing the actual work of making 1200 dense rows
+ * scannable.
+ *
+ * One weight, because one weight is all a single headline needs — the whole family would be
+ * several files for no benefit.
+ */
+const bricolage = Bricolage_Grotesque({
+  subsets: ["latin"],
+  weight: ["700"],
+  variable: "--font-display-alt",
+  display: "swap",
+});
+
+/**
+ * Counts, timestamps, connection scores, badges.
+ *
+ * A mono face here is functional rather than stylistic: these are TABULAR values that update
+ * live ("341 tech events", a ticking count), and a proportional face makes the surrounding
+ * layout shift by a pixel or two on every change. Plex Mono also sets narrower than JetBrains
+ * Mono, so it fits inside a pill without shrinking the label.
+ */
+const plexMono = IBM_Plex_Mono({
+  subsets: ["latin"],
+  weight: ["400", "500"],
+  variable: "--font-mono",
   display: "swap",
 });
 
@@ -67,7 +101,7 @@ export default function RootLayout({
     <html
       lang="en"
       translate="no"
-      className={`${inter.variable} ${interTight.variable} h-full`}
+      className={`${inter.variable} ${interTight.variable} ${bricolage.variable} ${plexMono.variable} h-full`}
     >
       <head>
         <meta name="google" content="notranslate" />

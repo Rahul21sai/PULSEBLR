@@ -5,6 +5,7 @@ import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { DesktopNav, MobileBottomNav } from './components/NavBar';
 import EventRow from './components/EventRow';
 import EventGridCard from './components/EventGridCard';
+import EventGraphHero from './components/graph/EventGraphHero';
 import FilterRail, { FilterState, EMPTY_FILTERS, countActive } from './components/FilterRail';
 import { FeedEvent, Facets, Pagination } from '@/lib/event-types';
 import { MIN_SEARCH_CHARS } from '@/lib/events/query';
@@ -549,6 +550,37 @@ export default function Home() {
    * Only computed for the ranked view. Under `soonest` the day grouping already does this, and
    * running it there would put the same events in two places.
    */
+  /**
+   * Bring a node's event into view in the list below.
+   *
+   * This is what stops the graph being a separate feature: picking a node answers "where is this
+   * in my list", so the spatial view and the list stay one dataset.
+   *
+   * Found by its own link href rather than by adding an id to every row. `EventRow` and
+   * `EventGridCard` both already link to `/events/<id>`, and the same event legitimately appears in
+   * several sections (live, spotlight, curated, coming up) — a single id would have to pick one and
+   * would break the moment a row moved between them. `querySelector` takes the first match, which is
+   * the highest-precedence section, which is the one the user should be shown.
+   *
+   * The highlight is a class toggled off on a timer rather than state, because the row is rendered by
+   * four different call sites and threading a "focused" prop through all of them to express something
+   * that lasts 1.6 seconds is not worth the coupling.
+   */
+  const focusEvent = useCallback((id: string) => {
+    if (typeof document === 'undefined') return;
+    const link = document.querySelector<HTMLElement>(`a[href="/events/${id}"]`);
+    const row = link?.closest('article, li') ?? link;
+    if (!row) return;
+
+    // `nearest` rather than `center`: the command bar is sticky, and centring a row that is already
+    // visible scrolls the page for no reason.
+    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    row.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'center' });
+
+    row.classList.add('graph-focus');
+    window.setTimeout(() => row.classList.remove('graph-focus'), 1600);
+  }, []);
+
   const [liveNow, spotlight, curated, comingUp] = useMemo(() => {
     if (chronological)
       return [[] as FeedEvent[], [] as FeedEvent[], [] as FeedEvent[], events];
@@ -786,36 +818,30 @@ export default function Home() {
             No card, no gradient, no new elevation: globals.css keeps one accent and one live
             state, and a hero is not a reason to spend either. The only colour is the live dot,
             and only when something is actually on. */}
-        <div className="max-w-[1240px] mx-auto px-4 md:px-8 pt-2 pb-7 md:pb-9">
-          {/* Eyebrow: a short rule then letterspaced caps. `.t-label` is +0.055em because the
-              type scale sets POSITIVE tracking for small caps — tight small caps are unreadable,
-              which is the same rule that gives the headline below its negative tracking. */}
-          <div className="flex items-center gap-3">
-            <span aria-hidden="true" className="h-px w-8 bg-[color:var(--hairline-strong)]" />
-            <p className="t-label text-[#8E8E93]">
-              Meetups · Conferences · Hackathons · Workshops
-            </p>
-          </div>
+        {/* ── The connection graph, replacing the text hero ──────────────────────────────
+            The old hero ASSERTED the thesis in a paragraph ("sorted by whether you'll leave with
+            useful contacts"). This SHOWS it: the same ranked events as nodes, joined wherever two
+            of them share a host, a company or a topic. It owns the H1, so the heading outline
+            still starts here — H1 (graph) -> H2 (active view) -> H2 (section) -> H3 (card).
 
-          <h1 className="t-hero mt-3.5 max-w-[22ch] text-[#1D1D1F]">
-            Bengaluru tech events, ranked by who you’ll meet
-          </h1>
+            The prose below it survives as a single line rather than a paragraph, because the graph
+            plus its legend now does the explaining that the paragraph was doing. */}
+        <EventGraphHero
+          events={events}
+          totalUpcoming={total}
+          loading={loading}
+          onSelectEvent={focusEvent}
+        />
 
-          <p className="mt-4 max-w-[64ch] text-[15px] leading-[1.55] text-[#3a3a3c]">
+        <div className="max-w-[1240px] mx-auto px-4 md:px-8 pt-5 pb-7 md:pb-9">
+          <p className="max-w-[64ch] text-[15px] leading-[1.55] text-[#3a3a3c]">
             Every{' '}
             <strong className="font-semibold text-[#1D1D1F]">
               developer meetup, conference, hackathon and workshop
             </strong>{' '}
-            in the city, in one place — sorted by whether you’ll leave with useful contacts, not
-            just by what’s on soonest. Scan a badge and keep the people you met.
+            in the city, in one place. Scan a badge and keep the people you met.
           </p>
-          <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[12.5px] text-[#6E6E73]">
-            <span>
-              <span className="tnum font-semibold text-[#1D1D1F]">
-                {total.toLocaleString('en-IN')}
-              </span>{' '}
-              upcoming
-            </span>
+          <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[12.5px] text-[#6E6E73]">
             {liveNow.length > 0 && (
               <span className="inline-flex items-center gap-1.5 font-semibold text-[#FF3B30]">
                 <span className="live-dot h-1.5 w-1.5 rounded-full bg-[#FF3B30]" />
