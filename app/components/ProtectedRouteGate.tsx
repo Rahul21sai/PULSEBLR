@@ -11,7 +11,7 @@ import { isAdminOnlyPath, isProtectedPath } from '@/lib/protected-routes';
  */
 function AdminOnlyNotice() {
   return (
-    <div className="min-h-screen bg-[#F5F5F7]">
+    <div className="min-h-screen ambient-above">
       <div className="mx-auto max-w-[520px] px-5 pt-24 text-center">
         <span
           aria-hidden="true"
@@ -99,7 +99,7 @@ export default function ProtectedRouteGate({ children }: { children: React.React
   const callbackUrl = `/login?callbackUrl=${encodeURIComponent(pathname || '/')}`;
 
   return (
-    <div className="min-h-screen bg-[#F5F5F7]">
+    <div className="min-h-screen ambient-above">
       <div className="mx-auto max-w-[520px] px-5 pt-24 text-center">
         <span
           aria-hidden="true"

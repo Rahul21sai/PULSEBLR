@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Inter, Inter_Tight } from "next/font/google";
 import "./globals.css";
 import Script from "next/script";
+import AmbientField from "./components/spatial/AmbientField";
 import Providers from "./providers";
 import ProtectedRouteGate from "./components/ProtectedRouteGate";
 
@@ -94,6 +95,17 @@ export default function RootLayout({
         />
       </head>
       <body className="min-h-full antialiased">
+        {/* The ambient 3D layer, mounted ONCE for the whole app.
+
+            It lives here rather than per-page so the field is continuous across route
+            changes - navigating does not restart the scene, which is the difference between
+            "the app is a space" and "this page has an effect on it". It is also outside
+            <Providers> because it needs no session and must never wait on one.
+
+            Page grounds were changed from an opaque `bg-[#F5F5F7]` to `.ambient-above` for
+            this: an opaque wrapper would paint straight over the field. The page colour is
+            now painted by .ambient-field itself, beneath the canvas. */}
+        <AmbientField />
         <Providers>
         {/* Inside Providers because it needs the SessionProvider. This replaced the cookie-name
             check in proxy.ts, which had no secret to verify a token with and so could only ask

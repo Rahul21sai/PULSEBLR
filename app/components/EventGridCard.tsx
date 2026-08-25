@@ -30,7 +30,7 @@ export default function EventGridCard({ event }: { event: FeedEvent }) {
    * redundant as well as wrong.
    */
   return (
-    <article className="group bg-white rounded-2xl card-shadow raise pressable spatial-rise overflow-hidden flex flex-col">
+    <article className="group glass-card rounded-2xl card-shadow raise pressable spatial-rise overflow-hidden flex flex-col">
       {/* aria-hidden as well as tabIndex={-1}: duplicates the title link and wraps a decorative
           cover, so it has no accessible name. Already unfocusable, so hiding it is safe. */}
       <Link

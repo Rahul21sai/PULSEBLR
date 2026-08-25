@@ -909,3 +909,73 @@ h1, h2, h3 { font-family: var(--font-display); }
    hundreds on the page. This gets the same "resting on the card" read from the shadow
    alone, so the cost stays at one extra box-shadow. */
 .contact-shadow { box-shadow: var(--contact); }
+
+/* ─── The ambient 3D layer ─────────────────────────────────────────────────
+   One fixed WebGL surface behind the WHOLE app (AmbientField.tsx), so every route
+   sits in the same space instead of only the feed having depth.
+
+   `position: fixed` with `z-index: 0` and every page surface above it. It is behind
+   content, not behind the BODY background — so `body`/page wrappers must not paint an
+   opaque colour over it. That is why the page ground is applied here as a gradient
+   under the canvas rather than on a wrapper div.
+
+   `pointer-events: none` is not optional: this covers the viewport, so without it every
+   tap in the app would land on the backdrop. */
+.ambient-field {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  /* Paint the page ground here, beneath the canvas, so the field composites onto it
+     instead of over an opaque wrapper. Same values as --paper, as a gradient so the
+     layer has some tonal variation to sit on. */
+  background:
+    radial-gradient(120% 90% at 12% 0%,  rgba(0, 113, 227, 0.05) 0%, rgba(0, 113, 227, 0) 56%),
+    radial-gradient(100% 80% at 90% 8%,  rgba(120, 130, 255, 0.045) 0%, rgba(120, 130, 255, 0) 58%),
+    linear-gradient(180deg, #F7F8FC 0%, #F5F5F7 46%, #F3F4F9 100%);
+}
+.ambient-field canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+/* No WebGL, low-end device, or save-data: a still dot lattice carries the same idea. */
+.ambient-field[data-inactive='true'] canvas { opacity: 0; }
+.ambient-field[data-inactive='true']::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(rgba(29, 29, 31, 0.14) 0.9px, transparent 0.9px);
+  background-size: 30px 30px;
+  -webkit-mask-image: linear-gradient(180deg, #000 0%, rgba(0,0,0,0.4) 70%, transparent 100%);
+          mask-image: linear-gradient(180deg, #000 0%, rgba(0,0,0,0.4) 70%, transparent 100%);
+}
+
+/* Every page surface sits ABOVE the field. Without this the field paints over content in
+   any stacking context that does not create its own layer. */
+.ambient-above { position: relative; z-index: 1; }
+
+/* ─── Glass card ───────────────────────────────────────────────────────────
+   The feed's cards, made translucent so the ambient 3D field reads THROUGH them.
+
+   WHY THIS IS NOT A VIOLATION OF THE ONE-ACCENT RULE. It introduces no hue - it makes an
+   existing white surface partly transparent. And it is what the client's own design system
+   asks for by name: "Depth is primarily communicated through Tonal Layering and
+   Glassmorphism", `backdrop-filter: blur(20px)` with `rgba(255,255,255,0.7)`. The app had
+   glass on the nav bar and one panel; the cards stayed fully opaque, which is why the
+   ambient layer was only visible in the gutters and the app still read as flat paper.
+
+   OPAQUE BY DEFAULT, transparency added back only inside @supports. Same pattern as
+   .glass-panel above, and for the same reason: a browser that cannot blur must never get a
+   74%-transparent card with 12px text on it. Note the standard property comes LAST - the CSS
+   optimiser has been observed collapsing a bare pair down to the -webkit- form alone. */
+.glass-card {
+  background: #FFFFFF;
+}
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .glass-card {
+    background: rgba(255, 255, 255, 0.74);
+    -webkit-backdrop-filter: blur(18px) saturate(1.5);
+            backdrop-filter: blur(18px) saturate(1.5);
+  }
+}

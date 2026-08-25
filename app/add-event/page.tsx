@@ -499,7 +499,7 @@ function AddEventForm() {
 
 export default function AddEventPage() {
   return (
-    <div className="min-h-screen bg-[#F5F5F7]">
+    <div className="min-h-screen ambient-above">
       <DesktopNav />
 
       {/* Mobile Header */}

@@ -74,7 +74,7 @@ function LoginBody() {
   const signedIn = status === 'authenticated' && Boolean(session?.user);
 
   return (
-    <div className="min-h-screen bg-[#F5F5F7] px-5 py-12 md:py-0 md:grid md:min-h-screen md:place-items-center">
+    <div className="min-h-screen ambient-above px-5 py-12 md:py-0 md:grid md:min-h-screen md:place-items-center">
       <div className="mx-auto w-full max-w-[880px] md:grid md:grid-cols-[1.15fr_1fr] md:items-center md:gap-14">
         {/* ── The thesis ──────────────────────────────────────────────────────
             Stated as the job the product does, not as a feature list. */}
@@ -236,7 +236,7 @@ function LoginBody() {
  */
 export default function LoginPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-[#F5F5F7]" />}>
+    <Suspense fallback={<div className="min-h-screen ambient-above" />}>
       <LoginBody />
     </Suspense>
   );

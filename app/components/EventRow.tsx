@@ -105,7 +105,7 @@ export default function EventRow({
 
       {/* Card */}
       <article className="flex-1 min-w-0 mb-3">
-        <div className="group relative bg-white rounded-[18px] card-shadow raise pressable overflow-hidden">
+        <div className="group relative glass-card rounded-[18px] card-shadow raise pressable overflow-hidden">
           {/* Category cue. Kept to a low-opacity tint rather than a saturated stripe:
               the cover image is the only thing on this card allowed to be colourful,
               because it is the only part that is real content. */}

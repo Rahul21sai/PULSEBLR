@@ -102,7 +102,7 @@ export default function DashboardPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#F5F5F7]">
+    <div className="min-h-screen ambient-above">
       {/* Material Symbols is loaded once in app/layout.tsx — a per-page <link>
           here duplicated the request on every dashboard visit. */}
 

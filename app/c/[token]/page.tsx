@@ -70,7 +70,7 @@ export default async function PublicCardPage({ params }: { params: Promise<{ tok
 
   if (!card) {
     return (
-      <main className="grid min-h-screen place-items-center bg-[#F5F5F7] px-6">
+      <main className="grid min-h-screen place-items-center ambient-above px-6">
         <div className="max-w-[360px] text-center">
           <span aria-hidden="true" className="material-symbols-outlined text-[40px] text-[#8E8E93]">link_off</span>
           <h1 className="t-title mt-3 text-[#1D1D1F]">That card is not available</h1>
@@ -104,7 +104,7 @@ export default async function PublicCardPage({ params }: { params: Promise<{ tok
   ].filter(Boolean) as Array<{ href: string; icon: string; label: string; external: boolean }>;
 
   return (
-    <main className="min-h-screen bg-[#F5F5F7] px-4 py-10">
+    <main className="min-h-screen ambient-above px-4 py-10">
       <div className="mx-auto max-w-[420px]">
         <section className="rounded-[22px] bg-white p-6 text-center card-shadow">
           <h1

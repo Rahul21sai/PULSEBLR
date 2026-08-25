@@ -28,7 +28,7 @@ export default function AppShell({
   if (bare) return <>{children}</>;
 
   return (
-    <div className="min-h-screen bg-[#F5F5F7]">
+    <div className="min-h-screen ambient-above">
       <DesktopNav />
       <header className="md:hidden fixed top-0 w-full h-14 bg-white/96 glass-nav z-50 border-b border-black/5 flex items-center justify-between px-5">
         <Link href="/" className="text-lg font-bold tracking-tight text-[#1D1D1F]">

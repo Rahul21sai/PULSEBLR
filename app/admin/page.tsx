@@ -43,7 +43,7 @@ export default async function AdminPage() {
 /** Shown by AdminDashboard when a fetch fails; kept here so the import stays server-side. */
 export function AdminUnavailable() {
   return (
-    <div className="min-h-screen bg-[#F5F5F7] flex items-center justify-center p-6">
+    <div className="min-h-screen ambient-above flex items-center justify-center p-6">
       <div className="bg-white rounded-2xl card-shadow p-6 max-w-md text-center">
         <h1 className="text-[18px] font-bold text-[#1D1D1F]">Admin is unavailable</h1>
         <p className="text-[13.5px] text-[#6E6E73] mt-1">
