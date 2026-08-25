@@ -92,6 +92,14 @@ Two of those categories are read as tech topics and are easy to reach for wrongl
   book clubs, dating and social mixers, generic business/sales/marketing
   networking, real-estate and investing pitches, and certification or
   course-selling sessions that merely mention a technology.
+  THE KIND OF GATHERING NEVER DECIDES THIS — THE SUBJECT DOES. "Hackathon",
+  "buildathon", "summit", "conference" and "meetup" describe a format, not a
+  topic, so judge what the room is actually about. A buildathon for go-to-market
+  or growth is FALSE; a hackathon for building software is TRUE.
+  These specific forms are FALSE however technical the host sounds: business or
+  founder referral circles, pitch circuits/nights/days, go-to-market and GTM
+  sessions, sales kickoffs, network-marketing and MLM meetings, and
+  employer-only or recruiter-only tickets to a hiring fair.
   COURSE SELLING IS FALSE EVEN WHEN THE SESSION IS FREE. A free demo class, a
   trial lecture, a "training with placement assistance", a batch-starting
   announcement or a coaching-institute enquiry session is lead generation for a
@@ -678,8 +686,30 @@ export async function tagEvents(inputs: TaggingInput[]): Promise<TaggingResult[]
     }
   }
 
+  /*
+   * ONE AUTHORITATIVE PASS FOR THE BUSINESS-GATHERING VETO, after every provider has had its say.
+   *
+   * It has to be here rather than only inside `keywordTagging`, because the LLM sets `isTechEvent`
+   * INDEPENDENTLY of the categories it returns — that is the documented drift between this app's
+   * two definitions of "tech" (CLAUDE.md §3), and it is how "Business Referral Circle" and
+   * "Bengaluru Pitch Circuit 9" reached the tech feed carrying only `[Career/Hiring]`. Vetoing in
+   * one place after the fact means the rule cannot be bypassed by a provider swap, a model that
+   * ignores the prompt, or a future third tagging path.
+   *
+   * It only ever turns `isTechEvent` OFF. A veto that could also turn it on would be a second,
+   * quieter classifier.
+   */
+  let vetoed = 0;
+  for (let i = 0; i < results.length; i++) {
+    if (results[i].isTechEvent && looksLikeBusinessGathering(inputs[i].title)) {
+      results[i] = { ...results[i], isTechEvent: false };
+      vetoed++;
+    }
+  }
+
   const summary =
     `Tagging: ${llmTagged}/${inputs.length} via LLM, ${inputs.length - llmTagged} via keywords` +
+    (vetoed > 0 ? `, ${vetoed} business gathering(s) vetoed` : '') +
     (batchFailures > 0 ? ` (${batchFailures} batch(es) fell back` : '') +
     (partialBatches > 0 ? `${batchFailures > 0 ? ', ' : ' ('}${partialBatches} partial` : '') +
     (batchFailures > 0 || partialBatches > 0 ? ')' : '');
@@ -795,6 +825,46 @@ export const CATEGORY_KEYWORDS: Array<[string, RegExp]> = [
  */
 const TECH_CATEGORIES = new Set<string>([...TECH_CATEGORY_NAMES, 'Hackathon']);
 
+/**
+ * Titles that name a BUSINESS gathering, which no gathering-type category may override.
+ *
+ * WHY THIS EXISTS, measured against the live corpus. `TECH_CATEGORIES` includes `Hackathon`
+ * because a hackathon with no topic is legitimately tech — but `Hackathon` is a gathering TYPE,
+ * not a subject, so "GTM Buildathon | BLR" was flagged `isTechEvent` by the keyword floor even
+ * though go-to-market is sales. The same shape got three more into the tech feed via the LLM,
+ * which sets `isTechEvent` independently of the categories: "Business Referral Circle | Every
+ * Founder Deserves…", "Bengaluru Pitch Circuit 9" and "HackerX — Employer Ticket".
+ *
+ * TITLE ONLY, on purpose. The description is where over-matching does its damage — a bare `\bpm\b`
+ * against descriptions once matched the "PM" in "6 PM" and tagged a fifth of the corpus
+ * `Product/Design`. A conference description that says "we'll also cover go-to-market" is still an
+ * engineering conference; a title that says GTM is not.
+ *
+ * EVERY ALTERNATIVE IS ANCHORED, because the near-misses are real events:
+ *   · `pitch` is matched only as `pitch circuit|night|day` — "Pitch your API to 100 developers"
+ *     must survive, and so must a hackathon's own pitch round.
+ *   · `real estate` is deliberately ABSENT. A proptech hackathon is genuinely engineering, and the
+ *     LLM prompt already refuses real-estate investing pitches; vetoing the phrase here would
+ *     delete the legitimate case to catch one the prompt already handles.
+ *
+ * Run `scripts/diag-business-gathering-veto.ts` after touching this. Its negative half is the
+ * important half — a widened alternative fails by silently removing real events from the feed,
+ * and no aggregate count reveals that.
+ */
+const BUSINESS_GATHERING_TITLE_RE =
+  /\b(referral circle|business referral|business networking|network marketing|mlm|go[-\s]?to[-\s]?market|gtm|employer ticket|recruiter ticket|pitch (?:circuit|night|day)|sales (?:kickoff|summit))\b/i;
+
+/**
+ * Does this TITLE name a business/sales gathering rather than an engineering one?
+ *
+ * Exported so the diagnostic and the tests judge the same predicate the tagger uses, rather than a
+ * copy that can drift — the same reason `CATEGORY_KEYWORDS` and `offCityReason` are exported.
+ */
+export function looksLikeBusinessGathering(title: string | null | undefined): boolean {
+  if (!title) return false;
+  return BUSINESS_GATHERING_TITLE_RE.test(title);
+}
+
 const FOOD_RE =
   /\b(food|snacks?|refreshments?|lunch|dinner|breakfast|pizza|beverages?|drinks?|meal|catering|high tea|buffet)\b/i;
 
@@ -832,7 +902,9 @@ export function keywordTagging(input: TaggingInput): TaggingResult {
     categories: chosen,
     format,
     hasFood: FOOD_RE.test(text) ? 'yes' : 'unknown',
-    isTechEvent: chosen.some(c => TECH_CATEGORIES.has(c)),
+    // The veto beats the category match: `Hackathon` is a gathering type, so "GTM Buildathon"
+    // would otherwise be tech on the strength of the word "buildathon" alone.
+    isTechEvent: chosen.some(c => TECH_CATEGORIES.has(c)) && !looksLikeBusinessGathering(input.title),
     confidence: 0.6,
   };
 }
