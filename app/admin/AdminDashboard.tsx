@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { DesktopNav } from '@/app/components/NavBar';
 import { relativeTime, dayLabelIST, timeIST } from '@/lib/format';
+import EditEventModal from './EditEventModal';
+import { SOURCE_TYPES } from '@/lib/sources/admin-validate';
 
 /**
  * The operator console: corpus health, the scraper, source management and event
@@ -444,9 +446,118 @@ function ScraperPanel({ stats, onDone }: { stats: Stats | null; onDone: () => vo
 
 /* ────────────────────────────── Sources ────────────────────────────── */
 
+/**
+ * Register a scrape source by hand — the "C" that was missing from the sources CRUD.
+ *
+ * Most sources arrive through auto-discovery (Luma calendar ids harvested from the city feed,
+ * Meetup group slugs from the keyword fan-out), which is the design and should stay that way. This
+ * is for the ones discovery cannot reach: a community that publishes only an .ics, or a Bevy tenant
+ * verified by hand with `probe-bevy-tenants.ts`.
+ *
+ * `kind` + `handle` are offered as an explicit PAIR because together they are the dedup identity
+ * (`Source.index({ kind, handle }, { unique: true, sparse: true })`), and the API rejects one
+ * without the other. Leaving both blank is fine and normal for a one-off URL.
+ */
+function NewSourceForm({ onCreated }: { onCreated: (name: string) => void }) {
+  const [form, setForm] = useState({ name: '', type: 'ical', url: '', kind: '', handle: '' });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+
+  async function submit() {
+    setSaving(true);
+    setError(null);
+    setFieldErrors({});
+    try {
+      const res = await fetch('/api/sources', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(form),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        if (Array.isArray(data?.fields)) {
+          const next: Record<string, string> = {};
+          for (const f of data.fields as Array<{ field: string; message: string }>) next[f.field] = f.message;
+          setFieldErrors(next);
+        }
+        setError(data?.error || `Could not create (HTTP ${res.status}).`);
+        return;
+      }
+      onCreated(form.name.trim() || 'source');
+      setForm({ name: '', type: 'ical', url: '', kind: '', handle: '' });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not create source.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const input = (key: keyof typeof form, placeholder: string) => (
+    <label className="block">
+      <span className="sr-only">{placeholder}</span>
+      <input
+        value={form[key]}
+        onChange={e => setForm(prev => ({ ...prev, [key]: e.target.value }))}
+        placeholder={placeholder}
+        className={`h-10 w-full rounded-xl border bg-white px-3 text-[13px] text-[#1D1D1F] focus:outline-none ${
+          fieldErrors[key] ? 'border-[#C7362D]' : 'border-[#e5e5ea] focus:border-[#0071E3]'
+        }`}
+      />
+      {fieldErrors[key] && <span className="mt-1 block text-[12px] text-[#C7362D]">{fieldErrors[key]}</span>}
+    </label>
+  );
+
+  return (
+    <div className="mb-3 rounded-2xl border border-[color:var(--hairline)] bg-[#fbfbfd] p-4">
+      <div className="grid gap-3 sm:grid-cols-2">
+        {input('name', 'Name, e.g. Bengaluru Python User Group')}
+        <label className="block">
+          <span className="sr-only">Type</span>
+          <select
+            value={form.type}
+            onChange={e => setForm(prev => ({ ...prev, type: e.target.value }))}
+            className={`h-10 w-full rounded-xl border bg-white px-3 text-[13px] text-[#1D1D1F] focus:outline-none ${
+              fieldErrors.type ? 'border-[#C7362D]' : 'border-[#e5e5ea] focus:border-[#0071E3]'
+            }`}
+          >
+            {SOURCE_TYPES.map(t => (
+              <option key={t} value={t}>{t}</option>
+            ))}
+          </select>
+          {fieldErrors.type && <span className="mt-1 block text-[12px] text-[#C7362D]">{fieldErrors.type}</span>}
+        </label>
+      </div>
+      <div className="mt-3">{input('url', 'Feed URL, https://…')}</div>
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        {input('kind', 'Kind (optional), e.g. meetup')}
+        {input('handle', 'Handle (optional), e.g. blr-python')}
+      </div>
+      <p className="mt-2 text-[11.5px] leading-relaxed text-[#86868B]">
+        Kind and handle are the dedup identity and must be given together, or not at all. The
+        scraper will fetch this URL on its next run, so http(s) only.
+      </p>
+      {error && (
+        <p role="alert" className="mt-2 rounded-xl bg-[#FFF1F0] px-3 py-2 text-[12.5px] text-[#C7362D]">
+          {error}
+        </p>
+      )}
+      <button
+        type="button"
+        onClick={submit}
+        disabled={saving}
+        className="pressable mt-3 h-10 rounded-full bg-[#1D1D1F] px-5 text-[12.5px] font-semibold text-white hover:bg-black disabled:opacity-50"
+      >
+        {saving ? 'Registering…' : 'Register source'}
+      </button>
+    </div>
+  );
+}
+
 function SourcesPanel({ stats, onChanged }: { stats: Stats; onChanged: () => void }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
+  const [adding, setAdding] = useState(false);
   const [filter, setFilter] = useState('');
   const [onlyProblems, setOnlyProblems] = useState(false);
 
@@ -532,7 +643,17 @@ function SourcesPanel({ stats, onChanged }: { stats: Stats; onChanged: () => voi
         >
           Only problems
         </button>
+        <button
+          type="button"
+          onClick={() => setAdding(v => !v)}
+          aria-expanded={adding}
+          className="h-10 shrink-0 rounded-full bg-[#0071E3] px-4 text-[12.5px] font-semibold text-white hover:bg-blue-600"
+        >
+          {adding ? 'Cancel' : 'Add source'}
+        </button>
       </div>
+
+      {adding && <NewSourceForm onCreated={created => { setAdding(false); setNote({ ok: true, text: `Registered “${created}”.` }); onChanged(); }} />}
 
       {note && <Banner tone={note.ok ? 'ok' : 'error'}>{note.text}</Banner>}
 
@@ -625,6 +746,8 @@ function EventsPanel({ onChanged }: { onChanged: () => void }) {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
+  /** Which event the edit modal is open for. Null = closed. */
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   const search = useCallback(async (term: string) => {
     setLoading(true);
@@ -824,6 +947,21 @@ function EventsPanel({ onChanged }: { onChanged: () => void }) {
                 >
                   {e.isTechEvent ? 'Tech' : 'Not tech'}
                 </button>
+                {/* An icon, for the same reason the Spotlight control is one: the row already
+                    carries a date, a title, a source line and two word-buttons. `aria-label`
+                    names the event so a screen reader hears which row it belongs to. */}
+                <button
+                  type="button"
+                  onClick={() => setEditingId(e._id)}
+                  disabled={busy === e._id}
+                  aria-label={`Edit ${e.title}`}
+                  title="Edit this event's title, time, venue, categories and cover image"
+                  className="shrink-0 rounded-full border border-[#e5e5ea] bg-white px-2.5 py-1.5 text-[12px] font-semibold text-[#6E6E73] hover:bg-[#f3f3f5] disabled:opacity-50"
+                >
+                  <span aria-hidden="true" className="material-symbols-outlined text-[15px] leading-none align-[-2px]">
+                    edit
+                  </span>
+                </button>
                 <button
                   type="button"
                   onClick={() => remove(e)}
@@ -837,6 +975,23 @@ function EventsPanel({ onChanged }: { onChanged: () => void }) {
             ))}
           </ul>
         </div>
+      )}
+
+      {/* Re-runs the search on save rather than patching the row in place: an edit can change the
+          title, the date or the categories, all of which the row displays and the query orders by,
+          so a local patch could leave a row under the wrong date heading. `onChanged()` also
+          refreshes the corpus stats, since a tech-flag change moves the counts. */}
+      {editingId && (
+        <EditEventModal
+          eventId={editingId}
+          onClose={() => setEditingId(null)}
+          onSaved={title => {
+            setEditingId(null);
+            setNote({ ok: true, text: `Saved “${title}”.` });
+            search(q);
+            onChanged();
+          }}
+        />
       )}
     </Card>
   );
