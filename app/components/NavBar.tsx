@@ -19,7 +19,16 @@ const NAV_LINKS = [
   { href: '/companies', label: 'Companies', icon: 'domain', mobile: true },
   { href: '/calendar', label: 'Calendar', icon: 'calendar_today', mobile: true },
   { href: '/tracker', label: 'Tracker', icon: 'bookmarks', mobile: true },
-  { href: '/folders', label: 'People', icon: 'groups', mobile: true },
+  /*
+   * "People" points at /people, not /folders, and that is a correction rather than a
+   * preference. This entry said People and opened a list of FOLDERS - one per event - so the
+   * label promised a person index and delivered containers, and "who do I already know at
+   * this company" had no answer anywhere in the product despite GET /api/contacts serving
+   * the data all along. /folders is still reachable and still useful; the two pages are the
+   * same data on different axes (by event for capture, by person for recall) and each links
+   * to the other.
+   */
+  { href: '/people', label: 'People', icon: 'groups', mobile: true },
   // ADMIN ONLY. `POST /api/events` is gated by requireAdmin(), so offering this to everyone was
   // a dead end: a regular user could fill in the whole form and only learn on submit that the
   // write was refused. Adding an event by hand is also a curation act — it feeds the home page's

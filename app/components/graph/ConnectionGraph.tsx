@@ -26,7 +26,7 @@
 import { useMemo, useRef, useState } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
-import type { EventGraph, GraphNode } from '@/lib/graph/build-graph';
+import type { EventGraph } from '@/lib/graph/build-graph';
 import { edgeLabel } from '@/lib/graph/build-graph';
 
 /*

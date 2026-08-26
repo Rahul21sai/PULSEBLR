@@ -41,6 +41,7 @@ export const PROTECTED_PATHS = [
   '/settings',
   '/admin',
   '/folders',
+  '/people',
   '/scan',
   '/card',
 ] as const;

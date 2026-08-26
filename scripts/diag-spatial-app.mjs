@@ -43,7 +43,7 @@ const base = (process.argv[2] || 'http://localhost:3000').replace(/\/$/, '')
  * ambient field and for overflow, because those must hold on the wall too.
  */
 const PUBLIC = ['/', '/companies', '/calendar']
-const PROTECTED = ['/tracker', '/folders', '/settings', '/dashboard']
+const PROTECTED = ['/tracker', '/folders', '/people', '/settings', '/dashboard']
 
 const VIEWPORTS = [
   { name: 'desktop', width: 1440, height: 900 },

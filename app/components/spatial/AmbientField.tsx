@@ -224,6 +224,13 @@ export default function AmbientField({
       };
       gl = (canvas.getContext('webgl', opts) as WebGLRenderingContext | null) ?? null;
       if (!gl) return false;
+      /*
+       * A canvas whose context was previously lost hands back that SAME lost context, and every
+       * call on it silently no-ops — shaders "fail to compile" with a null info log. Bail to the
+       * CSS fallback instead of logging a confusing error, which is what happened before the
+       * loseContext() call in cleanup was removed (see the note there).
+       */
+      if (gl.isContextLost()) return false;
 
       const vs = compile(gl, gl.VERTEX_SHADER, VERT);
       const fs = compile(gl, gl.FRAGMENT_SHADER, FRAG);
@@ -374,9 +381,28 @@ export default function AmbientField({
       if (gl) {
         if (buffer) gl.deleteBuffer(buffer);
         if (program) gl.deleteProgram(program);
-        // Free the GPU context eagerly. Browsers cap live WebGL contexts (~16) and React can
-        // mount/unmount this repeatedly in dev; leaking them makes later mounts silently fail.
-        gl.getExtension('WEBGL_lose_context')?.loseContext();
+        /*
+         * DO NOT call WEBGL_lose_context.loseContext() here. It was here, and it killed the
+         * whole layer.
+         *
+         * `loseContext()` destroys the context PERMANENTLY for that canvas element, and
+         * `getContext('webgl')` on the same element afterwards returns the SAME lost context
+         * rather than a fresh one. React Strict Mode mounts, unmounts and remounts every effect
+         * in development against the SAME DOM node — so the cleanup killed the context and the
+         * immediate remount then compiled its shaders against a dead one:
+         *
+         *   [AmbientField] shader compile failed: null
+         *
+         * (a null info log is the tell: a lost context reports no compile error, because it never
+         * attempted the compile). The field then fell back to the static CSS lattice on every
+         * page, in development only — which is exactly the kind of bug that survives a production
+         * check. It was verified working on a production build and dead in dev for the same commit.
+         *
+         * Nothing leaks by omitting it. There is at most ONE context here because the canvas is
+         * reused rather than recreated, and the browser reclaims it when the element is removed.
+         * The original comment worried about a per-mount leak, which can only happen if each mount
+         * creates a NEW canvas; this one does not.
+         */
       }
       gl = null;
       program = null;
