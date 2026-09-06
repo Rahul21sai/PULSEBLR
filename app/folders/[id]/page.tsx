@@ -1,11 +1,13 @@
 'use client';
 
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { use, useCallback, useEffect, useMemo, useState } from 'react';
 import AppShell from '../../components/AppShell';
 import Sheet from '../../components/Sheet';
 import QrCode from '../../components/QrCode';
 import ContactFields, { useTagVocabulary, type ContactDraft } from '../../components/scan/ContactFields';
+import FolderSettingsSheet from './FolderSettingsSheet';
 import { Banner, Button, ButtonLink, Card, EmptyState, PageHeader } from '../../components/ui';
 import { dayHeading, fullDateIST, relativeTime, timeIST } from '@/lib/format';
 import { newClientId, pendingContacts, startAutoDrain, subscribe } from '@/lib/scan/outbox';
@@ -21,6 +23,7 @@ export default function FolderPage({ params }: { params: Promise<{ id: string }>
   // A client component cannot be `async`, so params is unwrapped with React's `use()` —
   // the same approach app/events/[id]/page.tsx takes.
   const { id } = use(params);
+  const router = useRouter();
 
   const [folder, setFolder] = useState<FolderDTO | null>(null);
   const [contacts, setContacts] = useState<ContactDTO[]>([]);
@@ -31,6 +34,7 @@ export default function FolderPage({ params }: { params: Promise<{ id: string }>
   const [editing, setEditing] = useState<ContactDTO | null>(null);
   const [addingManually, setAddingManually] = useState(false);
   const [showQr, setShowQr] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   // The other folders, for the move picker in the edit sheet.
   const [otherFolders, setOtherFolders] = useState<FolderDTO[]>([]);
 
@@ -157,6 +161,25 @@ export default function FolderPage({ params }: { params: Promise<{ id: string }>
   );
 
   async function saveContact(contact: ContactDTO, draft: ContactDraft) {
+    /**
+     * A PENDING capture is edited in IndexedDB, not through the API.
+     *
+     * It has no server document — its row id here is `pending:<clientId>` — so the PATCH below would
+     * hit `/api/contacts/pending:<clientId>`, which cannot resolve, and the rollback would then
+     * `setContacts(previous)` on an array that never held the row. The edit was a silent no-op behind
+     * "Could not save that change", which is why the sheet used to refuse pending rows outright and a
+     * name mistyped offline stayed wrong until it synced.
+     */
+    if (contact.pending) {
+      const { updateQueuedContact } = await import('@/lib/scan/outbox');
+      await updateQueuedContact(contact.clientId, draft);
+      setEditing(null);
+      // `subscribe` fires from the outbox write, so the pending rows refresh themselves.
+      setNotice(`Updated ${draft.name || contact.name} on this device.`);
+      setTimeout(() => setNotice(null), 4000);
+      return;
+    }
+
     // Optimistic, matching the tracker's house pattern: apply locally, roll back only on a
     // hard rejection. A network failure is not a rejection — it means "not yet".
     const previous = contacts;
@@ -299,6 +322,17 @@ export default function FolderPage({ params }: { params: Promise<{ id: string }>
               <Button tone="quiet" icon="person_add" onClick={() => setAddingManually(true)}>
                 Add by hand
               </Button>
+              {/* Rename, re-date, archive, delete. The API handled all four from the start and
+                  nothing called it, so a folder created with a typo — or auto-created from a tracker
+                  confirmation with an unwieldy event title — was permanent. */}
+              <Button
+                tone="quiet"
+                icon="settings"
+                onClick={() => setShowSettings(true)}
+                aria-label="Folder settings"
+              >
+                Settings
+              </Button>
             </div>
           }
         />
@@ -431,6 +465,27 @@ export default function FolderPage({ params }: { params: Promise<{ id: string }>
           onAdded={async () => {
             setAddingManually(false);
             await load();
+          }}
+        />
+      )}
+
+      {showSettings && folder && (
+        <FolderSettingsSheet
+          folder={folder}
+          contactCount={contacts.length}
+          onClose={() => setShowSettings(false)}
+          onSaved={async () => {
+            setShowSettings(false);
+            await load();
+          }}
+          onDeleted={() => {
+            // Back to the folder list: this folder no longer exists, so staying here would render a
+            // 404 for something the user just deliberately removed.
+            //
+            // `router.replace`, not `push` — the deleted folder must not be a back-button
+            // destination, since returning to it can only show that 404. And not
+            // `window.location.href`, which throws away the client router and reloads the app.
+            router.replace('/folders');
           }}
         />
       )}
@@ -722,8 +777,13 @@ function EditContactSheet({
             </Banner>
           ) : (
             <Banner tone="warn">
-              This one is still only on this device, so it cannot be edited on the server yet. It
-              will upload on its own.
+              {/*
+                Was: "it cannot be edited on the server yet". It can be edited NOW — the save writes
+                straight to this device's queue and uploads with the corrected fields. That sentence
+                was the reason a name mistyped offline stayed wrong until it synced, on exactly the
+                path this feature exists for.
+              */}
+              This one is still only on this device. Edits are saved here and upload with it.
             </Banner>
           )}
         </div>

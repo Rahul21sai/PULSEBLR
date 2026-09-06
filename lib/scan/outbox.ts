@@ -603,6 +603,50 @@ export async function retryCapture(kind: 'contact' | 'folder', clientId: string)
 }
 
 /**
+ * Edit a capture that has not reached the server yet.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────────────────────
+ * WHY THIS CANNOT BE A PATCH. A queued record has no server document, so there is nothing to
+ * address: `app/folders/[id]` gives a pending row the id `pending:<clientId>`, and the edit sheet
+ * used to PATCH `/api/contacts/pending:<clientId>`, which cannot resolve. Worse, the rollback then
+ * did `setContacts(previous)` on an array that never contained the pending row, so the edit was a
+ * silent no-op behind "Could not save that change."
+ *
+ * So the sheet blocked editing a pending capture entirely — which meant a name mistyped at an event,
+ * on the offline path this whole feature exists for, stayed wrong until it synced. It also made the
+ * `missing-name` refusal copy ("Add one and it will upload") a promise no screen could keep.
+ *
+ * The fields are passed through `queueContact`, so the SAME canonicalisation the server would apply
+ * is applied here — otherwise a tag typed while offline would land in a different facet bucket from
+ * one typed online, which is exactly what `canonicaliseTags` exists to prevent.
+ *
+ * `blocked` is cleared: the record has changed, so the previous verdict is about a record that no
+ * longer exists and the next drain should judge it afresh.
+ * ─────────────────────────────────────────────────────────────────────────────────────────────
+ */
+export async function updateQueuedContact(
+  clientId: string,
+  patch: Partial<ContactInput>
+): Promise<void> {
+  const record = await tx<QueuedContactRecord | undefined>(CONTACTS, 'readonly', s =>
+    s.get(clientId) as IDBRequest<QueuedContactRecord | undefined>
+  );
+  if (!record) return;
+
+  // `clientId` is never patchable — it is the idempotency key, and changing it would let the same
+  // capture upload twice. Rebuilt with the original id last rather than destructured away, so the
+  // guarantee is visible in the assignment instead of relying on a discarded binding.
+  const fields = { ...patch };
+  delete fields.clientId;
+  const next: QueuedContactRecord = { ...record, ...fields, clientId: record.clientId };
+  delete next.blocked;
+  delete next.blockedReason;
+
+  await tx<IDBValidKey>(CONTACTS, 'readwrite', s => s.put(next));
+  notify();
+}
+
+/**
  * Repoint a queued contact at a different folder, and unblock it.
  *
  * This is what makes `folder-not-found` and `no-folder` RECOVERABLE instead of only

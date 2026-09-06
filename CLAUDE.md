@@ -1014,10 +1014,13 @@ and exposes no page↔worker channel.
 > - ~~**Repeat connections are surfaced NOWHERE in the scan/folder UI.**~~ **BUILT** — the `met N×`
 >   badge on `/people`, from `contactKeyEventCounts()`. Note it counts distinct EVENTS
 >   (`folder.eventId ?? folder._id`), not folders, so two folders for one event is not two meetings.
-> - **No folder rename, delete or archive.** `PATCH /api/folders/[id]` handles
->   name/note/venue/eventDate/archive and `DELETE` cascades its contacts; the UI calls neither. The
->   only `PATCH` calls anywhere in `app/` are `app/folders/[id]/page.tsx:138` and `:171`, both to
->   `/api/contacts/`.
+> - ~~**No folder rename, delete or archive.**~~ **BUILT 2026-09-06** — `FolderSettingsSheet` on
+>   `app/folders/[id]`. Archive is offered ABOVE delete and is what the copy steers toward, since it
+>   does everything "get this off my list" means and destroys nothing. Delete states the number of
+>   people it will take with it BEFORE the confirm — the cascade is right (a contact records "who I
+>   met at this event") but it is the one irreversible action in the feature. A rename onto an
+>   existing name is a 409 reported AS a name clash, which is only possible because the route's
+>   duplicate-key handler branches on `keyPattern`.
 > - ~~**No move-contact-between-folders**~~ **BUILT 2026-09-06** — a folder picker in the edit sheet
 >   on `app/folders/[id]`, for a SYNCED contact. It moves immediately rather than on Save, and is
 >   hidden for a *queued* capture: that has never reached the server so there is nothing to PATCH,
@@ -1027,8 +1030,14 @@ and exposes no page↔worker channel.
 > - ~~**`Contact.tags[]` has no input.**~~ **BUILT** — `TagField` in `ContactFields.tsx`, so it
 >   appears in both the capture sheet and the folder editor from one definition, plus bulk apply on
 >   `/people`. Tags are canonicalised by `canonicaliseTags()` because a tag is a facet KEY.
-> - **A pending (unsynced) capture cannot be edited or discarded** — the edit sheet blocks it by
->   design, so a name mistyped offline stays wrong until it syncs.
+> - ~~**A pending (unsynced) capture cannot be edited or discarded**~~ **BUILT 2026-09-06** —
+>   `updateQueuedContact()` writes back to IndexedDB, so the folder edit sheet now saves a pending row
+>   instead of refusing it. It CANNOT be a PATCH: a pending row's id is `pending:<clientId>`, so the
+>   old path hit `/api/contacts/pending:<clientId>`, which cannot resolve, and then rolled back
+>   against an array that never held the row — a silent no-op behind "Could not save that change".
+>   The draft goes through `queueContact`, so a tag typed offline gets the same canonicalisation as
+>   one typed online and lands in the same facet bucket. `blocked` is cleared, because the previous
+>   verdict was about a record that no longer exists.
 > - **CSV export is a bare `<a>`** — no loading or error state, so a 500 renders a raw error page.
 
 > **`Folder.eventId` IS ALWAYS NULL IN PRACTICE, WHICH MAKES CORRECT CODE UNREACHABLE.** Nothing in
