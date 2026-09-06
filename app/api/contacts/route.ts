@@ -3,6 +3,7 @@ import connectDB from '@/lib/mongodb';
 import Contact from '@/lib/models/Contact';
 import { requireUser } from '@/lib/api-auth';
 import { contactToDTO, findOwnedFolder, isValidId, upsertContact } from '@/lib/contacts/service';
+import { ITEM_REFUSALS } from '@/lib/scan/failure';
 import type { ContactInput } from '@/lib/contacts/types';
 
 /**
@@ -60,15 +61,29 @@ export async function POST(request: NextRequest) {
     const clientId = typeof body.clientId === 'string' ? body.clientId.trim() : '';
     if (!clientId) {
       // Without it there is no idempotency key, and a retry would duplicate the person.
-      return NextResponse.json({ error: 'clientId is required' }, { status: 400 });
+      return NextResponse.json(
+        { error: ITEM_REFUSALS['missing-client-id'], refusal: 'missing-client-id' },
+        { status: 400 }
+      );
     }
     if (typeof body.name !== 'string' || !body.name.trim()) {
-      return NextResponse.json({ error: 'A name is required' }, { status: 400 });
+      return NextResponse.json(
+        { error: ITEM_REFUSALS['missing-name'], refusal: 'missing-name' },
+        { status: 400 }
+      );
     }
 
     const folderId = typeof body.folderId === 'string' ? body.folderId : '';
     const folder = await findOwnedFolder(gate.userId, folderId);
-    if (!folder) return NextResponse.json({ error: 'Folder not found' }, { status: 404 });
+    if (!folder) {
+      return NextResponse.json(
+        {
+          error: ITEM_REFUSALS[folderId ? 'folder-not-found' : 'no-folder'],
+          refusal: folderId ? 'folder-not-found' : 'no-folder',
+        },
+        { status: 404 }
+      );
+    }
 
     // `body` is untrusted `Record<string, unknown>`; the cast is safe because `upsertContact`
     // passes everything through `pickWritable`, which coerces each field to the type the schema

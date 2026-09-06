@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import { newClientId, queueContact } from '@/lib/scan/outbox';
+import { newClientId, saveContact } from '@/lib/scan/outbox';
 import type { FolderDTO, PublicCardDTO } from '@/lib/contacts/types';
 
 /**
@@ -61,21 +61,20 @@ export default function SaveToFolder({ card }: { card: PublicCardDTO }) {
       scannedAt: new Date().toISOString(),
     };
 
-    try {
-      const res = await fetch('/api/contacts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(record),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      setSavedTo(folder.name);
-    } catch {
-      // Same guarantee as the scanner: queued locally rather than lost.
-      await queueContact(record);
-      setSavedTo(`${folder.name} (on this device)`);
-    } finally {
-      setSaving(false);
+    // Same path the scanner takes, for the same reason: queued locally rather than lost, but
+    // honest about whether "locally" means "for a moment" or "until you deal with it".
+    const result = await saveContact(record);
+    setSaving(false);
+
+    if (result.outcome === 'blocked' || result.outcome === 'auth') {
+      // NOT a success screen. The old code reported "Saved to <folder> (on this device)" for a
+      // refusal, then invited the visitor to move on — so the one moment they could have fixed
+      // it, standing in front of the person, passed silently.
+      setError(result.reason ?? 'That could not be saved.');
+      return;
     }
+
+    setSavedTo(result.outcome === 'saved' ? folder.name : `${folder.name} (on this device)`);
   }
 
   if (savedTo) {

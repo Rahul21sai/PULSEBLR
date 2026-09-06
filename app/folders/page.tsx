@@ -6,7 +6,18 @@ import AppShell from '../components/AppShell';
 import Sheet from '../components/Sheet';
 import { Button, ButtonLink, Card, EmptyState, PageHeader, Banner } from '../components/ui';
 import { dayHeading } from '@/lib/format';
-import { drain, newClientId, pendingCount, startAutoDrain, subscribe } from '@/lib/scan/outbox';
+import {
+  blockedCaptures,
+  discardContact,
+  discardFolder,
+  drain,
+  newClientId,
+  pendingSummary,
+  startAutoDrain,
+  subscribe,
+  type BlockedCapture,
+  type PendingSummary,
+} from '@/lib/scan/outbox';
 import type { FolderDTO } from '@/lib/contacts/types';
 
 /**
@@ -21,8 +32,11 @@ export default function FoldersPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
-  const [pending, setPending] = useState(0);
+  const [pending, setPending] = useState<PendingSummary>({ waiting: 0, blocked: 0, total: 0 });
+  const [stuck, setStuck] = useState<BlockedCapture[]>([]);
   const [syncing, setSyncing] = useState(false);
+  /** What the last "Sync now" actually did. Its absence was half of the reported bug. */
+  const [syncNote, setSyncNote] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -48,10 +62,14 @@ export default function FoldersPage() {
   }, [load]);
 
   // Keep the unsynced count honest without polling.
+  const refreshQueue = useCallback(async () => {
+    const [summary, blocked] = await Promise.all([pendingSummary(), blockedCaptures()]);
+    setPending(summary);
+    setStuck(blocked);
+  }, []);
+
   useEffect(() => {
-    const refresh = () => {
-      void pendingCount().then(setPending);
-    };
+    const refresh = () => void refreshQueue();
     refresh();
     const unsubscribe = subscribe(refresh);
     const stopAutoDrain = startAutoDrain();
@@ -59,14 +77,48 @@ export default function FoldersPage() {
       unsubscribe();
       stopAutoDrain();
     };
-  }, []);
+  }, [refreshQueue]);
 
+  /**
+   * Sync, and SAY WHAT HAPPENED.
+   *
+   * The version this replaces did the work and reported none of it: it only reloaded the folder
+   * list when `synced > 0`, so a hard rejection, a lapsed session and a queue full of records
+   * the server refuses were all indistinguishable from the button being broken. That is the
+   * literal complaint this fix started from — "Sync now appears to do nothing" — and it was
+   * true on every path except the happy one.
+   */
   async function syncNow() {
     setSyncing(true);
-    const result = await drain();
+    setSyncNote(null);
+    // `force`: the user asked. See the note in `drain()` about the automatic path declining an
+    // all-blocked queue.
+    const result = await drain({ force: true });
+    const summary = await pendingSummary();
     setSyncing(false);
-    setPending(await pendingCount());
+    await refreshQueue();
     if (result.synced > 0) await load();
+
+    setSyncNote(
+      result.authExpired
+        ? 'Your session has expired. Sign in again and these will upload on their own.'
+        : result.synced > 0
+          ? `Uploaded ${result.synced}.${summary.blocked ? ` ${summary.blocked} still need attention below.` : ''}`
+          : summary.blocked > 0 && summary.waiting === 0
+            ? 'Nothing uploaded — every remaining capture is one the server has refused. See below.'
+            : result.status
+              ? `The server refused the upload (HTTP ${result.status}). Nothing was lost.`
+              : summary.total === 0
+                ? 'Everything is uploaded.'
+                : 'Could not reach the server. Everything is still saved on this device.'
+    );
+  }
+
+  async function discard(item: BlockedCapture) {
+    if (item.kind === 'folder') await discardFolder(item.clientId);
+    else await discardContact(item.clientId);
+    await refreshQueue();
+    setSyncNote(`Discarded “${item.label}”.`);
   }
 
   return (
@@ -87,19 +139,82 @@ export default function FoldersPage() {
           }
         />
 
-        {pending > 0 && (
+        {/*
+          TWO BANNERS, NOT ONE COUNT.
+          The single "N captures not synced yet … will upload on their own" was accurate for a
+          record waiting for signal and a lie for a record the server had refused, and the user
+          had no way to tell which they were looking at. The number would simply never fall.
+        */}
+        {pending.waiting > 0 && (
           <div className="mb-4">
             <Banner tone="warn">
               <span className="flex flex-wrap items-center justify-between gap-2">
                 <span>
-                  <strong className="tnum">{pending}</strong> capture{pending === 1 ? '' : 's'} not
-                  synced yet. They are saved on this device and will upload on their own.
+                  <strong className="tnum">{pending.waiting}</strong> capture
+                  {pending.waiting === 1 ? '' : 's'} not synced yet. They are saved on this device
+                  and will upload on their own.
                 </span>
                 <Button size="sm" tone="quiet" onClick={syncNow} disabled={syncing}>
                   {syncing ? 'Syncing…' : 'Sync now'}
                 </Button>
               </span>
             </Banner>
+          </div>
+        )}
+
+        {stuck.length > 0 && (
+          <div className="mb-4">
+            <Banner tone="error">
+              <span className="flex flex-wrap items-center justify-between gap-2">
+                <span>
+                  <strong className="tnum">{stuck.length}</strong> capture
+                  {stuck.length === 1 ? '' : 's'} cannot upload. They are still saved on this
+                  device — nothing has been lost — but the server has refused them, so they will
+                  not go on their own.
+                </span>
+                {pending.waiting === 0 && (
+                  <Button size="sm" tone="quiet" onClick={syncNow} disabled={syncing}>
+                    {syncing ? 'Retrying…' : 'Try again'}
+                  </Button>
+                )}
+              </span>
+            </Banner>
+
+            <div className="mt-2 flex flex-col gap-2">
+              {stuck.map(item => (
+                <Card key={`${item.kind}:${item.clientId}`} padding="tight">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-[13.5px] font-semibold text-[#1D1D1F]">
+                        {item.label}
+                        {item.kind === 'folder' && (
+                          <span className="ml-2 rounded-full bg-[#F5F5F7] px-2 py-0.5 text-[10.5px] font-bold uppercase tracking-[0.05em] text-[#6E6E73]">
+                            folder
+                          </span>
+                        )}
+                      </p>
+                      <p className="mt-0.5 text-[12.5px] leading-relaxed text-[#6E6E73]">
+                        {item.reason}
+                      </p>
+                    </div>
+                    <Button
+                      size="sm"
+                      tone="quiet"
+                      onClick={() => void discard(item)}
+                      aria-label={`Discard ${item.label}`}
+                    >
+                      Discard
+                    </Button>
+                  </div>
+                </Card>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {syncNote && (
+          <div className="mb-4">
+            <Banner tone="info">{syncNote}</Banner>
           </div>
         )}
 

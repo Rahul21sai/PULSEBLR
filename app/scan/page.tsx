@@ -9,7 +9,15 @@ import ContactFields, { type ContactDraft } from '../components/scan/ContactFiel
 import { Banner, Button, ButtonLink } from '../components/ui';
 import { parseScanPayload } from '@/lib/scan/parse-payload';
 import { capturedViaFor, type ParsedScan } from '@/lib/scan/types';
-import { drain, newClientId, pendingCount, queueContact, startAutoDrain, subscribe } from '@/lib/scan/outbox';
+import {
+  drain,
+  newClientId,
+  pendingSummary,
+  saveContact,
+  startAutoDrain,
+  subscribe,
+  type PendingSummary,
+} from '@/lib/scan/outbox';
 import type { FolderDTO } from '@/lib/contacts/types';
 
 /**
@@ -45,7 +53,7 @@ function ScanScreen() {
   const [draft, setDraft] = useState<ContactDraft>({ name: '' });
   const [showAllFields, setShowAllFields] = useState(false);
   const [recent, setRecent] = useState<string[]>([]);
-  const [pending, setPending] = useState(0);
+  const [pending, setPending] = useState<PendingSummary>({ waiting: 0, blocked: 0, total: 0 });
   const [toast, setToast] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -91,7 +99,7 @@ function ScanScreen() {
   }, [loadFolders]);
 
   useEffect(() => {
-    const refresh = () => void pendingCount().then(setPending);
+    const refresh = () => void pendingSummary().then(setPending);
     refresh();
     const unsubscribe = subscribe(refresh);
     const stopAutoDrain = startAutoDrain();
@@ -177,29 +185,33 @@ function ScanScreen() {
       // `nameIsGuess` is a UI concern only and is not part of the stored record.
       delete (record as Record<string, unknown>).nameIsGuess;
 
-      try {
-        const res = await fetch('/api/contacts', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(record),
-        });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        setToast(`Saved ${record.name}`);
-      } catch {
-        // THE IMPORTANT PATH. A failed POST does not lose the person: the record goes to
-        // IndexedDB and uploads when the network returns. This is the normal case at a busy
-        // event, not the exception.
-        await queueContact(record);
-        setToast(`Saved ${record.name} on this device`);
-      } finally {
-        setSaving(false);
-      }
+      /**
+       * THE IMPORTANT PATH, and it is `saveContact`'s job now rather than this component's.
+       *
+       * A failed POST does not lose the person — that has always been true and still is. What
+       * changed is that a failure is no longer reported as if it were always the network: this
+       * screen used to say "Saved <name> on this device" for a 404 whose folder had been
+       * deleted, which is a promise the queue could not keep. See `lib/scan/failure.ts`.
+       */
+      const result = await saveContact(record);
+      setSaving(false);
+
+      const blocked = result.outcome === 'blocked' || result.outcome === 'auth';
+      setToast(
+        result.outcome === 'saved'
+          ? `Saved ${record.name}`
+          : result.outcome === 'queued'
+            ? `Saved ${record.name} on this device`
+            : `Kept ${record.name} on this device — ${result.reason}`
+      );
 
       // Remember what was saved so the loop does not immediately re-offer the same code.
       lastSavedRef.current = { raw: captured.raw, at: Date.now() };
 
       setRecent(current => [record.name, ...current].slice(0, 3));
-      setTimeout(() => setToast(null), 2500);
+      // A problem needs longer on screen than a success does — you are standing in front of
+      // the person you just scanned, and 2.5 seconds is not enough to read and act on it.
+      setTimeout(() => setToast(null), blocked ? 6000 : 2500);
       setCaptured(null);
       setDraft({ name: '' });
 
@@ -209,12 +221,26 @@ function ScanScreen() {
   );
 
   async function syncNow() {
-    const result = await drain();
-    setPending(await pendingCount());
+    // `force`, because this is the user asking. An automatic drain declines an all-blocked
+    // queue; a deliberate tap is evidence something may have changed since it was judged.
+    const result = await drain({ force: true });
+    const summary = await pendingSummary();
+    setPending(summary);
+
+    // Reporting only `synced > 0` was half the original bug: every other outcome looked
+    // identical to doing nothing, which is precisely what "Sync now doesn't work" meant.
     setToast(
-      result.synced > 0 ? `Uploaded ${result.synced}` : result.skipped ? 'Nothing to upload' : 'Still offline'
+      result.authExpired
+        ? 'Sign in again and these will upload'
+        : result.synced > 0
+          ? `Uploaded ${result.synced}${summary.blocked ? ` · ${summary.blocked} still stuck` : ''}`
+          : summary.blocked > 0
+            ? `${summary.blocked} cannot upload — open People to fix`
+            : result.skipped
+              ? 'Nothing to upload'
+              : 'Still offline'
     );
-    setTimeout(() => setToast(null), 2500);
+    setTimeout(() => setToast(null), summary.blocked > 0 || result.authExpired ? 6000 : 2500);
   }
 
   return (
@@ -303,15 +329,35 @@ function ScanScreen() {
         </div>
       )}
 
-      {pending > 0 && !captured && (
+      {pending.total > 0 && !captured && (
         <div className="absolute inset-x-0 bottom-0 z-20 p-3" style={{ paddingBottom: 'max(12px, env(safe-area-inset-bottom))' }}>
           <button
             type="button"
             onClick={syncNow}
-            className="mx-auto flex items-center gap-2 rounded-full bg-white/95 px-4 py-2 text-[12px] font-semibold text-[#1D1D1F]"
+            className={`mx-auto flex items-center gap-2 rounded-full px-4 py-2 text-[12px] font-semibold ${
+              pending.blocked > 0 ? 'bg-[#FFF1F0]/95 text-[#C7362D]' : 'bg-white/95 text-[#1D1D1F]'
+            }`}
           >
-            <span aria-hidden="true" className="material-symbols-outlined text-[16px]">cloud_upload</span>
-            <span className="tnum">{pending}</span> waiting to upload — tap to retry
+            <span aria-hidden="true" className="material-symbols-outlined text-[16px]">
+              {pending.blocked > 0 ? 'error' : 'cloud_upload'}
+            </span>
+            {/* Two counts, because they mean opposite things: one is patience, one is a problem. */}
+            {pending.blocked > 0 ? (
+              <>
+                <span className="tnum">{pending.blocked}</span> cannot upload
+                {pending.waiting > 0 && (
+                  <>
+                    {' · '}
+                    <span className="tnum">{pending.waiting}</span> waiting
+                  </>
+                )}
+                {' — tap to retry'}
+              </>
+            ) : (
+              <>
+                <span className="tnum">{pending.waiting}</span> waiting to upload — tap to retry
+              </>
+            )}
           </button>
         </div>
       )}

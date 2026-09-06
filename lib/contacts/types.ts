@@ -67,6 +67,17 @@ export interface ContactDTO {
    * pretending it is saved.
    */
   pending?: boolean;
+  /**
+   * Client-only, and only meaningful alongside `pending`: the server has REFUSED this record,
+   * so it is not merely waiting for signal.
+   *
+   * Without this the folder table showed a permanently stuck capture with the same quiet
+   * "local" chip as one queued four seconds ago on a bad connection, and its edit sheet told
+   * the user it "will upload on its own" — which was the promise that could not be kept. See
+   * `lib/scan/failure.ts`.
+   */
+  blocked?: boolean;
+  blockedReason?: string;
 }
 
 /** The editable fields a capture card or the table's inline editor may write. */

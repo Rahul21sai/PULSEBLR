@@ -3,6 +3,8 @@ import connectDB from '@/lib/mongodb';
 import Folder, { folderSlug } from '@/lib/models/Folder';
 import { requireUser } from '@/lib/api-auth';
 import { contactToDTO, findOwnedFolder, upsertContact } from '@/lib/contacts/service';
+import { isSchemaRejection } from '@/lib/tracker/validate';
+import { ITEM_REFUSALS, type ItemRefusal } from '@/lib/scan/failure';
 import type { ContactInput } from '@/lib/contacts/types';
 
 /**
@@ -20,6 +22,13 @@ import type { ContactInput } from '@/lib/contacts/types';
  *   - REPLAYS ARE SUCCESS, NOT CONFLICT. `upsertContact` is idempotent on `clientId`, so
  *     re-sending an already-synced record returns `created: false` and the client can safely
  *     drop it. Anything else and a flaky network duplicates people.
+ *   - EVERY REFUSAL SAYS WHETHER IT IS FINAL. An item result carries `permanent` and, where
+ *     there is one, a `refusal` code from `lib/scan/failure.ts`. Without it the client cannot
+ *     tell "the folder you scanned into has been deleted" (true forever) from "the database
+ *     blinked" (true for a second), so it treated both as retryable and a doomed record sat
+ *     in the queue for good under a banner promising it would upload on its own. The client
+ *     must never have to infer this by string-matching the `error` text — see the note in
+ *     `lib/scan/failure.ts` about mirrored constants drifting.
  *
  * Nothing here is destructive: it only creates.
  */
@@ -42,6 +51,46 @@ interface ItemResult {
   /** True when this record was already on the server — a replay, not a failure. */
   duplicate?: boolean;
   error?: string;
+  /**
+   * Whether re-sending this exact record could ever succeed. `true` means it cannot, so the
+   * client should stop counting it as "uploading shortly" and show the user what to do about
+   * it. Absent on a success.
+   */
+  permanent?: boolean;
+  /** A code from `ITEM_REFUSALS`, so the client renders copy rather than parsing prose. */
+  refusal?: ItemRefusal;
+}
+
+/** A refusal on the merits: one code, one message, and `permanent` set once in one place. */
+function refuse(clientId: string, refusal: ItemRefusal): ItemResult {
+  return { clientId, ok: false, permanent: true, refusal, error: ITEM_REFUSALS[refusal] };
+}
+
+/**
+ * A thrown error, classified — and deliberately NOT quoted back to the caller.
+ *
+ * A Mongoose ValidationError or CastError is the server rejecting the record's SHAPE, which no
+ * amount of retrying repairs, so it is permanent — exactly as the tracker write paths treat
+ * those same two error names. Anything else (a dropped Atlas connection, a replica-set
+ * election) is the server having a bad moment, so the record stays retryable.
+ *
+ * `error.message` is NOT forwarded. On a ValidationError it reads
+ * "Contact validation failed: name: Path `name` is required", which hands back the model name
+ * and the schema path — the free reconnaissance the tracker routes had to stop leaking, and
+ * this endpoint takes anonymous-shaped input from an offline queue, so it is the same hazard.
+ * The real wording goes to the server log, where it is useful and not published.
+ */
+function fromThrown(clientId: string, error: unknown, context: string): ItemResult {
+  const permanent = isSchemaRejection(error);
+  console.error(`[contacts/sync] ${context} ${clientId} failed:`, error);
+  return {
+    clientId,
+    ok: false,
+    permanent,
+    error: permanent
+      ? 'The server could not accept this record as it stands.'
+      : 'The server could not be reached for this record.',
+  };
 }
 
 export async function POST(request: NextRequest) {
@@ -65,12 +114,26 @@ export async function POST(request: NextRequest) {
     /* ── Folders first ──────────────────────────────────────────────────── */
     const folderMap: Record<string, string> = {};
     const folderResults: ItemResult[] = [];
+    /**
+     * clientId → was that folder's failure final?
+     *
+     * A contact whose folder is in this same batch inherits the folder's verdict. Without
+     * this, a folder that failed on a momentary database fault would mark every person
+     * belonging to it as permanently broken — punishing the contacts for a blip upstream of
+     * them, which is the opposite of what the queue is for.
+     */
+    const folderFailures = new Map<string, boolean>();
 
     for (const queued of queuedFolders) {
       const clientId = typeof queued?.clientId === 'string' ? queued.clientId.trim() : '';
       const name = typeof queued?.name === 'string' ? queued.name.trim() : '';
-      if (!clientId || !name) {
-        folderResults.push({ clientId: clientId || '(missing)', ok: false, error: 'clientId and name are required' });
+      if (!clientId) {
+        folderResults.push(refuse('(missing)', 'missing-client-id'));
+        continue;
+      }
+      if (!name) {
+        folderFailures.set(clientId, true);
+        folderResults.push(refuse(clientId, 'missing-name'));
         continue;
       }
 
@@ -107,11 +170,9 @@ export async function POST(request: NextRequest) {
         folderMap[clientId] = String(created._id);
         folderResults.push({ clientId, ok: true, id: String(created._id) });
       } catch (error) {
-        folderResults.push({
-          clientId,
-          ok: false,
-          error: error instanceof Error ? error.message : String(error),
-        });
+        const result = fromThrown(clientId, error, 'folder');
+        folderFailures.set(clientId, result.permanent === true);
+        folderResults.push(result);
       }
     }
 
@@ -125,11 +186,11 @@ export async function POST(request: NextRequest) {
     for (const queued of queuedContacts) {
       const clientId = typeof queued?.clientId === 'string' ? queued.clientId.trim() : '';
       if (!clientId) {
-        contactResults.push({ clientId: '(missing)', ok: false, error: 'clientId is required' });
+        contactResults.push(refuse('(missing)', 'missing-client-id'));
         continue;
       }
       if (typeof queued.name !== 'string' || !queued.name.trim()) {
-        contactResults.push({ clientId, ok: false, error: 'A name is required' });
+        contactResults.push(refuse(clientId, 'missing-name'));
         continue;
       }
 
@@ -137,7 +198,23 @@ export async function POST(request: NextRequest) {
       const targetId =
         (queued.folderClientId && folderMap[queued.folderClientId]) || queued.folderId || '';
       if (!targetId) {
-        contactResults.push({ clientId, ok: false, error: 'No folder for this contact' });
+        // Its folder was in this batch and failed. Inherit that verdict rather than issuing
+        // one of our own: if the folder can be retried, so can the person in it.
+        if (queued.folderClientId && folderFailures.has(queued.folderClientId)) {
+          const folderIsFinal = folderFailures.get(queued.folderClientId) === true;
+          contactResults.push(
+            folderIsFinal
+              ? refuse(clientId, 'no-folder')
+              : {
+                  clientId,
+                  ok: false,
+                  permanent: false,
+                  error: 'Waiting for its folder to upload first.',
+                }
+          );
+          continue;
+        }
+        contactResults.push(refuse(clientId, 'no-folder'));
         continue;
       }
 
@@ -148,7 +225,7 @@ export async function POST(request: NextRequest) {
         }
         const resolved = folderCache.get(targetId);
         if (!resolved) {
-          contactResults.push({ clientId, ok: false, error: 'Folder not found' });
+          contactResults.push(refuse(clientId, 'folder-not-found'));
           continue;
         }
 
@@ -164,31 +241,25 @@ export async function POST(request: NextRequest) {
           duplicate: !created,
         });
       } catch (error) {
-        contactResults.push({
-          clientId,
-          ok: false,
-          error: error instanceof Error ? error.message : String(error),
-        });
+        contactResults.push(fromThrown(clientId, error, 'contact'));
       }
     }
 
-    const failed = [...folderResults, ...contactResults].filter(r => !r.ok).length;
+    const all = [...folderResults, ...contactResults];
     return NextResponse.json({
       folderMap,
       folders: folderResults,
       contacts: contactResults,
       saved,
       synced: contactResults.filter(r => r.ok).length,
-      failed,
+      failed: all.filter(r => !r.ok).length,
+      /** Broken out so a client can distinguish "retry later" from "needs a human". */
+      blocked: all.filter(r => !r.ok && r.permanent === true).length,
     });
   } catch (error) {
     console.error('Error syncing contacts:', error);
-    return NextResponse.json(
-      {
-        error: 'Failed to sync',
-        details: error instanceof Error ? error.message : String(error),
-      },
-      { status: 500 }
-    );
+    // No `details`. The only thing it ever carried was the Mongoose wording this endpoint now
+    // deliberately keeps server-side; the real message is in the log line above.
+    return NextResponse.json({ error: 'Failed to sync' }, { status: 500 });
   }
 }

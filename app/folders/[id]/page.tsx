@@ -95,6 +95,10 @@ export default function FolderPage({ params }: { params: Promise<{ id: string }>
           createdAt: new Date(record.queuedAt).toISOString(),
           updatedAt: new Date(record.queuedAt).toISOString(),
           pending: true,
+          // Carried through so this table distinguishes "waiting for signal" from "the server
+          // said no", rather than showing both with the same reassuring chip.
+          blocked: record.blocked,
+          blockedReason: record.blockedReason,
         }))
     );
   }, [id]);
@@ -416,7 +420,7 @@ function ContactTable({
                         </p>
                       )}
                     </div>
-                    {contact.pending && <PendingDot />}
+                    {contact.pending && <PendingDot blocked={contact.blocked} reason={contact.blockedReason} />}
                   </div>
                 </td>
                 <td className="px-4 py-3 align-top">
@@ -470,7 +474,7 @@ function ContactCards({
             <div className="min-w-0">
               <p className="flex items-center gap-2 text-[15px] font-semibold text-[#1D1D1F]">
                 <span className="truncate">{contact.name}</span>
-                {contact.pending && <PendingDot />}
+                {contact.pending && <PendingDot blocked={contact.blocked} reason={contact.blockedReason} />}
               </p>
               <p className="mt-0.5 text-[12.5px] text-[#6E6E73]">
                 {[contact.role || contact.headline, contact.company].filter(Boolean).join(' · ') ||
@@ -536,7 +540,25 @@ function ContactLinks({ contact }: { contact: ContactDTO }) {
 }
 
 /** Not synced yet. Greyscale, because `--live` means exactly one thing in this app. */
-function PendingDot() {
+/**
+ * The "not on the server yet" chip.
+ *
+ * Two states, because they mean opposite things to the person reading them: grey `local` is
+ * patience (it will go), red `stuck` is a problem (it will not). One chip for both is what let a
+ * refused capture sit in a folder looking perfectly healthy.
+ */
+function PendingDot({ blocked = false, reason }: { blocked?: boolean; reason?: string }) {
+  if (blocked) {
+    return (
+      <span
+        title={reason ?? 'The server refused this capture. Open People to fix or discard it.'}
+        className="inline-flex shrink-0 items-center gap-1 rounded-full bg-[#FFF1F0] px-2 py-0.5 text-[10.5px] font-bold text-[#C7362D]"
+      >
+        <span aria-hidden="true" className="material-symbols-outlined text-[12px]">error</span>
+        stuck
+      </span>
+    );
+  }
   return (
     <span
       title="Saved on this device, not uploaded yet"
@@ -596,7 +618,13 @@ function EditContactSheet({
       open
       onClose={onClose}
       title={contact.name}
-      subtitle={contact.pending ? 'Not uploaded yet' : `Added ${fullDateIST(contact.createdAt)}`}
+      subtitle={
+        contact.pending
+          ? contact.blocked
+            ? 'Could not be uploaded'
+            : 'Not uploaded yet'
+          : `Added ${fullDateIST(contact.createdAt)}`
+      }
       labelledBy="edit-contact-title"
       footer={
         <div className="flex items-center gap-2">
@@ -617,10 +645,22 @@ function EditContactSheet({
     >
       {contact.pending && (
         <div className="mb-4">
-          <Banner tone="warn">
-            This one is still only on this device, so it cannot be edited on the server yet. It will
-            upload on its own.
-          </Banner>
+          {/*
+            Two messages, because only one of them is true at a time. Telling somebody a
+            permanently refused capture "will upload on its own" is the promise this whole fix
+            exists to stop making.
+          */}
+          {contact.blocked ? (
+            <Banner tone="error">
+              {contact.blockedReason ?? 'The server refused this capture.'} It is still saved on
+              this device. Go to People to retry it or discard it.
+            </Banner>
+          ) : (
+            <Banner tone="warn">
+              This one is still only on this device, so it cannot be edited on the server yet. It
+              will upload on its own.
+            </Banner>
+          )}
         </div>
       )}
 
@@ -670,22 +710,20 @@ function ManualAddSheet({
     setSaving(true);
     setError(null);
     const clientId = newClientId();
-    try {
-      const res = await fetch('/api/contacts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...draft, clientId, folderId, capturedVia: 'manual' }),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      onAdded();
-    } catch {
-      // Queue it rather than lose it — same path a scan takes.
-      const { queueContact } = await import('@/lib/scan/outbox');
-      await queueContact({ ...draft, clientId, folderId, capturedVia: 'manual' });
-      onAdded();
-    } finally {
-      setSaving(false);
+
+    // Same path a scan takes — `saveContact` queues rather than losing the person, and tells us
+    // whether the queue can actually deliver it.
+    const { saveContact } = await import('@/lib/scan/outbox');
+    const result = await saveContact({ ...draft, clientId, folderId, capturedVia: 'manual' });
+    setSaving(false);
+
+    if (result.outcome === 'blocked' || result.outcome === 'auth') {
+      // Keep the sheet open with the reason on it. The record is queued either way, but closing
+      // on a refusal is what let a doomed capture disappear behind a success animation.
+      setError(result.reason ?? 'That could not be saved.');
+      return;
     }
+    onAdded();
   }
 
   return (
