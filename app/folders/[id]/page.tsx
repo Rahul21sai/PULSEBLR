@@ -5,7 +5,7 @@ import { use, useCallback, useEffect, useMemo, useState } from 'react';
 import AppShell from '../../components/AppShell';
 import Sheet from '../../components/Sheet';
 import QrCode from '../../components/QrCode';
-import ContactFields, { type ContactDraft } from '../../components/scan/ContactFields';
+import ContactFields, { useTagVocabulary, type ContactDraft } from '../../components/scan/ContactFields';
 import { Banner, Button, ButtonLink, Card, EmptyState, PageHeader } from '../../components/ui';
 import { dayHeading, fullDateIST, relativeTime, timeIST } from '@/lib/format';
 import { newClientId, pendingContacts, startAutoDrain, subscribe } from '@/lib/scan/outbox';
@@ -620,6 +620,7 @@ function EditContactSheet({
   const [draft, setDraft] = useState<ContactDraft>(() => draftFrom(contact));
   const [showAll, setShowAll] = useState(true);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const tagVocabulary = useTagVocabulary();
 
   return (
     <Sheet
@@ -681,6 +682,7 @@ function EditContactSheet({
       )}
 
       <ContactFields
+        tagSuggestions={tagVocabulary}
         draft={draft}
         onChange={setDraft}
         showAll={showAll}
@@ -707,6 +709,7 @@ function ManualAddSheet({
 }) {
   const [draft, setDraft] = useState<ContactDraft>({ name: '' });
   const [showAll, setShowAll] = useState(false);
+  const tagVocabulary = useTagVocabulary();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -759,6 +762,7 @@ function ManualAddSheet({
         </div>
       )}
       <ContactFields
+        tagSuggestions={tagVocabulary}
         draft={draft}
         onChange={setDraft}
         showAll={showAll}

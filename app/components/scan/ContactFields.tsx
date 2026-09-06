@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useMemo, useState } from 'react';
 import { fullDateIST } from '@/lib/format';
 
 /**
@@ -59,12 +60,21 @@ export default function ContactFields({
   onChange,
   showAll = false,
   onToggleShowAll,
+  tagSuggestions = [],
 }: {
   draft: ContactDraft;
   onChange: (next: ContactDraft) => void;
   /** Reveal the rarely-needed fields. Collapsed by default so capture stays fast. */
   showAll?: boolean;
   onToggleShowAll?: () => void;
+  /**
+   * The user's existing tag vocabulary, for type-ahead.
+   *
+   * Passed in rather than fetched here: this component is rendered inside a sheet that may be
+   * mounted and unmounted per person, and one fetch per capture at an event — on the network this
+   * feature exists to cope with — is the wrong place to spend a request.
+   */
+  tagSuggestions?: string[];
 }) {
   const set = <K extends keyof ContactDraft>(key: K, value: ContactDraft[K]) =>
     onChange({ ...draft, [key]: value });
@@ -150,6 +160,12 @@ export default function ContactFields({
           The bit you will have forgotten in a fortnight.
         </span>
       </label>
+
+      <TagField
+        value={draft.tags ?? []}
+        onChange={tags => set('tags', tags)}
+        suggestions={tagSuggestions}
+      />
 
       <div>
         <span className="t-label text-[#8E8E93]">Follow up</span>
@@ -268,4 +284,171 @@ export default function ContactFields({
       )}
     </div>
   );
+}
+
+/**
+ * Tag chips with type-ahead, plus free entry.
+ *
+ * THE POINT OF THE FREE-ENTRY HALF. The requirement was "find the tech companies in Bangalore, and
+ * if the company is not there give me an option to create the tag". The registry covers 375
+ * employers and Bengaluru has thousands, so the fallback is not an edge case — it is how the long
+ * tail gets labelled at all, and a company filter without it would be permanently incomplete with
+ * no way for the user to fix it.
+ *
+ * Suggestions and free entry are the SAME input on purpose. A separate "create tag" button implies
+ * creating is a different act from applying, when for the user it is one thought: this person works
+ * at X. Typing a new tag and picking an existing one both end at "this person is tagged X".
+ *
+ * Canonicalisation is mirrored from `canonicaliseTags()` in `lib/contacts/service.ts` — trim,
+ * collapse whitespace, lowercase, 40 characters — so the chip shows exactly what will be stored.
+ * The server canonicalises again regardless; this exists so the UI never displays one string and
+ * saves another, which would look like a bug the moment a tag came back different.
+ */
+const MAX_TAG_LEN = 40;
+const MAX_TAGS = 20;
+
+function canonicalise(raw: string): string {
+  return raw.trim().replace(/\s+/g, ' ').toLowerCase().slice(0, MAX_TAG_LEN);
+}
+
+function TagField({
+  value,
+  onChange,
+  suggestions,
+}: {
+  value: string[];
+  onChange: (tags: string[]) => void;
+  suggestions: string[];
+}) {
+  const [entry, setEntry] = useState('');
+
+  const matches = useMemo(() => {
+    const typed = canonicalise(entry);
+    const already = new Set(value);
+    // With nothing typed, offer the vocabulary as-is — that is the "pick one you already use" case,
+    // which is the common one and should not require typing a character first.
+    const pool = suggestions.filter(s => !already.has(s));
+    if (!typed) return pool.slice(0, 8);
+    return pool.filter(s => s.includes(typed)).slice(0, 8);
+  }, [entry, suggestions, value]);
+
+  const typed = canonicalise(entry);
+  // Offer creation only when it is genuinely new, so "create" never sits next to an identical
+  // existing chip and make the user wonder which one they are about to get.
+  const canCreate = Boolean(typed) && !suggestions.includes(typed) && !value.includes(typed);
+
+  function add(tag: string) {
+    const clean = canonicalise(tag);
+    if (!clean || value.includes(clean) || value.length >= MAX_TAGS) return;
+    onChange([...value, clean]);
+    setEntry('');
+  }
+
+  return (
+    <div>
+      <span className="t-label text-[#8E8E93]">Tags</span>
+      <p className="mt-0.5 text-[12px] text-[#8E8E93]">
+        Your own labels — an employer we don&apos;t recognise, a team, anything you&apos;ll filter by
+        later.
+      </p>
+
+      {value.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {value.map(tag => (
+            <span
+              key={tag}
+              className="inline-flex items-center gap-1 rounded-full bg-[#EBF4FE] py-1 pl-3 pr-1.5 text-[12.5px] font-semibold text-[#0058B0]"
+            >
+              {tag}
+              <button
+                type="button"
+                onClick={() => onChange(value.filter(t => t !== tag))}
+                aria-label={`Remove tag ${tag}`}
+                className="grid h-5 w-5 place-items-center rounded-full hover:bg-[#D6E7FB]"
+              >
+                <span aria-hidden="true" className="material-symbols-outlined text-[14px]">
+                  close
+                </span>
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+
+      <input
+        value={entry}
+        onChange={e => setEntry(e.target.value)}
+        onKeyDown={e => {
+          // Enter adds; comma too, because typing a list is the natural way to enter several and
+          // waiting for a click after each one is not.
+          if (e.key === 'Enter' || e.key === ',') {
+            e.preventDefault();
+            add(entry);
+          } else if (e.key === 'Backspace' && !entry && value.length) {
+            // The chip-field convention: backspace on an empty input removes the last chip.
+            onChange(value.slice(0, -1));
+          }
+        }}
+        maxLength={MAX_TAG_LEN}
+        placeholder={value.length >= MAX_TAGS ? `Limit of ${MAX_TAGS} tags reached` : 'Add a tag'}
+        disabled={value.length >= MAX_TAGS}
+        className={FIELD_CLASS}
+      />
+
+      {(matches.length > 0 || canCreate) && value.length < MAX_TAGS && (
+        <div className="mt-1.5 flex flex-wrap gap-1.5">
+          {canCreate && (
+            <button
+              type="button"
+              onClick={() => add(entry)}
+              className="inline-flex h-8 items-center gap-1 rounded-full bg-[#1D1D1F] px-3 text-[12px] font-semibold text-white"
+            >
+              <span aria-hidden="true" className="material-symbols-outlined text-[14px]">add</span>
+              Create &ldquo;{typed}&rdquo;
+            </button>
+          )}
+          {matches.map(s => (
+            <button
+              key={s}
+              type="button"
+              onClick={() => add(s)}
+              className="h-8 rounded-full bg-white px-3 text-[12px] font-semibold text-[#1D1D1F] shadow-[inset_0_0_0_1px_var(--hairline)] hover:bg-[#F7F7F9]"
+            >
+              {s}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The user's tag vocabulary, for `tagSuggestions`. Fetched once per page.
+ *
+ * Lives here beside the field it feeds, so the scan sheet and the folder editor cannot end up with
+ * two copies that drift. Per PAGE and not per sheet: `ContactFields` is mounted and unmounted for
+ * every person captured, and a request per capture — on exactly the saturated network this feature
+ * exists to survive — is the wrong place to spend one.
+ *
+ * Fails to an empty list on purpose. Type-ahead is a convenience and free entry works without it,
+ * so a failed fetch must never be able to block recording somebody standing in front of you.
+ */
+export function useTagVocabulary(): string[] {
+  const [tags, setTags] = useState<string[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/contacts/tags')
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => {
+        if (!cancelled && Array.isArray(d?.tags)) setTags(d.tags as string[]);
+      })
+      .catch(() => {
+        /* Offline or signed out. Free entry still works. */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  return tags;
 }

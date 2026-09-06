@@ -26,6 +26,15 @@ const PROTECTED = [
   '/settings',
   '/admin',
   '/folders',
+  /**
+   * The cross-folder People list.
+   *
+   * Matching is by `startsWith`, so check any new entry against the PUBLIC pages before adding it:
+   * `/c/<token>` (somebody's card, opened by a stranger with no account) and `/f/<token>` ("add
+   * yourself to this folder") must never be shadowed. `/people` is safe — no public route begins
+   * with it — the same way `/card` is safe only because `'/c/abc'.startsWith('/card')` is false.
+   */
+  '/people',
   '/scan',
   '/card',
 ];

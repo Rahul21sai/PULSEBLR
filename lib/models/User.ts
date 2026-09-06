@@ -47,6 +47,13 @@ export interface IUser extends Document {
    * process-global shared by every user of the deployment.
    */
   targetCompanies: string[];
+  /**
+   * The user's own tag vocabulary for people. Lowercase, canonicalised by
+   * `canonicaliseTags()` in `lib/contacts/service.ts` — the same function that canonicalises
+   * `Contact.tags`, so a vocabulary entry and the tag stored on a person are always the same
+   * string and the facet cannot split.
+   */
+  contactTags: string[];
   createdAt: Date;
   updatedAt: Date;
 }
@@ -78,6 +85,28 @@ const UserSchema = new Schema<IUser>(
     googleId: { type: String, required: true, unique: true, index: true },
     card: { type: UserCardSchema },
     targetCompanies: { type: [String], default: () => [...DEFAULT_TARGET_COMPANIES] },
+    /**
+     * The user's own tag vocabulary for people they have met.
+     *
+     * WHY IT LIVES HERE RATHER THAN IN A `Tag` COLLECTION. The People page's tag facet is built
+     * from the UNION of this list and `Contact.distinct('tags')`, and each half covers the other's
+     * gap: `distinct` alone cannot represent a tag that has been created but not yet applied to
+     * anybody, and this list alone would miss a tag that arrived on a contact before the
+     * vocabulary knew about it (an offline capture, or the CSV of a folder somebody else set up).
+     *
+     * A `Tag` collection would buy a `{ userId, slug }` unique index and a rename that cascades
+     * over `Contact.tags[]`. That is real machinery, and nothing has asked for rename yet — so
+     * this follows `targetCompanies` exactly: a per-user string list on the User document, read
+     * through one accessor in `lib/contacts/service.ts`.
+     *
+     * Seeded EMPTY, unlike `targetCompanies`. A default tag list would be this app guessing how
+     * somebody labels the people they meet, and every unused seed tag is a facet row with nobody
+     * in it.
+     *
+     * Read it with `ensureUser()`, never `findOne` — a valid session can legitimately have no
+     * `User` row, which is what made `/api/me/card` return 404.
+     */
+    contactTags: { type: [{ type: String, maxlength: 40 }], default: [] },
   },
   { timestamps: true }
 );

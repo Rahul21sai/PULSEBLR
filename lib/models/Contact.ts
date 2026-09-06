@@ -106,7 +106,10 @@ const ContactSchema = new Schema<IContact>(
     phone: { type: String, trim: true },
 
     note: { type: String, trim: true, maxlength: 4000 },
-    tags: { type: [String], default: [] },
+    // `maxlength` on the element type, matching every sibling text field. `canonicaliseTags()`
+    // already caps at 40, so this is the schema-level backstop for a write that somehow bypasses
+    // `pickWritable` — and it stops a tag being the one unbounded string on the document.
+    tags: { type: [{ type: String, maxlength: 40 }], default: [] },
 
     followUpAt: { type: Date },
     followedUp: { type: Boolean, default: false },
@@ -130,6 +133,34 @@ ContactSchema.index({ userId: 1, folderId: 1, scannedAt: -1 });
 ContactSchema.index({ userId: 1, contactKey: 1 });
 ContactSchema.index({ userId: 1, followUpAt: 1 });
 ContactSchema.index({ userId: 1, linkedinSlug: 1 }, { sparse: true });
+
+/**
+ * The cross-folder People page: every person you have met, filterable by employer and by tag.
+ *
+ * `{ userId, folderId, scannedAt }` above cannot serve these. A compound index can only supply a
+ * sort from a prefix, and with `folderId` absent from the filter — which is the entire point of a
+ * cross-folder view — `scannedAt` is no longer reachable, so the query selected on `userId` and
+ * sorted the user's whole contact set in memory. Tolerable at today's row counts and a hard
+ * failure at the top end, because an in-memory sort is capped at 32 MB.
+ *
+ * THREE TRAPS HERE, and the first is the expensive one:
+ *
+ * 1. `tags` AND `companies` MUST NOT SHARE ONE INDEX. MongoDB refuses to index two array fields in
+ *    a single key ("cannot index parallel arrays"), and it refuses at WRITE time on the first
+ *    document that has both — so it presents as contacts failing to save, not as an index that
+ *    would not build. They are two separate indexes on purpose; do not "tidy" them into one.
+ * 2. NO `sparse` ON THESE. Both fields default to `[]`, an empty array indexes as the
+ *    missing-key sentinel, so `sparse` would omit most rows and make the index useless for
+ *    precisely the unfiltered listing it exists to serve. (This is a different failure from the
+ *    `sparse`-on-compound-`unique` bug that capped every user at one folder — same option, second
+ *    distinct way it misleads.)
+ * 3. Only ONE text index is allowed per collection, so search here is a regex path rather than
+ *    `$text` — see `lib/contacts/query.ts` for why that is also the better fit for a filter box
+ *    that has to work mid-typing.
+ */
+ContactSchema.index({ userId: 1, scannedAt: -1 });
+ContactSchema.index({ userId: 1, companies: 1, scannedAt: -1 });
+ContactSchema.index({ userId: 1, tags: 1, scannedAt: -1 });
 
 /**
  * Derive `contactKey`.

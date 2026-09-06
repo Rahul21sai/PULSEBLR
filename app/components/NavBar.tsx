@@ -19,7 +19,18 @@ const NAV_LINKS = [
   { href: '/companies', label: 'Companies', icon: 'domain', mobile: true },
   { href: '/calendar', label: 'Calendar', icon: 'calendar_today', mobile: true },
   { href: '/tracker', label: 'Tracker', icon: 'bookmarks', mobile: true },
-  { href: '/folders', label: 'People', icon: 'groups', mobile: true },
+  /**
+   * "People" now points at the cross-folder list, not the folder list.
+   *
+   * It pointed at `/folders`, which answers "who did I meet at this event" — the right question on
+   * the day and the wrong one a week later, when what you want is "who do I know at Razorpay". The
+   * folder list is still one tap away from `/people` and is where you go to scan into a specific
+   * event, so nothing is buried; the label just now leads to the thing it names.
+   *
+   * `useIsActive` matches by `startsWith`, so `/people` and `/folders` highlight independently and
+   * a visit to a folder does not light up this item. That is intended — they are different screens.
+   */
+  { href: '/people', label: 'People', icon: 'groups', mobile: true },
   { href: '/add-event', label: 'Add', icon: 'add_circle', mobile: false },
   { href: '/settings', label: 'Settings', icon: 'settings', mobile: true },
 ];

@@ -3,10 +3,9 @@ import connectDB from '@/lib/mongodb';
 import Contact from '@/lib/models/Contact';
 import { requireUser } from '@/lib/api-auth';
 import { findOwnedFolder } from '@/lib/contacts/service';
-import { toCsv, exportFilename, type CsvColumn } from '@/lib/scan/csv';
+import { toCsv, exportFilename } from '@/lib/scan/csv';
+import { CONTACT_CSV_COLUMNS } from '@/lib/contacts/export-columns';
 import { buildVCardFile } from '@/lib/contacts/vcf';
-import { fullDateIST, timeIST } from '@/lib/format';
-import type { IContact } from '@/lib/models/Contact';
 
 /**
  * Export one folder — "the sheet".
@@ -23,33 +22,11 @@ import type { IContact } from '@/lib/models/Contact';
  *     every value here originates in a QR code somebody else generated.
  *   - The filename is sanitised, since folder names are user-supplied and land in a
  *     `Content-Disposition` header.
+ *
+ * The CSV column set lives in `lib/contacts/export-columns.ts`, shared with the cross-folder export
+ * at `/api/contacts/export`. It is NOT exported from this file: a route is a framework entry point,
+ * and importing one route from another put every `/api/*` path into a 404 — see that module's header.
  */
-
-/** Dates are formatted in IST via lib/format.ts — never the ambient locale. */
-function scannedAtLabel(contact: IContact): string {
-  return `${fullDateIST(contact.scannedAt)} ${timeIST(contact.scannedAt)}`;
-}
-
-const COLUMNS: CsvColumn<IContact>[] = [
-  { label: 'Name', value: c => c.name },
-  { label: 'Headline', value: c => c.headline },
-  { label: 'Role', value: c => c.role },
-  { label: 'Company', value: c => c.company },
-  { label: 'LinkedIn', value: c => c.linkedin },
-  { label: 'Phone', value: c => c.phone },
-  { label: 'Email', value: c => c.email },
-  { label: 'X', value: c => c.x },
-  { label: 'GitHub', value: c => c.github },
-  { label: 'Website', value: c => c.website },
-  { label: 'How we met', value: c => c.note },
-  { label: 'Tags', value: c => c.tags?.join(', ') },
-  { label: 'Follow up', value: c => (c.followUpAt ? fullDateIST(c.followUpAt) : '') },
-  { label: 'Followed up', value: c => (c.followedUp ? 'yes' : 'no') },
-  { label: 'Target company', value: c => (c.isTargetCompany ? 'yes' : '') },
-  { label: 'Known companies', value: c => c.companies?.join(', ') },
-  { label: 'Captured via', value: c => c.capturedVia },
-  { label: 'Scanned at (IST)', value: c => scannedAtLabel(c) },
-];
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const gate = await requireUser();
@@ -82,7 +59,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
               note: [folder.name, c.note].filter(Boolean).join(' — '),
             }))
           )
-        : toCsv(contacts, COLUMNS);
+        : toCsv(contacts, CONTACT_CSV_COLUMNS);
 
     return new NextResponse(body, {
       status: 200,

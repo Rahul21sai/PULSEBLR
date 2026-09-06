@@ -77,6 +77,46 @@ export function matchesTargetCompany(
   });
 }
 
+/** The most a single tag may be, and the most tags one contact may carry. */
+export const MAX_TAG_LENGTH = 40;
+export const MAX_TAGS_PER_CONTACT = 20;
+
+/**
+ * Canonicalise a tag list. PURE, exported, and the single definition every write path shares.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────────────────────
+ * WHY CANONICALISATION IS NOT COSMETIC HERE. A tag is a FACET KEY: the People page groups and
+ * filters on the exact stored string. So `"AI/ML"` and `"ai/ml"` are not a tidiness problem, they
+ * are two facet entries for one idea, and the filter silently splits that person's cohort in half
+ * with nothing on screen to suggest it happened. `['ibm', 'ibm']` inflates a per-tag count. And an
+ * un-capped tag is an arbitrarily long string in a chip, which renders as a broken row.
+ *
+ * Lowercased on the way in rather than case-preserved. That loses `"IBM"` as a display form, and
+ * it is still the right trade: the alternative is a first-seen-wins display map, which needs a
+ * home, a migration, and a tie-break rule for the day two devices race — all to make a private
+ * label look nicer. A tag is a filter, not a title.
+ *
+ * `pickWritable` is the only caller, which means scan, manual add, PATCH and the offline drain all
+ * get the identical treatment — the property that matters, since a tag typed offline and synced
+ * three hours later must land in the same facet bucket as one typed online.
+ * ─────────────────────────────────────────────────────────────────────────────────────────────
+ */
+export function canonicaliseTags(input: unknown): string[] {
+  if (!Array.isArray(input)) return [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of input) {
+    if (typeof raw !== 'string') continue;
+    // Internal whitespace is collapsed, so "senior  sre" and "senior sre" are one tag.
+    const tag = raw.trim().replace(/\s+/g, ' ').toLowerCase().slice(0, MAX_TAG_LENGTH);
+    if (!tag || seen.has(tag)) continue;
+    seen.add(tag);
+    out.push(tag);
+    if (out.length >= MAX_TAGS_PER_CONTACT) break;
+  }
+  return out;
+}
+
 /**
  * Recompute the two derived fields from stored fields alone.
  *
@@ -87,18 +127,57 @@ export function deriveContactMeta(
     company?: string | null;
     role?: string | null;
     headline?: string | null;
+    /**
+     * ACCEPTED AND DELIBERATELY NOT USED for company resolution. Kept in the signature
+     * because callers pass the whole contact and because removing it would read as an
+     * oversight; see the warning below for why it must not be forwarded.
+     */
     tags?: string[] | null;
   },
   targetCompanies: readonly string[]
 ): { companies: string[]; isTargetCompany: boolean } {
   return {
-    // `organizer` is the registry's strongest field, and a contact's stated employer is
-    // exactly that kind of claim. `headline` goes in `title`, which the resolver restricts
-    // to distinctive names only.
+    /**
+     * `organizer` is the registry's strongest field, and a contact's stated employer is
+     * exactly that kind of claim. `headline` goes in `title`, which the resolver restricts
+     * to distinctive names only.
+     *
+     * ─────────────────────────────────────────────────────────────────────────────────────
+     * `tags` IS NOT PASSED, AND THAT IS THE WHOLE POINT — do not "fix" this by adding it back.
+     *
+     * It used to be `tags: fields.tags ?? null`, and that quietly defeated the feature user
+     * tags exist for. `resolve.ts` scores a tag match at 60 with NO strength gate — above the
+     * title branch's 50, which IS gated on `strength === 'distinctive'`. So for a contact, a
+     * free-text label the user typed counted as *stronger* company evidence than an event
+     * title, and every `ambiguous` name in the registry became reachable from it. Measured
+     * against the real resolver:
+     *
+     *     ['embedded', 'arm'] → ['Arm']       ['shell']  → ['Shell']
+     *     ['slice']           → ['slice']     ['target'] → ['Target']
+     *     ['visa']            → ['Visa']      ['setu']   → ['Setu']
+     *
+     * A hardware engineer tagged `embedded, arm` was filed under the company Arm. This is the
+     * same false-attribution class as the documented `Docker` → "SriVidya Tradition" leak,
+     * arriving from the one direction `strength` cannot defend against.
+     *
+     * It is also self-defeating. Custom tags exist PRECISELY for employers the registry does
+     * not know — that is the requirement they were built for — and forwarding them laundered
+     * that free text back into the registry facet, so the one dimension meant to be
+     * trustworthy became the one polluted by guesses.
+     *
+     * The two `tags` are not the same thing despite the shared name: on an Event they are
+     * organiser-supplied topic tags harvested from the source, where the score of 60 is
+     * reasonable. On a Contact they are one person's private labels. Severing them here is
+     * the honest fix; gating the resolver on `distinctive` would only narrow the leak.
+     *
+     * Run `scripts/backfill-contact-companies.ts --apply` after changing this — stored rows
+     * keep whatever the old rule gave them.
+     * ─────────────────────────────────────────────────────────────────────────────────────
+     */
     companies: resolveCompanies({
       organizer: fields.company ?? null,
       title: fields.headline ?? null,
-      tags: fields.tags ?? null,
+      tags: null,
     }),
     isTargetCompany: matchesTargetCompany(fields, targetCompanies),
   };
@@ -310,6 +389,192 @@ export async function listFolders(userId: string, includeArchived = false): Prom
   );
 }
 
+/* ────────────────────────────── cross-folder reads ────────────────────────────── */
+
+/**
+ * `contactKey` → how many DISTINCT EVENTS that person was met at.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────────────────────
+ * WHY THIS EXISTS RATHER THAN REUSING `detectRepeatConnections()`.
+ *
+ * That function is the dashboard's view and is wrong for this one in two structural ways. It
+ * filters to `eventIds.size >= 2`, so it knows nothing about anybody met once and cannot answer
+ * "met 1 time" versus "met 3 times" from a single call. And it returns names and keys with no
+ * `Contact._id`, so badging rows would mean matching its output back to contacts BY NAME — which
+ * is the exact defect the whole `contactKey` design exists to remove (two people called Rahul
+ * collapsing into one, one Rahul spelled two ways splitting into two).
+ *
+ * THE EVENT IS `folder.eventId ?? folder._id`, NOT the folder. Keying on the folder alone counts
+ * two folders for one event as two events — the same mistake `detectRepeatConnections` had to fix
+ * — and since `ensureFolderForEvent()` now links folders to corpus events, the better branch is
+ * finally reachable for folders created that way. Folders made by hand still have `eventId: null`
+ * and fall back to their own id, which is correct: an unlinked folder is the only identity it has.
+ * ─────────────────────────────────────────────────────────────────────────────────────────────
+ */
+export async function contactKeyEventCounts(userId: string): Promise<Map<string, number>> {
+  const rows = await Contact.aggregate<{ _id: string; count: number }>([
+    { $match: { userId } },
+    {
+      $lookup: {
+        from: 'folders',
+        localField: 'folderId',
+        foreignField: '_id',
+        as: 'folder',
+      },
+    },
+    {
+      $addFields: {
+        // `$ifNull` handles both a hand-made folder (eventId absent) and a DANGLING folderId —
+        // `pruneStale()` deletes events on every scrape without touching what references them, and
+        // a folder whose lookup returns nothing must still count as one event, not zero.
+        eventKey: { $ifNull: [{ $arrayElemAt: ['$folder.eventId', 0] }, '$folderId'] },
+      },
+    },
+    { $group: { _id: '$contactKey', events: { $addToSet: '$eventKey' } } },
+    { $project: { count: { $size: '$events' } } },
+  ]);
+
+  return new Map(rows.filter(r => r._id).map(r => [r._id, r.count]));
+}
+
+/**
+ * Attach the folder each person was met in.
+ *
+ * "Where did I meet them" is the single most valuable column on a combined list, and
+ * `contactToDTO` emits only a bare `folderId`. The alternatives were both worse: N fetches of
+ * `/api/folders/[id]`, or the client holding the folder list and joining by id — which breaks for
+ * an ARCHIVED folder, because `listFolders()` excludes those by default, so people met at an
+ * archived event would show no location at all.
+ *
+ * One `Folder.find` over the distinct ids on the page plus an in-memory join — the same
+ * one-round-trip discipline `listFolders()` uses for its counts.
+ */
+export async function attachFolderNames(contacts: ContactDTO[]): Promise<ContactDTO[]> {
+  const ids = [...new Set(contacts.map(c => c.folderId).filter(Boolean))];
+  if (!ids.length) return contacts;
+
+  const folders = await Folder.find({ _id: { $in: ids } })
+    .select('name eventDate eventId')
+    .lean();
+  const byId = new Map(folders.map(f => [String(f._id), f]));
+
+  return contacts.map(c => {
+    const folder = byId.get(c.folderId);
+    return {
+      ...c,
+      // Null rather than a placeholder when the folder is gone: a dangling reference is a normal
+      // state here (see `pruneStale`), and inventing "Unknown folder" would hide that.
+      folderName: folder?.name ?? null,
+      folderEventDate: folder?.eventDate ? new Date(folder.eventDate).toISOString() : null,
+    };
+  });
+}
+
+/* ────────────────────────────── tag vocabulary ────────────────────────────── */
+
+/**
+ * Every tag this user can pick from: their stored vocabulary UNIONED with what is actually on
+ * their contacts.
+ *
+ * Both halves are necessary and each covers a gap the other cannot:
+ *
+ *   - `User.contactTags` alone misses a tag that reached a contact without going through the
+ *     vocabulary — an offline capture drained later, a contact imported by another route, or a
+ *     tag applied before this field existed. Those tags are real and filterable, so a facet that
+ *     omitted them would show a chip list that does not match the data.
+ *   - `Contact.distinct('tags')` alone cannot represent a tag that has been CREATED but not yet
+ *     applied to anybody, which is exactly the state right after somebody makes one — so a
+ *     freshly created tag would vanish until it was used, which reads as the create button not
+ *     working.
+ *
+ * `distinct` is used rather than an aggregate because it is served straight off the
+ * `{ userId, tags, scannedAt }` index and returns a small set; per-tag COUNTS are a separate
+ * question answered by the facet route, which needs them for one query anyway.
+ */
+export async function getContactTags(userId: string): Promise<string[]> {
+  const [user, used] = await Promise.all([
+    User.findOne({ googleId: userId }).select('contactTags').lean(),
+    Contact.distinct('tags', { userId }) as Promise<string[]>,
+  ]);
+
+  const all = new Set<string>();
+  for (const tag of canonicaliseTagVocabulary([...(user?.contactTags ?? []), ...used])) {
+    all.add(tag);
+  }
+  return [...all].sort();
+}
+
+/**
+ * Canonicalise a vocabulary list.
+ *
+ * Separate from `canonicaliseTags` only in its cap: a vocabulary is a whole list of labels, not the
+ * handful on one person, so the 20-tag ceiling that is right for a contact would silently truncate
+ * it. Everything else — trimming, whitespace collapse, lowercasing, dedupe, the 40-character cap —
+ * is deliberately identical, because a vocabulary entry and the tag stored on a person must be the
+ * same string or the facet splits.
+ */
+export function canonicaliseTagVocabulary(input: unknown): string[] {
+  if (!Array.isArray(input)) return [];
+  const seen = new Set<string>();
+  for (const raw of input) {
+    if (typeof raw !== 'string') continue;
+    const tag = raw.trim().replace(/\s+/g, ' ').toLowerCase().slice(0, MAX_TAG_LENGTH);
+    if (tag) seen.add(tag);
+  }
+  return [...seen].slice(0, MAX_TAG_VOCABULARY);
+}
+
+/** A generous ceiling on one user's tag vocabulary — high enough never to bite in real use. */
+export const MAX_TAG_VOCABULARY = 300;
+
+/**
+ * Add tags to the user's vocabulary. Idempotent.
+ *
+ * `ensureUser()` rather than `findOne`: a valid session can legitimately have no `User` row —
+ * `User.email` is unique, so the sign-in upsert throws E11000 whenever an email already exists
+ * under a different googleId, and the dev provider hits that on every sign-in for an account that
+ * has also used real Google. That is what made `/api/me/card` return 404 for a perfectly good
+ * session, and creating a tag is not worth losing to the same hole.
+ */
+export async function addContactTags(userId: string, tags: unknown): Promise<string[]> {
+  const incoming = canonicaliseTagVocabulary(tags);
+  if (!incoming.length) return getContactTags(userId);
+
+  const user = await ensureUser(userId);
+  if (!user) return incoming;
+
+  const merged = canonicaliseTagVocabulary([...(user.contactTags ?? []), ...incoming]);
+  user.contactTags = merged;
+  await user.save();
+  return getContactTags(userId);
+}
+
+/**
+ * Remove a tag from the vocabulary AND from every contact carrying it.
+ *
+ * Both halves, because doing only the first leaves the tag visible in the facet forever (it comes
+ * back through the `distinct` union) while appearing to have been deleted — and doing only the
+ * second leaves a vocabulary entry with nobody in it. There is no rename; that is the feature a
+ * `Tag` collection would be for, and nothing has asked for it.
+ */
+export async function removeContactTag(userId: string, tag: string): Promise<void> {
+  const [canonical] = canonicaliseTagVocabulary([tag]);
+  if (!canonical) return;
+
+  const user = await ensureUser(userId);
+  if (user) {
+    user.contactTags = (user.contactTags ?? []).filter(t => t !== canonical);
+    await user.save();
+  }
+
+  // `updateMany` skips document middleware, which is normally forbidden on Contact because the
+  // `contactKey` hook lives in `pre('validate')`. It is safe HERE and only here: `contactKey` is
+  // derived from linkedinSlug/email/phone/name and `$pull` on `tags` cannot touch any of them, so
+  // there is nothing for the hook to recompute. Doing this document-by-document would be hundreds
+  // of round trips to remove one label.
+  await Contact.updateMany({ userId, tags: canonical }, { $pull: { tags: canonical } });
+}
+
 /* ────────────────────────────── contacts ────────────────────────────── */
 
 /**
@@ -397,13 +662,7 @@ export function pickWritable(body: Record<string, unknown>): ContactWritable {
   }
 
   if ('tags' in body) {
-    out.tags = Array.isArray(body.tags)
-      ? body.tags
-          .filter((t): t is string => typeof t === 'string')
-          .map(t => t.trim())
-          .filter(Boolean)
-          .slice(0, 20)
-      : [];
+    out.tags = canonicaliseTags(body.tags);
   }
 
   if ('followUpAt' in body) {

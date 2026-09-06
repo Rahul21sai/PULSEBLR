@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import QrScanner from '../components/scan/QrScanner';
 import Sheet from '../components/Sheet';
-import ContactFields, { type ContactDraft } from '../components/scan/ContactFields';
+import ContactFields, { useTagVocabulary, type ContactDraft } from '../components/scan/ContactFields';
 import { Banner, Button, ButtonLink } from '../components/ui';
 import { parseScanPayload } from '@/lib/scan/parse-payload';
 import { capturedViaFor, type ParsedScan } from '@/lib/scan/types';
@@ -63,6 +63,8 @@ function ScanScreen() {
   });
   const [toast, setToast] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  // One fetch for the page; the capture sheet is remounted per person.
+  const tagVocabulary = useTagVocabulary();
 
   /**
    * The payload just saved, and when.
@@ -446,6 +448,7 @@ function ScanScreen() {
           )}
 
           <ContactFields
+            tagSuggestions={tagVocabulary}
             draft={draft}
             onChange={setDraft}
             showAll={showAllFields}

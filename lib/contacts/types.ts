@@ -78,6 +78,24 @@ export interface ContactDTO {
    */
   blocked?: boolean;
   blockedReason?: string;
+
+  /**
+   * Where you met them, joined on by `attachFolderNames()` for the cross-folder People list.
+   *
+   * `null` rather than absent when the folder is gone — a dangling `folderId` is a normal state
+   * (`pruneStale()` deletes events every scrape without touching what references them), and it is
+   * worth showing as unknown rather than papering over.
+   */
+  folderName?: string | null;
+  folderEventDate?: string | null;
+  /**
+   * How many distinct EVENTS this person was met at, from `contactKeyEventCounts()`.
+   *
+   * The signal `Contact.contactKey` was built for and which, until now, was surfaced nowhere in
+   * the scan UI at all. Counted per event rather than per folder, so two folders for one event do
+   * not read as two meetings.
+   */
+  metCount?: number;
 }
 
 /** The editable fields a capture card or the table's inline editor may write. */
