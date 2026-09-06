@@ -34,7 +34,19 @@ type NavLink = {
 
 const NAV_LINKS: NavLink[] = [
   { href: '/', label: 'Events', icon: 'explore', mobile: true },
-  { href: '/companies', label: 'Companies', icon: 'domain', mobile: true },
+  /**
+   * COMPANIES IS NOT IN THE PUBLIC NAV. It moved to the admin console.
+   *
+   * The directory deliberately lists companies with NOTHING scheduled, and hosts the registry does
+   * not recognise, so that the coverage gap is visible rather than hidden. That is an operator's
+   * view of the corpus, not a reader's: measured today, 44 of 375 companies have any events, so a
+   * visitor met a mostly-empty directory and no way to tell that was intentional.
+   *
+   * THE ROUTE IS STILL PUBLIC AND STILL WORKS, deliberately — `app/events/[id]/page.tsx` links to
+   * `/companies?q=<name>` from every event that names a company, and gating the page would turn
+   * that into a sign-in wall for a reader following a link about the event they are looking at.
+   * This removes a top-level destination, not a capability.
+   */
   { href: '/calendar', label: 'Calendar', icon: 'calendar_today', mobile: true },
   { href: '/tracker', label: 'Tracker', icon: 'bookmarks', mobile: true },
   /**

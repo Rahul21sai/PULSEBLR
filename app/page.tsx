@@ -164,9 +164,18 @@ export default function Home() {
       const category = p.get('category');
       const area = p.get('area');
       const format = p.get('format');
-      // techOnly defaults to TRUE, so only an explicit "false" turns it off — otherwise a
-      // link without the param would silently flip the default.
-      const techOnly = p.get('techOnly');
+      /**
+       * `techOnly` IS NO LONGER READ FROM THE URL, and that is the point of removing the toggle.
+       *
+       * It used to accept an explicit `?techOnly=false`. With the control gone from the rail, still
+       * honouring the parameter would leave the escape hatch fully working for anyone who typed the
+       * URL or followed an old link — the feed would quietly become 74% concerts and treks again,
+       * with nothing on screen to explain why or to turn it back off. A UI decision that a query
+       * string can override is not a decision.
+       *
+       * The parameter still exists on `/api/events` and in `buildEventFilter`, where /admin uses
+       * it. This is the reader's feed choosing not to expose it.
+       */
 
       /*
        * RETURN `prev` UNCHANGED WHEN NOTHING CAME FROM THE URL. This spread used to run
@@ -190,7 +199,9 @@ export default function Home() {
           format: format ?? prev.format,
           freeOnly: p.get('isFree') === 'true' ? true : prev.freeOnly,
           foodOnly: p.get('hasFood') === 'yes' ? true : prev.foodOnly,
-          techOnly: techOnly === null ? prev.techOnly : techOnly !== 'false',
+          // Always true. Not `prev.techOnly` — that would still carry a false through a
+          // client-side navigation once anything else set it.
+          techOnly: true,
         };
         const unchanged =
           next.format === prev.format &&
@@ -205,6 +216,30 @@ export default function Home() {
 
       // Only now may the URL be written back.
       hydratedFromUrl.current = true;
+
+      /**
+       * STRIP A LEGACY `techOnly` FROM THE ADDRESS BAR.
+       *
+       * Done here rather than left to the URL writer below, because that effect cannot reach this
+       * case: its deps are `[query, when, sort, view, filters]`, and hydration does not change any
+       * of them — `techOnly` is pinned true in the initial state, so the read above computes an
+       * identical object and returns `prev`. The writer therefore runs once BEFORE hydration
+       * (returning early at the guard) and never again, leaving the param sitting there.
+       *
+       * It has to go rather than merely be ignored: an old bookmark or shared link reading
+       * `?techOnly=false` would show a tech-only feed while the URL claimed otherwise, and that
+       * URL then propagates every time it is copied.
+       */
+      if (p.has('techOnly')) {
+        const cleaned = new URLSearchParams(window.location.search);
+        cleaned.delete('techOnly');
+        const qs = cleaned.toString();
+        window.history.replaceState(
+          null,
+          '',
+          `${window.location.pathname}${qs ? `?${qs}` : ''}`
+        );
+      }
     }, 0);
     return () => clearTimeout(timer);
   }, []);
@@ -224,8 +259,9 @@ export default function Home() {
    * when copied matters far more than one that is undoable.
    *
    * Only non-default values are written, so a clean view stays a clean "/" rather than a
-   * wall of redundant params. techOnly is the exception: it defaults to true, so turning it
-   * OFF is what has to be recorded.
+   * wall of redundant params. `techOnly` used to be the exception — it defaulted to true, so
+   * turning it OFF had to be recorded — and it is no longer written at all, because it can no
+   * longer be turned off.
    */
   useEffect(() => {
     // Never write before the initial read has landed, or a shared link erases itself.
@@ -246,7 +282,10 @@ export default function Home() {
     if (filters.format) p.set('format', filters.format);
     if (filters.freeOnly) p.set('isFree', 'true');
     if (filters.foodOnly) p.set('hasFood', 'yes');
-    if (!filters.techOnly) p.set('techOnly', 'false');
+    // Never serialised. It is unconditional now, so writing it would only produce a parameter
+    // that looks like a choice and is not one — and a shared link carrying `techOnly=false`
+    // would be a promise the feed no longer keeps.
+
 
     const qs = p.toString();
     const next = `${window.location.pathname}${qs ? `?${qs}` : ''}`;

@@ -38,8 +38,10 @@ export function countActive(filters: FilterState): number {
     filters.companies.length +
     (filters.format ? 1 : 0) +
     (filters.freeOnly ? 1 : 0) +
-    (filters.foodOnly ? 1 : 0) +
-    (filters.techOnly ? 1 : 0)
+    (filters.foodOnly ? 1 : 0)
+    // `techOnly` is deliberately NOT counted. It is unconditional now, so counting it would show
+    // "1 filter active" on a completely unfiltered feed, next to a Clear button that cannot clear
+    // it — a control that lies about what it will do.
   );
 }
 
@@ -82,14 +84,27 @@ export default function FilterRail({
       <section>
         <h2 className="text-label-sm uppercase tracking-widest text-[#86868B] mb-2.5">Quick filters</h2>
         <div className="flex flex-wrap gap-2">
-          {/* On by default. Labelled as the thing it lets you do — see everything —
-              because a toggle that is already active reads as a filter you can drop. */}
-          <Toggle
-            label={filters.techOnly ? 'Tech only' : 'Show all events'}
-            count={totals?.tech}
-            active={filters.techOnly}
-            onClick={() => onChange({ ...filters, techOnly: !filters.techOnly })}
-          />
+          {/*
+            THE "SHOW ALL EVENTS" TOGGLE IS GONE, AND `techOnly` IS NOW UNCONDITIONAL.
+            ─────────────────────────────────────────────────────────────────────────────────────
+            This app is for finding Bengaluru software and hardware engineering events worth
+            attending to make professional connections. The scraper still ingests the whole city,
+            because one broad pass is cheaper than many narrow ones and the classifier sorts it
+            out — but the RESULT of that pass is not something a reader should be offered.
+            Measured on the live corpus: 1158 upcoming events, 297 of them tech. So the escape
+            hatch led to a view that was 74% concerts, treks, comedy and book clubs.
+
+            A toggle is not neutral. Offering it says the product is unsure what it is about, and
+            it was the one control that could turn a sharp product into a general listings site in
+            a single tap.
+
+            NOTHING WAS DELETED. The 861 non-tech events are still stored, still scraped and still
+            listed in /admin — where they are needed, both to correct a mis-tag and because
+            non-tech is where the junk to remove lives. `techOnly` also stays in the API and in
+            `buildEventFilter`: /admin uses it, and removing a query parameter to express a UI
+            decision would be the wrong layer.
+            ─────────────────────────────────────────────────────────────────────────────────────
+          */}
           <Toggle
             label="Free"
             count={totals?.free}
@@ -170,7 +185,12 @@ export default function FilterRail({
           <SkeletonList rows={8} />
         ) : (
           <div className="flex flex-col gap-3.5">
-            {CATEGORY_GROUPS.map(group => {
+            {/*
+              `other` ("Everything else") is filtered out: with `techOnly` unconditional, none of
+              its categories can ever match, so the group could only ever render empty or — worse —
+              show a count that clicking would not honour.
+            */}
+            {CATEGORY_GROUPS.filter(group => group.id !== 'other').map(group => {
               // Facet counts decide what to show; the group supplies only order and
               // grouping. A category with no events is omitted entirely here —
               // unlike the format grid, where a fixed 2x2 must not reflow — because

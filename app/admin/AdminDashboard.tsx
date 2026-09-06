@@ -164,6 +164,19 @@ export default function AdminDashboard({
                 <code className="font-mono text-[12px]">ADMIN_EMAILS</code>.
               </p>
             </div>
+            {/*
+              The companies directory, which used to be a top-level public tab. It shows companies
+              with nothing scheduled and hosts the registry does not recognise — a coverage-gap view,
+              which is an operator's question rather than a reader's. A LINK, not a tab: it is a
+              separate page, and the tabs above switch panels within this one.
+            */}
+            <Link
+              href="/companies"
+              className="shrink-0 flex items-center gap-1.5 rounded-full border border-[#e5e5ea] bg-white px-4 py-2 text-[12.5px] font-semibold text-[#1D1D1F] hover:bg-[#f3f3f5] transition-colors"
+            >
+              <span aria-hidden="true" className="material-symbols-outlined text-[15px]">domain</span>
+              Companies
+            </Link>
             <button
               type="button"
               onClick={load}
