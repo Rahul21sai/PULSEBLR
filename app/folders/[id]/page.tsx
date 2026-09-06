@@ -31,6 +31,8 @@ export default function FolderPage({ params }: { params: Promise<{ id: string }>
   const [editing, setEditing] = useState<ContactDTO | null>(null);
   const [addingManually, setAddingManually] = useState(false);
   const [showQr, setShowQr] = useState(false);
+  // The other folders, for the move picker in the edit sheet.
+  const [otherFolders, setOtherFolders] = useState<FolderDTO[]>([]);
 
   const load = useCallback(async () => {
     try {
@@ -56,6 +58,24 @@ export default function FolderPage({ params }: { params: Promise<{ id: string }>
     const timer = setTimeout(load, 0);
     return () => clearTimeout(timer);
   }, [load]);
+
+  useEffect(() => {
+    // One fetch for the page. Archived ones included: moving somebody into a folder you have tidied
+    // away is a legitimate thing to want, and excluding them would silently drop options.
+    // The param is `archived`, NOT `includeArchived` — the route reads
+    // `searchParams.get('archived')`, so the wrong name fails silently by returning fewer folders.
+    const timer = setTimeout(() => {
+      void fetch('/api/folders?archived=true')
+        .then(r => (r.ok ? r.json() : null))
+        .then(d => {
+          if (d?.folders) setOtherFolders((d.folders as FolderDTO[]).filter(f => f._id !== id));
+        })
+        .catch(() => {
+          /* Offline: the picker simply does not render. */
+        });
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [id]);
 
   /**
    * Merge in anything still sitting in the outbox for this folder, flagged `pending`.
@@ -156,6 +176,36 @@ export default function FolderPage({ params }: { params: Promise<{ id: string }>
     } catch {
       setContacts(previous);
       setError('Could not save that change. Your edit was undone, nothing else.');
+      setTimeout(() => setError(null), 4000);
+    }
+  }
+
+  /**
+   * Move a SYNCED contact to another folder.
+   *
+   * `PATCH /api/contacts/[id]` has always validated that the destination folder is yours — this was
+   * the last thing on the scan feature's "does not do yet" list that was pure UI. Only a queued
+   * capture could be moved before, and only from the stuck-captures list, because
+   * `folder-not-found` recovery needed it.
+   *
+   * NOT optimistic, unlike the other writes here. The row leaves this folder entirely on success, so
+   * an optimistic remove followed by a rollback would make it flicker out and back in; and the
+   * contact is somebody's real details, so "it moved" should mean the server said so.
+   */
+  async function moveContact(contact: ContactDTO, folderId: string) {
+    try {
+      const res = await fetch(`/api/contacts/${contact._id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ folderId }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setEditing(null);
+      await load();
+      setNotice(`Moved ${contact.name} to another folder.`);
+      setTimeout(() => setNotice(null), 4000);
+    } catch {
+      setError('Could not move that person.');
       setTimeout(() => setError(null), 4000);
     }
   }
@@ -369,6 +419,8 @@ export default function FolderPage({ params }: { params: Promise<{ id: string }>
           onClose={() => setEditing(null)}
           onSave={draft => saveContact(editing, draft)}
           onDelete={() => deleteContact(editing)}
+          otherFolders={otherFolders}
+          onMove={folderId => moveContact(editing, folderId)}
         />
       )}
 
@@ -611,11 +663,15 @@ function EditContactSheet({
   onClose,
   onSave,
   onDelete,
+  otherFolders,
+  onMove,
 }: {
   contact: ContactDTO;
   onClose: () => void;
   onSave: (draft: ContactDraft) => void;
   onDelete: () => void;
+  otherFolders: FolderDTO[];
+  onMove: (folderId: string) => void;
 }) {
   const [draft, setDraft] = useState<ContactDraft>(() => draftFrom(contact));
   const [showAll, setShowAll] = useState(true);
@@ -679,6 +735,36 @@ function EditContactSheet({
             Open on LinkedIn
           </ButtonLink>
         </div>
+      )}
+
+      {/*
+        MOVE TO ANOTHER FOLDER — only for a SYNCED contact.
+        A queued one has never reached the server, so there is nothing to PATCH; those are moved from
+        the stuck-captures list on /folders, which rewrites the record in IndexedDB instead.
+      */}
+      {!contact.pending && otherFolders.length > 0 && (
+        <label className="mb-4 block">
+          <span className="t-label text-[#8E8E93]">Move to another folder</span>
+          <select
+            defaultValue=""
+            aria-label={`Move ${contact.name} to another folder`}
+            onChange={e => {
+              if (e.target.value) onMove(e.target.value);
+            }}
+            className="mt-1.5 h-11 w-full rounded-xl bg-[#F7F7F9] px-3.5 text-[15px] text-[#1D1D1F] outline-none focus:shadow-[inset_0_0_0_2px_var(--blue)]"
+          >
+            <option value="">Stay in this folder</option>
+            {otherFolders.map(f => (
+              <option key={f._id} value={f._id}>
+                {f.name}
+                {f.archivedAt ? ' (archived)' : ''}
+              </option>
+            ))}
+          </select>
+          <span className="mt-1 block text-[12px] text-[#8E8E93]">
+            Moves them straight away — the other fields here still need Save.
+          </span>
+        </label>
       )}
 
       <ContactFields

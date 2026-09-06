@@ -163,16 +163,22 @@ verified. Duplicating those as unit tests would only produce slow, flaky copies.
 | `cleanup-duplicate-clusters.ts` | Collapse documents sharing a `clusterKey`; keeps the most complete, repoints `TrackerEntry` rows, gap-fills only. Hand-entered events never enter a cluster group — their `clusterKey` is owner-namespaced AND the `$match` excludes them, because either outcome here is data loss (the user's event deleted, or the PUBLIC one deleted in favour of a row only one person can see). **Destructive** — dry by default, `--apply` to write. |
 | `cleanup-past.ts` / `cleanup-seed.ts` / `cleanup-dryrun.ts` | Older one-off cleanups, kept for reference. `cleanup-past.ts` is scoped to scraped events only. |
 
-> **OUTSTANDING as of 2026-08-24: `cleanup-non-bengaluru.ts --apply` has NOT been run.** The script
-> is fixed and verified; the database is not cleaned. Its dry run reports **39 rows total, 29
-> upcoming, 10 in the default tech feed**, and all of them are still stored — including
-> `KONG API + AI Summit 2026` (`city: Los Angeles`, `connectionScore` 100), which
-> `diag-offcity.ts` ranks **#2 in the entire tech feed**. Do not read "the off-city work landed" as
-> "the feed is clean": the ingest gate stops new arrivals from the next scrape onward, and nothing
-> has deleted the backlog. Run `diag-offcity.ts` first — it names all 29 rejects and all 6 spares —
-> then `--apply`.
+> **RESOLVED 2026-09-06 — the off-city backlog is gone, and `--apply` was never needed.** Measured
+> today: `cleanup-non-bengaluru.ts` dry-runs at **0 rows** over 1308 stored events, and
+> `diag-offcity.ts` reports `gate rejects across ALL rows 0` with `no off-city row is in the tech
+> feed at all`. Both agree, and each computes it independently — the cleanup selects on
+> `offCityReason()` while the diagnostic ranks through `buildSort('connections')`.
 >
-> Why it cannot be waited out: rejecting a re-sighting stops `lastSeenAt` refreshing, so each
+> **It drained on its own, exactly as the paragraph below predicted.** The backlog was 39 rows on
+> 2026-08-24, including `KONG API + AI Summit 2026` (`city: Los Angeles`) sitting at #2 in the tech
+> feed. Every one was frozen — a rejected re-sighting never refreshes `lastSeenAt` — so `pruneStale()`
+> removed each a week after its own start date. Twelve days later they are all past that line.
+>
+> Keep the note below anyway. "They drain **after** being shown" is the cost that was actually paid
+> here: those rows WERE in the feed for the fortnight it took, and the only reason waiting worked is
+> that nobody minded. A future backlog of the same shape should be applied, not waited out.
+>
+> Why waiting is not a strategy: rejecting a re-sighting stops `lastSeenAt` refreshing, so each
 > stored row is **frozen** — a later scrape can no longer correct or cancel it — and `pruneStale()`
 > only removes it a week after its own start date. They drain **after** being shown.
 
@@ -1012,9 +1018,12 @@ and exposes no page↔worker channel.
 >   name/note/venue/eventDate/archive and `DELETE` cascades its contacts; the UI calls neither. The
 >   only `PATCH` calls anywhere in `app/` are `app/folders/[id]/page.tsx:138` and `:171`, both to
 >   `/api/contacts/`.
-> - **No move-contact-between-folders** for a SYNCED contact, though `PATCH /api/contacts/[id]`
->   already validates that the destination folder is yours. (A *queued* one can now be moved, from
->   the stuck-captures list on `/folders` — that was needed to make `folder-not-found` recoverable.)
+> - ~~**No move-contact-between-folders**~~ **BUILT 2026-09-06** — a folder picker in the edit sheet
+>   on `app/folders/[id]`, for a SYNCED contact. It moves immediately rather than on Save, and is
+>   hidden for a *queued* capture: that has never reached the server so there is nothing to PATCH,
+>   and those are moved from the stuck-captures list on `/folders` instead, which rewrites the record
+>   in IndexedDB. Archived folders are offered too — the list route's param is `archived`, NOT
+>   `includeArchived`, and the wrong name fails silently by returning fewer folders.
 > - ~~**`Contact.tags[]` has no input.**~~ **BUILT** — `TagField` in `ContactFields.tsx`, so it
 >   appears in both the capture sheet and the folder editor from one definition, plus bulk apply on
 >   `/people`. Tags are canonicalised by `canonicaliseTags()` because a tag is a facet KEY.
@@ -1052,16 +1061,30 @@ and exposes no page↔worker channel.
 > so it now creates a folder and had to learn to delete it (matched on `eventId`, never on name,
 > which would also delete a hand-made folder for the same event).
 
-> **`public/sw.js` v3 IS UNVERIFIED, AND CANNOT BE VERIFIED UNDER `npm run dev`.** `app/layout.tsx`
-> unregisters every service worker and deletes every cache in development, so offline behaviour
-> needs `npm run build && npm start` with `NEXTAUTH_URL` set. Three checks constitute verification:
-> (1) offline, a private API GET such as `/api/folders` must **fail** rather than serve a cached
-> copy — that is the fix working, and losing offline reads of private data is deliberate; (2) after
-> `signOut()`, `caches.keys()` is empty; (3) sign out, sign in with a **different** Google account,
-> go offline, and confirm the first account's contacts are unreadable — the leak v3 exists to
-> close. Two smaller gaps: `/tracker` was never re-checked under the global `viewportFit: 'cover'`,
-> and `lib/security/rate-limit.ts` was never driven to a live 429 (11 rapid POSTs to
-> `/api/intake/<token>` should give ten 201s then a 429 carrying `Retry-After`).
+> **`public/sw.js` CANNOT BE VERIFIED UNDER `npm run dev`.** `app/layout.tsx` unregisters every
+> service worker and deletes every cache in development, so offline behaviour needs a production
+> server — `node scripts/start-verify.js` serves one on its own port and build dir. Three checks
+> constitute verification: (1) a private API GET such as `/api/folders` or `/api/events` must never
+> be written to a cache, so offline it **fails** rather than serving a copy — that is the fix
+> working, and losing offline reads of private data is deliberate; (2) after `signOut()`,
+> `caches.keys()` is empty; (3) sign out, sign in with a **different** Google account, go offline,
+> and confirm the first account's contacts are unreadable — the leak this exists to close.
+>
+> **STATUS 2026-09-06 (v4): checks 1 and 2 PASS, check 3 is still not done.** Measured against a
+> production build with the worker in control: the only cache present was `pulseblr-static-v4` (no
+> v3 name survived the bump), fetching `/api/events` and `/api/contacts` through the controlling
+> worker left **zero** private entries in it while `/manifest.json` and the icons were cached, and a
+> `purge-caches` message emptied `caches.keys()`.
+>
+> Check 3 remains open and cannot be done the same way: a production build has no `DEV_LOGIN` — that
+> guard is `NODE_ENV !== 'production'`, working as designed — so there is no way to sign in as two
+> accounts on the server where the worker runs. Note its MECHANISM is check 1, which now passes:
+> nothing private is ever written, so there is nothing for a second account to read. Check 3 is the
+> end-to-end confirmation of that, not an independent risk.
+>
+> Two smaller gaps, both still open: `/tracker` was never re-checked under the global
+> `viewportFit: 'cover'`, and `lib/security/rate-limit.ts` was never driven to a live 429 (11 rapid
+> POSTs to `/api/intake/<token>` should give ten 201s then a 429 carrying `Retry-After`).
 
 > **VERIFYING IN ISOLATION WHEN OTHER SESSIONS SHARE THIS CHECKOUT.** **`git stash` is unsafe
 > here** — it silently captures other sessions' uncommitted work, and a later `pop` either
@@ -1167,6 +1190,32 @@ Two defects found by verifying rather than reasoning, both worth knowing:
 > "routes that exist return 404" and the causes are unrelated. Shared column set now lives in
 > `lib/contacts/export-columns.ts`.
 
+> **REPOINTING THE "People" NAV MADE AUTO-CREATED FOLDERS INVISIBLE, and it was reported as a
+> different bug entirely.** The nav item used to go to `/folders`, which lists FOLDERS. It now goes
+> to `/people`, which lists CONTACTS. Confirming an event in the tracker auto-creates an EMPTY
+> folder — so after the change that folder appeared nowhere on the page the user opens to look for
+> it, including in the Event rail, because those chips come from an aggregate over contacts and a
+> folder with none produces no bucket.
+>
+> It came in as "adding an event by hand and moving it to Confirmed is not creating a folder". It
+> was creating the folder, with the right `eventId`, every time. `scripts/diag-tracker-folder.ts`
+> walks Event → TrackerEntry → Folder and prints which link is actually missing; run it before
+> believing a folder-creation report, because the real answer that day was
+> `status=Shortlisted triggersFolder=false` — the card had never reached a folder-creating status,
+> and nothing on the board said which ones do (the Confirmed and Attended headers now carry a
+> `folder` badge driven by `FOLDER_ON_TRACKER_STATUS`).
+>
+> The general lesson: **a page named after a noun must show that noun even when it is empty.** Empty
+> folders are now facet buckets at count 0, the same treatment `tagVocabulary` gets, for the same
+> reason — a thing the user just made has to be visible or the button that made it looks broken.
+
+> **`FOLDER_ON_TRACKER_STATUS` LIVES IN `lib/tracker/validate.ts`, NOT `lib/contacts/service.ts`.**
+> The kanban board needs it to label columns and is a client component; `service.ts` imports mongoose
+> and every model, so importing from there would pull all of it into the browser bundle. `validate.ts`
+> is pure — mongoose appears only in its comments — which is the same property that lets
+> `lib/models/TrackerEntry.ts` import `TRACKER_STATUSES` from it without a cycle. `service.ts`
+> re-exports it so no existing importer changed.
+
 > **`repeatOnly` is a TWO-STAGE query, not a post-filter.** "Have I met this person before" is a
 > property of a group sharing a `contactKey`, so it cannot be one predicate. The first attempt
 > filtered the page after the query: the list correctly narrowed to two rows while the heading beside
@@ -1217,9 +1266,13 @@ it** — for everyone, signed-out included. It is the arm somebody deletes as re
 > populate came back null, so the entry and its notes just vanish from the kanban. Now excluded, and
 > user events are kept indefinitely — a hand-entered event is more like a `Folder` than a listing.
 
-> **FOUR ID-ADDRESSABLE PATHS BYPASS THE FEED FILTER**, and each needed its own guard via
-> `canViewEvent()`: `GET /api/events/[id]`, its `related` query, the **ICS** route, and
-> **`POST /api/tracker`**. The tracker one was worst — it turned id-guessing into a *durable* read,
+> **FIVE ID-ADDRESSABLE PATHS BYPASS THE FEED FILTER**, and each needed its own guard via
+> `canViewEvent()`: `GET /api/events/[id]`, its `related` query, the **ICS** route,
+> **`POST /api/tracker`**, and — found a day later, while checking whether a folder could be linked
+> to an event — **`PATCH /api/folders/[id]`**, which accepts an `eventId` and copies the event's
+> `startDateTime` and `venue` onto a folder the CALLER owns. That last one is a DURABLE copy,
+> denormalised on purpose so the folder survives `pruneStale()`, so no later access-control change
+> could claw it back. Four was the count after one audit; assume there is a sixth. The tracker one was worst — it turned id-guessing into a *durable* read,
 > returning the populated document and re-populating it on every later `GET /api/tracker`, and
 > moving the entry to Confirmed copies the private event's title and venue into a `Folder` the
 > attacker owns. **A Mongo ObjectId is not a secret** (timestamp + counter, so neighbours are
