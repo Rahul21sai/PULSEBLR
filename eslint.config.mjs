@@ -18,6 +18,11 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Throwaway build directories from `PULSEBLR_DIST_DIR` (see the `distDir` note in
+    // next.config.ts). `.next/**` does NOT cover these — it is an exact directory name, not a
+    // prefix — so without this line an isolated verification build makes `npm run lint` report
+    // 500+ errors in generated output and bury the real ones. Measured: 8476 problems.
+    ".next-*/**",
     // Agent worktrees (`git worktree` checkouts under `.claude/worktrees/`) are a second
     // copy of this same repo, so linting them is duplicate work — and it FAILS: the
     // `scripts/**/*.js` override above is anchored at the repo root, so the nested

@@ -11,6 +11,9 @@
 
 # next.js
 /.next/
+# Throwaway build dirs from PULSEBLR_DIST_DIR — see the note on `distDir` in next.config.ts.
+# `/.next/` does NOT cover these: it is an exact directory name, not a prefix.
+/.next-*/
 /out/
 
 # production
