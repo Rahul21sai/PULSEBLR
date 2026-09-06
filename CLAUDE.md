@@ -313,9 +313,33 @@ met. It's a PWA (service worker + `manifest.json`, share-target support).
 
 The scraper still ingests the whole city (concerts, treks, book clubs and all) because
 one broad pass is cheaper than many narrow ones and the classifier sorts it out — but
-the **feed defaults to `techOnly`**, and "show all events" is a deliberate opt-out in
-the filter rail. Roughly 20% of the corpus is tech; the other 80% is noise for this
-product's purpose.
+the **public feed is `techOnly` UNCONDITIONALLY**. Roughly 26% of the corpus is tech;
+the other 74% is noise for this product's purpose.
+
+> **THERE IS NO LONGER A "SHOW ALL EVENTS" OPT-OUT, and `?techOnly=false` is not honoured.**
+> The filter rail used to carry the toggle. Measured 2026-09-06: 1158 upcoming events, 297 tech —
+> so one tap turned a sharp product into a listings site that was 74% concerts and treks. Removed
+> 2026-09-06 at the owner's direction, along with the "Everything else" category group (with
+> `techOnly` unconditional none of its categories can match, so it could only render empty or show
+> a count that clicking would not honour) and `techOnly` from `countActive` (otherwise an
+> unfiltered feed reads "1 filter active" beside a Clear button that cannot clear it).
+>
+> The URL parameter is **stripped on load** rather than merely ignored — obeying it while hiding
+> the control would leave the hatch open to any old bookmark, and the URL would then assert
+> something the feed does not do and propagate on every copy. Stripped in the read effect, NOT the
+> URL writer: that writer's deps are `[query, when, sort, view, filters]`, and hydration changes
+> none of them because `techOnly` is pinned true in the initial state — so it runs once before
+> hydration, returns early at its guard, and never runs again.
+>
+> **Nothing was deleted.** The non-tech events are still stored, still scraped and still listed in
+> `/admin`, which needs them to correct a mis-tag and because non-tech is where the junk to remove
+> lives. `techOnly` remains a real parameter on `/api/events` and in `buildEventFilter` — `/admin`
+> uses it. Expressing a UI decision by deleting a query parameter would be the wrong layer.
+>
+> Consequence to know: `district` (23 upcoming, **0 tech**) and `allevents` (99 upcoming, **5
+> tech**) now contribute almost nothing a reader can reach. Disabling them was offered and
+> declined — District was added deliberately for city breadth — so they still cost ~130 upstream
+> requests a run. Revisit if run time matters.
 
 Two derived fields encode the purpose, and both are recomputable without re-scraping:
 
@@ -638,6 +662,17 @@ and harvests more group slugs); the irrelevant remainder collapses at ingest.
 `/companies` browses every company with events, and deliberately also shows the
 companies with **nothing** scheduled and the hosts the registry does **not** yet
 recognise — so the coverage gap is visible rather than hidden.
+
+> **IT IS NO LONGER IN THE PUBLIC NAV** (2026-09-06, owner's direction). That coverage-gap view is
+> an operator's question, not a reader's: measured, 44 of 375 companies have any events, so a
+> visitor met a mostly-empty directory with no way to tell that was deliberate. The entry point is
+> now a link in `/admin`'s header.
+>
+> **The ROUTE stays public and unguarded, and that is not an oversight.** `app/events/[id]` links to
+> `/companies?q=<name>` from every event naming a company; gating the page would turn that into a
+> sign-in wall for a reader following a link about the event in front of them. What was removed is a
+> top-level destination, not a capability — so do not "finish the job" by adding it to
+> `PROTECTED_PATHS`.
 
 ### 5. Query layer (`lib/events/query.ts`)
 
