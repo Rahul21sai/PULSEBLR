@@ -144,6 +144,7 @@ verified. Duplicating those as unit tests would only produce slow, flaky copies.
 | `retag-category.ts` | Re-tag a SUBSET, replacing categories. By category name, for when a category has gone bad; or **`--match=<title regex>`** for when a category is being *missed* and the documents carry no marker to select on. `--dry`, `--all`. |
 | `diag-scorecard.ts` | **The product scorecard as measurements, not estimates.** Each dimension is a criterion a query decides. Two rules keep it honest: CAPABILITY and SUPPLY are never averaged (hardware is externally capped, so mixing it with a code metric hides what you can act on), and no dimension scores itself on a proxy that cannot fail. Ratios with a denominator under 10 are printed but **not judged** — a supply cap must not be reported as a code defect. Exits non-zero only on a capability shortfall with enough evidence to call it one. |
 | `diag-source-caps.ts` | Are the per-run caps silently dropping discovered sources? This is what found 80 of 200 Meetup groups being skipped on every run. Read-only. |
+| `diag-calendar-consistency.ts` | Do the calendar's **dots** and its **day panel** agree, day by day, for a whole month? They share `buildEventFilter()`, so the only thing that can drift is the multi-day expansion the aggregation does and the list does not — and its bound must match the list's `spanning` lookback, which is a DIFFERENT number (see the note in §7). Reports the two failure directions separately: dot > panel is a square advertising events the panel cannot show, dot < panel is the grid under-reporting. Takes any number of `YYYY-MM` months, defaults to the current IST one. Read-only, needs a dev server, no sign-in. Exits non-zero on any mismatch. |
 | `diag-offcity.ts` | Replays the real `offCityReason()` predicate over the stored corpus and **names every row on both sides** — the rejects and the spares — so the gate's false positives can be argued with rather than trusted. Run it after touching the gazetteer. Read-only. |
 | `diag-meetup-geo-leak.ts` | Proves the Meetup adapter's city guard **cannot reject anything** (its `=== false` is unsatisfiable, because `isBengaluru`'s only text-driven `false` sits inside `if (location)` and ICS emits no LOCATION), and measures what got in: 23 of 886 upcoming events, 19 in-person, 9 in the default tech feed. Read-only. |
 | `diag-city-spelling-dupes.ts` | Does cross-source dedup survive **Bangalore** vs **Bengaluru**? **Suspected bug, DISPROVED, and the mechanism is what closes it** — not the count. `normalizeTitleForMatch()` (`lib/scrapers/core/text.ts`) lists `bangalore`, `bengaluru`, `blr` and `india` in `NOISE_WORDS` and **deletes** them before building the key, so two titles differing only by the city word are structurally incapable of producing different keys. Measured 2026-08-24 for confirmation: identical keys (`founders running club\|2026-08-30`), 0 of 1237 upcoming events in a spelling-caused duplicate group. **One real edge:** line 71 falls back to the **un-stripped** title when noise-stripping empties it, so a title that is *only* a city plus noise words — `"Bangalore Meetup"` vs `"Bengaluru Meetup"`, the source's own example — does NOT collide. Re-run after touching the normalizer; a non-zero count is a normalizer regression, not a cleanup job. Read-only. |
@@ -903,6 +904,64 @@ Interactive surfaces **press** (`.pressable`, `scale(0.978)`) rather than lift: 
 > **The signature element is the connection meter** (`.meter` + `ConnectionMeter` in `EventRow.tsx`). `connectionScore` is computed for every event and powers the "Best for connections" sort, but it was rendered **nowhere**, so the app's one signal that Luma and Meetup cannot show was invisible and that sort looked arbitrary. It renders as three bars, not the number, because the score is a ranking signal rather than a measurement and printing "83" implies a precision it does not have.
 
 > **Verifying layout changes:** run the clip-aware overlap probe and **exclude `position: fixed`/`sticky` ancestors**. A naive probe reports the command bar and bottom nav "overlapping" every row they scroll over, which is intended behaviour — those bars are near-opaque. Measured after this redesign: 0 content-only overlaps at 1440×900 and 390×844, at both scroll-top and scrolled.
+- Calendar (`app/calendar/page.tsx` + `GET /api/events/calendar`) is a month grid of per-day
+  volume with a day panel beside it. **It is two endpoints answering one question**, which is the
+  arrangement §5 exists to police, so the notes below are all about keeping them from diverging.
+
+  > **A DAY IS A `YYYY-MM-DD` IST KEY HERE, NEVER A `Date`.** The grid was built with date-fns
+  > (`startOfMonth`, `eachDayOfInterval`, `getDay`, `format(day, 'd')`), all of which read the
+  > BROWSER's clock, while the dots come from `$dateToString ... timezone: IST`. Two calendars for
+  > one grid, agreeing only when the browser happens to be in IST. From +13, local midnight on 1
+  > September is 31 August 16:30 IST, so the square drawn "1" fetched 31 August; from UTC the day
+  > panel's `setHours(0,0,0,0)` fetched 00:00Z-23:59Z, i.e. IST 05:30 today through 05:29 tomorrow -
+  > a half-day-shifted list under a heading naming the right day. The month is `YYYY-MM`, the day is
+  > `dayKeyIST(...)`, and the calendar arithmetic runs through `Date.UTC` where it is pure calendar
+  > maths with no zone in it. Do not reintroduce a `Date` as a day identity.
+
+  > **THE VISIBLE MONTH IS DERIVED FROM THE SELECTED DAY - one piece of state, not two.** They were
+  > independent (`currentDate`, `selectedDate`) and disagreed immediately: paging September to
+  > October left the panel headed "7 September", describing a day with no square on screen, and no
+  > square in October highlighted at all. Paging now lands on today when the target is the current
+  > month and the 1st otherwise, so a highlighted square and the panel heading always name the same
+  > visible day. `pageMonth` uses the **updater form** of `setState` for a measured reason: reading
+  > `monthKey` out of the render that drew the button let React batching collapse four clicks in one
+  > tick into a single month, which is invisible until somebody double-taps the chevron.
+
+  > **`MAX_SPAN_DAYS` IS `SPAN_FLOOR_DAYS + 1`, AND THE `+ 1` IS MEASURED, NOT A FUDGE.** The route
+  > expands a multi-day event onto every IST day it covers - without that, GIDS and IndiaFOSS drew a
+  > dot on day 1 and vanished, on a calendar of all surfaces. The day panel reaches the same events
+  > through `spanning`, whose bound is a **lookback**: an event starting on S is admitted to days S
+  > through S + `SPAN_FLOOR_DAYS`, fifteen inclusive, not fourteen. Capping the expansion at fourteen
+  > made the two sides differ by exactly one day. Measured over September 2026 on the live corpus: 29
+  > days agreed and 20 September did not, dot 4 against panel 5, and ONE event was responsible -
+  > `AI Agents Workshop`, dated 2026-09-06 to 2026-10-06, a 31-day range that only the cap keeps off
+  > the whole grid. **97% agreement reads as noise rather than as an off-by-one**, which is why this
+  > is `diag-calendar-consistency.ts` and not a calculation. Now 0 mismatches across four months
+  > (Aug/Sep/Oct/Nov 2026, 122 day-comparisons).
+
+  > **`spanning` MADE THE PANEL COMPLETE AND, ON ITS OWN, MISLEADING.** A carried-over event still
+  > sorts by its true start, so on 7 September `QUESSATHON` (starting 1 September) was the top row
+  > labelled **19:00** - a prominent claim to an evening slot it does not have. The rail now prints
+  > `1 Sept onward` instead of a time whenever the start day is not the day being shown. Ranking is
+  > deliberately unchanged: things already running belong at the top.
+
+  > **The header's event count is a separate `countDocuments`, NOT the sum of the day buckets.** Once
+  > one event occupies several days, summing them double-counts: September reports 312 distinct
+  > events across 353 occupied day-slots. Also `techOnly=true` on both fetches - the route advertised
+  > and implemented the parameter and the page never sent it, so a tech-only product's calendar
+  > counted the whole city (1069 against 312 for September). And the counts route reads
+  > `getCurrentUserId()` **nullably**, like `/api/events/facets`: the page is public, and a per-day
+  > count IS disclosure at that granularity, so hand-rolling the `$match` had been leaking how many
+  > private and pending events sat on each date. Verified with a write-then-delete fixture - two
+  > hidden rows on an otherwise empty day left the anonymous dot at 0, with a control confirming they
+  > really were in the collection.
+
+  > **Failures are SHOWN.** Both fetches used to `console.error` and fall through to empty state, so
+  > a 500 from the counts route rendered "No events this month" - a confident factual claim about
+  > Bengaluru standing in for a broken request, the most alarming failure reading as the most
+  > reassuring answer. Each half now has its own message and its own retry, and the grid renders
+  > dotless rather than claiming zero.
+
 - Tracker (`app/tracker/page.tsx`) is a drag-and-drop kanban with optimistic updates and rollback, a list view, and a "follow-ups due" strip on top.
 
 **Two audiences, two surfaces.** A regular user browses, tracks and applies; they never see the scraping machinery. `/admin` (`app/admin/`) is the operator console: corpus stats, the scraper trigger, source enable/disable/delete, and event administration (delete, and correct a mis-tagged `isTechEvent`). Its data comes from `GET /api/admin/stats` in one round trip, so the dashboard cannot render internally inconsistent totals.

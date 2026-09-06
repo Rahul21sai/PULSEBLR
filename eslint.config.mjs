@@ -31,6 +31,11 @@ const eslintConfig = defineConfig([
     // parallel session happened to have a worktree open, on files that `.git/info/exclude`
     // means can never be committed from here anyway.
     ".claude/**",
+    // `audit/` is gitignored working notes — throwaway probe scripts and diag captures written
+    // during an investigation, run once with `node` or `tsx` and never bundled. Same reasoning as
+    // `.next-*/**` above: 6 `no-require-imports` errors in files that cannot be committed made
+    // `npm run lint` exit non-zero and buried the one real finding in `app/`.
+    "audit/**",
   ]),
 ]);
 

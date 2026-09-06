@@ -91,3 +91,8 @@ PR_BODY.md
 # is why no committed file may cite these by name.
 HEAPHEAPHURRAY-AUDIT.md
 IMPROVEMENT-IDEAS.md
+
+# Audit working notes: live corpus diagnostics, agent reports and raw upstream captures.
+# Local tool output like the entries above — measurements go stale, and the diag captures
+# include upstream response bodies. Load-bearing conclusions belong in CLAUDE.md instead.
+/audit/

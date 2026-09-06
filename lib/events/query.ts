@@ -39,6 +39,18 @@ export interface EventQueryParams {
   /** Include events that already started but haven't finished. */
   includeOngoing?: boolean;
   includePast?: boolean;
+  /**
+   * Match events that OVERLAP the `from`..`to` window, not just those that START inside it.
+   *
+   * OPT-IN, and only the calendar sets it. With `from`/`to` supplied, the default branch below
+   * matches on `startDateTime` alone — which is right for the feed (a window means "events
+   * beginning in this window") and wrong for a calendar, where a three-day conference must appear
+   * on all three squares. Without this, tapping day 2 of GIDS or droidCon shows nothing.
+   *
+   * Deliberately not the default: changing the feed's window semantics would move the counts on
+   * every facet chip, and no other caller wants it.
+   */
+  spanning?: boolean;
 }
 
 /** Parse the querystring into a normalized parameter object. */
@@ -62,6 +74,7 @@ export function parseEventParams(searchParams: URLSearchParams): EventQueryParam
     spotlight: searchParams.get('spotlight') === 'true',
     includePast: searchParams.get('includePast') === 'true' || searchParams.get('includeAll') === 'true',
     includeOngoing: searchParams.get('includeOngoing') !== 'false',
+    spanning: searchParams.get('spanning') === 'true',
   };
 
   const isFree = searchParams.get('isFree');
@@ -152,6 +165,19 @@ export const MIN_SEARCH_CHARS = 2;
 export const DESCRIPTION_SEARCH_CHARS = 4;
 
 /**
+ * How many days before a window a multi-day event may have started and still count as spanning it.
+ *
+ * Exported so `/api/events/calendar` bounds its per-day expansion with the SAME number the day-panel
+ * query uses. If the two disagreed, a dot would appear on a square whose day panel comes back empty,
+ * or the reverse — which is the exact "the grid and the panel answer different questions" class of
+ * bug this work exists to remove.
+ *
+ * 14 days: longer than any real conference in this corpus, short enough that an evergreen listing
+ * dated years wide is excluded rather than smeared across every square.
+ */
+export const SPAN_FLOOR_DAYS = 14;
+
+/**
  * The visibility clause. Three arms, and every one of them is load-bearing.
  *
  * ─────────────────────────────────────────────────────────────────────────────────────────────
@@ -222,6 +248,26 @@ export function buildEventFilter(
         $or: [
           { startDateTime: { $gte: lowerBound } },
           { startDateTime: { $gte: ongoingFloor }, endDateTime: { $gte: lowerBound } },
+        ],
+      });
+    } else if (params.spanning) {
+      /**
+       * OVERLAP, for the calendar. Structurally the same shape as the `includeOngoing` branch
+       * above, and for the same reason — including the floor.
+       *
+       * THE FLOOR IS NOT OPTIONAL. Matching purely on "ends after this day" is what let an
+       * Eventbrite evergreen listing dated 2015→2030 sit at the top of the feed forever; on a
+       * calendar the same row would land on every square of every month, so one bad end date would
+       * make the whole grid look full. `SPAN_FLOOR_DAYS` bounds how far back a start may be, which
+       * caps a genuine multi-day event at a plausible conference length and drops the impossible
+       * ones. `scripts/cleanup-implausible.ts` deletes those, but this must not depend on it having
+       * been run.
+       */
+      const spanFloor = new Date(lowerBound.getTime() - SPAN_FLOOR_DAYS * 24 * 3600 * 1000);
+      and.push({
+        $or: [
+          { startDateTime: { $gte: lowerBound } },
+          { startDateTime: { $gte: spanFloor }, endDateTime: { $gte: lowerBound } },
         ],
       });
     } else {
