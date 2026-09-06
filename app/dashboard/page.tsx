@@ -1,5 +1,6 @@
 'use client';
-import Link from 'next/link';
+// `Link` is gone with the hand-rolled nav below — `DesktopNav` owns the links now.
+import { DesktopNav, MobileBottomNav } from '../components/NavBar';
 
 import { useEffect, useState } from 'react';
 import { format } from 'date-fns';
@@ -35,14 +36,6 @@ interface RepeatConnection {
   details: { role?: string; company?: string; linkedin?: string };
   eventCount: number;
 }
-
-const NAV_LINKS = [
-  { href: '/', label: 'Feed', icon: 'rss_feed' },
-  { href: '/calendar', label: 'Calendar', icon: 'calendar_today' },
-  { href: '/tracker', label: 'Tracker', icon: 'analytics' },
-  { href: '/add-event', label: 'Add', icon: 'add_circle' },
-  { href: '/settings', label: 'Settings', icon: 'settings' },
-];
 
 const STAT_CARDS = (stats: Stats) => [
   { label: 'Total Events',     value: stats.totalEvents,    sub: 'In database',        iconBg: 'bg-[#1D1D1F]',  textColor: 'text-[#1D1D1F]', cardBg: 'bg-white',       icon: 'event' },
@@ -113,34 +106,31 @@ export default function DashboardPage() {
       {/* Material Symbols is loaded once in app/layout.tsx — a per-page <link>
           here duplicated the request on every dashboard visit. */}
 
-      {/* Desktop Nav */}
-      <nav className="hidden md:flex fixed top-0 w-full h-14 bg-white/96 glass-nav z-50 border-b border-black/5">
-        <div className="flex justify-between items-center w-full max-w-[1200px] mx-auto px-20">
-          <Link href="/" className="text-xl font-bold tracking-tight text-[#1D1D1F]">PulseBLR</Link>
-          <div className="flex items-center gap-8">
-            {NAV_LINKS.map(link => (
-              <a key={link.href} href={link.href}
-                className={`text-sm font-medium transition-colors ${link.href === '/dashboard' ? 'text-[#0071E3] font-semibold border-b-2 border-[#0071E3] pb-0.5' : 'text-[#86868B] hover:text-[#1D1D1F]'}`}>
-                {link.label}
-              </a>
-            ))}
-          </div>
-          <span className="text-[#86868B] text-sm">Dashboard</span>
-        </div>
-      </nav>
+      {/*
+        THE SHARED NAV, not a copy.
 
-      {/* Mobile Header */}
-      <header className="md:hidden fixed top-0 w-full h-14 bg-white/96 glass-nav z-50 border-b border-black/5 flex items-center justify-between px-5">
-        <Link href="/" className="text-lg font-bold tracking-tight text-[#1D1D1F]">PulseBLR</Link>
-        <span className="text-[#86868B] text-sm font-medium">Dashboard</span>
-      </header>
+        This page used to hand-roll its own desktop nav, mobile header and bottom bar from a local
+        NAV_LINKS array — and that array had gone stale: it offered "Feed", "Calendar", "Tracker",
+        "Add" and "Settings", missing Companies, People and Dashboard itself. So opening the
+        dashboard visibly changed the whole chrome and dropped links the rest of the app has,
+        which is what "the total UI is getting changed" was describing. A second copy of the nav
+        cannot stay in step with the first; the fix is to not have one.
+      */}
+      <DesktopNav />
 
       <main className="pt-14 pb-24 md:pb-8">
-        {/* Hero */}
-        <section className="bg-black text-white px-5 md:px-20 pt-12 pb-10">
+        {/*
+          Page header, on the app's own surface rather than a full-bleed BLACK band.
+
+          globals.css rations colour deliberately — greyscale everywhere so that cover images are
+          the only colourful thing, and one accent that means "you can act on this". A solid black
+          hero is the loudest possible element and it appeared on exactly one page, which is why
+          this screen read as belonging to a different product.
+        */}
+        <section className="px-5 md:px-8 pt-8 pb-2">
           <div className="max-w-[1200px] mx-auto">
-            <h1 className="t-display mb-1">Dashboard</h1>
-            <p className="text-gray-400 text-[15px]">Your networking & event stats</p>
+            <h1 className="t-display text-[#1D1D1F] mb-1">Dashboard</h1>
+            <p className="text-[#6E6E73] text-[15px]">Your networking &amp; event stats</p>
           </div>
         </section>
 
@@ -269,22 +259,7 @@ export default function DashboardPage() {
         </div>
       </main>
 
-      {/* Mobile Bottom Nav */}
-      <nav className="fixed bottom-0 w-full md:hidden bg-white/96 glass-nav border-t border-black/5 flex justify-around items-center px-4 py-2 z-50 rounded-t-2xl">
-        {NAV_LINKS.map(link => {
-          const isActive = link.href === '/dashboard';
-          return (
-            <a key={link.href} href={link.href}
-              className={`flex flex-col items-center px-3 py-1 rounded-full transition-colors ${isActive ? 'bg-[#0071E3]/10' : 'hover:bg-[#f3f3f5]'}`}>
-              <span aria-hidden="true" className={`material-symbols-outlined text-[22px] ${isActive ? 'text-[#0071E3]' : 'text-[#86868B]'}`}
-                style={{ fontVariationSettings: isActive ? "'FILL' 1" : "'FILL' 0" }}>
-                {link.icon}
-              </span>
-              <span className={`text-[10px] font-semibold mt-0.5 ${isActive ? 'text-[#0071E3]' : 'text-[#86868B]'}`}>{link.label}</span>
-            </a>
-          );
-        })}
-      </nav>
+      <MobileBottomNav />
     </div>
   );
 }

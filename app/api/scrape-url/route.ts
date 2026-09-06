@@ -57,6 +57,10 @@ export async function POST(request: NextRequest) {
     const stripHtml = (s: string) =>
       s.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
 
+    // Base for resolving relative asset URLs. The request URL, not the canonical tag — the
+    // canonical is parsed later and may itself be relative.
+    const canonicalBase = url;
+
     // ── Extract fields ────────────────────────────────────────────────────────
 
     // Title
@@ -73,8 +77,70 @@ export async function POST(request: NextRequest) {
       metaContent('description') ??
       '';
 
-    // Image
-    // const image = metaContent('og:image');
+    /*
+     * Image. This was `// const image = metaContent('og:image');` — extraction commented out —
+     * so "Import from Link" never returned a cover and every manually added event fell back to
+     * the category-tinted monogram. The form had no image field either, so there was nowhere to
+     * put one even by hand.
+     *
+     * JSON-LD FIRST, then og:image. For an event page the schema.org `image` is the event's own
+     * artwork, while `og:image` is whatever the site wants in a social card — often a site-wide
+     * banner or logo. Preferring the specific one over the generic one is the whole point of
+     * looking in two places.
+     *
+     * schema.org allows `image` to be a string, an array, or an ImageObject, and real pages use
+     * all three, so it is normalised rather than assumed.
+     */
+    const firstImage = (value: unknown): string | undefined => {
+      if (!value) return undefined;
+      if (typeof value === 'string') return value;
+      if (Array.isArray(value)) {
+        for (const item of value) {
+          const found = firstImage(item);
+          if (found) return found;
+        }
+        return undefined;
+      }
+      if (typeof value === 'object') {
+        const obj = value as Record<string, unknown>;
+        return firstImage(obj.url ?? obj.contentUrl);
+      }
+      return undefined;
+    };
+
+    let image: string | undefined;
+    const imageLd = html.match(/<script[^>]+type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/i);
+    if (imageLd) {
+      try {
+        const ld = JSON.parse(imageLd[1]);
+        for (const node of (Array.isArray(ld) ? ld : [ld]) as Array<Record<string, unknown>>) {
+          if (node['@type'] === 'Event' || node['@type'] === 'SocialEvent') {
+            image = firstImage(node.image);
+            break;
+          }
+        }
+      } catch {
+        // ignore JSON parse errors — og:image below is the fallback
+      }
+    }
+    image = image ?? metaContent('og:image') ?? metaContent('twitter:image');
+
+    /*
+     * Resolve against the page and reject anything that is not http(s).
+     *
+     * Relative values like `/images/cover.png` are common and would render as a broken image.
+     * The scheme check matters more: the cover is rendered in a plain <img src>, so a
+     * `javascript:` or `data:` value from a page we do not control has no business reaching it.
+     * `safeFetch` guards what this route FETCHES; this guards what it hands back.
+     */
+    if (image) {
+      try {
+        const resolved = new URL(image, canonicalBase);
+        image = /^https?:$/.test(resolved.protocol) ? resolved.toString() : undefined;
+      } catch {
+        image = undefined;
+      }
+    }
 
     // Organizer — try JSON-LD first
     let organizer: string | undefined;
@@ -205,6 +271,7 @@ export async function POST(request: NextRequest) {
       endDateTime,
       venue,
       format,
+      imageUrl: image,
     };
 
     // If we got at least a title, return it

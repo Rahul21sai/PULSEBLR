@@ -14,7 +14,25 @@ import Logo from './Logo';
  * reach for while standing at an event, and adding an event by hand is a desk task, `Add`
  * yields its slot rather than shrinking everything.
  */
-const NAV_LINKS = [
+/**
+ * `adminOnly` is optional and, right now, unused by every entry — so the type is declared rather
+ * than inferred. Without the annotation TypeScript narrows the element type to exactly the keys
+ * present, and `link.adminOnly` in the filter below stops compiling the moment nothing sets it.
+ *
+ * The MECHANISM is kept even though no entry needs it today: it was built to hide `Add` from
+ * non-admins, and that entry has since been un-gated (see the note on it). Keeping the filter means
+ * the next operator-only surface is one property away instead of a re-implementation, and a
+ * dummy entry to satisfy the inference would be worse than saying this out loud.
+ */
+type NavLink = {
+  href: string;
+  label: string;
+  icon: string;
+  mobile: boolean;
+  adminOnly?: boolean;
+};
+
+const NAV_LINKS: NavLink[] = [
   { href: '/', label: 'Events', icon: 'explore', mobile: true },
   { href: '/companies', label: 'Companies', icon: 'domain', mobile: true },
   { href: '/calendar', label: 'Calendar', icon: 'calendar_today', mobile: true },
@@ -31,6 +49,21 @@ const NAV_LINKS = [
    * a visit to a folder does not light up this item. That is intended — they are different screens.
    */
   { href: '/people', label: 'People', icon: 'groups', mobile: true },
+  /**
+   * NO LONGER `adminOnly`, and that reversal is deliberate — not a merge accident.
+   *
+   * It was made admin-only on the reasoning that "`POST /api/events` is gated by
+   * `requireAdmin()`, so offering this to everyone was a dead end: a regular user could fill in
+   * the whole form and only learn on submit that the write was refused." That reasoning was
+   * exactly right at the time, and the user-added-events work removed its premise:
+   * `POST /api/events` is now `requireUser()`, and a regular user gets a real outcome —
+   * `visibility: 'private'` for an event only they can see, or `'pending'` to submit it for the
+   * shared feed. Only `visibility: 'public'` still re-checks the admin allowlist.
+   *
+   * So the form is no longer a dead end for a reader, and hiding it would remove the feature.
+   * The curation concern it named is answered by the review queue at /admin → Submissions rather
+   * than by hiding the entry point.
+   */
   { href: '/add-event', label: 'Add', icon: 'add_circle', mobile: false },
   { href: '/settings', label: 'Settings', icon: 'settings', mobile: true },
 ];
@@ -61,7 +94,7 @@ export function DesktopNav() {
         </Link>
 
         <div className="flex items-center gap-7">
-          {NAV_LINKS.map(link => {
+          {NAV_LINKS.filter(link => !link.adminOnly || session?.user?.isAdmin).map(link => {
             const active = isActive(link.href);
             return (
               <Link

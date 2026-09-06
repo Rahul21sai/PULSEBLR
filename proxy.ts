@@ -1,61 +1,42 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 
-// Routes that require a signed-in user.
-//
-// `/settings` belongs here and was missing: it exposes controls that disable event
-// sources and trigger a scraper run, so it was operable by anyone who knew the URL.
-// The underlying API routes are now gated too (lib/api-auth.ts) — this is the
-// don't-even-render-it layer, not the security boundary.
-//
-// NOTE: the matcher below deliberately excludes `api`, so NOTHING here protects an API
-// route. Every /api guard lives in its own handler. See lib/api-auth.ts.
-// NOTE ON PREFIX MATCHING: the check below is `pathname.startsWith(p)`, so each entry also
-// covers every sibling beginning with those characters. That is why the public pages of the
-// scan feature live at deliberately different top-level segments:
-//
-//   /folders, /scan, /card   PRIVATE — listed here
-//   /c/<token>               PUBLIC  — somebody's card, opened from a QR by a stranger
-//   /f/<token>               PUBLIC  — "add yourself to this folder"
-//
-// `'/c/abc'.startsWith('/card')` is false, so `/card` does not accidentally capture `/c/…`.
-// Never add a bare `/c` or `/f` here, and never nest a public page under a listed prefix.
-const PROTECTED = [
-  '/dashboard',
-  '/tracker',
-  '/add-event',
-  '/settings',
-  '/admin',
-  '/folders',
-  /**
-   * The cross-folder People list.
-   *
-   * Matching is by `startsWith`, so check any new entry against the PUBLIC pages before adding it:
-   * `/c/<token>` (somebody's card, opened by a stranger with no account) and `/f/<token>` ("add
-   * yourself to this folder") must never be shadowed. `/people` is safe — no public route begins
-   * with it — the same way `/card` is safe only because `'/c/abc'.startsWith('/card')` is false.
-   */
-  '/people',
-  '/scan',
-  '/card',
-];
-
-export default function proxy(req: NextRequest) {
-  const { pathname } = req.nextUrl;
-
-  const isProtected = PROTECTED.some(p => pathname.startsWith(p));
-  if (isProtected) {
-    // Check for the next-auth session token cookie (works with JWT strategy)
-    const token =
-      req.cookies.get('__Secure-authjs.session-token')?.value ||
-      req.cookies.get('authjs.session-token')?.value;
-
-    if (!token) {
-      const loginUrl = new URL('/login', req.url);
-      loginUrl.searchParams.set('callbackUrl', pathname);
-      return NextResponse.redirect(loginUrl);
-    }
-  }
-
+/**
+ * Next 16's middleware equivalent. IT NO LONGER GATES PAGES, AND THAT IS THE FIX.
+ *
+ * WHAT IT USED TO DO, AND WHY IT HAD TO GO. It redirected `/dashboard`, `/tracker`, `/add-event`,
+ * `/settings`, `/admin`, `/folders`, `/scan` and `/card` to `/login` unless it could find an
+ * Auth.js session cookie BY NAME. Two independent problems, and neither is fixable at this layer:
+ *
+ *   1. IT SECURED NOTHING. The edge runtime has no secret to verify a JWT with, so the check
+ *      could only ever be "is a cookie with this name present". Measured against production:
+ *      `Cookie: __Secure-authjs.session-token=dummy` returned **200** on all eight paths. Any
+ *      stranger could walk straight past it by inventing a cookie. Putting the secret in the edge
+ *      runtime to make it a real check is the wrong trade too — getting that wrong signs out
+ *      every user at once, so the blast radius is the whole app rather than one route.
+ *
+ *   2. IT LOCKED OUT USERS WHO WERE SIGNED IN. Reported repeatedly, then confirmed from the app's
+ *      own screen: `/login?callbackUrl=%2Ffolders` rendered "You're already signed in as
+ *      <the user's address>". So the browser held a session that `/api/auth/session` could read
+ *      and decode, while this file had just refused the navigation that led there. Only `proxy.ts`
+ *      ever writes that URL shape, so the redirect was unambiguously from here.
+ *
+ * A check that cannot say no to an attacker but does say no to a real user has negative value.
+ * Deleting it is the fix, not tuning the cookie names — the previous attempt at that (teaching it
+ * about CHUNKED cookies) was a genuine latent defect but not this bug, and it did not help.
+ *
+ * WHERE THE GATE LIVES NOW.
+ *   · Authorisation, unchanged and untouched: `requireUser()` / `requireAdmin()` in every private
+ *     API route (`lib/api-auth.ts`), and `/admin`'s own server-side session + allowlist check,
+ *     which `redirect()`s a non-admin before any admin markup is generated.
+ *   · What to DRAW: `app/components/ProtectedRouteGate.tsx`, which asks `useSession()` — the same
+ *     session the API routes see — instead of guessing from a cookie name.
+ *
+ * WHY THE FILE STILL EXISTS. Removing it entirely is a bigger change than this hotfix wants, and
+ * an empty pass-through is the honest intermediate state: it documents the decision at the place
+ * someone will look for it. If nothing else claims this layer, delete the file — but do NOT
+ * reintroduce cookie-name sniffing here.
+ */
+export default function proxy() {
   return NextResponse.next();
 }
 

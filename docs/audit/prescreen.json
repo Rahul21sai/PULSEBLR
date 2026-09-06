@@ -1,0 +1,658 @@
+[
+ {
+  "name": "Palo Alto Networks",
+  "sector": "SaaS",
+  "strength": "distinctive",
+  "reasons": [
+   "TOKEN \"networks\" is ordinary vocabulary"
+  ]
+ },
+ {
+  "name": "Juniper Networks",
+  "sector": "Hardware & Semiconductor",
+  "strength": "distinctive",
+  "reasons": [
+   "TOKEN \"juniper\" is ordinary vocabulary",
+   "TOKEN \"networks\" is ordinary vocabulary"
+  ]
+ },
+ {
+  "name": "Arista Networks",
+  "sector": "Hardware & Semiconductor",
+  "strength": "distinctive",
+  "reasons": [
+   "TOKEN \"arista\" is ordinary vocabulary",
+   "TOKEN \"networks\" is ordinary vocabulary"
+  ]
+ },
+ {
+  "name": "Tejas Networks",
+  "sector": "Hardware & Semiconductor",
+  "strength": "distinctive",
+  "reasons": [
+   "TOKEN \"networks\" is ordinary vocabulary"
+  ]
+ },
+ {
+  "name": "Cashfree Payments",
+  "sector": "Fintech",
+  "strength": "distinctive",
+  "reasons": [
+   "TOKEN \"payments\" is ordinary vocabulary"
+  ]
+ },
+ {
+  "name": "MoEngage",
+  "sector": "SaaS",
+  "strength": "distinctive",
+  "reasons": [
+   "DUPLICATE within candidates"
+  ]
+ },
+ {
+  "name": "Exotel",
+  "sector": "SaaS",
+  "strength": "distinctive",
+  "reasons": [
+   "DUPLICATE within candidates"
+  ]
+ },
+ {
+  "name": "Sprinto",
+  "sector": "SaaS",
+  "strength": "distinctive",
+  "reasons": [
+   "DUPLICATE within candidates"
+  ]
+ },
+ {
+  "name": "CloudSEK",
+  "sector": "SaaS",
+  "strength": "distinctive",
+  "reasons": [
+   "DUPLICATE within candidates"
+  ]
+ },
+ {
+  "name": "Yellow.ai",
+  "sector": "Data & AI",
+  "strength": "distinctive",
+  "reasons": [
+   "DUPLICATE within candidates"
+  ]
+ },
+ {
+  "name": "Observe.AI",
+  "sector": "Data & AI",
+  "strength": "distinctive",
+  "reasons": [
+   "DUPLICATE within candidates"
+  ]
+ },
+ {
+  "name": "SigNoz",
+  "sector": "Developer Tools",
+  "strength": "distinctive",
+  "reasons": [
+   "DUPLICATE within candidates"
+  ]
+ },
+ {
+  "name": "Last9",
+  "sector": "Developer Tools",
+  "strength": "ambiguous",
+  "reasons": [
+   "DUPLICATE within candidates"
+  ]
+ },
+ {
+  "name": "Siemens",
+  "sector": "Hardware & Semiconductor",
+  "strength": "distinctive",
+  "reasons": [
+   "DUPLICATE within candidates"
+  ]
+ },
+ {
+  "name": "Infineon Technologies",
+  "sector": "Hardware & Semiconductor",
+  "strength": "distinctive",
+  "reasons": [
+   "TOKEN \"technologies\" is ordinary vocabulary"
+  ]
+ },
+ {
+  "name": "Western Digital",
+  "sector": "Hardware & Semiconductor",
+  "strength": "distinctive",
+  "reasons": [
+   "DUPLICATE within candidates",
+   "TOKEN \"western\" is ordinary vocabulary",
+   "TOKEN \"digital\" is ordinary vocabulary"
+  ]
+ },
+ {
+  "name": "NetApp",
+  "sector": "Hardware & Semiconductor",
+  "strength": "distinctive",
+  "reasons": [
+   "DUPLICATE within candidates"
+  ]
+ },
+ {
+  "name": "Mistral Solutions",
+  "sector": "Hardware & Semiconductor",
+  "strength": "distinctive",
+  "reasons": [
+   "TOKEN \"solutions\" is ordinary vocabulary"
+  ]
+ },
+ {
+  "name": "L&T Technology Services",
+  "sector": "Services & GCC",
+  "strength": "distinctive",
+  "reasons": [
+   "TOKEN \"technology\" is ordinary vocabulary",
+   "TOKEN \"services\" is ordinary vocabulary"
+  ]
+ },
+ {
+  "name": "Mercedes-Benz R&D India",
+  "sector": "Hardware & Semiconductor",
+  "strength": "distinctive",
+  "reasons": [
+   "TOKEN \"india\" is ordinary vocabulary"
+  ]
+ },
+ {
+  "name": "Ather Energy",
+  "sector": "Hardware & Semiconductor",
+  "strength": "distinctive",
+  "reasons": [
+   "DUPLICATE within candidates",
+   "TOKEN \"energy\" is ordinary vocabulary"
+  ]
+ },
+ {
+  "name": "Ola Electric",
+  "sector": "Hardware & Semiconductor",
+  "strength": "distinctive",
+  "reasons": [
+   "DUPLICATE within candidates"
+  ]
+ },
+ {
+  "name": "Ultraviolette",
+  "sector": "Hardware & Semiconductor",
+  "strength": "distinctive",
+  "reasons": [
+   "DUPLICATE within candidates"
+  ]
+ },
+ {
+  "name": "GE HealthCare",
+  "sector": "Hardware & Semiconductor",
+  "strength": "distinctive",
+  "reasons": [
+   "TOKEN \"healthcare\" is ordinary vocabulary"
+  ]
+ },
+ {
+  "name": "Honeywell",
+  "sector": "Hardware & Semiconductor",
+  "strength": "distinctive",
+  "reasons": [
+   "DUPLICATE within candidates"
+  ]
+ },
+ {
+  "name": "Thales",
+  "sector": "Hardware & Semiconductor",
+  "strength": "ambiguous",
+  "reasons": [
+   "DUPLICATE within candidates"
+  ]
+ },
+ {
+  "name": "Pixxel",
+  "sector": "Hardware & Semiconductor",
+  "strength": "distinctive",
+  "reasons": [
+   "DUPLICATE within candidates"
+  ]
+ },
+ {
+  "name": "Digantara",
+  "sector": "Hardware & Semiconductor",
+  "strength": "distinctive",
+  "reasons": [
+   "DUPLICATE within candidates"
+  ]
+ },
+ {
+  "name": "Ericsson",
+  "sector": "Hardware & Semiconductor",
+  "strength": "distinctive",
+  "reasons": [
+   "DUPLICATE within candidates"
+  ]
+ },
+ {
+  "name": "Juniper Networks",
+  "sector": "Hardware & Semiconductor",
+  "strength": "distinctive",
+  "reasons": [
+   "DUPLICATE within candidates",
+   "TOKEN \"juniper\" is ordinary vocabulary",
+   "TOKEN \"networks\" is ordinary vocabulary"
+  ]
+ },
+ {
+  "name": "Arista Networks",
+  "sector": "Hardware & Semiconductor",
+  "strength": "distinctive",
+  "reasons": [
+   "DUPLICATE within candidates",
+   "TOKEN \"arista\" is ordinary vocabulary",
+   "TOKEN \"networks\" is ordinary vocabulary"
+  ]
+ },
+ {
+  "name": "Tejas Networks",
+  "sector": "Hardware & Semiconductor",
+  "strength": "distinctive",
+  "reasons": [
+   "DUPLICATE within candidates",
+   "TOKEN \"networks\" is ordinary vocabulary"
+  ]
+ },
+ {
+  "name": "Hewlett Packard Enterprise",
+  "sector": "Hardware & Semiconductor",
+  "strength": "ambiguous",
+  "reasons": [
+   "DUPLICATE within candidates"
+  ]
+ },
+ {
+  "name": "Lenovo",
+  "sector": "Hardware & Semiconductor",
+  "strength": "distinctive",
+  "reasons": [
+   "DUPLICATE within candidates"
+  ]
+ },
+ {
+  "name": "Cashfree Payments",
+  "sector": "Fintech",
+  "strength": "distinctive",
+  "reasons": [
+   "DUPLICATE within candidates",
+   "TOKEN \"payments\" is ordinary vocabulary"
+  ]
+ },
+ {
+  "name": "Perfios",
+  "sector": "Fintech",
+  "strength": "distinctive",
+  "reasons": [
+   "DUPLICATE within candidates"
+  ]
+ },
+ {
+  "name": "Decentro",
+  "sector": "Fintech",
+  "strength": "distinctive",
+  "reasons": [
+   "DUPLICATE within candidates"
+  ]
+ },
+ {
+  "name": "Fi Money",
+  "sector": "Fintech",
+  "strength": "ambiguous",
+  "reasons": [
+   "DUPLICATE within candidates"
+  ]
+ },
+ {
+  "name": "FamPay",
+  "sector": "Fintech",
+  "strength": "distinctive",
+  "reasons": [
+   "DUPLICATE within candidates"
+  ]
+ },
+ {
+  "name": "Jar",
+  "sector": "Fintech",
+  "strength": "ambiguous",
+  "reasons": [
+   "DUPLICATE within candidates"
+  ]
+ },
+ {
+  "name": "Simpl",
+  "sector": "Fintech",
+  "strength": "ambiguous",
+  "reasons": [
+   "DUPLICATE within candidates"
+  ]
+ },
+ {
+  "name": "Rupeek",
+  "sector": "Fintech",
+  "strength": "distinctive",
+  "reasons": [
+   "DUPLICATE within candidates"
+  ]
+ },
+ {
+  "name": "Khatabook",
+  "sector": "Fintech",
+  "strength": "distinctive",
+  "reasons": [
+   "DUPLICATE within candidates"
+  ]
+ },
+ {
+  "name": "Open Financial Technologies",
+  "sector": "Fintech",
+  "strength": "ambiguous",
+  "reasons": [
+   "DUPLICATE within candidates"
+  ]
+ },
+ {
+  "name": "Zolve",
+  "sector": "Fintech",
+  "strength": "distinctive",
+  "reasons": [
+   "DUPLICATE within candidates"
+  ]
+ },
+ {
+  "name": "smallcase",
+  "sector": "Fintech",
+  "strength": "distinctive",
+  "reasons": [
+   "DUPLICATE within candidates"
+  ]
+ },
+ {
+  "name": "Onsurity",
+  "sector": "Fintech",
+  "strength": "distinctive",
+  "reasons": [
+   "DUPLICATE within candidates"
+  ]
+ },
+ {
+  "name": "Plum",
+  "sector": "Fintech",
+  "strength": "ambiguous",
+  "reasons": [
+   "DUPLICATE within candidates"
+  ]
+ },
+ {
+  "name": "Acko",
+  "sector": "Fintech",
+  "strength": "ambiguous",
+  "reasons": [
+   "DUPLICATE within candidates"
+  ]
+ },
+ {
+  "name": "Ujjivan Small Finance Bank",
+  "sector": "Fintech",
+  "strength": "distinctive",
+  "reasons": [
+   "TOKEN \"finance\" is ordinary vocabulary",
+   "TOKEN \"bank\" is ordinary vocabulary"
+  ]
+ },
+ {
+  "name": "Canara Bank",
+  "sector": "Fintech",
+  "strength": "distinctive",
+  "reasons": [
+   "TOKEN \"bank\" is ordinary vocabulary"
+  ]
+ },
+ {
+  "name": "NatWest Group",
+  "sector": "Fintech",
+  "strength": "distinctive",
+  "reasons": [
+   "TOKEN \"group\" is ordinary vocabulary"
+  ]
+ },
+ {
+  "name": "Deutsche Bank",
+  "sector": "Fintech",
+  "strength": "distinctive",
+  "reasons": [
+   "TOKEN \"bank\" is ordinary vocabulary"
+  ]
+ },
+ {
+  "name": "Tech Mahindra",
+  "sector": "Services & GCC",
+  "strength": "distinctive",
+  "reasons": [
+   "TOKEN \"tech\" is a fragment of ['fintech', 'technologies', 'technology']"
+  ]
+ },
+ {
+  "name": "Mphasis",
+  "sector": "Services & GCC",
+  "strength": "distinctive",
+  "reasons": [
+   "DUPLICATE within candidates"
+  ]
+ },
+ {
+  "name": "Tata Elxsi",
+  "sector": "Services & GCC",
+  "strength": "distinctive",
+  "reasons": [
+   "DUPLICATE within candidates"
+  ]
+ },
+ {
+  "name": "Quest Global",
+  "sector": "Services & GCC",
+  "strength": "distinctive",
+  "reasons": [
+   "TOKEN \"global\" is ordinary vocabulary"
+  ]
+ },
+ {
+  "name": "L&T Technology Services",
+  "sector": "Services & GCC",
+  "strength": "ambiguous",
+  "reasons": [
+   "DUPLICATE within candidates"
+  ]
+ },
+ {
+  "name": "HARMAN",
+  "sector": "Hardware & Semiconductor",
+  "strength": "ambiguous",
+  "reasons": [
+   "DUPLICATE within candidates"
+  ]
+ },
+ {
+  "name": "Tiger Analytics",
+  "sector": "Data & AI",
+  "strength": "distinctive",
+  "reasons": [
+   "TOKEN \"analytics\" is ordinary vocabulary"
+  ]
+ },
+ {
+  "name": "Sigmoid",
+  "sector": "Data & AI",
+  "strength": "ambiguous",
+  "reasons": [
+   "DUPLICATE within candidates"
+  ]
+ },
+ {
+  "name": "Yellow.ai",
+  "sector": "Data & AI",
+  "strength": "distinctive",
+  "reasons": [
+   "DUPLICATE within candidates"
+  ]
+ },
+ {
+  "name": "Observe.AI",
+  "sector": "Data & AI",
+  "strength": "ambiguous",
+  "reasons": [
+   "DUPLICATE within candidates"
+  ]
+ },
+ {
+  "name": "Gupshup",
+  "sector": "Data & AI",
+  "strength": "ambiguous",
+  "reasons": [
+   "DUPLICATE within candidates"
+  ]
+ },
+ {
+  "name": "Cropin",
+  "sector": "Data & AI",
+  "strength": "distinctive",
+  "reasons": [
+   "DUPLICATE within candidates"
+  ]
+ },
+ {
+  "name": "ThoughtSpot",
+  "sector": "Data & AI",
+  "strength": "distinctive",
+  "reasons": [
+   "DUPLICATE within candidates"
+  ]
+ },
+ {
+  "name": "Informatica",
+  "sector": "Data & AI",
+  "strength": "distinctive",
+  "reasons": [
+   "DUPLICATE within candidates"
+  ]
+ },
+ {
+  "name": "Couchbase",
+  "sector": "Data & AI",
+  "strength": "distinctive",
+  "reasons": [
+   "DUPLICATE within candidates"
+  ]
+ },
+ {
+  "name": "Rubrik",
+  "sector": "Data & AI",
+  "strength": "distinctive",
+  "reasons": [
+   "DUPLICATE within candidates"
+  ]
+ },
+ {
+  "name": "Cohesity",
+  "sector": "Data & AI",
+  "strength": "distinctive",
+  "reasons": [
+   "DUPLICATE within candidates"
+  ]
+ },
+ {
+  "name": "Harness",
+  "sector": "Developer Tools",
+  "strength": "ambiguous",
+  "reasons": [
+   "DUPLICATE within candidates"
+  ]
+ },
+ {
+  "name": "Rust Bangalore",
+  "sector": "Community",
+  "strength": "distinctive",
+  "reasons": [
+   "TOKEN \"bangalore\" is ordinary vocabulary"
+  ]
+ },
+ {
+  "name": "AWS User Group Bengaluru",
+  "sector": "Community",
+  "strength": "distinctive",
+  "reasons": [
+   "TOKEN \"group\" is ordinary vocabulary",
+   "TOKEN \"bengaluru\" is ordinary vocabulary"
+  ]
+ },
+ {
+  "name": "TiE Bangalore",
+  "sector": "Community",
+  "strength": "distinctive",
+  "reasons": [
+   "TOKEN \"tie\" is a fragment of ['communities']",
+   "TOKEN \"bangalore\" is ordinary vocabulary"
+  ]
+ },
+ {
+  "name": "IEEE Bangalore Section",
+  "sector": "Community",
+  "strength": "distinctive",
+  "reasons": [
+   "TOKEN \"bangalore\" is ordinary vocabulary"
+  ]
+ },
+ {
+  "name": "Analytics India Magazine",
+  "sector": "Community",
+  "strength": "distinctive",
+  "reasons": [
+   "TOKEN \"analytics\" is ordinary vocabulary",
+   "TOKEN \"india\" is ordinary vocabulary"
+  ]
+ },
+ {
+  "name": "PGConf India",
+  "sector": "Community",
+  "strength": "distinctive",
+  "reasons": [
+   "TOKEN \"india\" is ordinary vocabulary"
+  ]
+ },
+ {
+  "name": "Friends of Figma, Bangalore",
+  "sector": "Community",
+  "strength": "distinctive",
+  "reasons": [
+   "TOKEN \"bangalore\" is ordinary vocabulary"
+  ]
+ },
+ {
+  "name": "ProductTank Bangalore",
+  "sector": "Community",
+  "strength": "distinctive",
+  "reasons": [
+   "TOKEN \"bangalore\" is ordinary vocabulary"
+  ]
+ },
+ {
+  "name": "droidcon India",
+  "sector": "Community",
+  "strength": "distinctive",
+  "reasons": [
+   "TOKEN \"india\" is ordinary vocabulary"
+  ]
+ }
+]

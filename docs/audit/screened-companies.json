@@ -1,0 +1,2692 @@
+[
+ {
+  "name": "Palo Alto Networks",
+  "sector": "SaaS",
+  "strength": "distinctive",
+  "aliases": [
+   "Palo Alto Networks India",
+   "PANW"
+  ],
+  "website": "https://www.paloaltonetworks.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "Zscaler",
+  "sector": "SaaS",
+  "strength": "distinctive",
+  "aliases": [
+   "Zscaler India"
+  ],
+  "website": "https://www.zscaler.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "Netskope",
+  "sector": "SaaS",
+  "strength": "distinctive",
+  "aliases": [
+   "Netskope India"
+  ],
+  "website": "https://www.netskope.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "Fortinet",
+  "sector": "SaaS",
+  "strength": "distinctive",
+  "aliases": [
+   "Fortinet India"
+  ],
+  "website": "https://www.fortinet.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "SentinelOne",
+  "sector": "SaaS",
+  "strength": "distinctive",
+  "aliases": [
+   "Sentinel One",
+   "SentinelOne India"
+  ],
+  "website": "https://www.sentinelone.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "Check Point Software",
+  "sector": "SaaS",
+  "strength": "ambiguous",
+  "aliases": [
+   "Check Point",
+   "Check Point Software Technologies"
+  ],
+  "website": "https://www.checkpoint.com",
+  "strengthChanged": false,
+  "strengthReason": "'check point' / 'checkpoint' is ordinary English and a standard ML/CI term — 'model checkpoint', 'checkpoint file', 'save a checkpoint'"
+ },
+ {
+  "name": "Trellix",
+  "sector": "SaaS",
+  "strength": "distinctive",
+  "aliases": [
+   "McAfee Enterprise",
+   "FireEye",
+   "Trellix India"
+  ],
+  "website": "https://www.trellix.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "McAfee",
+  "sector": "SaaS",
+  "strength": "distinctive",
+  "aliases": [
+   "McAfee India",
+   "McAfee Software India"
+  ],
+  "website": "https://www.mcafee.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "SonicWall",
+  "sector": "SaaS",
+  "strength": "distinctive",
+  "aliases": [
+   "SonicWALL",
+   "SonicWall India"
+  ],
+  "website": "https://www.sonicwall.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "Akamai",
+  "sector": "Developer Tools",
+  "strength": "distinctive",
+  "aliases": [
+   "Akamai Technologies",
+   "Linode"
+  ],
+  "website": "https://www.akamai.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "Okta",
+  "sector": "SaaS",
+  "strength": "ambiguous",
+  "aliases": [
+   "Auth0",
+   "Okta India"
+  ],
+  "website": "https://www.okta.com",
+  "strengthChanged": false,
+  "strengthReason": "four-character token; 'okta' is also the meteorological unit of cloud cover and sits inside strings like 'Oktane'"
+ },
+ {
+  "name": "Saviynt",
+  "sector": "SaaS",
+  "strength": "distinctive",
+  "aliases": [
+   "Saviynt India"
+  ],
+  "website": "https://saviynt.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "Securonix",
+  "sector": "SaaS",
+  "strength": "distinctive",
+  "aliases": [
+   "Securonix India"
+  ],
+  "website": "https://www.securonix.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "CloudSEK",
+  "sector": "SaaS",
+  "strength": "distinctive",
+  "aliases": [
+   "Cloud SEK",
+   "CloudSEK Information Security",
+   "Cloudsek"
+  ],
+  "website": "https://cloudsek.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "Sprinto",
+  "sector": "SaaS",
+  "strength": "distinctive",
+  "aliases": [
+   "Sprinto Inc"
+  ],
+  "website": "https://sprinto.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "Scrut Automation",
+  "sector": "SaaS",
+  "strength": "ambiguous",
+  "aliases": [
+   "Scrut"
+  ],
+  "website": "https://www.scrut.io",
+  "strengthChanged": true,
+  "strengthReason": "the alias 'Scrut' is a fragment of 'scrutiny' / 'scrutinize' / 'scrutinised'"
+ },
+ {
+  "name": "Thales",
+  "sector": "Hardware & Semiconductor",
+  "strength": "ambiguous",
+  "aliases": [
+   "Gemalto",
+   "Thales Engineering Competence Centre",
+   "Thales Group",
+   "Thales India"
+  ],
+  "website": "https://www.thalesgroup.com",
+  "strengthChanged": true,
+  "strengthReason": "Thales is the mathematician in \"Thales' theorem\", which stands alone in student and education event titles in this corpus"
+ },
+ {
+  "name": "Juniper Networks",
+  "sector": "Hardware & Semiconductor",
+  "strength": "distinctive",
+  "aliases": [
+   "Juniper India",
+   "Juniper Networks India"
+  ],
+  "website": "https://www.juniper.net",
+  "strengthChanged": false
+ },
+ {
+  "name": "Arista Networks",
+  "sector": "Hardware & Semiconductor",
+  "strength": "distinctive",
+  "aliases": [
+   "Arista India",
+   "Arista Networks India"
+  ],
+  "website": "https://www.arista.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "F5",
+  "sector": "Developer Tools",
+  "strength": "ambiguous",
+  "aliases": [
+   "F5 Networks",
+   "NGINX",
+   "F5 India"
+  ],
+  "website": "https://www.f5.com",
+  "strengthChanged": false,
+  "strengthReason": "two-character token — 'F5' is the refresh key and appears in ordinary text, version strings and IDs"
+ },
+ {
+  "name": "Extreme Networks",
+  "sector": "Hardware & Semiconductor",
+  "strength": "ambiguous",
+  "aliases": [
+   "Extreme Networks India"
+  ],
+  "website": "https://www.extremenetworks.com",
+  "strengthChanged": true,
+  "strengthReason": "'Extreme' is an ordinary English adjective and 'Networks' a generic industry term, so the pair can appear in ordinary copy"
+ },
+ {
+  "name": "CommScope",
+  "sector": "Hardware & Semiconductor",
+  "strength": "distinctive",
+  "aliases": [
+   "Ruckus Networks",
+   "CommScope India",
+   "ARRIS International"
+  ],
+  "website": "https://www.commscope.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "Tejas Networks",
+  "sector": "Hardware & Semiconductor",
+  "strength": "distinctive",
+  "aliases": [
+   "Saankhya Labs",
+   "Tejas Networks Limited"
+  ],
+  "website": "https://www.tejasnetworks.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "Ericsson",
+  "sector": "Hardware & Semiconductor",
+  "strength": "distinctive",
+  "aliases": [
+   "Ericsson India",
+   "Ericsson R&D"
+  ],
+  "website": "https://www.ericsson.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "Hewlett Packard Enterprise",
+  "sector": "Hardware & Semiconductor",
+  "strength": "ambiguous",
+  "aliases": [
+   "HPE",
+   "HPE India",
+   "Hewlett Packard",
+   "Hewlett-Packard Enterprise"
+  ],
+  "website": "https://www.hpe.com",
+  "strengthChanged": false,
+  "strengthReason": "the 'HPE' alias is a three-character token, below the short-token floor"
+ },
+ {
+  "name": "Lenovo",
+  "sector": "Hardware & Semiconductor",
+  "strength": "distinctive",
+  "aliases": [
+   "Lenovo India",
+   "Motorola Mobility"
+  ],
+  "website": "https://www.lenovo.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "Honeywell",
+  "sector": "Hardware & Semiconductor",
+  "strength": "distinctive",
+  "aliases": [
+   "Honeywell Aerospace",
+   "Honeywell India",
+   "Honeywell Technology Solutions"
+  ],
+  "website": "https://www.honeywell.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "Siemens",
+  "sector": "Services & GCC",
+  "strength": "distinctive",
+  "aliases": [
+   "Mentor Graphics",
+   "Siemens Digital Industries Software",
+   "Siemens EDA",
+   "Siemens Healthineers",
+   "Siemens India",
+   "Siemens Technology India",
+   "Siemens Technology and Services"
+  ],
+  "website": "https://www.siemens.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "NetApp",
+  "sector": "Hardware & Semiconductor",
+  "strength": "distinctive",
+  "aliases": [
+   "NetApp India"
+  ],
+  "website": "https://www.netapp.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "Pure Storage",
+  "sector": "Hardware & Semiconductor",
+  "strength": "ambiguous",
+  "aliases": [
+   "Pure Storage India"
+  ],
+  "website": "https://www.purestorage.com",
+  "strengthChanged": true,
+  "strengthReason": "'pure' is an ordinary adjective and 'storage' a generic industry term — 'pure storage' occurs in ordinary infrastructure copy"
+ },
+ {
+  "name": "Rubrik",
+  "sector": "SaaS",
+  "strength": "distinctive",
+  "aliases": [
+   "Rubrik India"
+  ],
+  "website": "https://www.rubrik.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "Cohesity",
+  "sector": "SaaS",
+  "strength": "distinctive",
+  "aliases": [
+   "Cohesity India"
+  ],
+  "website": "https://www.cohesity.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "Commvault",
+  "sector": "SaaS",
+  "strength": "distinctive",
+  "aliases": [
+   "Commvault India"
+  ],
+  "website": "https://www.commvault.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "Western Digital",
+  "sector": "Hardware & Semiconductor",
+  "strength": "ambiguous",
+  "aliases": [
+   "HGST",
+   "SanDisk",
+   "Western Digital India"
+  ],
+  "website": "https://www.westerndigital.com",
+  "strengthChanged": true,
+  "strengthReason": "'Western' is an ordinary adjective and 'Digital' a generic industry term — 'western digital <noun>' appears in ordinary copy"
+ },
+ {
+  "name": "Informatica",
+  "sector": "Data & AI",
+  "strength": "distinctive",
+  "aliases": [
+   "Informatica Business Solutions",
+   "Informatica India"
+  ],
+  "website": "https://www.informatica.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "Cloudera",
+  "sector": "Data & AI",
+  "strength": "distinctive",
+  "aliases": [
+   "Cloudera India",
+   "Hortonworks"
+  ],
+  "website": "https://www.cloudera.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "Couchbase",
+  "sector": "Data & AI",
+  "strength": "distinctive",
+  "aliases": [
+   "Couchbase India"
+  ],
+  "website": "https://www.couchbase.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "Aerospike",
+  "sector": "Data & AI",
+  "strength": "ambiguous",
+  "aliases": [
+   "Aerospike India"
+  ],
+  "website": "https://aerospike.com",
+  "strengthChanged": true,
+  "strengthReason": "'aerospike' is also a rocket-engine nozzle type, which appears verbatim in space-tech event copy (Bengaluru has an active space-hardware scene)"
+ },
+ {
+  "name": "ThoughtSpot",
+  "sector": "Data & AI",
+  "strength": "distinctive",
+  "aliases": [
+   "ThoughtSpot India",
+   "Thoughtspot"
+  ],
+  "website": "https://www.thoughtspot.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "Fivetran",
+  "sector": "Data & AI",
+  "strength": "distinctive",
+  "aliases": [
+   "Fivetran India"
+  ],
+  "website": "https://www.fivetran.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "Citrix",
+  "sector": "SaaS",
+  "strength": "distinctive",
+  "aliases": [
+   "Citrix Systems",
+   "Citrix R&D India"
+  ],
+  "website": "https://www.citrix.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "JFrog",
+  "sector": "Developer Tools",
+  "strength": "distinctive",
+  "aliases": [
+   "JFrog India",
+   "Artifactory"
+  ],
+  "website": "https://jfrog.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "Harness",
+  "sector": "Developer Tools",
+  "strength": "ambiguous",
+  "aliases": [
+   "Harness Inc",
+   "Harness India",
+   "Harness.io"
+  ],
+  "website": "https://www.harness.io",
+  "strengthChanged": false,
+  "strengthReason": "\"harness\" is an ordinary English verb and \"harness the power of AI\" is one of the most common title constructions in this corpus."
+ },
+ {
+  "name": "DigitalOcean",
+  "sector": "Developer Tools",
+  "strength": "ambiguous",
+  "aliases": [
+   "DigitalOcean India",
+   "Digital Ocean"
+  ],
+  "website": "https://www.digitalocean.com",
+  "strengthChanged": true,
+  "strengthReason": "the alias 'Digital Ocean' matches the marketing phrase 'digital ocean of data', and 'digital' is a generic industry term"
+ },
+ {
+  "name": "Last9",
+  "sector": "Developer Tools",
+  "strength": "ambiguous",
+  "aliases": [
+   "Last 9",
+   "Last9 Inc"
+  ],
+  "website": "https://last9.io",
+  "strengthChanged": true,
+  "strengthReason": "'last' is an ordinary English word and 'Last9' collides with strings like 'last90days'; the 'Last Nine' alias ('the last nine months') was dropped outright"
+ },
+ {
+  "name": "SigNoz",
+  "sector": "Developer Tools",
+  "strength": "distinctive",
+  "aliases": [
+   "Signoz"
+  ],
+  "website": "https://signoz.io",
+  "strengthChanged": false
+ },
+ {
+  "name": "SolarWinds",
+  "sector": "Developer Tools",
+  "strength": "distinctive",
+  "aliases": [
+   "SolarWinds India"
+  ],
+  "website": "https://www.solarwinds.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "OpenText",
+  "sector": "SaaS",
+  "strength": "ambiguous",
+  "aliases": [
+   "Micro Focus",
+   "OpenText India",
+   "Open Text"
+  ],
+  "website": "https://www.opentext.com",
+  "strengthChanged": true,
+  "strengthReason": "the alias 'Open Text' matches ordinary phrases — 'open text file', 'open text editor'"
+ },
+ {
+  "name": "Boomi",
+  "sector": "SaaS",
+  "strength": "ambiguous",
+  "aliases": [
+   "Dell Boomi",
+   "Boomi India"
+  ],
+  "website": "https://boomi.com",
+  "strengthChanged": true,
+  "strengthReason": "'Boomi' is a fragment of 'booming' — 'the booming AI market'"
+ },
+ {
+  "name": "Zoom",
+  "sector": "SaaS",
+  "strength": "ambiguous",
+  "aliases": [
+   "Zoom Video Communications",
+   "Zoom Communications"
+  ],
+  "website": "https://www.zoom.com",
+  "strengthChanged": false,
+  "strengthReason": "'zoom' is an ordinary English word and appears in nearly every online-event listing — 'Zoom link', 'zoom in'"
+ },
+ {
+  "name": "MoEngage",
+  "sector": "SaaS",
+  "strength": "distinctive",
+  "aliases": [
+   "MoEngage Inc",
+   "Moengage"
+  ],
+  "website": "https://www.moengage.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "Yellow.ai",
+  "sector": "SaaS",
+  "strength": "distinctive",
+  "aliases": [
+   "Yellow AI",
+   "Yellow Messenger",
+   "Yellow ai",
+   "YellowAI",
+   "Yellowai"
+  ],
+  "website": "https://yellow.ai",
+  "strengthChanged": false
+ },
+ {
+  "name": "Exotel",
+  "sector": "SaaS",
+  "strength": "distinctive",
+  "aliases": [
+   "Ameyo",
+   "Exotel India",
+   "Exotel Techcom"
+  ],
+  "website": "https://exotel.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "Observe.AI",
+  "sector": "SaaS",
+  "strength": "ambiguous",
+  "aliases": [
+   "Observe AI",
+   "ObserveAI"
+  ],
+  "website": "https://www.observe.ai",
+  "strengthChanged": true,
+  "strengthReason": "The \"Observe AI\" alias collides with the ordinary imperative phrase \"observe AI\" (\"Observe AI Agents in Production\"), which is exactly the copy this GenAI-saturated corpus is full of."
+ },
+ {
+  "name": "Tekion",
+  "sector": "SaaS",
+  "strength": "distinctive",
+  "aliases": [
+   "Tekion Corp",
+   "Tekion India"
+  ],
+  "website": "https://tekion.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "BigBasket",
+  "sector": "Consumer Internet",
+  "strength": "distinctive",
+  "aliases": [
+   "Supermarket Grocery Supplies",
+   "BBnow",
+   "BB Now"
+  ],
+  "website": "https://www.bigbasket.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "Zepto",
+  "sector": "Consumer Internet",
+  "strength": "ambiguous",
+  "aliases": [
+   "KiranaKart Technologies",
+   "Zeptonow",
+   "Zepto Now"
+  ],
+  "website": "https://www.zeptonow.com",
+  "strengthChanged": true,
+  "strengthReason": "'zepto' is the SI prefix (zeptosecond, zeptogram) and the prefix of the unrelated ZeptoLab games studio"
+ },
+ {
+  "name": "cult.fit",
+  "sector": "Consumer Internet",
+  "strength": "distinctive",
+  "aliases": [
+   "Curefit",
+   "Cure.fit",
+   "Cultfit",
+   "Curefit Healthcare"
+  ],
+  "website": "https://www.cult.fit",
+  "strengthChanged": false
+ },
+ {
+  "name": "NoBroker",
+  "sector": "Consumer Internet",
+  "strength": "distinctive",
+  "aliases": [
+   "NoBrokerHood"
+  ],
+  "website": "https://www.nobroker.in",
+  "strengthChanged": false
+ },
+ {
+  "name": "MyGate",
+  "sector": "Consumer Internet",
+  "strength": "distinctive",
+  "aliases": [
+   "Vivish Technologies"
+  ],
+  "website": "https://mygate.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "Licious",
+  "sector": "Consumer Internet",
+  "strength": "ambiguous",
+  "aliases": [
+   "Delightful Gourmet"
+  ],
+  "website": "https://www.licious.in",
+  "strengthChanged": false,
+  "strengthReason": "'licious' is the tail of 'delicious', a word that appears constantly in food and meetup copy"
+ },
+ {
+  "name": "VerSe Innovation",
+  "sector": "Consumer Internet",
+  "strength": "ambiguous",
+  "aliases": [
+   "Dailyhunt",
+   "Newshunt",
+   "Josh App",
+   "Verse Innovation"
+  ],
+  "website": "https://verse.in",
+  "strengthChanged": false,
+  "strengthReason": "'verse' is an ordinary noun and a fragment of 'universe'/'conversely'; the bare 'VerSe' alias was dropped for that reason, and 'Josh' is a common first name"
+ },
+ {
+  "name": "Pratilipi",
+  "sector": "Consumer Internet",
+  "strength": "ambiguous",
+  "aliases": [
+   "Nasadiya Technologies",
+   "Pratilipi Comics",
+   "Pratilipi FM"
+  ],
+  "website": "https://www.pratilipi.com",
+  "strengthChanged": true,
+  "strengthReason": "'pratilipi' is an ordinary Sanskrit/Hindi noun ('copy', 'manuscript') that can appear in the literary and cultural listings this corpus ingests"
+ },
+ {
+  "name": "Apna",
+  "sector": "Consumer Internet",
+  "strength": "ambiguous",
+  "aliases": [
+   "apna.co",
+   "Apna Time Tech",
+   "Apna Jobs"
+  ],
+  "website": "https://apna.co",
+  "strengthChanged": false,
+  "strengthReason": "'apna' is an everyday Hindi word ('our own') and a 4-char token"
+ },
+ {
+  "name": "BYJU'S",
+  "sector": "Consumer Internet",
+  "strength": "distinctive",
+  "aliases": [
+   "Byjus",
+   "Byju's",
+   "BYJUS",
+   "Think and Learn",
+   "WhiteHat Jr"
+  ],
+  "website": "https://byjus.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "Vedantu",
+  "sector": "Consumer Internet",
+  "strength": "distinctive",
+  "aliases": [
+   "Vedantu Innovations"
+  ],
+  "website": "https://www.vedantu.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "Cuemath",
+  "sector": "Consumer Internet",
+  "strength": "distinctive",
+  "aliases": [
+   "Cuelearn",
+   "Cue Learn"
+  ],
+  "website": "https://www.cuemath.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "Simplilearn",
+  "sector": "Consumer Internet",
+  "strength": "distinctive",
+  "aliases": [
+   "Simplilearn Solutions"
+  ],
+  "website": "https://www.simplilearn.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "Newton School",
+  "sector": "Community",
+  "strength": "ambiguous",
+  "aliases": [
+   "Newton School of Technology",
+   "NewtonSchool"
+  ],
+  "website": "https://www.newtonschool.co",
+  "strengthChanged": true,
+  "strengthReason": "'Newton' is the SI unit of force and a common surname, and the phrase 'Newton School' also names unrelated schools; sector set to Community to match the existing Scaler entry"
+ },
+ {
+  "name": "Shadowfax",
+  "sector": "Consumer Internet",
+  "strength": "ambiguous",
+  "aliases": [
+   "Shadowfax Technologies"
+  ],
+  "website": "https://www.shadowfax.in",
+  "strengthChanged": true,
+  "strengthReason": "'Shadowfax' is Gandalf's horse in Tolkien and can appear in the book-club and pop-culture listings this corpus ingests"
+ },
+ {
+  "name": "Porter",
+  "sector": "Consumer Internet",
+  "strength": "ambiguous",
+  "aliases": [
+   "Smartshift Logistics",
+   "SmartShift",
+   "Porter.in"
+  ],
+  "website": "https://porter.in",
+  "strengthChanged": false,
+  "strengthReason": "'porter' is an ordinary noun, a common surname (Porter's five forces), and a fragment of 'reporter'/'transporter'/'importer'"
+ },
+ {
+  "name": "BlackBuck",
+  "sector": "Consumer Internet",
+  "strength": "ambiguous",
+  "aliases": [
+   "Zinka Logistics",
+   "Zinka Logistics Solutions"
+  ],
+  "website": "https://blackbuck.com",
+  "strengthChanged": true,
+  "strengthReason": "'blackbuck' is an Indian antelope and appears in the wildlife/trek listings this corpus deliberately ingests"
+ },
+ {
+  "name": "Zetwerk",
+  "sector": "Consumer Internet",
+  "strength": "distinctive",
+  "aliases": [
+   "Zetwerk Manufacturing Businesses"
+  ],
+  "website": "https://www.zetwerk.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "Yulu",
+  "sector": "Consumer Internet",
+  "strength": "ambiguous",
+  "aliases": [
+   "Yulu Bikes",
+   "Yulu Mobility"
+  ],
+  "website": "https://www.yulu.bike",
+  "strengthChanged": false,
+  "strengthReason": "4-char token; too short to match safely outside an employer/organiser field"
+ },
+ {
+  "name": "Mobile Premier League",
+  "sector": "Consumer Internet",
+  "strength": "ambiguous",
+  "aliases": [
+   "Galactus Funware Technology",
+   "MPL Esports"
+  ],
+  "website": "https://www.mpl.live",
+  "strengthChanged": false,
+  "strengthReason": "the 'MPL' short form collides inside 'simple', 'sample' and 'compliance', so it is not retained as an alias; 'Mobile' on its own is generic"
+ },
+ {
+  "name": "PlaySimple Games",
+  "sector": "Consumer Internet",
+  "strength": "distinctive",
+  "aliases": [
+   "PlaySimple"
+  ],
+  "website": "https://playsimple.in",
+  "strengthChanged": false
+ },
+ {
+  "name": "Ninjacart",
+  "sector": "Consumer Internet",
+  "strength": "distinctive",
+  "aliases": [
+   "Ninja Cart",
+   "63 Ideas Infolabs"
+  ],
+  "website": "https://ninjacart.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "Cropin",
+  "sector": "Data & AI",
+  "strength": "distinctive",
+  "aliases": [
+   "CropIn",
+   "CropIn Technology",
+   "Cropin Technology",
+   "Cropin Technology Solutions"
+  ],
+  "website": "https://www.cropin.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "Practo",
+  "sector": "Consumer Internet",
+  "strength": "ambiguous",
+  "aliases": [
+   "Practo Technologies"
+  ],
+  "website": "https://www.practo.com",
+  "strengthChanged": true,
+  "strengthReason": "'practo' sits inside 'chiropractor', which appears in the wellness listings this corpus ingests"
+ },
+ {
+  "name": "HealthifyMe",
+  "sector": "Consumer Internet",
+  "strength": "ambiguous",
+  "aliases": [
+   "Healthify",
+   "Healthify Me"
+  ],
+  "website": "https://www.healthifyme.com",
+  "strengthChanged": true,
+  "strengthReason": "'healthify' is used as a verb in wellness marketing copy ('healthify your diet'), and the corpus is full of wellness listings"
+ },
+ {
+  "name": "Cashfree Payments",
+  "sector": "Fintech",
+  "strength": "distinctive",
+  "aliases": [
+   "Cashfree",
+   "Cashfree Payments India"
+  ],
+  "website": "https://www.cashfree.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "Perfios",
+  "sector": "Fintech",
+  "strength": "distinctive",
+  "aliases": [
+   "Karza Technologies",
+   "Perfios Software Solutions"
+  ],
+  "website": "https://www.perfios.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "Rupeek",
+  "sector": "Fintech",
+  "strength": "distinctive",
+  "aliases": [
+   "Rupeek Fintech"
+  ],
+  "website": "https://rupeek.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "Khatabook",
+  "sector": "Fintech",
+  "strength": "distinctive",
+  "aliases": [
+   "Biz Analyst",
+   "Kyte Technologies"
+  ],
+  "website": "https://khatabook.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "Simpl",
+  "sector": "Fintech",
+  "strength": "ambiguous",
+  "aliases": [
+   "Get Simpl",
+   "GetSimpl",
+   "GetSimpl Technologies",
+   "One Sigma Technologies"
+  ],
+  "website": "https://getsimpl.com",
+  "strengthChanged": false,
+  "strengthReason": "'Simpl' is the stem of 'simple' / 'simply' / 'simplify', which appear constantly in event copy"
+ },
+ {
+  "name": "Open Financial Technologies",
+  "sector": "Fintech",
+  "strength": "ambiguous",
+  "aliases": [
+   "Open Financial",
+   "Open Financial Technologies Pvt Ltd",
+   "Open Money",
+   "Open.Money",
+   "OpenMoney",
+   "Zwitch"
+  ],
+  "website": "https://open.money",
+  "strengthChanged": false,
+  "strengthReason": "'Open' is one of the most common tokens in tech-event text ('open source', 'open banking'), and the aliases 'Open Money' / 'Open Financial' are ordinary word pairs"
+ },
+ {
+  "name": "Fi Money",
+  "sector": "Fintech",
+  "strength": "ambiguous",
+  "aliases": [
+   "Epifi Technologies",
+   "Fi Neobank",
+   "Fi.Money",
+   "epiFi",
+   "epiFi Technologies"
+  ],
+  "website": "https://fi.money",
+  "strengthChanged": false,
+  "strengthReason": "'Fi' is a two-character token that occurs inside 'Wi-Fi' / 'sci-fi' and 'money' is an ordinary English word, so neither half of the name is safe outside the organiser field"
+ },
+ {
+  "name": "Jar",
+  "sector": "Fintech",
+  "strength": "ambiguous",
+  "aliases": [
+   "Changejar Technologies",
+   "Jar App",
+   "MyJar"
+  ],
+  "website": "https://www.myjar.app",
+  "strengthChanged": false,
+  "strengthReason": "'jar' is an ordinary English noun and a three-character token (venue/organiser strings like 'The Mason Jar' would match)"
+ },
+ {
+  "name": "smallcase",
+  "sector": "Fintech",
+  "strength": "ambiguous",
+  "aliases": [
+   "Smallcase Technologies",
+   "Tickertape"
+  ],
+  "website": "https://www.smallcase.com",
+  "strengthChanged": false,
+  "strengthReason": "'smallcase' reads as ordinary prose for lowercase/'small case'; the spaced 'Small Case' alias was dropped for the same reason"
+ },
+ {
+  "name": "Decentro",
+  "sector": "Fintech",
+  "strength": "distinctive",
+  "aliases": [
+   "Decentro Tech"
+  ],
+  "website": "https://decentro.tech",
+  "strengthChanged": false
+ },
+ {
+  "name": "FamPay",
+  "sector": "Fintech",
+  "strength": "distinctive",
+  "aliases": [
+   "FamApp",
+   "Trio Payments"
+  ],
+  "website": "https://fampay.in",
+  "strengthChanged": false
+ },
+ {
+  "name": "Zolve",
+  "sector": "Fintech",
+  "strength": "distinctive",
+  "aliases": [
+   "Zolve Innovations"
+  ],
+  "website": "https://www.zolve.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "Acko",
+  "sector": "Fintech",
+  "strength": "ambiguous",
+  "aliases": [
+   "Acko Drive",
+   "Acko General Insurance",
+   "Acko Insurance"
+  ],
+  "website": "https://www.acko.com",
+  "strengthChanged": false,
+  "strengthReason": "four-character token, so it must stay organiser-field only under the <=4-char rule"
+ },
+ {
+  "name": "Onsurity",
+  "sector": "Fintech",
+  "strength": "distinctive",
+  "aliases": [
+   "Onsurity Technologies"
+  ],
+  "website": "https://www.onsurity.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "Plum",
+  "sector": "Fintech",
+  "strength": "ambiguous",
+  "aliases": [
+   "Plum Benefits",
+   "Plum Health",
+   "Plum Insurance",
+   "PlumHQ"
+  ],
+  "website": "https://www.plumhq.com",
+  "strengthChanged": false,
+  "strengthReason": "'plum' is an ordinary English word (the fruit, and 'plum role'), and a four-character token that appears in venue and cafe names"
+ },
+ {
+  "name": "Medi Assist",
+  "sector": "SaaS",
+  "strength": "ambiguous",
+  "aliases": [
+   "MediAssist",
+   "Medi Assist Healthcare Services",
+   "Medi Assist TPA"
+  ],
+  "website": "https://www.mediassist.in",
+  "strengthChanged": true,
+  "strengthReason": "both tokens are generic health-service words - 'medi assist' occurs in ordinary health-camp copy and in other TPAs' and clinics' names"
+ },
+ {
+  "name": "LeadSquared",
+  "sector": "SaaS",
+  "strength": "distinctive",
+  "aliases": [
+   "Lead Squared",
+   "MarketXpander Services"
+  ],
+  "website": "https://www.leadsquared.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "SpotDraft",
+  "sector": "SaaS",
+  "strength": "distinctive",
+  "aliases": [
+   "Spot Draft"
+  ],
+  "website": "https://www.spotdraft.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "Tracxn",
+  "sector": "SaaS",
+  "strength": "distinctive",
+  "aliases": [
+   "Tracxn Technologies"
+  ],
+  "website": "https://tracxn.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "DevRev",
+  "sector": "SaaS",
+  "strength": "distinctive",
+  "aliases": [
+   "DevRev Inc"
+  ],
+  "website": "https://devrev.ai",
+  "strengthChanged": false
+ },
+ {
+  "name": "HackerEarth",
+  "sector": "Developer Tools",
+  "strength": "distinctive",
+  "aliases": [
+   "Hacker Earth"
+  ],
+  "website": "https://www.hackerearth.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "Gupshup",
+  "sector": "SaaS",
+  "strength": "ambiguous",
+  "aliases": [
+   "Gupshup.io",
+   "Webaroo"
+  ],
+  "website": "https://www.gupshup.io",
+  "strengthChanged": false,
+  "strengthReason": "\"gupshup\" is a common Hindi word for chat/chit-chat and is used verbatim in Indian event titles (\"Tech Gupshup\")."
+ },
+ {
+  "name": "Sigmoid",
+  "sector": "Data & AI",
+  "strength": "ambiguous",
+  "aliases": [
+   "Sigmoid Analytics"
+  ],
+  "website": "https://www.sigmoid.com",
+  "strengthChanged": false,
+  "strengthReason": "\"sigmoid\" is standard ML vocabulary (the sigmoid activation) and appears as a whole token in ML talk titles and organiser tags."
+ },
+ {
+  "name": "Appsmith",
+  "sector": "Developer Tools",
+  "strength": "distinctive",
+  "aliases": [
+   "Appsmith Inc"
+  ],
+  "website": "https://www.appsmith.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "Composio",
+  "sector": "Developer Tools",
+  "strength": "distinctive",
+  "aliases": [
+   "Composio HQ"
+  ],
+  "website": "https://composio.dev",
+  "strengthChanged": false
+ },
+ {
+  "name": "Ather Energy",
+  "sector": "Hardware & Semiconductor",
+  "strength": "ambiguous",
+  "aliases": [
+   "Ather Energy Limited",
+   "Ather Energy Ltd"
+  ],
+  "website": "https://www.atherenergy.com",
+  "strengthChanged": false,
+  "strengthReason": "the bare 'Ather' form sits inside 'rather', 'gather', 'weather', 'leather' and the name 'Heather', so it is not retained as an alias at all"
+ },
+ {
+  "name": "Ola Electric",
+  "sector": "Hardware & Semiconductor",
+  "strength": "distinctive",
+  "aliases": [
+   "Ola Cell Technologies",
+   "Ola Electric Mobility",
+   "Ola Futurefactory"
+  ],
+  "website": "https://www.olaelectric.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "Ultraviolette",
+  "sector": "Hardware & Semiconductor",
+  "strength": "distinctive",
+  "aliases": [
+   "Ultraviolette Automotive"
+  ],
+  "website": "https://www.ultraviolette.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "Ultrahuman",
+  "sector": "Hardware & Semiconductor",
+  "strength": "distinctive",
+  "aliases": [
+   "Ultrahuman Healthcare",
+   "Ultrahuman Ring"
+  ],
+  "website": "https://www.ultrahuman.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "Pixxel",
+  "sector": "Hardware & Semiconductor",
+  "strength": "distinctive",
+  "aliases": [
+   "Pixxel India",
+   "Pixxel Space",
+   "Pixxel Space Technologies"
+  ],
+  "website": "https://www.pixxel.space",
+  "strengthChanged": false
+ },
+ {
+  "name": "Digantara",
+  "sector": "Hardware & Semiconductor",
+  "strength": "ambiguous",
+  "aliases": [
+   "Digantara Research and Technologies"
+  ],
+  "website": "https://www.digantara.co.in",
+  "strengthChanged": true,
+  "strengthReason": "'digantara' is a Sanskrit noun (horizon/space) that can appear as a title word in the cultural listings this corpus ingests"
+ },
+ {
+  "name": "Synopsys",
+  "sector": "Hardware & Semiconductor",
+  "strength": "distinctive",
+  "aliases": [
+   "Synopsys India"
+  ],
+  "website": "https://www.synopsys.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "Cadence",
+  "sector": "Hardware & Semiconductor",
+  "strength": "ambiguous",
+  "aliases": [
+   "Cadence Design Systems",
+   "Cadence India"
+  ],
+  "website": "https://www.cadence.com",
+  "strengthChanged": false,
+  "strengthReason": "cadence — ordinary English noun (running cadence, release cadence, musical cadence)"
+ },
+ {
+  "name": "MathWorks",
+  "sector": "Hardware & Semiconductor",
+  "strength": "ambiguous",
+  "aliases": [
+   "MathWorks India",
+   "MATLAB",
+   "Simulink"
+  ],
+  "website": "https://www.mathworks.com",
+  "strengthChanged": true,
+  "strengthReason": "MATLAB / Simulink — the aliases are tool names that stand alone as ordinary words in titles ('MATLAB workshop', 'Simulink training'), which a coaching centre runs far more often than MathWorks does; ambiguous keeps the aliases usable by restricting them to the organiser field"
+ },
+ {
+  "name": "Marvell",
+  "sector": "Hardware & Semiconductor",
+  "strength": "ambiguous",
+  "aliases": [
+   "Marvell Technology",
+   "Marvell Semiconductor",
+   "Marvell India"
+  ],
+  "website": "https://www.marvell.com",
+  "strengthChanged": false,
+  "strengthReason": "marvellous / marvel — 'marvell' is a fragment of the British spelling"
+ },
+ {
+  "name": "Analog Devices",
+  "sector": "Hardware & Semiconductor",
+  "strength": "ambiguous",
+  "aliases": [
+   "Analog Devices India",
+   "ADI India"
+  ],
+  "website": "https://www.analog.com",
+  "strengthChanged": false,
+  "strengthReason": "'analog devices' is an ordinary hardware phrase that stands alone in event copy about analog devices"
+ },
+ {
+  "name": "NXP Semiconductors",
+  "sector": "Hardware & Semiconductor",
+  "strength": "ambiguous",
+  "aliases": [
+   "NXP",
+   "NXP India",
+   "NXP Semiconductors India"
+  ],
+  "website": "https://www.nxp.com",
+  "strengthChanged": false,
+  "strengthReason": "the 'NXP' alias is a three-character token, below the short-token floor"
+ },
+ {
+  "name": "Infineon Technologies",
+  "sector": "Hardware & Semiconductor",
+  "strength": "distinctive",
+  "aliases": [
+   "Infineon",
+   "Infineon India",
+   "Infineon Technologies India"
+  ],
+  "website": "https://www.infineon.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "Renesas Electronics",
+  "sector": "Hardware & Semiconductor",
+  "strength": "distinctive",
+  "aliases": [
+   "Renesas",
+   "Renesas India",
+   "Intersil"
+  ],
+  "website": "https://www.renesas.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "Microchip Technology",
+  "sector": "Hardware & Semiconductor",
+  "strength": "ambiguous",
+  "aliases": [
+   "Microchip",
+   "Microchip India",
+   "Microsemi"
+  ],
+  "website": "https://www.microchip.com",
+  "strengthChanged": false,
+  "strengthReason": "microchip — generic hardware noun, and the bare alias is exactly that word"
+ },
+ {
+  "name": "MediaTek",
+  "sector": "Hardware & Semiconductor",
+  "strength": "distinctive",
+  "aliases": [
+   "MediaTek India",
+   "MediaTek Bangalore"
+  ],
+  "website": "https://www.mediatek.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "STMicroelectronics",
+  "sector": "Hardware & Semiconductor",
+  "strength": "distinctive",
+  "aliases": [
+   "ST Microelectronics",
+   "STMicro",
+   "STMicroelectronics India"
+  ],
+  "website": "https://www.st.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "SiFive",
+  "sector": "Hardware & Semiconductor",
+  "strength": "distinctive",
+  "aliases": [
+   "SiFive India"
+  ],
+  "website": "https://www.sifive.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "Applied Materials",
+  "sector": "Hardware & Semiconductor",
+  "strength": "ambiguous",
+  "aliases": [
+   "Applied Materials India",
+   "AMAT"
+  ],
+  "website": "https://www.appliedmaterials.com",
+  "strengthChanged": false,
+  "strengthReason": "'applied materials' reads as a generic materials-science phrase; the 'AMAT' alias is also a fragment of 'amateur'"
+ },
+ {
+  "name": "Lam Research",
+  "sector": "Hardware & Semiconductor",
+  "strength": "ambiguous",
+  "aliases": [
+   "Lam Research India"
+  ],
+  "website": "https://www.lamresearch.com",
+  "strengthChanged": false,
+  "strengthReason": "'Lam' is a three-letter token and a common surname; 'research' is a generic industry word"
+ },
+ {
+  "name": "Tessolve",
+  "sector": "Hardware & Semiconductor",
+  "strength": "distinctive",
+  "aliases": [
+   "Tessolve Semiconductor",
+   "Tessolve Bangalore"
+  ],
+  "website": "https://www.tessolve.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "Sasken",
+  "sector": "Hardware & Semiconductor",
+  "strength": "distinctive",
+  "aliases": [
+   "Sasken Technologies",
+   "Sasken Communication Technologies"
+  ],
+  "website": "https://www.sasken.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "Mistral Solutions",
+  "sector": "Hardware & Semiconductor",
+  "strength": "distinctive",
+  "aliases": [
+   "Mistral Solutions Pvt Ltd"
+  ],
+  "website": "https://www.mistralsolutions.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "Ignitarium",
+  "sector": "Hardware & Semiconductor",
+  "strength": "distinctive",
+  "aliases": [
+   "Ignitarium Technology Solutions"
+  ],
+  "website": "https://ignitarium.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "eInfochips",
+  "sector": "Hardware & Semiconductor",
+  "strength": "distinctive",
+  "aliases": [
+   "Einfochips",
+   "eInfochips (an Arrow company)"
+  ],
+  "website": "https://www.einfochips.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "L&T Technology Services",
+  "sector": "Services & GCC",
+  "strength": "ambiguous",
+  "aliases": [
+   "L&T Technology Services Limited",
+   "LTTS",
+   "LnT Technology Services"
+  ],
+  "website": "https://www.ltts.com",
+  "strengthChanged": false,
+  "strengthReason": "The \"LTTS\" alias is a 4-character token, and \"Technology Services\" is a generic industry phrase."
+ },
+ {
+  "name": "Tata Elxsi",
+  "sector": "Services & GCC",
+  "strength": "distinctive",
+  "aliases": [
+   "Tata Elxsi Limited"
+  ],
+  "website": "https://www.tataelxsi.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "Mercedes-Benz R&D India",
+  "sector": "Hardware & Semiconductor",
+  "strength": "distinctive",
+  "aliases": [
+   "MBRDI",
+   "Mercedes-Benz Research and Development India",
+   "Mercedes-Benz R&D"
+  ],
+  "website": "https://www.mbrdi.co.in",
+  "strengthChanged": false
+ },
+ {
+  "name": "Continental Automotive",
+  "sector": "Hardware & Semiconductor",
+  "strength": "ambiguous",
+  "aliases": [
+   "Continental",
+   "Continental Automotive India",
+   "Continental AG"
+  ],
+  "website": "https://www.continental.com",
+  "strengthChanged": false,
+  "strengthReason": "continental — ordinary English adjective, and the bare alias also names hotels, breakfasts and cricket clubs"
+ },
+ {
+  "name": "Aptiv",
+  "sector": "Hardware & Semiconductor",
+  "strength": "ambiguous",
+  "aliases": [
+   "Aptiv India"
+  ],
+  "website": "https://www.aptiv.com",
+  "strengthChanged": true,
+  "strengthReason": "adaptive / captive — both contain 'aptiv', and 'adaptive' is everywhere in ADAS and AI event copy"
+ },
+ {
+  "name": "Harman",
+  "sector": "Hardware & Semiconductor",
+  "strength": "ambiguous",
+  "aliases": [
+   "HARMAN Connected Services",
+   "HARMAN India",
+   "Harman India",
+   "Harman International"
+  ],
+  "website": "https://www.harman.com",
+  "strengthChanged": false,
+  "strengthReason": "\"Harman\" is a common Indian personal name (Harman, Harman Singh) and organiser fields routinely carry personal names."
+ },
+ {
+  "name": "Netradyne",
+  "sector": "Hardware & Semiconductor",
+  "strength": "distinctive",
+  "aliases": [
+   "Netradyne India"
+  ],
+  "website": "https://www.netradyne.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "GE Aerospace",
+  "sector": "Hardware & Semiconductor",
+  "strength": "distinctive",
+  "aliases": [
+   "GE Aviation",
+   "GE India Technology Centre",
+   "John F. Welch Technology Centre",
+   "JFWTC",
+   "GE India"
+  ],
+  "website": "https://www.geaerospace.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "GE HealthCare",
+  "sector": "Hardware & Semiconductor",
+  "strength": "distinctive",
+  "aliases": [
+   "GE Healthcare",
+   "Wipro GE Healthcare",
+   "GE HealthCare India"
+  ],
+  "website": "https://www.gehealthcare.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "Airbus",
+  "sector": "Hardware & Semiconductor",
+  "strength": "distinctive",
+  "aliases": [
+   "Airbus India",
+   "Airbus India Engineering Centre"
+  ],
+  "website": "https://www.airbus.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "Boeing",
+  "sector": "Hardware & Semiconductor",
+  "strength": "distinctive",
+  "aliases": [
+   "Boeing India",
+   "BIETC",
+   "Boeing India Engineering and Technology Center"
+  ],
+  "website": "https://www.boeing.co.in",
+  "strengthChanged": false
+ },
+ {
+  "name": "Rolls-Royce",
+  "sector": "Hardware & Semiconductor",
+  "strength": "ambiguous",
+  "aliases": [
+   "Rolls Royce",
+   "Rolls-Royce India",
+   "Rolls-Royce Engineering Centre India"
+  ],
+  "website": "https://www.rolls-royce.com",
+  "strengthChanged": true,
+  "strengthReason": "used idiomatically as a superlative ('the Rolls-Royce of frameworks') and shared with Rolls-Royce Motor Cars, a different (BMW-owned) company — organiser-only matching keeps both out"
+ },
+ {
+  "name": "Safran",
+  "sector": "Hardware & Semiconductor",
+  "strength": "distinctive",
+  "aliases": [
+   "Safran Engineering Services",
+   "Safran India"
+  ],
+  "website": "https://www.safran-group.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "Hindustan Aeronautics",
+  "sector": "Hardware & Semiconductor",
+  "strength": "ambiguous",
+  "aliases": [
+   "HAL",
+   "Hindustan Aeronautics Limited",
+   "HAL Bangalore"
+  ],
+  "website": "https://hal-india.co.in",
+  "strengthChanged": false,
+  "strengthReason": "the 'HAL' alias is a Bengaluru locality — HAL Airport Road, HAL 2nd Stage, HAL Layout are in venue and address strings all over the corpus, and it also sits inside 'shall'/'challenge'"
+ },
+ {
+  "name": "Bharat Electronics",
+  "sector": "Hardware & Semiconductor",
+  "strength": "ambiguous",
+  "aliases": [
+   "BEL",
+   "Bharat Electronics Limited",
+   "BEL Bangalore"
+  ],
+  "website": "https://bel-india.in",
+  "strengthChanged": false,
+  "strengthReason": "the 'BEL' alias is a major Bengaluru road and locality (BEL Road, BEL Layout) and a fragment of 'below', 'label', 'belong'"
+ },
+ {
+  "name": "ISRO",
+  "sector": "Hardware & Semiconductor",
+  "strength": "ambiguous",
+  "aliases": [
+   "Indian Space Research Organisation",
+   "URSC",
+   "U R Rao Satellite Centre",
+   "ISTRAC",
+   "ISRO Bengaluru"
+  ],
+  "website": "https://www.isro.gov.in",
+  "strengthChanged": false,
+  "strengthReason": "four-character token, and 'ISRO Layout' is a Bengaluru locality that appears in address strings"
+ },
+ {
+  "name": "DRDO",
+  "sector": "Hardware & Semiconductor",
+  "strength": "ambiguous",
+  "aliases": [
+   "Defence Research and Development Organisation",
+   "LRDE",
+   "GTRE",
+   "CABS",
+   "DRDO Bengaluru"
+  ],
+  "website": "https://www.drdo.gov.in",
+  "strengthChanged": false,
+  "strengthReason": "four-character token; the lab aliases are short acronyms too ('CABS' is the plural of cab). The proposed 'ADE' alias is removed — it is a fragment of 'made', 'grade', 'decade' and 'Academy'"
+ },
+ {
+  "name": "Bellatrix Aerospace",
+  "sector": "Hardware & Semiconductor",
+  "strength": "distinctive",
+  "aliases": [
+   "Bellatrix"
+  ],
+  "website": "https://bellatrix.aero",
+  "strengthChanged": false
+ },
+ {
+  "name": "Tonbo Imaging",
+  "sector": "Hardware & Semiconductor",
+  "strength": "distinctive",
+  "aliases": [
+   "Tonbo"
+  ],
+  "website": "https://www.tonboimaging.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "CynLr",
+  "sector": "Hardware & Semiconductor",
+  "strength": "distinctive",
+  "aliases": [
+   "Cynlr"
+  ],
+  "website": "https://www.cynlr.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "Philips",
+  "sector": "Hardware & Semiconductor",
+  "strength": "distinctive",
+  "aliases": [
+   "Philips Innovation Campus",
+   "Philips India",
+   "Philips Healthcare"
+  ],
+  "website": "https://www.philips.co.in",
+  "strengthChanged": false
+ },
+ {
+  "name": "Signzy",
+  "sector": "Fintech",
+  "strength": "distinctive",
+  "aliases": [
+   "Signzy Technologies"
+  ],
+  "website": "https://www.signzy.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "FinBox",
+  "sector": "Fintech",
+  "strength": "distinctive",
+  "aliases": [
+   "Moneyhoney",
+   "FinBox India"
+  ],
+  "website": "https://finbox.in",
+  "strengthChanged": false
+ },
+ {
+  "name": "HyperVerge",
+  "sector": "Fintech",
+  "strength": "distinctive",
+  "website": "https://hyperverge.co",
+  "strengthChanged": false
+ },
+ {
+  "name": "Instamojo",
+  "sector": "Fintech",
+  "strength": "distinctive",
+  "website": "https://www.instamojo.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "Innoviti",
+  "sector": "Fintech",
+  "strength": "distinctive",
+  "aliases": [
+   "Innoviti Payment Solutions",
+   "Innoviti Technologies"
+  ],
+  "website": "https://innoviti.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "Wibmo",
+  "sector": "Fintech",
+  "strength": "distinctive",
+  "aliases": [
+   "Wibmo Inc"
+  ],
+  "website": "https://www.wibmo.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "Axio",
+  "sector": "Fintech",
+  "strength": "ambiguous",
+  "aliases": [
+   "Capital Float",
+   "CapFloat Financial Services"
+  ],
+  "website": "https://www.axio.co.in",
+  "strengthChanged": false,
+  "strengthReason": "four-character token that sits inside 'axiom' and 'axios' (the HTTP client, ubiquitous in dev-event text)"
+ },
+ {
+  "name": "KreditBee",
+  "sector": "Fintech",
+  "strength": "distinctive",
+  "aliases": [
+   "Krazybee",
+   "KreditBee NBFC"
+  ],
+  "website": "https://www.kreditbee.in",
+  "strengthChanged": false
+ },
+ {
+  "name": "Money View",
+  "sector": "Fintech",
+  "strength": "ambiguous",
+  "aliases": [
+   "Moneyview",
+   "Whizdm Innovations"
+  ],
+  "website": "https://moneyview.in",
+  "strengthChanged": true,
+  "strengthReason": "both tokens are ordinary English words — 'money' and 'view' — so the pair can occur as an incidental adjacency in a finance-event title or organiser string"
+ },
+ {
+  "name": "Kuvera",
+  "sector": "Fintech",
+  "strength": "distinctive",
+  "aliases": [
+   "Arevuk Advisory Services"
+  ],
+  "website": "https://kuvera.in",
+  "strengthChanged": false
+ },
+ {
+  "name": "Scripbox",
+  "sector": "Fintech",
+  "strength": "distinctive",
+  "aliases": [
+   "Scripbox Advisors"
+  ],
+  "website": "https://scripbox.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "Fisdom",
+  "sector": "Fintech",
+  "strength": "distinctive",
+  "aliases": [
+   "Finwizard Technology"
+  ],
+  "website": "https://www.fisdom.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "CoinSwitch",
+  "sector": "Fintech",
+  "strength": "distinctive",
+  "aliases": [
+   "CoinSwitch Kuber",
+   "Bitcipher Labs"
+  ],
+  "website": "https://coinswitch.co",
+  "strengthChanged": false
+ },
+ {
+  "name": "Fyle",
+  "sector": "Fintech",
+  "strength": "ambiguous",
+  "aliases": [
+   "Fyle Technologies",
+   "FyleHQ"
+  ],
+  "website": "https://www.fylehq.com",
+  "strengthChanged": false,
+  "strengthReason": "four-character token and a near-miss of 'file' — too short to match anywhere but the organiser field"
+ },
+ {
+  "name": "Happay",
+  "sector": "Fintech",
+  "strength": "distinctive",
+  "aliases": [
+   "VA Tech Ventures"
+  ],
+  "website": "https://www.happay.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "Digit Insurance",
+  "sector": "Fintech",
+  "strength": "ambiguous",
+  "aliases": [
+   "Go Digit",
+   "Go Digit General Insurance",
+   "GoDigit"
+  ],
+  "website": "https://www.godigit.com",
+  "strengthChanged": false,
+  "strengthReason": "'Digit' is the stem of 'digital' / 'digits' and the alias 'Go Digit' is a prefix of the extremely common phrase 'go digital'"
+ },
+ {
+  "name": "Ujjivan Small Finance Bank",
+  "sector": "Fintech",
+  "strength": "distinctive",
+  "aliases": [
+   "Ujjivan",
+   "Ujjivan SFB",
+   "Ujjivan Financial Services"
+  ],
+  "website": "https://www.ujjivansfb.in",
+  "strengthChanged": false
+ },
+ {
+  "name": "Jana Small Finance Bank",
+  "sector": "Fintech",
+  "strength": "ambiguous",
+  "aliases": [
+   "Jana SFB",
+   "Janalakshmi Financial Services"
+  ],
+  "website": "https://www.janabank.com",
+  "strengthChanged": false,
+  "strengthReason": "'Jana' is a common Indian name fragment and word ('Jana Gana Mana', 'Janardhan'), so the short alias forms are unsafe outside the organiser field"
+ },
+ {
+  "name": "Canara Bank",
+  "sector": "Fintech",
+  "strength": "distinctive",
+  "aliases": [
+   "Canara"
+  ],
+  "website": "https://www.canarabank.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "Angel One",
+  "sector": "Fintech",
+  "strength": "ambiguous",
+  "aliases": [
+   "Angel Broking",
+   "Angel One Limited"
+  ],
+  "website": "https://www.angelone.in",
+  "strengthChanged": true,
+  "strengthReason": "'angel' is ubiquitous in startup-event strings ('angel investor', 'Angel Network', 'angel round'), and 'angel one' occurs as an ordinary adjacency, so title/venue matching is unsafe"
+ },
+ {
+  "name": "M2P Fintech",
+  "sector": "Fintech",
+  "strength": "ambiguous",
+  "aliases": [
+   "M2P Solutions",
+   "M2P"
+  ],
+  "website": "https://m2pfintech.com",
+  "strengthChanged": true,
+  "strengthReason": "the alias 'M2P' is a three-character token and 'fintech' is a generic industry term — the short alias must be organiser-field only"
+ },
+ {
+  "name": "Wells Fargo",
+  "sector": "Fintech",
+  "strength": "distinctive",
+  "aliases": [
+   "Wells Fargo India",
+   "Wells Fargo International Solutions",
+   "WFIS"
+  ],
+  "website": "https://www.wellsfargo.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "Morgan Stanley",
+  "sector": "Fintech",
+  "strength": "distinctive",
+  "aliases": [
+   "Morgan Stanley Advantage Services",
+   "MSAS"
+  ],
+  "website": "https://www.morganstanley.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "Standard Chartered",
+  "sector": "Fintech",
+  "strength": "distinctive",
+  "aliases": [
+   "Standard Chartered Bank",
+   "Standard Chartered GBS",
+   "SC Ventures"
+  ],
+  "website": "https://www.sc.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "Northern Trust",
+  "sector": "Fintech",
+  "strength": "distinctive",
+  "aliases": [
+   "Northern Trust Corporation"
+  ],
+  "website": "https://www.northerntrust.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "Fidelity Investments",
+  "sector": "Fintech",
+  "strength": "distinctive",
+  "aliases": [
+   "FMR India",
+   "Fidelity Investments India",
+   "FMR LLC"
+  ],
+  "website": "https://www.fidelity.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "ANZ",
+  "sector": "Fintech",
+  "strength": "ambiguous",
+  "aliases": [
+   "Australia and New Zealand Banking Group",
+   "ANZ Bengaluru",
+   "ANZ Support Services India"
+  ],
+  "website": "https://www.anz.com",
+  "strengthChanged": false,
+  "strengthReason": "three-letter acronym — far too short to match outside the organiser field"
+ },
+ {
+  "name": "NatWest Group",
+  "sector": "Fintech",
+  "strength": "distinctive",
+  "aliases": [
+   "NatWest",
+   "NatWest Digital X",
+   "NatWest Group India",
+   "RBS Services India"
+  ],
+  "website": "https://www.natwestgroup.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "Capital One",
+  "sector": "Fintech",
+  "strength": "ambiguous",
+  "aliases": [
+   "Capital One India",
+   "Capital One Financial"
+  ],
+  "website": "https://www.capitalone.com",
+  "strengthChanged": false,
+  "strengthReason": "'capital' is a common word in startup-event copy and 'capital one' occurs as an incidental adjacency ('raising capital one round at a time')"
+ },
+ {
+  "name": "Swiss Re",
+  "sector": "Fintech",
+  "strength": "ambiguous",
+  "aliases": [
+   "Swiss Re Global Business Solutions",
+   "Swiss Reinsurance"
+  ],
+  "website": "https://www.swissre.com",
+  "strengthChanged": false,
+  "strengthReason": "'Re' is a two-character second token and the pair is a prefix of 'Swiss Reinsurance' / 'Swiss research'"
+ },
+ {
+  "name": "HSBC",
+  "sector": "Fintech",
+  "strength": "ambiguous",
+  "aliases": [
+   "HSBC Technology India",
+   "HSBC Software Development India",
+   "HSBC India"
+  ],
+  "website": "https://www.hsbc.co.in",
+  "strengthChanged": true,
+  "strengthReason": "four-character acronym — the <=4-char rule applies, same as ANZ and LSEG; it also appears inside strings like 'HSBCnet'"
+ },
+ {
+  "name": "Deutsche Bank",
+  "sector": "Fintech",
+  "strength": "distinctive",
+  "aliases": [
+   "Deutsche India",
+   "DB Global Technology",
+   "Deutsche Bank Group"
+  ],
+  "website": "https://www.db.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "Broadridge",
+  "sector": "Fintech",
+  "strength": "distinctive",
+  "aliases": [
+   "Broadridge Financial Solutions",
+   "Broadridge India"
+  ],
+  "website": "https://www.broadridge.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "LSEG",
+  "sector": "Fintech",
+  "strength": "ambiguous",
+  "aliases": [
+   "London Stock Exchange Group",
+   "Refinitiv",
+   "LSEG India"
+  ],
+  "website": "https://www.lseg.com",
+  "strengthChanged": false,
+  "strengthReason": "four-character acronym; 'London Stock Exchange' is also referenced generically in finance-event copy"
+ },
+ {
+  "name": "Finastra",
+  "sector": "Fintech",
+  "strength": "distinctive",
+  "aliases": [
+   "Misys",
+   "Finastra India"
+  ],
+  "website": "https://www.finastra.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "Yodlee",
+  "sector": "Fintech",
+  "strength": "distinctive",
+  "aliases": [
+   "Envestnet | Yodlee",
+   "Envestnet Yodlee",
+   "Envestnet",
+   "Yodlee Infotech"
+  ],
+  "website": "https://www.yodlee.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "Stripe",
+  "sector": "Fintech",
+  "strength": "ambiguous",
+  "aliases": [
+   "Stripe India",
+   "Stripe Payments India",
+   "Recko"
+  ],
+  "website": "https://stripe.com",
+  "strengthChanged": false,
+  "strengthReason": "'stripe' is an ordinary English word (also 'striped', 'stripes' in design/venue copy)"
+ },
+ {
+  "name": "Mphasis",
+  "sector": "Services & GCC",
+  "strength": "distinctive",
+  "aliases": [
+   "MphasiS",
+   "MphasiS BFL",
+   "Mphasis Limited",
+   "Mphasis NEXTlabs"
+  ],
+  "website": "https://www.mphasis.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "EdgeVerve",
+  "sector": "Fintech",
+  "strength": "distinctive",
+  "aliases": [
+   "EdgeVerve Systems",
+   "Finacle",
+   "Infosys Finacle"
+  ],
+  "website": "https://www.edgeverve.com",
+  "strengthChanged": false
+ },
+ {
+  "name": "HCLTech",
+  "sector": "Services & GCC",
+  "strength": "ambiguous",
+  "strengthChanged": false,
+  "strengthReason": "The \"HCL\" alias is a 3-char token (also the chemical formula HCl); short enough that only an organiser-field claim should count.",
+  "aliases": [
+   "HCL Technologies",
+   "HCL",
+   "HCL Tech"
+  ],
+  "website": "https://www.hcltech.com"
+ },
+ {
+  "name": "Tech Mahindra",
+  "sector": "Services & GCC",
+  "strength": "distinctive",
+  "strengthChanged": false,
+  "aliases": [
+   "TechM",
+   "Tech Mahindra Limited"
+  ],
+  "website": "https://www.techmahindra.com"
+ },
+ {
+  "name": "LTIMindtree",
+  "sector": "Services & GCC",
+  "strength": "distinctive",
+  "strengthChanged": false,
+  "aliases": [
+   "Mindtree",
+   "L&T Infotech",
+   "Larsen & Toubro Infotech",
+   "LTI Mindtree"
+  ],
+  "website": "https://www.ltimindtree.com"
+ },
+ {
+  "name": "Capgemini",
+  "sector": "Services & GCC",
+  "strength": "distinctive",
+  "strengthChanged": false,
+  "aliases": [
+   "Capgemini India",
+   "Capgemini Engineering",
+   "Altran"
+  ],
+  "website": "https://www.capgemini.com"
+ },
+ {
+  "name": "Cognizant",
+  "sector": "Services & GCC",
+  "strength": "ambiguous",
+  "strengthChanged": true,
+  "strengthReason": "\"cognizant\" is an ordinary English adjective (\"be cognizant of the trade-offs\") and matches as a whole token, so it must not be read out of titles or venue strings.",
+  "aliases": [
+   "Cognizant Technology Solutions"
+  ],
+  "website": "https://www.cognizant.com"
+ },
+ {
+  "name": "Happiest Minds",
+  "sector": "Services & GCC",
+  "strength": "distinctive",
+  "strengthChanged": false,
+  "aliases": [
+   "Happiest Minds Technologies"
+  ],
+  "website": "https://www.happiestminds.com"
+ },
+ {
+  "name": "Sonata Software",
+  "sector": "Services & GCC",
+  "strength": "ambiguous",
+  "strengthChanged": true,
+  "strengthReason": "The \"Sonata\" alias is a whole-token match on the musical form — this corpus ingests concert and recital listings via District/AllEvents, where \"Sonata\" appears in titles.",
+  "aliases": [
+   "Sonata Software Limited",
+   "Sonata"
+  ],
+  "website": "https://www.sonata-software.com"
+ },
+ {
+  "name": "Quest Global",
+  "sector": "Services & GCC",
+  "strength": "distinctive",
+  "strengthChanged": false,
+  "aliases": [
+   "QuEST Global",
+   "Quest Global Engineering"
+  ],
+  "website": "https://www.quest-global.com"
+ },
+ {
+  "name": "Persistent Systems",
+  "sector": "Services & GCC",
+  "strength": "ambiguous",
+  "strengthChanged": true,
+  "strengthReason": "\"persistent systems\" is ordinary technical phrasing that occurs verbatim in talk titles (\"Building Persistent Systems with Kafka\").",
+  "aliases": [
+   "Persistent Systems Limited"
+  ],
+  "website": "https://www.persistent.com"
+ },
+ {
+  "name": "GlobalLogic",
+  "sector": "Services & GCC",
+  "strength": "distinctive",
+  "strengthChanged": false,
+  "aliases": [
+   "GlobalLogic India",
+   "GlobalLogic, a Hitachi Group Company"
+  ],
+  "website": "https://www.globallogic.com"
+ },
+ {
+  "name": "EPAM",
+  "sector": "Services & GCC",
+  "strength": "ambiguous",
+  "strengthChanged": false,
+  "strengthReason": "4-character token; too short to trust anywhere but the organiser field.",
+  "aliases": [
+   "EPAM Systems",
+   "EPAM India"
+  ],
+  "website": "https://www.epam.com"
+ },
+ {
+  "name": "Publicis Sapient",
+  "sector": "Services & GCC",
+  "strength": "distinctive",
+  "strengthChanged": false,
+  "aliases": [
+   "Sapient",
+   "Publicis Sapient India",
+   "SapientRazorfish"
+  ],
+  "website": "https://www.publicissapient.com"
+ },
+ {
+  "name": "KPMG",
+  "sector": "Services & GCC",
+  "strength": "ambiguous",
+  "strengthChanged": false,
+  "strengthReason": "4-character token, and the \"KGS\" alias is 3 characters — acronyms this short are organiser-field-only.",
+  "aliases": [
+   "KPMG Global Services",
+   "KGS",
+   "KPMG India"
+  ],
+  "website": "https://kpmg.com/in"
+ },
+ {
+  "name": "EY",
+  "sector": "Services & GCC",
+  "strength": "ambiguous",
+  "strengthChanged": false,
+  "strengthReason": "2-character name — the shortest in the batch; \"ey\" is a fragment of they/key/money/survey, so it is only safe as a standalone organiser token.",
+  "aliases": [
+   "Ernst & Young",
+   "EY GDS",
+   "EY Global Delivery Services",
+   "EY India"
+  ],
+  "website": "https://www.ey.com/en_in"
+ },
+ {
+  "name": "PwC",
+  "sector": "Services & GCC",
+  "strength": "ambiguous",
+  "strengthChanged": false,
+  "strengthReason": "3-character token; too short to match outside the organiser field.",
+  "aliases": [
+   "PricewaterhouseCoopers",
+   "PwC Acceleration Centre",
+   "PwC India",
+   "PwC AC Bangalore"
+  ],
+  "website": "https://www.pwc.in"
+ },
+ {
+  "name": "Altimetrik",
+  "sector": "Services & GCC",
+  "strength": "distinctive",
+  "strengthChanged": false,
+  "aliases": [
+   "Altimetrik India"
+  ],
+  "website": "https://www.altimetrik.com"
+ },
+ {
+  "name": "Lollypop Design Studio",
+  "sector": "Services & GCC",
+  "strength": "ambiguous",
+  "strengthChanged": true,
+  "strengthReason": "The \"Lollypop\" alias is a common-noun spelling of \"lollipop\" and reads as a whole token in the kids/leisure listings this corpus ingests.",
+  "aliases": [
+   "Lollypop",
+   "Lollypop Design"
+  ],
+  "website": "https://lollypop.design"
+ },
+ {
+  "name": "Tredence",
+  "sector": "Data & AI",
+  "strength": "distinctive",
+  "strengthChanged": false,
+  "aliases": [
+   "Tredence Analytics",
+   "Tredence Inc"
+  ],
+  "website": "https://www.tredence.com"
+ },
+ {
+  "name": "TheMathCompany",
+  "sector": "Data & AI",
+  "strength": "distinctive",
+  "strengthChanged": false,
+  "aliases": [
+   "MathCo",
+   "The Math Company"
+  ],
+  "website": "https://themathcompany.com"
+ },
+ {
+  "name": "Tiger Analytics",
+  "sector": "Data & AI",
+  "strength": "distinctive",
+  "strengthChanged": false,
+  "aliases": [
+   "Tiger Analytics India"
+  ],
+  "website": "https://www.tigeranalytics.com"
+ },
+ {
+  "name": "Entropik",
+  "sector": "Data & AI",
+  "strength": "distinctive",
+  "strengthChanged": false,
+  "aliases": [
+   "Entropik Tech",
+   "Entropik Technologies"
+  ],
+  "website": "https://www.entropik.io"
+ },
+ {
+  "name": "Skit.ai",
+  "sector": "Data & AI",
+  "strength": "distinctive",
+  "strengthChanged": false,
+  "aliases": [
+   "Vernacular.ai",
+   "Skit AI"
+  ],
+  "website": "https://skit.ai"
+ },
+ {
+  "name": "TrueFoundry",
+  "sector": "Data & AI",
+  "strength": "distinctive",
+  "strengthChanged": false,
+  "aliases": [
+   "True Foundry",
+   "Truefoundry"
+  ],
+  "website": "https://www.truefoundry.com"
+ },
+ {
+  "name": "Portkey",
+  "sector": "Data & AI",
+  "strength": "ambiguous",
+  "strengthChanged": true,
+  "strengthReason": "\"portkey\" is a Harry Potter common noun that turns up as a whole token in themed quiz/trivia titles, which this all-city corpus ingests; the company is also small enough that title matching buys little.",
+  "aliases": [
+   "Portkey AI",
+   "Portkey.ai"
+  ],
+  "website": "https://portkey.ai"
+ },
+ {
+  "name": "Glean",
+  "sector": "Data & AI",
+  "strength": "ambiguous",
+  "strengthChanged": false,
+  "strengthReason": "\"glean\" is an ordinary English verb (\"glean insights from your data\") and matches as a whole token.",
+  "aliases": [
+   "Glean India",
+   "Glean Technologies"
+  ],
+  "website": "https://www.glean.com"
+ },
+ {
+  "name": "BDOTNET",
+  "sector": "Community",
+  "strength": "distinctive",
+  "strengthChanged": false,
+  "aliases": [
+   "Bangalore .NET User Group",
+   "Bangalore Dot Net User Group",
+   "bdotnet"
+  ]
+ },
+ {
+  "name": "BlrDroid",
+  "sector": "Community",
+  "strength": "distinctive",
+  "strengthChanged": false,
+  "aliases": [
+   "Blr Droid",
+   "Bangalore Android User Group"
+  ]
+ },
+ {
+  "name": "Rust Bangalore",
+  "sector": "Community",
+  "strength": "distinctive",
+  "strengthChanged": false,
+  "aliases": [
+   "Rust Bengaluru",
+   "Rust Bangalore Meetup"
+  ]
+ },
+ {
+  "name": "AWS User Group Bengaluru",
+  "sector": "Community",
+  "strength": "distinctive",
+  "strengthChanged": false,
+  "aliases": [
+   "AWS User Group Bangalore",
+   "AWS UG Bengaluru",
+   "AWS Community Day Bengaluru"
+  ]
+ },
+ {
+  "name": "GIDS",
+  "sector": "Community",
+  "strength": "ambiguous",
+  "strengthChanged": false,
+  "strengthReason": "4-character acronym; too short to match outside the organiser field.",
+  "aliases": [
+   "Great Indian Developer Summit",
+   "Great International Developer Summit",
+   "Saltmarch Media"
+  ],
+  "website": "https://developersummit.com"
+ },
+ {
+  "name": "Nasscom",
+  "sector": "Community",
+  "strength": "distinctive",
+  "strengthChanged": false,
+  "aliases": [
+   "NASSCOM",
+   "nasscom 10000 Startups",
+   "Nasscom CoE"
+  ],
+  "website": "https://nasscom.in"
+ },
+ {
+  "name": "TiE Bangalore",
+  "sector": "Community",
+  "strength": "distinctive",
+  "strengthChanged": false,
+  "aliases": [
+   "TiE Bengaluru",
+   "TiE Bangalore Chapter"
+  ]
+ },
+ {
+  "name": "IEEE Bangalore Section",
+  "sector": "Community",
+  "strength": "distinctive",
+  "strengthChanged": false,
+  "aliases": [
+   "IEEE Bangalore",
+   "IEEE Bangalore Chapter"
+  ]
+ },
+ {
+  "name": "Analytics India Magazine",
+  "sector": "Community",
+  "strength": "distinctive",
+  "strengthChanged": false,
+  "aliases": [
+   "AIM Media House",
+   "MachineHack"
+  ],
+  "website": "https://analyticsindiamag.com"
+ },
+ {
+  "name": "YourStory",
+  "sector": "Community",
+  "strength": "distinctive",
+  "strengthChanged": false,
+  "aliases": [
+   "TechSparks",
+   "YourStory Media"
+  ],
+  "website": "https://yourstory.com"
+ },
+ {
+  "name": "PGConf India",
+  "sector": "Community",
+  "strength": "distinctive",
+  "strengthChanged": false,
+  "aliases": [
+   "PGConf.IN",
+   "pgconf India"
+  ],
+  "website": "https://pgconf.in"
+ },
+ {
+  "name": "DesignUp",
+  "sector": "Community",
+  "strength": "ambiguous",
+  "strengthChanged": false,
+  "strengthReason": "Compound of two very common words; the \"Design Up\" alias is generic enough to surface in unrelated design-event titles.",
+  "aliases": [
+   "Design Up",
+   "DesignUp Conference"
+  ],
+  "website": "https://designup.io"
+ },
+ {
+  "name": "Friends of Figma, Bangalore",
+  "sector": "Community",
+  "strength": "distinctive",
+  "strengthChanged": false,
+  "aliases": [
+   "Friends of Figma Bangalore",
+   "Friends of Figma Bengaluru"
+  ]
+ },
+ {
+  "name": "ProductTank Bangalore",
+  "sector": "Community",
+  "strength": "distinctive",
+  "strengthChanged": false,
+  "aliases": [
+   "ProductTank Bengaluru",
+   "Mind the Product Bangalore"
+  ]
+ },
+ {
+  "name": "droidcon India",
+  "sector": "Community",
+  "strength": "distinctive",
+  "strengthChanged": false,
+  "aliases": [
+   "droidcon Bengaluru",
+   "DroidCon India"
+  ],
+  "website": "https://www.droidcon.com"
+ },
+ {
+  "name": "Agile India",
+  "sector": "Community",
+  "strength": "ambiguous",
+  "strengthChanged": false,
+  "strengthReason": "\"agile India\" is ordinary industry prose (\"the agile India community\") and a generic phrase rather than a unique string.",
+  "aliases": [
+   "Agile Software Community of India",
+   "AgileIndia"
+  ]
+ },
+ {
+  "name": "Open Source India",
+  "sector": "Community",
+  "strength": "ambiguous",
+  "strengthChanged": false,
+  "strengthReason": "\"open source India\" is a phrase that appears constantly in ordinary event copy and titles.",
+  "aliases": [
+   "OSI Days",
+   "EFY Group",
+   "Open Source India Conference"
+  ]
+ },
+ {
+  "name": "AnitaB.org India",
+  "sector": "Community",
+  "strength": "ambiguous",
+  "strengthChanged": true,
+  "strengthReason": "The \"GHCI\" alias is a 4-character token that collides with GHCi, the Glasgow Haskell Compiler interactive shell — a Haskell meetup titled \"Intro to GHCi\" would otherwise be attributed here.",
+  "aliases": [
+   "Grace Hopper Celebration India",
+   "GHCI",
+   "AnitaB.org"
+  ],
+  "website": "https://anitab.org"
+ },
+ {
+  "name": "Makers Tribe",
+  "sector": "Community",
+  "strength": "distinctive",
+  "strengthChanged": false,
+  "aliases": [
+   "MakersTribe",
+   "Makers Tribe Bangalore"
+  ]
+ }
+]

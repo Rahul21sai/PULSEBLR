@@ -1,0 +1,3990 @@
+{
+ "companies": [
+  {
+   "name": "Palo Alto Networks",
+   "sector": "SaaS",
+   "strength": "distinctive",
+   "aliases": [
+    "Palo Alto Networks India",
+    "PANW"
+   ],
+   "website": "https://www.paloaltonetworks.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Zscaler",
+   "sector": "SaaS",
+   "strength": "distinctive",
+   "aliases": [
+    "Zscaler India"
+   ],
+   "website": "https://www.zscaler.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Netskope",
+   "sector": "SaaS",
+   "strength": "distinctive",
+   "aliases": [
+    "Netskope India"
+   ],
+   "website": "https://www.netskope.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Fortinet",
+   "sector": "SaaS",
+   "strength": "distinctive",
+   "aliases": [
+    "Fortinet India"
+   ],
+   "website": "https://www.fortinet.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "SentinelOne",
+   "sector": "SaaS",
+   "strength": "distinctive",
+   "aliases": [
+    "Sentinel One",
+    "SentinelOne India"
+   ],
+   "website": "https://www.sentinelone.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Check Point Software",
+   "sector": "SaaS",
+   "strength": "ambiguous",
+   "aliases": [
+    "Check Point",
+    "Check Point Software Technologies"
+   ],
+   "website": "https://www.checkpoint.com",
+   "strengthChanged": false,
+   "strengthReason": "'check point' / 'checkpoint' is ordinary English and a standard ML/CI term — 'model checkpoint', 'checkpoint file', 'save a checkpoint'"
+  },
+  {
+   "name": "Trellix",
+   "sector": "SaaS",
+   "strength": "distinctive",
+   "aliases": [
+    "McAfee Enterprise",
+    "FireEye",
+    "Trellix India"
+   ],
+   "website": "https://www.trellix.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "McAfee",
+   "sector": "SaaS",
+   "strength": "distinctive",
+   "aliases": [
+    "McAfee India",
+    "McAfee Software India"
+   ],
+   "website": "https://www.mcafee.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "SonicWall",
+   "sector": "SaaS",
+   "strength": "distinctive",
+   "aliases": [
+    "SonicWALL",
+    "SonicWall India"
+   ],
+   "website": "https://www.sonicwall.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Akamai",
+   "sector": "Developer Tools",
+   "strength": "distinctive",
+   "aliases": [
+    "Akamai Technologies",
+    "Linode"
+   ],
+   "website": "https://www.akamai.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Okta",
+   "sector": "SaaS",
+   "strength": "ambiguous",
+   "aliases": [
+    "Auth0",
+    "Okta India"
+   ],
+   "website": "https://www.okta.com",
+   "strengthChanged": false,
+   "strengthReason": "four-character token; 'okta' is also the meteorological unit of cloud cover and sits inside strings like 'Oktane'"
+  },
+  {
+   "name": "Saviynt",
+   "sector": "SaaS",
+   "strength": "distinctive",
+   "aliases": [
+    "Saviynt India"
+   ],
+   "website": "https://saviynt.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Securonix",
+   "sector": "SaaS",
+   "strength": "distinctive",
+   "aliases": [
+    "Securonix India"
+   ],
+   "website": "https://www.securonix.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "CloudSEK",
+   "sector": "SaaS",
+   "strength": "distinctive",
+   "aliases": [
+    "Cloud SEK"
+   ],
+   "website": "https://cloudsek.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Sprinto",
+   "sector": "SaaS",
+   "strength": "distinctive",
+   "aliases": [
+    "Sprinto Inc"
+   ],
+   "website": "https://sprinto.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Scrut Automation",
+   "sector": "SaaS",
+   "strength": "ambiguous",
+   "aliases": [
+    "Scrut"
+   ],
+   "website": "https://www.scrut.io",
+   "strengthChanged": true,
+   "strengthReason": "the alias 'Scrut' is a fragment of 'scrutiny' / 'scrutinize' / 'scrutinised'"
+  },
+  {
+   "name": "Thales",
+   "sector": "Hardware & Semiconductor",
+   "strength": "ambiguous",
+   "aliases": [
+    "Thales Group",
+    "Thales India",
+    "Gemalto"
+   ],
+   "website": "https://www.thalesgroup.com",
+   "strengthChanged": true,
+   "strengthReason": "'Thales' also names the Greek mathematician, so talk and workshop copy collides — \"Thales' theorem\""
+  },
+  {
+   "name": "Juniper Networks",
+   "sector": "Hardware & Semiconductor",
+   "strength": "distinctive",
+   "aliases": [
+    "Juniper Networks India"
+   ],
+   "website": "https://www.juniper.net",
+   "strengthChanged": false
+  },
+  {
+   "name": "Arista Networks",
+   "sector": "Hardware & Semiconductor",
+   "strength": "distinctive",
+   "aliases": [
+    "Arista Networks India"
+   ],
+   "website": "https://www.arista.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "F5",
+   "sector": "Developer Tools",
+   "strength": "ambiguous",
+   "aliases": [
+    "F5 Networks",
+    "NGINX",
+    "F5 India"
+   ],
+   "website": "https://www.f5.com",
+   "strengthChanged": false,
+   "strengthReason": "two-character token — 'F5' is the refresh key and appears in ordinary text, version strings and IDs"
+  },
+  {
+   "name": "Extreme Networks",
+   "sector": "Hardware & Semiconductor",
+   "strength": "ambiguous",
+   "aliases": [
+    "Extreme Networks India"
+   ],
+   "website": "https://www.extremenetworks.com",
+   "strengthChanged": true,
+   "strengthReason": "'Extreme' is an ordinary English adjective and 'Networks' a generic industry term, so the pair can appear in ordinary copy"
+  },
+  {
+   "name": "CommScope",
+   "sector": "Hardware & Semiconductor",
+   "strength": "distinctive",
+   "aliases": [
+    "Ruckus Networks",
+    "CommScope India",
+    "ARRIS International"
+   ],
+   "website": "https://www.commscope.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Tejas Networks",
+   "sector": "Hardware & Semiconductor",
+   "strength": "distinctive",
+   "aliases": [
+    "Tejas Networks Limited"
+   ],
+   "website": "https://www.tejasnetworks.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Ericsson",
+   "sector": "Hardware & Semiconductor",
+   "strength": "distinctive",
+   "aliases": [
+    "Ericsson India",
+    "Ericsson R&D"
+   ],
+   "website": "https://www.ericsson.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Hewlett Packard Enterprise",
+   "sector": "Hardware & Semiconductor",
+   "strength": "ambiguous",
+   "aliases": [
+    "HPE",
+    "HPE India",
+    "Hewlett Packard"
+   ],
+   "website": "https://www.hpe.com",
+   "strengthChanged": false,
+   "strengthReason": "'HPE' is a three-character token and 'Hewlett Packard' also matches HP Inc, a different company"
+  },
+  {
+   "name": "Lenovo",
+   "sector": "Hardware & Semiconductor",
+   "strength": "distinctive",
+   "aliases": [
+    "Lenovo India"
+   ],
+   "website": "https://www.lenovo.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Honeywell",
+   "sector": "Hardware & Semiconductor",
+   "strength": "distinctive",
+   "aliases": [
+    "Honeywell Technology Solutions",
+    "Honeywell India"
+   ],
+   "website": "https://www.honeywell.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Siemens",
+   "sector": "Services & GCC",
+   "strength": "distinctive",
+   "aliases": [
+    "Siemens Technology and Services",
+    "Siemens India"
+   ],
+   "website": "https://www.siemens.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "NetApp",
+   "sector": "Hardware & Semiconductor",
+   "strength": "distinctive",
+   "aliases": [
+    "NetApp India"
+   ],
+   "website": "https://www.netapp.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Pure Storage",
+   "sector": "Hardware & Semiconductor",
+   "strength": "ambiguous",
+   "aliases": [
+    "Pure Storage India"
+   ],
+   "website": "https://www.purestorage.com",
+   "strengthChanged": true,
+   "strengthReason": "'pure' is an ordinary adjective and 'storage' a generic industry term — 'pure storage' occurs in ordinary infrastructure copy"
+  },
+  {
+   "name": "Rubrik",
+   "sector": "SaaS",
+   "strength": "distinctive",
+   "aliases": [
+    "Rubrik India"
+   ],
+   "website": "https://www.rubrik.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Cohesity",
+   "sector": "SaaS",
+   "strength": "distinctive",
+   "aliases": [
+    "Cohesity India"
+   ],
+   "website": "https://www.cohesity.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Commvault",
+   "sector": "SaaS",
+   "strength": "distinctive",
+   "aliases": [
+    "Commvault India"
+   ],
+   "website": "https://www.commvault.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Western Digital",
+   "sector": "Hardware & Semiconductor",
+   "strength": "ambiguous",
+   "aliases": [
+    "Western Digital India",
+    "SanDisk"
+   ],
+   "website": "https://www.westerndigital.com",
+   "strengthChanged": true,
+   "strengthReason": "'Western' is an ordinary adjective and 'Digital' a generic industry term — 'western digital <noun>' appears in ordinary copy"
+  },
+  {
+   "name": "Informatica",
+   "sector": "Data & AI",
+   "strength": "distinctive",
+   "aliases": [
+    "Informatica India"
+   ],
+   "website": "https://www.informatica.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Cloudera",
+   "sector": "Data & AI",
+   "strength": "distinctive",
+   "aliases": [
+    "Cloudera India",
+    "Hortonworks"
+   ],
+   "website": "https://www.cloudera.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Couchbase",
+   "sector": "Data & AI",
+   "strength": "distinctive",
+   "aliases": [
+    "Couchbase India"
+   ],
+   "website": "https://www.couchbase.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Aerospike",
+   "sector": "Data & AI",
+   "strength": "ambiguous",
+   "aliases": [
+    "Aerospike India"
+   ],
+   "website": "https://aerospike.com",
+   "strengthChanged": true,
+   "strengthReason": "'aerospike' is also a rocket-engine nozzle type, which appears verbatim in space-tech event copy (Bengaluru has an active space-hardware scene)"
+  },
+  {
+   "name": "ThoughtSpot",
+   "sector": "Data & AI",
+   "strength": "distinctive",
+   "aliases": [
+    "ThoughtSpot India",
+    "Thoughtspot"
+   ],
+   "website": "https://www.thoughtspot.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Fivetran",
+   "sector": "Data & AI",
+   "strength": "distinctive",
+   "aliases": [
+    "Fivetran India"
+   ],
+   "website": "https://www.fivetran.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Citrix",
+   "sector": "SaaS",
+   "strength": "distinctive",
+   "aliases": [
+    "Citrix Systems",
+    "Citrix R&D India"
+   ],
+   "website": "https://www.citrix.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "JFrog",
+   "sector": "Developer Tools",
+   "strength": "distinctive",
+   "aliases": [
+    "JFrog India",
+    "Artifactory"
+   ],
+   "website": "https://jfrog.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Harness",
+   "sector": "Developer Tools",
+   "strength": "ambiguous",
+   "aliases": [
+    "Harness.io",
+    "Harness Inc"
+   ],
+   "website": "https://www.harness.io",
+   "strengthChanged": false,
+   "strengthReason": "'harness' is an ordinary English verb and noun — 'harness AI', 'harness the power of'"
+  },
+  {
+   "name": "DigitalOcean",
+   "sector": "Developer Tools",
+   "strength": "ambiguous",
+   "aliases": [
+    "DigitalOcean India",
+    "Digital Ocean"
+   ],
+   "website": "https://www.digitalocean.com",
+   "strengthChanged": true,
+   "strengthReason": "the alias 'Digital Ocean' matches the marketing phrase 'digital ocean of data', and 'digital' is a generic industry term"
+  },
+  {
+   "name": "Last9",
+   "sector": "Developer Tools",
+   "strength": "ambiguous",
+   "aliases": [
+    "Last9 Inc",
+    "Last 9"
+   ],
+   "website": "https://last9.io",
+   "strengthChanged": true,
+   "strengthReason": "the alias 'Last 9' matches ordinary text such as 'the last 9 months' / 'last 9 events'"
+  },
+  {
+   "name": "SigNoz",
+   "sector": "Developer Tools",
+   "strength": "distinctive",
+   "aliases": [
+    "Signoz"
+   ],
+   "website": "https://signoz.io",
+   "strengthChanged": false
+  },
+  {
+   "name": "SolarWinds",
+   "sector": "Developer Tools",
+   "strength": "distinctive",
+   "aliases": [
+    "SolarWinds India"
+   ],
+   "website": "https://www.solarwinds.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "OpenText",
+   "sector": "SaaS",
+   "strength": "ambiguous",
+   "aliases": [
+    "Micro Focus",
+    "OpenText India",
+    "Open Text"
+   ],
+   "website": "https://www.opentext.com",
+   "strengthChanged": true,
+   "strengthReason": "the alias 'Open Text' matches ordinary phrases — 'open text file', 'open text editor'"
+  },
+  {
+   "name": "Boomi",
+   "sector": "SaaS",
+   "strength": "ambiguous",
+   "aliases": [
+    "Dell Boomi",
+    "Boomi India"
+   ],
+   "website": "https://boomi.com",
+   "strengthChanged": true,
+   "strengthReason": "'Boomi' is a fragment of 'booming' — 'the booming AI market'"
+  },
+  {
+   "name": "Zoom",
+   "sector": "SaaS",
+   "strength": "ambiguous",
+   "aliases": [
+    "Zoom Video Communications",
+    "Zoom Communications"
+   ],
+   "website": "https://www.zoom.com",
+   "strengthChanged": false,
+   "strengthReason": "'zoom' is an ordinary English word and appears in nearly every online-event listing — 'Zoom link', 'zoom in'"
+  },
+  {
+   "name": "MoEngage",
+   "sector": "SaaS",
+   "strength": "distinctive",
+   "aliases": [
+    "Moengage"
+   ],
+   "website": "https://www.moengage.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Yellow.ai",
+   "sector": "SaaS",
+   "strength": "distinctive",
+   "aliases": [
+    "Yellow Messenger",
+    "Yellow AI"
+   ],
+   "website": "https://yellow.ai",
+   "strengthChanged": false
+  },
+  {
+   "name": "Exotel",
+   "sector": "SaaS",
+   "strength": "distinctive",
+   "aliases": [
+    "Exotel India",
+    "Ameyo"
+   ],
+   "website": "https://exotel.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Observe.AI",
+   "sector": "SaaS",
+   "strength": "ambiguous",
+   "aliases": [
+    "Observe AI",
+    "ObserveAI"
+   ],
+   "website": "https://www.observe.ai",
+   "strengthChanged": true,
+   "strengthReason": "the alias 'Observe AI' matches the ordinary phrase 'observe AI …' — 'observe AI agents in action'"
+  },
+  {
+   "name": "Tekion",
+   "sector": "SaaS",
+   "strength": "distinctive",
+   "aliases": [
+    "Tekion Corp",
+    "Tekion India"
+   ],
+   "website": "https://tekion.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "BigBasket",
+   "sector": "Consumer Internet",
+   "strength": "distinctive",
+   "aliases": [
+    "Supermarket Grocery Supplies",
+    "BBnow",
+    "BB Now"
+   ],
+   "website": "https://www.bigbasket.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Zepto",
+   "sector": "Consumer Internet",
+   "strength": "ambiguous",
+   "aliases": [
+    "KiranaKart Technologies",
+    "Zeptonow",
+    "Zepto Now"
+   ],
+   "website": "https://www.zeptonow.com",
+   "strengthChanged": true,
+   "strengthReason": "'zepto' is the SI prefix (zeptosecond, zeptogram) and the prefix of the unrelated ZeptoLab games studio"
+  },
+  {
+   "name": "cult.fit",
+   "sector": "Consumer Internet",
+   "strength": "distinctive",
+   "aliases": [
+    "Curefit",
+    "Cure.fit",
+    "Cultfit",
+    "Curefit Healthcare"
+   ],
+   "website": "https://www.cult.fit",
+   "strengthChanged": false
+  },
+  {
+   "name": "NoBroker",
+   "sector": "Consumer Internet",
+   "strength": "distinctive",
+   "aliases": [
+    "NoBrokerHood"
+   ],
+   "website": "https://www.nobroker.in",
+   "strengthChanged": false
+  },
+  {
+   "name": "MyGate",
+   "sector": "Consumer Internet",
+   "strength": "distinctive",
+   "aliases": [
+    "Vivish Technologies"
+   ],
+   "website": "https://mygate.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Licious",
+   "sector": "Consumer Internet",
+   "strength": "ambiguous",
+   "aliases": [
+    "Delightful Gourmet"
+   ],
+   "website": "https://www.licious.in",
+   "strengthChanged": false,
+   "strengthReason": "'licious' is the tail of 'delicious', a word that appears constantly in food and meetup copy"
+  },
+  {
+   "name": "VerSe Innovation",
+   "sector": "Consumer Internet",
+   "strength": "ambiguous",
+   "aliases": [
+    "Dailyhunt",
+    "Newshunt",
+    "Josh App",
+    "Verse Innovation"
+   ],
+   "website": "https://verse.in",
+   "strengthChanged": false,
+   "strengthReason": "'verse' is an ordinary noun and a fragment of 'universe'/'conversely'; the bare 'VerSe' alias was dropped for that reason, and 'Josh' is a common first name"
+  },
+  {
+   "name": "Pratilipi",
+   "sector": "Consumer Internet",
+   "strength": "ambiguous",
+   "aliases": [
+    "Nasadiya Technologies",
+    "Pratilipi Comics",
+    "Pratilipi FM"
+   ],
+   "website": "https://www.pratilipi.com",
+   "strengthChanged": true,
+   "strengthReason": "'pratilipi' is an ordinary Sanskrit/Hindi noun ('copy', 'manuscript') that can appear in the literary and cultural listings this corpus ingests"
+  },
+  {
+   "name": "Apna",
+   "sector": "Consumer Internet",
+   "strength": "ambiguous",
+   "aliases": [
+    "apna.co",
+    "Apna Time Tech",
+    "Apna Jobs"
+   ],
+   "website": "https://apna.co",
+   "strengthChanged": false,
+   "strengthReason": "'apna' is an everyday Hindi word ('our own') and a 4-char token"
+  },
+  {
+   "name": "BYJU'S",
+   "sector": "Consumer Internet",
+   "strength": "distinctive",
+   "aliases": [
+    "Byjus",
+    "Byju's",
+    "BYJUS",
+    "Think and Learn",
+    "WhiteHat Jr"
+   ],
+   "website": "https://byjus.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Vedantu",
+   "sector": "Consumer Internet",
+   "strength": "distinctive",
+   "aliases": [
+    "Vedantu Innovations"
+   ],
+   "website": "https://www.vedantu.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Cuemath",
+   "sector": "Consumer Internet",
+   "strength": "distinctive",
+   "aliases": [
+    "Cuelearn",
+    "Cue Learn"
+   ],
+   "website": "https://www.cuemath.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Simplilearn",
+   "sector": "Consumer Internet",
+   "strength": "distinctive",
+   "aliases": [
+    "Simplilearn Solutions"
+   ],
+   "website": "https://www.simplilearn.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Newton School",
+   "sector": "Community",
+   "strength": "ambiguous",
+   "aliases": [
+    "Newton School of Technology",
+    "NewtonSchool"
+   ],
+   "website": "https://www.newtonschool.co",
+   "strengthChanged": true,
+   "strengthReason": "'Newton' is the SI unit of force and a common surname, and the phrase 'Newton School' also names unrelated schools; sector set to Community to match the existing Scaler entry"
+  },
+  {
+   "name": "Shadowfax",
+   "sector": "Consumer Internet",
+   "strength": "ambiguous",
+   "aliases": [
+    "Shadowfax Technologies"
+   ],
+   "website": "https://www.shadowfax.in",
+   "strengthChanged": true,
+   "strengthReason": "'Shadowfax' is Gandalf's horse in Tolkien and can appear in the book-club and pop-culture listings this corpus ingests"
+  },
+  {
+   "name": "Porter",
+   "sector": "Consumer Internet",
+   "strength": "ambiguous",
+   "aliases": [
+    "Smartshift Logistics",
+    "SmartShift",
+    "Porter.in"
+   ],
+   "website": "https://porter.in",
+   "strengthChanged": false,
+   "strengthReason": "'porter' is an ordinary noun, a common surname (Porter's five forces), and a fragment of 'reporter'/'transporter'/'importer'"
+  },
+  {
+   "name": "BlackBuck",
+   "sector": "Consumer Internet",
+   "strength": "ambiguous",
+   "aliases": [
+    "Zinka Logistics",
+    "Zinka Logistics Solutions"
+   ],
+   "website": "https://blackbuck.com",
+   "strengthChanged": true,
+   "strengthReason": "'blackbuck' is an Indian antelope and appears in the wildlife/trek listings this corpus deliberately ingests"
+  },
+  {
+   "name": "Zetwerk",
+   "sector": "Consumer Internet",
+   "strength": "distinctive",
+   "aliases": [
+    "Zetwerk Manufacturing Businesses"
+   ],
+   "website": "https://www.zetwerk.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Yulu",
+   "sector": "Consumer Internet",
+   "strength": "ambiguous",
+   "aliases": [
+    "Yulu Bikes",
+    "Yulu Mobility"
+   ],
+   "website": "https://www.yulu.bike",
+   "strengthChanged": false,
+   "strengthReason": "4-char token; too short to match safely outside an employer/organiser field"
+  },
+  {
+   "name": "Mobile Premier League",
+   "sector": "Consumer Internet",
+   "strength": "ambiguous",
+   "aliases": [
+    "Galactus Funware Technology",
+    "MPL Esports"
+   ],
+   "website": "https://www.mpl.live",
+   "strengthChanged": false,
+   "strengthReason": "the 'MPL' short form collides inside 'simple', 'sample' and 'compliance', so it is not retained as an alias; 'Mobile' on its own is generic"
+  },
+  {
+   "name": "PlaySimple Games",
+   "sector": "Consumer Internet",
+   "strength": "distinctive",
+   "aliases": [
+    "PlaySimple"
+   ],
+   "website": "https://playsimple.in",
+   "strengthChanged": false
+  },
+  {
+   "name": "Ninjacart",
+   "sector": "Consumer Internet",
+   "strength": "distinctive",
+   "aliases": [
+    "Ninja Cart",
+    "63 Ideas Infolabs"
+   ],
+   "website": "https://ninjacart.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Cropin",
+   "sector": "Data & AI",
+   "strength": "distinctive",
+   "aliases": [
+    "CropIn Technology",
+    "Cropin Technology Solutions"
+   ],
+   "website": "https://www.cropin.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Practo",
+   "sector": "Consumer Internet",
+   "strength": "ambiguous",
+   "aliases": [
+    "Practo Technologies"
+   ],
+   "website": "https://www.practo.com",
+   "strengthChanged": true,
+   "strengthReason": "'practo' sits inside 'chiropractor', which appears in the wellness listings this corpus ingests"
+  },
+  {
+   "name": "HealthifyMe",
+   "sector": "Consumer Internet",
+   "strength": "ambiguous",
+   "aliases": [
+    "Healthify",
+    "Healthify Me"
+   ],
+   "website": "https://www.healthifyme.com",
+   "strengthChanged": true,
+   "strengthReason": "'healthify' is used as a verb in wellness marketing copy ('healthify your diet'), and the corpus is full of wellness listings"
+  },
+  {
+   "name": "Cashfree Payments",
+   "sector": "Fintech",
+   "strength": "distinctive",
+   "aliases": [
+    "Cashfree",
+    "Cashfree Payments India"
+   ],
+   "website": "https://www.cashfree.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Perfios",
+   "sector": "Fintech",
+   "strength": "distinctive",
+   "aliases": [
+    "Perfios Software Solutions",
+    "Karza Technologies"
+   ],
+   "website": "https://www.perfios.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Rupeek",
+   "sector": "Fintech",
+   "strength": "distinctive",
+   "aliases": [
+    "Rupeek Fintech"
+   ],
+   "website": "https://rupeek.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Khatabook",
+   "sector": "Fintech",
+   "strength": "distinctive",
+   "aliases": [
+    "Kyte Technologies",
+    "Biz Analyst"
+   ],
+   "website": "https://khatabook.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Simpl",
+   "sector": "Fintech",
+   "strength": "ambiguous",
+   "aliases": [
+    "Get Simpl",
+    "GetSimpl",
+    "One Sigma Technologies"
+   ],
+   "website": "https://getsimpl.com",
+   "strengthChanged": false,
+   "strengthReason": "'Simpl' is a fragment of 'simple'/'simply' and of the company name 'Simplilearn', which is itself in this batch"
+  },
+  {
+   "name": "Open Financial Technologies",
+   "sector": "Fintech",
+   "strength": "ambiguous",
+   "aliases": [
+    "Open Money",
+    "Open.Money",
+    "Zwitch",
+    "Open Financial Technologies Pvt Ltd"
+   ],
+   "website": "https://open.money",
+   "strengthChanged": false,
+   "strengthReason": "the brand is the English word 'open' ('open source', 'open house'), so it may only be matched in an employer/organiser field"
+  },
+  {
+   "name": "Fi Money",
+   "sector": "Fintech",
+   "strength": "ambiguous",
+   "aliases": [
+    "epiFi",
+    "Epifi Technologies",
+    "Fi.Money"
+   ],
+   "website": "https://fi.money",
+   "strengthChanged": false,
+   "strengthReason": "the 'Fi' short form collides inside 'fintech', 'WiFi' and 'profile', so it is not retained as an alias"
+  },
+  {
+   "name": "Jar",
+   "sector": "Fintech",
+   "strength": "ambiguous",
+   "aliases": [
+    "Jar App",
+    "Changejar Technologies",
+    "MyJar"
+   ],
+   "website": "https://www.myjar.app",
+   "strengthChanged": false,
+   "strengthReason": "'jar' is a common English noun, the Java archive extension, and a fragment of 'jargon'"
+  },
+  {
+   "name": "smallcase",
+   "sector": "Fintech",
+   "strength": "ambiguous",
+   "aliases": [
+    "Smallcase Technologies"
+   ],
+   "website": "https://www.smallcase.com",
+   "strengthChanged": false,
+   "strengthReason": "'smallcase' reads as ordinary prose for lowercase/'small case'; the spaced 'Small Case' alias was dropped for the same reason"
+  },
+  {
+   "name": "Decentro",
+   "sector": "Fintech",
+   "strength": "distinctive",
+   "aliases": [
+    "Decentro Tech"
+   ],
+   "website": "https://decentro.tech",
+   "strengthChanged": false
+  },
+  {
+   "name": "FamPay",
+   "sector": "Fintech",
+   "strength": "distinctive",
+   "aliases": [
+    "FamApp",
+    "Trio Payments"
+   ],
+   "website": "https://fampay.in",
+   "strengthChanged": false
+  },
+  {
+   "name": "Zolve",
+   "sector": "Fintech",
+   "strength": "distinctive",
+   "aliases": [
+    "Zolve Innovations"
+   ],
+   "website": "https://www.zolve.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Acko",
+   "sector": "Fintech",
+   "strength": "ambiguous",
+   "aliases": [
+    "Acko General Insurance",
+    "Acko Insurance",
+    "Acko Drive"
+   ],
+   "website": "https://www.acko.com",
+   "strengthChanged": false,
+   "strengthReason": "4-char token; too short to match safely outside an employer/organiser field"
+  },
+  {
+   "name": "Onsurity",
+   "sector": "Fintech",
+   "strength": "distinctive",
+   "aliases": [
+    "Onsurity Technologies"
+   ],
+   "website": "https://www.onsurity.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Plum",
+   "sector": "Fintech",
+   "strength": "ambiguous",
+   "aliases": [
+    "Plum Benefits",
+    "PlumHQ",
+    "Plum Insurance",
+    "Plum Health"
+   ],
+   "website": "https://www.plumhq.com",
+   "strengthChanged": false,
+   "strengthReason": "'plum' is a fruit and an ordinary adjective, sits inside 'plumbing', and also names the unrelated D2C brand Plum Goodness"
+  },
+  {
+   "name": "Medi Assist",
+   "sector": "SaaS",
+   "strength": "ambiguous",
+   "aliases": [
+    "MediAssist",
+    "Medi Assist Healthcare Services",
+    "Medi Assist TPA"
+   ],
+   "website": "https://www.mediassist.in",
+   "strengthChanged": true,
+   "strengthReason": "both tokens are generic health-service words - 'medi assist' occurs in ordinary health-camp copy and in other TPAs' and clinics' names"
+  },
+  {
+   "name": "MoEngage",
+   "sector": "SaaS",
+   "strength": "distinctive",
+   "aliases": [
+    "Moengage",
+    "MoEngage Inc"
+   ],
+   "website": "https://www.moengage.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "LeadSquared",
+   "sector": "SaaS",
+   "strength": "distinctive",
+   "aliases": [
+    "Lead Squared",
+    "MarketXpander Services"
+   ],
+   "website": "https://www.leadsquared.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Exotel",
+   "sector": "SaaS",
+   "strength": "distinctive",
+   "aliases": [
+    "Exotel Techcom",
+    "Ameyo"
+   ],
+   "website": "https://exotel.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Sprinto",
+   "sector": "SaaS",
+   "strength": "distinctive",
+   "aliases": [
+    "Sprinto Inc"
+   ],
+   "website": "https://sprinto.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "SpotDraft",
+   "sector": "SaaS",
+   "strength": "distinctive",
+   "aliases": [
+    "Spot Draft"
+   ],
+   "website": "https://www.spotdraft.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Tracxn",
+   "sector": "SaaS",
+   "strength": "distinctive",
+   "aliases": [
+    "Tracxn Technologies"
+   ],
+   "website": "https://tracxn.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "CloudSEK",
+   "sector": "SaaS",
+   "strength": "distinctive",
+   "aliases": [
+    "Cloudsek",
+    "CloudSEK Information Security"
+   ],
+   "website": "https://www.cloudsek.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "DevRev",
+   "sector": "SaaS",
+   "strength": "distinctive",
+   "aliases": [
+    "DevRev Inc"
+   ],
+   "website": "https://devrev.ai",
+   "strengthChanged": false
+  },
+  {
+   "name": "HackerEarth",
+   "sector": "Developer Tools",
+   "strength": "distinctive",
+   "aliases": [
+    "Hacker Earth"
+   ],
+   "website": "https://www.hackerearth.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Gupshup",
+   "sector": "SaaS",
+   "strength": "ambiguous",
+   "aliases": [
+    "Gupshup.io",
+    "Webaroo"
+   ],
+   "website": "https://www.gupshup.io",
+   "strengthChanged": false,
+   "strengthReason": "'gupshup' is an everyday Hindi word for chit-chat and turns up in Bengaluru meetup titles; the spaced 'Gup Shup' alias was dropped for the same reason"
+  },
+  {
+   "name": "Yellow.ai",
+   "sector": "Data & AI",
+   "strength": "distinctive",
+   "aliases": [
+    "Yellow Messenger",
+    "Yellowai",
+    "Yellow AI"
+   ],
+   "website": "https://yellow.ai",
+   "strengthChanged": false
+  },
+  {
+   "name": "Observe.AI",
+   "sector": "Data & AI",
+   "strength": "distinctive",
+   "aliases": [
+    "ObserveAI"
+   ],
+   "website": "https://www.observe.ai",
+   "strengthChanged": false
+  },
+  {
+   "name": "Sigmoid",
+   "sector": "Data & AI",
+   "strength": "ambiguous",
+   "aliases": [
+    "Sigmoid Analytics"
+   ],
+   "website": "https://www.sigmoid.com",
+   "strengthChanged": false,
+   "strengthReason": "'sigmoid' is the name of an activation function and will appear in ML event copy in this corpus"
+  },
+  {
+   "name": "Appsmith",
+   "sector": "Developer Tools",
+   "strength": "distinctive",
+   "aliases": [
+    "Appsmith Inc"
+   ],
+   "website": "https://www.appsmith.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "SigNoz",
+   "sector": "Developer Tools",
+   "strength": "distinctive",
+   "aliases": [
+    "Signoz"
+   ],
+   "website": "https://signoz.io",
+   "strengthChanged": false
+  },
+  {
+   "name": "Last9",
+   "sector": "Developer Tools",
+   "strength": "ambiguous",
+   "aliases": [
+    "Last9 Inc"
+   ],
+   "website": "https://last9.io",
+   "strengthChanged": true,
+   "strengthReason": "'last' is an ordinary English word and 'Last9' collides with strings like 'last90days'; the 'Last Nine' alias ('the last nine months') was dropped outright"
+  },
+  {
+   "name": "Composio",
+   "sector": "Developer Tools",
+   "strength": "distinctive",
+   "aliases": [
+    "Composio HQ"
+   ],
+   "website": "https://composio.dev",
+   "strengthChanged": false
+  },
+  {
+   "name": "Ather Energy",
+   "sector": "Hardware & Semiconductor",
+   "strength": "ambiguous",
+   "aliases": [
+    "Ather Energy Ltd"
+   ],
+   "website": "https://www.atherenergy.com",
+   "strengthChanged": false,
+   "strengthReason": "the bare 'Ather' form sits inside 'rather', 'gather', 'weather', 'leather' and the name 'Heather', so it is not retained as an alias at all"
+  },
+  {
+   "name": "Ola Electric",
+   "sector": "Hardware & Semiconductor",
+   "strength": "distinctive",
+   "aliases": [
+    "Ola Electric Mobility",
+    "Ola Cell Technologies",
+    "Ola Futurefactory"
+   ],
+   "website": "https://www.olaelectric.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Ultraviolette",
+   "sector": "Hardware & Semiconductor",
+   "strength": "distinctive",
+   "aliases": [
+    "Ultraviolette Automotive"
+   ],
+   "website": "https://www.ultraviolette.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Ultrahuman",
+   "sector": "Hardware & Semiconductor",
+   "strength": "distinctive",
+   "aliases": [
+    "Ultrahuman Healthcare",
+    "Ultrahuman Ring"
+   ],
+   "website": "https://www.ultrahuman.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Pixxel",
+   "sector": "Hardware & Semiconductor",
+   "strength": "distinctive",
+   "aliases": [
+    "Pixxel Space",
+    "Pixxel Space Technologies"
+   ],
+   "website": "https://www.pixxel.space",
+   "strengthChanged": false
+  },
+  {
+   "name": "Digantara",
+   "sector": "Hardware & Semiconductor",
+   "strength": "ambiguous",
+   "aliases": [
+    "Digantara Research and Technologies"
+   ],
+   "website": "https://www.digantara.co.in",
+   "strengthChanged": true,
+   "strengthReason": "'digantara' is a Sanskrit noun (horizon/space) that can appear as a title word in the cultural listings this corpus ingests"
+  },
+  {
+   "name": "Synopsys",
+   "sector": "Hardware & Semiconductor",
+   "strength": "distinctive",
+   "aliases": [
+    "Synopsys India"
+   ],
+   "website": "https://www.synopsys.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Cadence",
+   "sector": "Hardware & Semiconductor",
+   "strength": "ambiguous",
+   "aliases": [
+    "Cadence Design Systems",
+    "Cadence India"
+   ],
+   "website": "https://www.cadence.com",
+   "strengthChanged": false,
+   "strengthReason": "cadence — ordinary English noun (running cadence, release cadence, musical cadence)"
+  },
+  {
+   "name": "Siemens",
+   "sector": "Hardware & Semiconductor",
+   "strength": "distinctive",
+   "aliases": [
+    "Siemens EDA",
+    "Mentor Graphics",
+    "Siemens Digital Industries Software",
+    "Siemens Technology and Services",
+    "Siemens Healthineers",
+    "Siemens Technology India"
+   ],
+   "website": "https://www.siemens.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "MathWorks",
+   "sector": "Hardware & Semiconductor",
+   "strength": "ambiguous",
+   "aliases": [
+    "MathWorks India",
+    "MATLAB",
+    "Simulink"
+   ],
+   "website": "https://www.mathworks.com",
+   "strengthChanged": true,
+   "strengthReason": "MATLAB / Simulink — the aliases are tool names that stand alone as ordinary words in titles ('MATLAB workshop', 'Simulink training'), which a coaching centre runs far more often than MathWorks does; ambiguous keeps the aliases usable by restricting them to the organiser field"
+  },
+  {
+   "name": "Marvell",
+   "sector": "Hardware & Semiconductor",
+   "strength": "ambiguous",
+   "aliases": [
+    "Marvell Technology",
+    "Marvell Semiconductor",
+    "Marvell India"
+   ],
+   "website": "https://www.marvell.com",
+   "strengthChanged": false,
+   "strengthReason": "marvellous / marvel — 'marvell' is a fragment of the British spelling"
+  },
+  {
+   "name": "Analog Devices",
+   "sector": "Hardware & Semiconductor",
+   "strength": "ambiguous",
+   "aliases": [
+    "Analog Devices India",
+    "ADI India"
+   ],
+   "website": "https://www.analog.com",
+   "strengthChanged": false,
+   "strengthReason": "'analog devices' is an ordinary hardware phrase that stands alone in event copy about analog devices"
+  },
+  {
+   "name": "NXP Semiconductors",
+   "sector": "Hardware & Semiconductor",
+   "strength": "ambiguous",
+   "aliases": [
+    "NXP",
+    "NXP India",
+    "NXP Semiconductors India"
+   ],
+   "website": "https://www.nxp.com",
+   "strengthChanged": false,
+   "strengthReason": "the 'NXP' alias is a three-character token, below the short-token floor"
+  },
+  {
+   "name": "Infineon Technologies",
+   "sector": "Hardware & Semiconductor",
+   "strength": "distinctive",
+   "aliases": [
+    "Infineon",
+    "Infineon India",
+    "Infineon Technologies India"
+   ],
+   "website": "https://www.infineon.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Renesas Electronics",
+   "sector": "Hardware & Semiconductor",
+   "strength": "distinctive",
+   "aliases": [
+    "Renesas",
+    "Renesas India",
+    "Intersil"
+   ],
+   "website": "https://www.renesas.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Microchip Technology",
+   "sector": "Hardware & Semiconductor",
+   "strength": "ambiguous",
+   "aliases": [
+    "Microchip",
+    "Microchip India",
+    "Microsemi"
+   ],
+   "website": "https://www.microchip.com",
+   "strengthChanged": false,
+   "strengthReason": "microchip — generic hardware noun, and the bare alias is exactly that word"
+  },
+  {
+   "name": "MediaTek",
+   "sector": "Hardware & Semiconductor",
+   "strength": "distinctive",
+   "aliases": [
+    "MediaTek India",
+    "MediaTek Bangalore"
+   ],
+   "website": "https://www.mediatek.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "STMicroelectronics",
+   "sector": "Hardware & Semiconductor",
+   "strength": "distinctive",
+   "aliases": [
+    "ST Microelectronics",
+    "STMicro",
+    "STMicroelectronics India"
+   ],
+   "website": "https://www.st.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Western Digital",
+   "sector": "Hardware & Semiconductor",
+   "strength": "distinctive",
+   "aliases": [
+    "Western Digital India",
+    "HGST"
+   ],
+   "website": "https://www.westerndigital.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "NetApp",
+   "sector": "Hardware & Semiconductor",
+   "strength": "distinctive",
+   "aliases": [
+    "NetApp India"
+   ],
+   "website": "https://www.netapp.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "SiFive",
+   "sector": "Hardware & Semiconductor",
+   "strength": "distinctive",
+   "aliases": [
+    "SiFive India"
+   ],
+   "website": "https://www.sifive.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Applied Materials",
+   "sector": "Hardware & Semiconductor",
+   "strength": "ambiguous",
+   "aliases": [
+    "Applied Materials India",
+    "AMAT"
+   ],
+   "website": "https://www.appliedmaterials.com",
+   "strengthChanged": false,
+   "strengthReason": "'applied materials' reads as a generic materials-science phrase; the 'AMAT' alias is also a fragment of 'amateur'"
+  },
+  {
+   "name": "Lam Research",
+   "sector": "Hardware & Semiconductor",
+   "strength": "ambiguous",
+   "aliases": [
+    "Lam Research India"
+   ],
+   "website": "https://www.lamresearch.com",
+   "strengthChanged": false,
+   "strengthReason": "'Lam' is a three-letter token and a common surname; 'research' is a generic industry word"
+  },
+  {
+   "name": "Tessolve",
+   "sector": "Hardware & Semiconductor",
+   "strength": "distinctive",
+   "aliases": [
+    "Tessolve Semiconductor",
+    "Tessolve Bangalore"
+   ],
+   "website": "https://www.tessolve.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Sasken",
+   "sector": "Hardware & Semiconductor",
+   "strength": "distinctive",
+   "aliases": [
+    "Sasken Technologies",
+    "Sasken Communication Technologies"
+   ],
+   "website": "https://www.sasken.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Mistral Solutions",
+   "sector": "Hardware & Semiconductor",
+   "strength": "distinctive",
+   "aliases": [
+    "Mistral Solutions Pvt Ltd"
+   ],
+   "website": "https://www.mistralsolutions.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Ignitarium",
+   "sector": "Hardware & Semiconductor",
+   "strength": "distinctive",
+   "aliases": [
+    "Ignitarium Technology Solutions"
+   ],
+   "website": "https://ignitarium.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "eInfochips",
+   "sector": "Hardware & Semiconductor",
+   "strength": "distinctive",
+   "aliases": [
+    "Einfochips",
+    "eInfochips (an Arrow company)"
+   ],
+   "website": "https://www.einfochips.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "L&T Technology Services",
+   "sector": "Services & GCC",
+   "strength": "distinctive",
+   "aliases": [
+    "LTTS",
+    "L&T Technology Services Limited",
+    "LnT Technology Services"
+   ],
+   "website": "https://www.ltts.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Tata Elxsi",
+   "sector": "Services & GCC",
+   "strength": "distinctive",
+   "aliases": [
+    "Tata Elxsi Limited"
+   ],
+   "website": "https://www.tataelxsi.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Mercedes-Benz R&D India",
+   "sector": "Hardware & Semiconductor",
+   "strength": "distinctive",
+   "aliases": [
+    "MBRDI",
+    "Mercedes-Benz Research and Development India",
+    "Mercedes-Benz R&D"
+   ],
+   "website": "https://www.mbrdi.co.in",
+   "strengthChanged": false
+  },
+  {
+   "name": "Continental Automotive",
+   "sector": "Hardware & Semiconductor",
+   "strength": "ambiguous",
+   "aliases": [
+    "Continental",
+    "Continental Automotive India",
+    "Continental AG"
+   ],
+   "website": "https://www.continental.com",
+   "strengthChanged": false,
+   "strengthReason": "continental — ordinary English adjective, and the bare alias also names hotels, breakfasts and cricket clubs"
+  },
+  {
+   "name": "Aptiv",
+   "sector": "Hardware & Semiconductor",
+   "strength": "ambiguous",
+   "aliases": [
+    "Aptiv India"
+   ],
+   "website": "https://www.aptiv.com",
+   "strengthChanged": true,
+   "strengthReason": "adaptive / captive — both contain 'aptiv', and 'adaptive' is everywhere in ADAS and AI event copy"
+  },
+  {
+   "name": "Harman",
+   "sector": "Hardware & Semiconductor",
+   "strength": "ambiguous",
+   "aliases": [
+    "Harman International",
+    "HARMAN Connected Services",
+    "Harman India"
+   ],
+   "website": "https://www.harman.com",
+   "strengthChanged": false,
+   "strengthReason": "Harman is a common personal name in India (Harman Singh, Harmanpreet), so it appears as a speaker or organiser name with no company involved"
+  },
+  {
+   "name": "Ather Energy",
+   "sector": "Hardware & Semiconductor",
+   "strength": "distinctive",
+   "aliases": [
+    "Ather Energy Limited"
+   ],
+   "website": "https://www.atherenergy.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Ola Electric",
+   "sector": "Hardware & Semiconductor",
+   "strength": "distinctive",
+   "aliases": [
+    "Ola Electric Mobility",
+    "Ola Futurefactory"
+   ],
+   "website": "https://www.olaelectric.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Ultraviolette",
+   "sector": "Hardware & Semiconductor",
+   "strength": "distinctive",
+   "aliases": [
+    "Ultraviolette Automotive"
+   ],
+   "website": "https://www.ultraviolette.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Netradyne",
+   "sector": "Hardware & Semiconductor",
+   "strength": "distinctive",
+   "aliases": [
+    "Netradyne India"
+   ],
+   "website": "https://www.netradyne.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "GE Aerospace",
+   "sector": "Hardware & Semiconductor",
+   "strength": "distinctive",
+   "aliases": [
+    "GE Aviation",
+    "GE India Technology Centre",
+    "John F. Welch Technology Centre",
+    "JFWTC",
+    "GE India"
+   ],
+   "website": "https://www.geaerospace.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "GE HealthCare",
+   "sector": "Hardware & Semiconductor",
+   "strength": "distinctive",
+   "aliases": [
+    "GE Healthcare",
+    "Wipro GE Healthcare",
+    "GE HealthCare India"
+   ],
+   "website": "https://www.gehealthcare.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Honeywell",
+   "sector": "Hardware & Semiconductor",
+   "strength": "distinctive",
+   "aliases": [
+    "Honeywell Technology Solutions",
+    "Honeywell India",
+    "Honeywell Aerospace"
+   ],
+   "website": "https://www.honeywell.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Airbus",
+   "sector": "Hardware & Semiconductor",
+   "strength": "distinctive",
+   "aliases": [
+    "Airbus India",
+    "Airbus India Engineering Centre"
+   ],
+   "website": "https://www.airbus.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Boeing",
+   "sector": "Hardware & Semiconductor",
+   "strength": "distinctive",
+   "aliases": [
+    "Boeing India",
+    "BIETC",
+    "Boeing India Engineering and Technology Center"
+   ],
+   "website": "https://www.boeing.co.in",
+   "strengthChanged": false
+  },
+  {
+   "name": "Rolls-Royce",
+   "sector": "Hardware & Semiconductor",
+   "strength": "ambiguous",
+   "aliases": [
+    "Rolls Royce",
+    "Rolls-Royce India",
+    "Rolls-Royce Engineering Centre India"
+   ],
+   "website": "https://www.rolls-royce.com",
+   "strengthChanged": true,
+   "strengthReason": "used idiomatically as a superlative ('the Rolls-Royce of frameworks') and shared with Rolls-Royce Motor Cars, a different (BMW-owned) company — organiser-only matching keeps both out"
+  },
+  {
+   "name": "Safran",
+   "sector": "Hardware & Semiconductor",
+   "strength": "distinctive",
+   "aliases": [
+    "Safran Engineering Services",
+    "Safran India"
+   ],
+   "website": "https://www.safran-group.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Thales",
+   "sector": "Hardware & Semiconductor",
+   "strength": "ambiguous",
+   "aliases": [
+    "Thales Group",
+    "Thales India",
+    "Thales Engineering Competence Centre"
+   ],
+   "website": "https://www.thalesgroup.com",
+   "strengthChanged": true,
+   "strengthReason": "Thales is the mathematician in \"Thales' theorem\", which stands alone in student and education event titles in this corpus"
+  },
+  {
+   "name": "Hindustan Aeronautics",
+   "sector": "Hardware & Semiconductor",
+   "strength": "ambiguous",
+   "aliases": [
+    "HAL",
+    "Hindustan Aeronautics Limited",
+    "HAL Bangalore"
+   ],
+   "website": "https://hal-india.co.in",
+   "strengthChanged": false,
+   "strengthReason": "the 'HAL' alias is a Bengaluru locality — HAL Airport Road, HAL 2nd Stage, HAL Layout are in venue and address strings all over the corpus, and it also sits inside 'shall'/'challenge'"
+  },
+  {
+   "name": "Bharat Electronics",
+   "sector": "Hardware & Semiconductor",
+   "strength": "ambiguous",
+   "aliases": [
+    "BEL",
+    "Bharat Electronics Limited",
+    "BEL Bangalore"
+   ],
+   "website": "https://bel-india.in",
+   "strengthChanged": false,
+   "strengthReason": "the 'BEL' alias is a major Bengaluru road and locality (BEL Road, BEL Layout) and a fragment of 'below', 'label', 'belong'"
+  },
+  {
+   "name": "ISRO",
+   "sector": "Hardware & Semiconductor",
+   "strength": "ambiguous",
+   "aliases": [
+    "Indian Space Research Organisation",
+    "URSC",
+    "U R Rao Satellite Centre",
+    "ISTRAC",
+    "ISRO Bengaluru"
+   ],
+   "website": "https://www.isro.gov.in",
+   "strengthChanged": false,
+   "strengthReason": "four-character token, and 'ISRO Layout' is a Bengaluru locality that appears in address strings"
+  },
+  {
+   "name": "DRDO",
+   "sector": "Hardware & Semiconductor",
+   "strength": "ambiguous",
+   "aliases": [
+    "Defence Research and Development Organisation",
+    "LRDE",
+    "GTRE",
+    "CABS",
+    "DRDO Bengaluru"
+   ],
+   "website": "https://www.drdo.gov.in",
+   "strengthChanged": false,
+   "strengthReason": "four-character token; the lab aliases are short acronyms too ('CABS' is the plural of cab). The proposed 'ADE' alias is removed — it is a fragment of 'made', 'grade', 'decade' and 'Academy'"
+  },
+  {
+   "name": "Pixxel",
+   "sector": "Hardware & Semiconductor",
+   "strength": "distinctive",
+   "aliases": [
+    "Pixxel Space",
+    "Pixxel India"
+   ],
+   "website": "https://www.pixxel.space",
+   "strengthChanged": false
+  },
+  {
+   "name": "Digantara",
+   "sector": "Hardware & Semiconductor",
+   "strength": "distinctive",
+   "aliases": [
+    "Digantara Research and Technologies"
+   ],
+   "website": "https://www.digantara.co.in",
+   "strengthChanged": false
+  },
+  {
+   "name": "Bellatrix Aerospace",
+   "sector": "Hardware & Semiconductor",
+   "strength": "distinctive",
+   "aliases": [
+    "Bellatrix"
+   ],
+   "website": "https://bellatrix.aero",
+   "strengthChanged": false
+  },
+  {
+   "name": "Tonbo Imaging",
+   "sector": "Hardware & Semiconductor",
+   "strength": "distinctive",
+   "aliases": [
+    "Tonbo"
+   ],
+   "website": "https://www.tonboimaging.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "CynLr",
+   "sector": "Hardware & Semiconductor",
+   "strength": "distinctive",
+   "aliases": [
+    "Cynlr"
+   ],
+   "website": "https://www.cynlr.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Ericsson",
+   "sector": "Hardware & Semiconductor",
+   "strength": "distinctive",
+   "aliases": [
+    "Ericsson India",
+    "Ericsson R&D"
+   ],
+   "website": "https://www.ericsson.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Juniper Networks",
+   "sector": "Hardware & Semiconductor",
+   "strength": "distinctive",
+   "aliases": [
+    "Juniper Networks India",
+    "Juniper India"
+   ],
+   "website": "https://www.juniper.net",
+   "strengthChanged": false
+  },
+  {
+   "name": "Arista Networks",
+   "sector": "Hardware & Semiconductor",
+   "strength": "distinctive",
+   "aliases": [
+    "Arista Networks India",
+    "Arista India"
+   ],
+   "website": "https://www.arista.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Tejas Networks",
+   "sector": "Hardware & Semiconductor",
+   "strength": "distinctive",
+   "aliases": [
+    "Tejas Networks Limited",
+    "Saankhya Labs"
+   ],
+   "website": "https://www.tejasnetworks.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Philips",
+   "sector": "Hardware & Semiconductor",
+   "strength": "distinctive",
+   "aliases": [
+    "Philips Innovation Campus",
+    "Philips India",
+    "Philips Healthcare"
+   ],
+   "website": "https://www.philips.co.in",
+   "strengthChanged": false
+  },
+  {
+   "name": "Hewlett Packard Enterprise",
+   "sector": "Hardware & Semiconductor",
+   "strength": "ambiguous",
+   "aliases": [
+    "HPE",
+    "HPE India",
+    "Hewlett-Packard Enterprise"
+   ],
+   "website": "https://www.hpe.com",
+   "strengthChanged": false,
+   "strengthReason": "the 'HPE' alias is a three-character token, below the short-token floor"
+  },
+  {
+   "name": "Lenovo",
+   "sector": "Hardware & Semiconductor",
+   "strength": "distinctive",
+   "aliases": [
+    "Lenovo India",
+    "Motorola Mobility"
+   ],
+   "website": "https://www.lenovo.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Cashfree Payments",
+   "sector": "Fintech",
+   "strength": "distinctive",
+   "aliases": [
+    "Cashfree"
+   ],
+   "website": "https://www.cashfree.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Perfios",
+   "sector": "Fintech",
+   "strength": "distinctive",
+   "aliases": [
+    "Perfios Software Solutions"
+   ],
+   "website": "https://www.perfios.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Signzy",
+   "sector": "Fintech",
+   "strength": "distinctive",
+   "aliases": [
+    "Signzy Technologies"
+   ],
+   "website": "https://www.signzy.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Decentro",
+   "sector": "Fintech",
+   "strength": "distinctive",
+   "website": "https://www.decentro.tech",
+   "strengthChanged": false
+  },
+  {
+   "name": "FinBox",
+   "sector": "Fintech",
+   "strength": "distinctive",
+   "aliases": [
+    "Moneyhoney",
+    "FinBox India"
+   ],
+   "website": "https://finbox.in",
+   "strengthChanged": false
+  },
+  {
+   "name": "HyperVerge",
+   "sector": "Fintech",
+   "strength": "distinctive",
+   "website": "https://hyperverge.co",
+   "strengthChanged": false
+  },
+  {
+   "name": "Instamojo",
+   "sector": "Fintech",
+   "strength": "distinctive",
+   "website": "https://www.instamojo.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Innoviti",
+   "sector": "Fintech",
+   "strength": "distinctive",
+   "aliases": [
+    "Innoviti Payment Solutions",
+    "Innoviti Technologies"
+   ],
+   "website": "https://innoviti.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Wibmo",
+   "sector": "Fintech",
+   "strength": "distinctive",
+   "aliases": [
+    "Wibmo Inc"
+   ],
+   "website": "https://www.wibmo.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Fi Money",
+   "sector": "Fintech",
+   "strength": "ambiguous",
+   "aliases": [
+    "epiFi",
+    "epiFi Technologies",
+    "Fi Neobank"
+   ],
+   "website": "https://fi.money",
+   "strengthChanged": false,
+   "strengthReason": "'Fi' is a two-character token that occurs inside 'Wi-Fi' / 'sci-fi' and 'money' is an ordinary English word, so neither half of the name is safe outside the organiser field"
+  },
+  {
+   "name": "FamPay",
+   "sector": "Fintech",
+   "strength": "distinctive",
+   "aliases": [
+    "FamApp"
+   ],
+   "website": "https://fampay.in",
+   "strengthChanged": false
+  },
+  {
+   "name": "Jar",
+   "sector": "Fintech",
+   "strength": "ambiguous",
+   "aliases": [
+    "Jar App",
+    "MyJar"
+   ],
+   "website": "https://www.myjar.app",
+   "strengthChanged": false,
+   "strengthReason": "'jar' is an ordinary English noun and a three-character token (venue/organiser strings like 'The Mason Jar' would match)"
+  },
+  {
+   "name": "Simpl",
+   "sector": "Fintech",
+   "strength": "ambiguous",
+   "aliases": [
+    "Get Simpl",
+    "GetSimpl Technologies"
+   ],
+   "website": "https://getsimpl.com",
+   "strengthChanged": false,
+   "strengthReason": "'Simpl' is the stem of 'simple' / 'simply' / 'simplify', which appear constantly in event copy"
+  },
+  {
+   "name": "Axio",
+   "sector": "Fintech",
+   "strength": "ambiguous",
+   "aliases": [
+    "Capital Float",
+    "CapFloat Financial Services"
+   ],
+   "website": "https://www.axio.co.in",
+   "strengthChanged": false,
+   "strengthReason": "four-character token that sits inside 'axiom' and 'axios' (the HTTP client, ubiquitous in dev-event text)"
+  },
+  {
+   "name": "KreditBee",
+   "sector": "Fintech",
+   "strength": "distinctive",
+   "aliases": [
+    "Krazybee",
+    "KreditBee NBFC"
+   ],
+   "website": "https://www.kreditbee.in",
+   "strengthChanged": false
+  },
+  {
+   "name": "Money View",
+   "sector": "Fintech",
+   "strength": "ambiguous",
+   "aliases": [
+    "Moneyview",
+    "Whizdm Innovations"
+   ],
+   "website": "https://moneyview.in",
+   "strengthChanged": true,
+   "strengthReason": "both tokens are ordinary English words — 'money' and 'view' — so the pair can occur as an incidental adjacency in a finance-event title or organiser string"
+  },
+  {
+   "name": "Rupeek",
+   "sector": "Fintech",
+   "strength": "distinctive",
+   "aliases": [
+    "Rupeek Fintech"
+   ],
+   "website": "https://rupeek.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Khatabook",
+   "sector": "Fintech",
+   "strength": "distinctive",
+   "aliases": [
+    "Kyte Technologies"
+   ],
+   "website": "https://khatabook.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Open Financial Technologies",
+   "sector": "Fintech",
+   "strength": "ambiguous",
+   "aliases": [
+    "Open Money",
+    "OpenMoney",
+    "Zwitch",
+    "Open Financial"
+   ],
+   "website": "https://open.money",
+   "strengthChanged": false,
+   "strengthReason": "'Open' is one of the most common tokens in tech-event text ('open source', 'open banking'), and the aliases 'Open Money' / 'Open Financial' are ordinary word pairs"
+  },
+  {
+   "name": "Zolve",
+   "sector": "Fintech",
+   "strength": "distinctive",
+   "website": "https://www.zolve.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "smallcase",
+   "sector": "Fintech",
+   "strength": "distinctive",
+   "aliases": [
+    "Smallcase Technologies",
+    "Tickertape"
+   ],
+   "website": "https://www.smallcase.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Kuvera",
+   "sector": "Fintech",
+   "strength": "distinctive",
+   "aliases": [
+    "Arevuk Advisory Services"
+   ],
+   "website": "https://kuvera.in",
+   "strengthChanged": false
+  },
+  {
+   "name": "Scripbox",
+   "sector": "Fintech",
+   "strength": "distinctive",
+   "aliases": [
+    "Scripbox Advisors"
+   ],
+   "website": "https://scripbox.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Fisdom",
+   "sector": "Fintech",
+   "strength": "distinctive",
+   "aliases": [
+    "Finwizard Technology"
+   ],
+   "website": "https://www.fisdom.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "CoinSwitch",
+   "sector": "Fintech",
+   "strength": "distinctive",
+   "aliases": [
+    "CoinSwitch Kuber",
+    "Bitcipher Labs"
+   ],
+   "website": "https://coinswitch.co",
+   "strengthChanged": false
+  },
+  {
+   "name": "Fyle",
+   "sector": "Fintech",
+   "strength": "ambiguous",
+   "aliases": [
+    "Fyle Technologies",
+    "FyleHQ"
+   ],
+   "website": "https://www.fylehq.com",
+   "strengthChanged": false,
+   "strengthReason": "four-character token and a near-miss of 'file' — too short to match anywhere but the organiser field"
+  },
+  {
+   "name": "Happay",
+   "sector": "Fintech",
+   "strength": "distinctive",
+   "aliases": [
+    "VA Tech Ventures"
+   ],
+   "website": "https://www.happay.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Onsurity",
+   "sector": "Fintech",
+   "strength": "distinctive",
+   "website": "https://www.onsurity.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Plum",
+   "sector": "Fintech",
+   "strength": "ambiguous",
+   "aliases": [
+    "Plum Benefits",
+    "PlumHQ",
+    "Plum Insurance"
+   ],
+   "website": "https://www.plumhq.com",
+   "strengthChanged": false,
+   "strengthReason": "'plum' is an ordinary English word (the fruit, and 'plum role'), and a four-character token that appears in venue and cafe names"
+  },
+  {
+   "name": "Acko",
+   "sector": "Fintech",
+   "strength": "ambiguous",
+   "aliases": [
+    "Acko General Insurance",
+    "Acko Drive"
+   ],
+   "website": "https://www.acko.com",
+   "strengthChanged": false,
+   "strengthReason": "four-character token, so it must stay organiser-field only under the <=4-char rule"
+  },
+  {
+   "name": "Digit Insurance",
+   "sector": "Fintech",
+   "strength": "ambiguous",
+   "aliases": [
+    "Go Digit",
+    "Go Digit General Insurance",
+    "GoDigit"
+   ],
+   "website": "https://www.godigit.com",
+   "strengthChanged": false,
+   "strengthReason": "'Digit' is the stem of 'digital' / 'digits' and the alias 'Go Digit' is a prefix of the extremely common phrase 'go digital'"
+  },
+  {
+   "name": "Ujjivan Small Finance Bank",
+   "sector": "Fintech",
+   "strength": "distinctive",
+   "aliases": [
+    "Ujjivan",
+    "Ujjivan SFB",
+    "Ujjivan Financial Services"
+   ],
+   "website": "https://www.ujjivansfb.in",
+   "strengthChanged": false
+  },
+  {
+   "name": "Jana Small Finance Bank",
+   "sector": "Fintech",
+   "strength": "ambiguous",
+   "aliases": [
+    "Jana SFB",
+    "Janalakshmi Financial Services"
+   ],
+   "website": "https://www.janabank.com",
+   "strengthChanged": false,
+   "strengthReason": "'Jana' is a common Indian name fragment and word ('Jana Gana Mana', 'Janardhan'), so the short alias forms are unsafe outside the organiser field"
+  },
+  {
+   "name": "Canara Bank",
+   "sector": "Fintech",
+   "strength": "distinctive",
+   "aliases": [
+    "Canara"
+   ],
+   "website": "https://www.canarabank.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Angel One",
+   "sector": "Fintech",
+   "strength": "ambiguous",
+   "aliases": [
+    "Angel Broking",
+    "Angel One Limited"
+   ],
+   "website": "https://www.angelone.in",
+   "strengthChanged": true,
+   "strengthReason": "'angel' is ubiquitous in startup-event strings ('angel investor', 'Angel Network', 'angel round'), and 'angel one' occurs as an ordinary adjacency, so title/venue matching is unsafe"
+  },
+  {
+   "name": "M2P Fintech",
+   "sector": "Fintech",
+   "strength": "ambiguous",
+   "aliases": [
+    "M2P Solutions",
+    "M2P"
+   ],
+   "website": "https://m2pfintech.com",
+   "strengthChanged": true,
+   "strengthReason": "the alias 'M2P' is a three-character token and 'fintech' is a generic industry term — the short alias must be organiser-field only"
+  },
+  {
+   "name": "Wells Fargo",
+   "sector": "Fintech",
+   "strength": "distinctive",
+   "aliases": [
+    "Wells Fargo India",
+    "Wells Fargo International Solutions",
+    "WFIS"
+   ],
+   "website": "https://www.wellsfargo.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Morgan Stanley",
+   "sector": "Fintech",
+   "strength": "distinctive",
+   "aliases": [
+    "Morgan Stanley Advantage Services",
+    "MSAS"
+   ],
+   "website": "https://www.morganstanley.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Standard Chartered",
+   "sector": "Fintech",
+   "strength": "distinctive",
+   "aliases": [
+    "Standard Chartered Bank",
+    "Standard Chartered GBS",
+    "SC Ventures"
+   ],
+   "website": "https://www.sc.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Northern Trust",
+   "sector": "Fintech",
+   "strength": "distinctive",
+   "aliases": [
+    "Northern Trust Corporation"
+   ],
+   "website": "https://www.northerntrust.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Fidelity Investments",
+   "sector": "Fintech",
+   "strength": "distinctive",
+   "aliases": [
+    "FMR India",
+    "Fidelity Investments India",
+    "FMR LLC"
+   ],
+   "website": "https://www.fidelity.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "ANZ",
+   "sector": "Fintech",
+   "strength": "ambiguous",
+   "aliases": [
+    "Australia and New Zealand Banking Group",
+    "ANZ Bengaluru",
+    "ANZ Support Services India"
+   ],
+   "website": "https://www.anz.com",
+   "strengthChanged": false,
+   "strengthReason": "three-letter acronym — far too short to match outside the organiser field"
+  },
+  {
+   "name": "NatWest Group",
+   "sector": "Fintech",
+   "strength": "distinctive",
+   "aliases": [
+    "NatWest",
+    "NatWest Digital X",
+    "NatWest Group India",
+    "RBS Services India"
+   ],
+   "website": "https://www.natwestgroup.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Capital One",
+   "sector": "Fintech",
+   "strength": "ambiguous",
+   "aliases": [
+    "Capital One India",
+    "Capital One Financial"
+   ],
+   "website": "https://www.capitalone.com",
+   "strengthChanged": false,
+   "strengthReason": "'capital' is a common word in startup-event copy and 'capital one' occurs as an incidental adjacency ('raising capital one round at a time')"
+  },
+  {
+   "name": "Swiss Re",
+   "sector": "Fintech",
+   "strength": "ambiguous",
+   "aliases": [
+    "Swiss Re Global Business Solutions",
+    "Swiss Reinsurance"
+   ],
+   "website": "https://www.swissre.com",
+   "strengthChanged": false,
+   "strengthReason": "'Re' is a two-character second token and the pair is a prefix of 'Swiss Reinsurance' / 'Swiss research'"
+  },
+  {
+   "name": "HSBC",
+   "sector": "Fintech",
+   "strength": "ambiguous",
+   "aliases": [
+    "HSBC Technology India",
+    "HSBC Software Development India",
+    "HSBC India"
+   ],
+   "website": "https://www.hsbc.co.in",
+   "strengthChanged": true,
+   "strengthReason": "four-character acronym — the <=4-char rule applies, same as ANZ and LSEG; it also appears inside strings like 'HSBCnet'"
+  },
+  {
+   "name": "Deutsche Bank",
+   "sector": "Fintech",
+   "strength": "distinctive",
+   "aliases": [
+    "Deutsche India",
+    "DB Global Technology",
+    "Deutsche Bank Group"
+   ],
+   "website": "https://www.db.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Broadridge",
+   "sector": "Fintech",
+   "strength": "distinctive",
+   "aliases": [
+    "Broadridge Financial Solutions",
+    "Broadridge India"
+   ],
+   "website": "https://www.broadridge.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "LSEG",
+   "sector": "Fintech",
+   "strength": "ambiguous",
+   "aliases": [
+    "London Stock Exchange Group",
+    "Refinitiv",
+    "LSEG India"
+   ],
+   "website": "https://www.lseg.com",
+   "strengthChanged": false,
+   "strengthReason": "four-character acronym; 'London Stock Exchange' is also referenced generically in finance-event copy"
+  },
+  {
+   "name": "Finastra",
+   "sector": "Fintech",
+   "strength": "distinctive",
+   "aliases": [
+    "Misys",
+    "Finastra India"
+   ],
+   "website": "https://www.finastra.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Yodlee",
+   "sector": "Fintech",
+   "strength": "distinctive",
+   "aliases": [
+    "Envestnet | Yodlee",
+    "Envestnet Yodlee",
+    "Envestnet",
+    "Yodlee Infotech"
+   ],
+   "website": "https://www.yodlee.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "Stripe",
+   "sector": "Fintech",
+   "strength": "ambiguous",
+   "aliases": [
+    "Stripe India",
+    "Stripe Payments India",
+    "Recko"
+   ],
+   "website": "https://stripe.com",
+   "strengthChanged": false,
+   "strengthReason": "'stripe' is an ordinary English word (also 'striped', 'stripes' in design/venue copy)"
+  },
+  {
+   "name": "Mphasis",
+   "sector": "Services & GCC",
+   "strength": "distinctive",
+   "aliases": [
+    "Mphasis Limited",
+    "MphasiS BFL",
+    "Mphasis NEXTlabs"
+   ],
+   "website": "https://www.mphasis.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "EdgeVerve",
+   "sector": "Fintech",
+   "strength": "distinctive",
+   "aliases": [
+    "EdgeVerve Systems",
+    "Finacle",
+    "Infosys Finacle"
+   ],
+   "website": "https://www.edgeverve.com",
+   "strengthChanged": false
+  },
+  {
+   "name": "HCLTech",
+   "sector": "Services & GCC",
+   "strength": "ambiguous",
+   "strengthChanged": false,
+   "strengthReason": "The \"HCL\" alias is a 3-char token (also the chemical formula HCl); short enough that only an organiser-field claim should count.",
+   "aliases": [
+    "HCL Technologies",
+    "HCL",
+    "HCL Tech"
+   ],
+   "website": "https://www.hcltech.com"
+  },
+  {
+   "name": "Tech Mahindra",
+   "sector": "Services & GCC",
+   "strength": "distinctive",
+   "strengthChanged": false,
+   "aliases": [
+    "TechM",
+    "Tech Mahindra Limited"
+   ],
+   "website": "https://www.techmahindra.com"
+  },
+  {
+   "name": "LTIMindtree",
+   "sector": "Services & GCC",
+   "strength": "distinctive",
+   "strengthChanged": false,
+   "aliases": [
+    "Mindtree",
+    "L&T Infotech",
+    "Larsen & Toubro Infotech",
+    "LTI Mindtree"
+   ],
+   "website": "https://www.ltimindtree.com"
+  },
+  {
+   "name": "Mphasis",
+   "sector": "Services & GCC",
+   "strength": "distinctive",
+   "strengthChanged": false,
+   "aliases": [
+    "Mphasis Limited",
+    "MphasiS"
+   ],
+   "website": "https://www.mphasis.com"
+  },
+  {
+   "name": "Capgemini",
+   "sector": "Services & GCC",
+   "strength": "distinctive",
+   "strengthChanged": false,
+   "aliases": [
+    "Capgemini India",
+    "Capgemini Engineering",
+    "Altran"
+   ],
+   "website": "https://www.capgemini.com"
+  },
+  {
+   "name": "Cognizant",
+   "sector": "Services & GCC",
+   "strength": "ambiguous",
+   "strengthChanged": true,
+   "strengthReason": "\"cognizant\" is an ordinary English adjective (\"be cognizant of the trade-offs\") and matches as a whole token, so it must not be read out of titles or venue strings.",
+   "aliases": [
+    "Cognizant Technology Solutions"
+   ],
+   "website": "https://www.cognizant.com"
+  },
+  {
+   "name": "Tata Elxsi",
+   "sector": "Services & GCC",
+   "strength": "distinctive",
+   "strengthChanged": false,
+   "aliases": [
+    "Tata Elxsi Limited"
+   ],
+   "website": "https://www.tataelxsi.com"
+  },
+  {
+   "name": "Happiest Minds",
+   "sector": "Services & GCC",
+   "strength": "distinctive",
+   "strengthChanged": false,
+   "aliases": [
+    "Happiest Minds Technologies"
+   ],
+   "website": "https://www.happiestminds.com"
+  },
+  {
+   "name": "Sonata Software",
+   "sector": "Services & GCC",
+   "strength": "ambiguous",
+   "strengthChanged": true,
+   "strengthReason": "The \"Sonata\" alias is a whole-token match on the musical form — this corpus ingests concert and recital listings via District/AllEvents, where \"Sonata\" appears in titles.",
+   "aliases": [
+    "Sonata Software Limited",
+    "Sonata"
+   ],
+   "website": "https://www.sonata-software.com"
+  },
+  {
+   "name": "Quest Global",
+   "sector": "Services & GCC",
+   "strength": "distinctive",
+   "strengthChanged": false,
+   "aliases": [
+    "QuEST Global",
+    "Quest Global Engineering"
+   ],
+   "website": "https://www.quest-global.com"
+  },
+  {
+   "name": "Persistent Systems",
+   "sector": "Services & GCC",
+   "strength": "ambiguous",
+   "strengthChanged": true,
+   "strengthReason": "\"persistent systems\" is ordinary technical phrasing that occurs verbatim in talk titles (\"Building Persistent Systems with Kafka\").",
+   "aliases": [
+    "Persistent Systems Limited"
+   ],
+   "website": "https://www.persistent.com"
+  },
+  {
+   "name": "GlobalLogic",
+   "sector": "Services & GCC",
+   "strength": "distinctive",
+   "strengthChanged": false,
+   "aliases": [
+    "GlobalLogic India",
+    "GlobalLogic, a Hitachi Group Company"
+   ],
+   "website": "https://www.globallogic.com"
+  },
+  {
+   "name": "EPAM",
+   "sector": "Services & GCC",
+   "strength": "ambiguous",
+   "strengthChanged": false,
+   "strengthReason": "4-character token; too short to trust anywhere but the organiser field.",
+   "aliases": [
+    "EPAM Systems",
+    "EPAM India"
+   ],
+   "website": "https://www.epam.com"
+  },
+  {
+   "name": "Publicis Sapient",
+   "sector": "Services & GCC",
+   "strength": "distinctive",
+   "strengthChanged": false,
+   "aliases": [
+    "Sapient",
+    "Publicis Sapient India",
+    "SapientRazorfish"
+   ],
+   "website": "https://www.publicissapient.com"
+  },
+  {
+   "name": "KPMG",
+   "sector": "Services & GCC",
+   "strength": "ambiguous",
+   "strengthChanged": false,
+   "strengthReason": "4-character token, and the \"KGS\" alias is 3 characters — acronyms this short are organiser-field-only.",
+   "aliases": [
+    "KPMG Global Services",
+    "KGS",
+    "KPMG India"
+   ],
+   "website": "https://kpmg.com/in"
+  },
+  {
+   "name": "EY",
+   "sector": "Services & GCC",
+   "strength": "ambiguous",
+   "strengthChanged": false,
+   "strengthReason": "2-character name — the shortest in the batch; \"ey\" is a fragment of they/key/money/survey, so it is only safe as a standalone organiser token.",
+   "aliases": [
+    "Ernst & Young",
+    "EY GDS",
+    "EY Global Delivery Services",
+    "EY India"
+   ],
+   "website": "https://www.ey.com/en_in"
+  },
+  {
+   "name": "PwC",
+   "sector": "Services & GCC",
+   "strength": "ambiguous",
+   "strengthChanged": false,
+   "strengthReason": "3-character token; too short to match outside the organiser field.",
+   "aliases": [
+    "PricewaterhouseCoopers",
+    "PwC Acceleration Centre",
+    "PwC India",
+    "PwC AC Bangalore"
+   ],
+   "website": "https://www.pwc.in"
+  },
+  {
+   "name": "L&T Technology Services",
+   "sector": "Services & GCC",
+   "strength": "ambiguous",
+   "strengthChanged": false,
+   "strengthReason": "The \"LTTS\" alias is a 4-character token, and \"Technology Services\" is a generic industry phrase.",
+   "aliases": [
+    "LTTS",
+    "L&T Technology Services Limited"
+   ],
+   "website": "https://www.ltts.com"
+  },
+  {
+   "name": "Altimetrik",
+   "sector": "Services & GCC",
+   "strength": "distinctive",
+   "strengthChanged": false,
+   "aliases": [
+    "Altimetrik India"
+   ],
+   "website": "https://www.altimetrik.com"
+  },
+  {
+   "name": "Lollypop Design Studio",
+   "sector": "Services & GCC",
+   "strength": "ambiguous",
+   "strengthChanged": true,
+   "strengthReason": "The \"Lollypop\" alias is a common-noun spelling of \"lollipop\" and reads as a whole token in the kids/leisure listings this corpus ingests.",
+   "aliases": [
+    "Lollypop",
+    "Lollypop Design"
+   ],
+   "website": "https://lollypop.design"
+  },
+  {
+   "name": "HARMAN",
+   "sector": "Hardware & Semiconductor",
+   "strength": "ambiguous",
+   "strengthChanged": false,
+   "strengthReason": "\"Harman\" is a common Indian personal name (Harman, Harman Singh) and organiser fields routinely carry personal names.",
+   "aliases": [
+    "Harman International",
+    "HARMAN India",
+    "HARMAN Connected Services"
+   ],
+   "website": "https://www.harman.com"
+  },
+  {
+   "name": "Tredence",
+   "sector": "Data & AI",
+   "strength": "distinctive",
+   "strengthChanged": false,
+   "aliases": [
+    "Tredence Analytics",
+    "Tredence Inc"
+   ],
+   "website": "https://www.tredence.com"
+  },
+  {
+   "name": "TheMathCompany",
+   "sector": "Data & AI",
+   "strength": "distinctive",
+   "strengthChanged": false,
+   "aliases": [
+    "MathCo",
+    "The Math Company"
+   ],
+   "website": "https://themathcompany.com"
+  },
+  {
+   "name": "Tiger Analytics",
+   "sector": "Data & AI",
+   "strength": "distinctive",
+   "strengthChanged": false,
+   "aliases": [
+    "Tiger Analytics India"
+   ],
+   "website": "https://www.tigeranalytics.com"
+  },
+  {
+   "name": "Sigmoid",
+   "sector": "Data & AI",
+   "strength": "ambiguous",
+   "strengthChanged": false,
+   "strengthReason": "\"sigmoid\" is standard ML vocabulary (the sigmoid activation) and appears as a whole token in ML talk titles and organiser tags.",
+   "aliases": [
+    "Sigmoid Analytics"
+   ],
+   "website": "https://www.sigmoid.com"
+  },
+  {
+   "name": "Yellow.ai",
+   "sector": "Data & AI",
+   "strength": "distinctive",
+   "strengthChanged": false,
+   "aliases": [
+    "Yellow Messenger",
+    "YellowAI",
+    "Yellow ai"
+   ],
+   "website": "https://yellow.ai"
+  },
+  {
+   "name": "Observe.AI",
+   "sector": "Data & AI",
+   "strength": "ambiguous",
+   "strengthChanged": true,
+   "strengthReason": "The \"Observe AI\" alias collides with the ordinary imperative phrase \"observe AI\" (\"Observe AI Agents in Production\"), which is exactly the copy this GenAI-saturated corpus is full of.",
+   "aliases": [
+    "Observe AI",
+    "ObserveAI"
+   ],
+   "website": "https://www.observe.ai"
+  },
+  {
+   "name": "Gupshup",
+   "sector": "Data & AI",
+   "strength": "ambiguous",
+   "strengthChanged": false,
+   "strengthReason": "\"gupshup\" is a common Hindi word for chat/chit-chat and is used verbatim in Indian event titles (\"Tech Gupshup\").",
+   "aliases": [
+    "Gupshup.io"
+   ],
+   "website": "https://www.gupshup.io"
+  },
+  {
+   "name": "Entropik",
+   "sector": "Data & AI",
+   "strength": "distinctive",
+   "strengthChanged": false,
+   "aliases": [
+    "Entropik Tech",
+    "Entropik Technologies"
+   ],
+   "website": "https://www.entropik.io"
+  },
+  {
+   "name": "Skit.ai",
+   "sector": "Data & AI",
+   "strength": "distinctive",
+   "strengthChanged": false,
+   "aliases": [
+    "Vernacular.ai",
+    "Skit AI"
+   ],
+   "website": "https://skit.ai"
+  },
+  {
+   "name": "Cropin",
+   "sector": "Data & AI",
+   "strength": "distinctive",
+   "strengthChanged": false,
+   "aliases": [
+    "Cropin Technology",
+    "CropIn"
+   ],
+   "website": "https://www.cropin.com"
+  },
+  {
+   "name": "TrueFoundry",
+   "sector": "Data & AI",
+   "strength": "distinctive",
+   "strengthChanged": false,
+   "aliases": [
+    "True Foundry",
+    "Truefoundry"
+   ],
+   "website": "https://www.truefoundry.com"
+  },
+  {
+   "name": "Portkey",
+   "sector": "Data & AI",
+   "strength": "ambiguous",
+   "strengthChanged": true,
+   "strengthReason": "\"portkey\" is a Harry Potter common noun that turns up as a whole token in themed quiz/trivia titles, which this all-city corpus ingests; the company is also small enough that title matching buys little.",
+   "aliases": [
+    "Portkey AI",
+    "Portkey.ai"
+   ],
+   "website": "https://portkey.ai"
+  },
+  {
+   "name": "ThoughtSpot",
+   "sector": "Data & AI",
+   "strength": "distinctive",
+   "strengthChanged": false,
+   "aliases": [
+    "ThoughtSpot India"
+   ],
+   "website": "https://www.thoughtspot.com"
+  },
+  {
+   "name": "Informatica",
+   "sector": "Data & AI",
+   "strength": "distinctive",
+   "strengthChanged": false,
+   "aliases": [
+    "Informatica India",
+    "Informatica Business Solutions"
+   ],
+   "website": "https://www.informatica.com"
+  },
+  {
+   "name": "Couchbase",
+   "sector": "Data & AI",
+   "strength": "distinctive",
+   "strengthChanged": false,
+   "aliases": [
+    "Couchbase India"
+   ],
+   "website": "https://www.couchbase.com"
+  },
+  {
+   "name": "Rubrik",
+   "sector": "Data & AI",
+   "strength": "distinctive",
+   "strengthChanged": false,
+   "aliases": [
+    "Rubrik India"
+   ],
+   "website": "https://www.rubrik.com"
+  },
+  {
+   "name": "Cohesity",
+   "sector": "Data & AI",
+   "strength": "distinctive",
+   "strengthChanged": false,
+   "aliases": [
+    "Cohesity India"
+   ],
+   "website": "https://www.cohesity.com"
+  },
+  {
+   "name": "Harness",
+   "sector": "Developer Tools",
+   "strength": "ambiguous",
+   "strengthChanged": false,
+   "strengthReason": "\"harness\" is an ordinary English verb and \"harness the power of AI\" is one of the most common title constructions in this corpus.",
+   "aliases": [
+    "Harness.io",
+    "Harness India"
+   ],
+   "website": "https://www.harness.io"
+  },
+  {
+   "name": "Glean",
+   "sector": "Data & AI",
+   "strength": "ambiguous",
+   "strengthChanged": false,
+   "strengthReason": "\"glean\" is an ordinary English verb (\"glean insights from your data\") and matches as a whole token.",
+   "aliases": [
+    "Glean India",
+    "Glean Technologies"
+   ],
+   "website": "https://www.glean.com"
+  },
+  {
+   "name": "BDOTNET",
+   "sector": "Community",
+   "strength": "distinctive",
+   "strengthChanged": false,
+   "aliases": [
+    "Bangalore .NET User Group",
+    "Bangalore Dot Net User Group",
+    "bdotnet"
+   ]
+  },
+  {
+   "name": "BlrDroid",
+   "sector": "Community",
+   "strength": "distinctive",
+   "strengthChanged": false,
+   "aliases": [
+    "Blr Droid",
+    "Bangalore Android User Group"
+   ]
+  },
+  {
+   "name": "Rust Bangalore",
+   "sector": "Community",
+   "strength": "distinctive",
+   "strengthChanged": false,
+   "aliases": [
+    "Rust Bengaluru",
+    "Rust Bangalore Meetup"
+   ]
+  },
+  {
+   "name": "AWS User Group Bengaluru",
+   "sector": "Community",
+   "strength": "distinctive",
+   "strengthChanged": false,
+   "aliases": [
+    "AWS User Group Bangalore",
+    "AWS UG Bengaluru",
+    "AWS Community Day Bengaluru"
+   ]
+  },
+  {
+   "name": "GIDS",
+   "sector": "Community",
+   "strength": "ambiguous",
+   "strengthChanged": false,
+   "strengthReason": "4-character acronym; too short to match outside the organiser field.",
+   "aliases": [
+    "Great Indian Developer Summit",
+    "Great International Developer Summit",
+    "Saltmarch Media"
+   ],
+   "website": "https://developersummit.com"
+  },
+  {
+   "name": "Nasscom",
+   "sector": "Community",
+   "strength": "distinctive",
+   "strengthChanged": false,
+   "aliases": [
+    "NASSCOM",
+    "nasscom 10000 Startups",
+    "Nasscom CoE"
+   ],
+   "website": "https://nasscom.in"
+  },
+  {
+   "name": "TiE Bangalore",
+   "sector": "Community",
+   "strength": "distinctive",
+   "strengthChanged": false,
+   "aliases": [
+    "TiE Bengaluru",
+    "TiE Bangalore Chapter"
+   ]
+  },
+  {
+   "name": "IEEE Bangalore Section",
+   "sector": "Community",
+   "strength": "distinctive",
+   "strengthChanged": false,
+   "aliases": [
+    "IEEE Bangalore",
+    "IEEE Bangalore Chapter"
+   ]
+  },
+  {
+   "name": "Analytics India Magazine",
+   "sector": "Community",
+   "strength": "distinctive",
+   "strengthChanged": false,
+   "aliases": [
+    "AIM Media House",
+    "MachineHack"
+   ],
+   "website": "https://analyticsindiamag.com"
+  },
+  {
+   "name": "YourStory",
+   "sector": "Community",
+   "strength": "distinctive",
+   "strengthChanged": false,
+   "aliases": [
+    "TechSparks",
+    "YourStory Media"
+   ],
+   "website": "https://yourstory.com"
+  },
+  {
+   "name": "PGConf India",
+   "sector": "Community",
+   "strength": "distinctive",
+   "strengthChanged": false,
+   "aliases": [
+    "PGConf.IN",
+    "pgconf India"
+   ],
+   "website": "https://pgconf.in"
+  },
+  {
+   "name": "DesignUp",
+   "sector": "Community",
+   "strength": "ambiguous",
+   "strengthChanged": false,
+   "strengthReason": "Compound of two very common words; the \"Design Up\" alias is generic enough to surface in unrelated design-event titles.",
+   "aliases": [
+    "Design Up",
+    "DesignUp Conference"
+   ],
+   "website": "https://designup.io"
+  },
+  {
+   "name": "Friends of Figma, Bangalore",
+   "sector": "Community",
+   "strength": "distinctive",
+   "strengthChanged": false,
+   "aliases": [
+    "Friends of Figma Bangalore",
+    "Friends of Figma Bengaluru"
+   ]
+  },
+  {
+   "name": "ProductTank Bangalore",
+   "sector": "Community",
+   "strength": "distinctive",
+   "strengthChanged": false,
+   "aliases": [
+    "ProductTank Bengaluru",
+    "Mind the Product Bangalore"
+   ]
+  },
+  {
+   "name": "droidcon India",
+   "sector": "Community",
+   "strength": "distinctive",
+   "strengthChanged": false,
+   "aliases": [
+    "droidcon Bengaluru",
+    "DroidCon India"
+   ],
+   "website": "https://www.droidcon.com"
+  },
+  {
+   "name": "Agile India",
+   "sector": "Community",
+   "strength": "ambiguous",
+   "strengthChanged": false,
+   "strengthReason": "\"agile India\" is ordinary industry prose (\"the agile India community\") and a generic phrase rather than a unique string.",
+   "aliases": [
+    "Agile Software Community of India",
+    "AgileIndia"
+   ]
+  },
+  {
+   "name": "Open Source India",
+   "sector": "Community",
+   "strength": "ambiguous",
+   "strengthChanged": false,
+   "strengthReason": "\"open source India\" is a phrase that appears constantly in ordinary event copy and titles.",
+   "aliases": [
+    "OSI Days",
+    "EFY Group",
+    "Open Source India Conference"
+   ]
+  },
+  {
+   "name": "AnitaB.org India",
+   "sector": "Community",
+   "strength": "ambiguous",
+   "strengthChanged": true,
+   "strengthReason": "The \"GHCI\" alias is a 4-character token that collides with GHCi, the Glasgow Haskell Compiler interactive shell — a Haskell meetup titled \"Intro to GHCi\" would otherwise be attributed here.",
+   "aliases": [
+    "Grace Hopper Celebration India",
+    "GHCI",
+    "AnitaB.org"
+   ],
+   "website": "https://anitab.org"
+  },
+  {
+   "name": "Makers Tribe",
+   "sector": "Community",
+   "strength": "distinctive",
+   "strengthChanged": false,
+   "aliases": [
+    "MakersTribe",
+    "Makers Tribe Bangalore"
+   ]
+  }
+ ],
+ "droppedCount": 14,
+ "droppedByReason": {
+  "unverifiable": 8,
+  "no-bengaluru-office": 3,
+  "not-tech": 3
+ },
+ "droppedSample": [
+  {
+   "name": "CrowdStrike",
+   "reason": "unverifiable",
+   "detail": "The India engineering hub I can place for CrowdStrike is Pune, which LENS 1 says to reject as a different city. The entry's own wording is hedged ('India engineering presence including a Bengaluru office') and CrowdStrike's own locations and contact pages 404 on fetch, so nothing independently establishes a Bengaluru site. Better dropped than admitted on a hedge.",
+   "bucket": "gcc-enterprise"
+  },
+  {
+   "name": "YugabyteDB",
+   "reason": "unverifiable",
+   "detail": "Yugabyte's own job board names every other site precisely (Sunnyvale CA, London UK, Tel Aviv) but gives all 5 India postings the bare location string 'India' with no city. That is the signature of remote hiring, which LENS 1 explicitly refuses as a basis. No Bengaluru office evidenced.",
+   "bucket": "gcc-enterprise"
+  },
+  {
+   "name": "Kong",
+   "reason": "unverifiable",
+   "detail": "Kong's contact page says only 'offices and people around the world, operating in more than 25 countries' and names none; its careers page advertises a 'thriving remote culture' with 600+ employees in 25+ countries. Its live job board has exactly one India posting — Enterprise Account Executive, hybrid, 'Bangalore, India' — a sales seat, not the 'India engineering/office presence' the entry claims.",
+   "bucket": "gcc-enterprise"
+  },
+  {
+   "name": "Gupshup",
+   "reason": "unverifiable",
+   "detail": "Gupshup's contact page, about page and careers page all say 'India Offices' / 'across India' and name no Indian city; the only India base I can place is Mumbai. 'India headquarters and main engineering office in Bengaluru' is asserted with nothing behind it, so it fails LENS 1's vagueness test.",
+   "bucket": "gcc-enterprise"
+  },
+  {
+   "name": "Epicor",
+   "reason": "unverifiable",
+   "detail": "epicor.com returns 403 to every fetch (both /en-in/contact-us and /en-in/company/contact-us), and I have no independent knowledge of an Epicor development centre in Bengaluru. 'India development centre in Bengaluru for the Epicor ERP product lines' is a medium-confidence assertion with no verifiable basis — exactly the case the brief says to drop.",
+   "bucket": "gcc-enterprise"
+  },
+  {
+   "name": "Dunzo",
+   "reason": "no-bengaluru-office",
+   "detail": "The proposal concedes operations are wound down. The Koramangala HQ no longer exists as an office, so Lens 1 fails on its own terms - the registry is meant to name live Bengaluru employers, and a defunct company can also never appear as an event organiser. Attribution is permanent once written, so a shut-down company is the wrong kind of bet.",
+   "bucket": "indian-startups"
+  },
+  {
+   "name": "Zolostays",
+   "reason": "not-tech",
+   "detail": "Primarily a co-living / real-estate operator rather than an engineering employer; the app is a thin front end on a property-management business. Separately, the entry listed 'Nestaway' as an alias, which is a different company (acquired by Aurum PropTech) - so the entry's own identity claims were not checked, which is grounds for refusing it rather than repairing it.",
+   "bucket": "indian-startups"
+  },
+  {
+   "name": "Wakefit",
+   "reason": "not-tech",
+   "detail": "D2C mattress and furniture manufacturing plus retail. Bengaluru HQ is real, but Lens 3 excludes non-tech manufacturing and retail, and there is no meaningful engineering org that would put its people in a Bengaluru tech-events feed.",
+   "bucket": "indian-startups"
+  },
+  {
+   "name": "BlueStone",
+   "reason": "not-tech",
+   "detail": "Omnichannel jewellery retail. Bengaluru HQ is real and it is listed, but it is a retail/jewellery-manufacturing business, not a software employer - same exclusion that rules out Wakefit.",
+   "bucket": "indian-startups"
+  },
+  {
+   "name": "Bureau",
+   "reason": "unverifiable",
+   "detail": "US-headquartered (San Francisco) with only a medium-confidence claim of a 'main engineering team in Bengaluru', which I cannot independently confirm (no web access this session). Compounding it, the canonical name is the bare English noun 'bureau', which would match employer/organiser strings such as 'credit bureau' or 'Bureau of Indian Standards' even under organiser-only matching - so even as 'ambiguous' it mis-attributes.",
+   "bucket": "indian-startups"
+  },
+  {
+   "name": "Springworks",
+   "reason": "no-bengaluru-office",
+   "detail": "The evidence is 'registered in Bengaluru; remote-first ... founding and leadership base is the city' - a registered address plus founder location, which is exactly the vague/remote basis Lens 1 rejects. No office, campus, GCC or R&D centre is claimed, and confidence was only medium.",
+   "bucket": "indian-startups"
+  },
+  {
+   "name": "Collins Aerospace",
+   "reason": "no-bengaluru-office",
+   "detail": "Lens 1. Collins Aerospace's India engineering site of record is HYDERABAD (the Collins Aerospace India Design Centre / RTX India operations), which the researcher's own evidence concedes with 'alongside Hyderabad'. I could not independently confirm a Bengaluru engineering or design centre — collinsaerospace.com's global-locations page returns HTTP 403 to a fetch, so the claim rests on the researcher's assertion at confidence 'medium', and the only Bengaluru-adjacent thing I can place is legacy Goodrich activity, which is not the same claim. Lens 2 compounds it: the proposed 'RTX' alias is a whole-word match for NVIDIA RTX GPU mentions, which saturate this corpus's hardware and AI copy, so a distinctive entry would attribute GPU workshops to an avionics company. Both problems point the same way — leave it out and re-propose only with a named Bengaluru site and no 'RTX' alias.",
+   "bucket": "hardware-semi"
+  },
+  {
+   "name": "Nasdaq",
+   "reason": "unverifiable",
+   "detail": "Two independent failures. LENS 1: the entry's own confidence is 'medium' and the claim is a bare 'India technology centre is in Bengaluru' with no site named; I could not confirm a Bengaluru office from any first-party source (nasdaq.com/about/careers/locations timed out) and I do not independently know it to be real — Nasdaq's better-documented India footprint is a Mumbai commercial office, and 'roles are hired there' is exactly the hires-in-India evidence the lens rejects. LENS 2: 'Nasdaq' is also a generic market/index term that appears constantly in finance-event titles ('Trading the Nasdaq', 'Nasdaq-listed'), so as 'distinctive' it would match title and venue text and attribute unrelated trading meetups to Nasdaq Inc. Even if the office were confirmed, the entry would have to be 'ambiguous'.",
+   "bucket": "fintech-bfsi"
+  },
+  {
+   "name": "Wadhwani AI",
+   "reason": "unverifiable",
+   "detail": "Bengaluru office is the entire basis for inclusion and I cannot independently confirm it. Wadhwani AI's HQ is Mumbai, with its other well-documented presence in Delhi — both cities LENS 1 tells me to reject as a substitute. The researcher's own confidence is 'medium' and the evidence phrasing (\"a Bengaluru office alongside Mumbai and Delhi\") is exactly the shape of a guess extrapolated from a multi-city footprint. Better dropped than admitted on a maybe.",
+   "bucket": "services-ai-community"
+  }
+ ],
+ "downgraded": [
+  {
+   "name": "Scrut Automation",
+   "strength": "ambiguous",
+   "why": "the alias 'Scrut' is a fragment of 'scrutiny' / 'scrutinize' / 'scrutinised'"
+  },
+  {
+   "name": "Thales",
+   "strength": "ambiguous",
+   "why": "'Thales' also names the Greek mathematician, so talk and workshop copy collides — \"Thales' theorem\""
+  },
+  {
+   "name": "Extreme Networks",
+   "strength": "ambiguous",
+   "why": "'Extreme' is an ordinary English adjective and 'Networks' a generic industry term, so the pair can appear in ordinary copy"
+  },
+  {
+   "name": "Pure Storage",
+   "strength": "ambiguous",
+   "why": "'pure' is an ordinary adjective and 'storage' a generic industry term — 'pure storage' occurs in ordinary infrastructure copy"
+  },
+  {
+   "name": "Western Digital",
+   "strength": "ambiguous",
+   "why": "'Western' is an ordinary adjective and 'Digital' a generic industry term — 'western digital <noun>' appears in ordinary copy"
+  },
+  {
+   "name": "Aerospike",
+   "strength": "ambiguous",
+   "why": "'aerospike' is also a rocket-engine nozzle type, which appears verbatim in space-tech event copy (Bengaluru has an active space-hardware scene)"
+  },
+  {
+   "name": "DigitalOcean",
+   "strength": "ambiguous",
+   "why": "the alias 'Digital Ocean' matches the marketing phrase 'digital ocean of data', and 'digital' is a generic industry term"
+  },
+  {
+   "name": "Last9",
+   "strength": "ambiguous",
+   "why": "the alias 'Last 9' matches ordinary text such as 'the last 9 months' / 'last 9 events'"
+  },
+  {
+   "name": "OpenText",
+   "strength": "ambiguous",
+   "why": "the alias 'Open Text' matches ordinary phrases — 'open text file', 'open text editor'"
+  },
+  {
+   "name": "Boomi",
+   "strength": "ambiguous",
+   "why": "'Boomi' is a fragment of 'booming' — 'the booming AI market'"
+  },
+  {
+   "name": "Observe.AI",
+   "strength": "ambiguous",
+   "why": "the alias 'Observe AI' matches the ordinary phrase 'observe AI …' — 'observe AI agents in action'"
+  },
+  {
+   "name": "Zepto",
+   "strength": "ambiguous",
+   "why": "'zepto' is the SI prefix (zeptosecond, zeptogram) and the prefix of the unrelated ZeptoLab games studio"
+  },
+  {
+   "name": "Pratilipi",
+   "strength": "ambiguous",
+   "why": "'pratilipi' is an ordinary Sanskrit/Hindi noun ('copy', 'manuscript') that can appear in the literary and cultural listings this corpus ingests"
+  },
+  {
+   "name": "Newton School",
+   "strength": "ambiguous",
+   "why": "'Newton' is the SI unit of force and a common surname, and the phrase 'Newton School' also names unrelated schools; sector set to Community to match the existing Scaler entry"
+  },
+  {
+   "name": "Shadowfax",
+   "strength": "ambiguous",
+   "why": "'Shadowfax' is Gandalf's horse in Tolkien and can appear in the book-club and pop-culture listings this corpus ingests"
+  },
+  {
+   "name": "BlackBuck",
+   "strength": "ambiguous",
+   "why": "'blackbuck' is an Indian antelope and appears in the wildlife/trek listings this corpus deliberately ingests"
+  },
+  {
+   "name": "Practo",
+   "strength": "ambiguous",
+   "why": "'practo' sits inside 'chiropractor', which appears in the wellness listings this corpus ingests"
+  },
+  {
+   "name": "HealthifyMe",
+   "strength": "ambiguous",
+   "why": "'healthify' is used as a verb in wellness marketing copy ('healthify your diet'), and the corpus is full of wellness listings"
+  },
+  {
+   "name": "Medi Assist",
+   "strength": "ambiguous",
+   "why": "both tokens are generic health-service words - 'medi assist' occurs in ordinary health-camp copy and in other TPAs' and clinics' names"
+  },
+  {
+   "name": "Last9",
+   "strength": "ambiguous",
+   "why": "'last' is an ordinary English word and 'Last9' collides with strings like 'last90days'; the 'Last Nine' alias ('the last nine months') was dropped outright"
+  },
+  {
+   "name": "Digantara",
+   "strength": "ambiguous",
+   "why": "'digantara' is a Sanskrit noun (horizon/space) that can appear as a title word in the cultural listings this corpus ingests"
+  },
+  {
+   "name": "MathWorks",
+   "strength": "ambiguous",
+   "why": "MATLAB / Simulink — the aliases are tool names that stand alone as ordinary words in titles ('MATLAB workshop', 'Simulink training'), which a coaching centre runs far more often than MathWorks does; ambiguous keeps the aliases usable by restricting them to the organiser field"
+  },
+  {
+   "name": "Aptiv",
+   "strength": "ambiguous",
+   "why": "adaptive / captive — both contain 'aptiv', and 'adaptive' is everywhere in ADAS and AI event copy"
+  },
+  {
+   "name": "Rolls-Royce",
+   "strength": "ambiguous",
+   "why": "used idiomatically as a superlative ('the Rolls-Royce of frameworks') and shared with Rolls-Royce Motor Cars, a different (BMW-owned) company — organiser-only matching keeps both out"
+  },
+  {
+   "name": "Thales",
+   "strength": "ambiguous",
+   "why": "Thales is the mathematician in \"Thales' theorem\", which stands alone in student and education event titles in this corpus"
+  },
+  {
+   "name": "Money View",
+   "strength": "ambiguous",
+   "why": "both tokens are ordinary English words — 'money' and 'view' — so the pair can occur as an incidental adjacency in a finance-event title or organiser string"
+  },
+  {
+   "name": "Angel One",
+   "strength": "ambiguous",
+   "why": "'angel' is ubiquitous in startup-event strings ('angel investor', 'Angel Network', 'angel round'), and 'angel one' occurs as an ordinary adjacency, so title/venue matching is unsafe"
+  },
+  {
+   "name": "M2P Fintech",
+   "strength": "ambiguous",
+   "why": "the alias 'M2P' is a three-character token and 'fintech' is a generic industry term — the short alias must be organiser-field only"
+  },
+  {
+   "name": "HSBC",
+   "strength": "ambiguous",
+   "why": "four-character acronym — the <=4-char rule applies, same as ANZ and LSEG; it also appears inside strings like 'HSBCnet'"
+  },
+  {
+   "name": "Cognizant",
+   "strength": "ambiguous",
+   "why": "\"cognizant\" is an ordinary English adjective (\"be cognizant of the trade-offs\") and matches as a whole token, so it must not be read out of titles or venue strings."
+  },
+  {
+   "name": "Sonata Software",
+   "strength": "ambiguous",
+   "why": "The \"Sonata\" alias is a whole-token match on the musical form — this corpus ingests concert and recital listings via District/AllEvents, where \"Sonata\" appears in titles."
+  },
+  {
+   "name": "Persistent Systems",
+   "strength": "ambiguous",
+   "why": "\"persistent systems\" is ordinary technical phrasing that occurs verbatim in talk titles (\"Building Persistent Systems with Kafka\")."
+  },
+  {
+   "name": "Lollypop Design Studio",
+   "strength": "ambiguous",
+   "why": "The \"Lollypop\" alias is a common-noun spelling of \"lollipop\" and reads as a whole token in the kids/leisure listings this corpus ingests."
+  },
+  {
+   "name": "Observe.AI",
+   "strength": "ambiguous",
+   "why": "The \"Observe AI\" alias collides with the ordinary imperative phrase \"observe AI\" (\"Observe AI Agents in Production\"), which is exactly the copy this GenAI-saturated corpus is full of."
+  },
+  {
+   "name": "Portkey",
+   "strength": "ambiguous",
+   "why": "\"portkey\" is a Harry Potter common noun that turns up as a whole token in themed quiz/trivia titles, which this all-city corpus ingests; the company is also small enough that title matching buys little."
+  },
+  {
+   "name": "AnitaB.org India",
+   "strength": "ambiguous",
+   "why": "The \"GHCI\" alias is a 4-character token that collides with GHCi, the Glasgow Haskell Compiler interactive shell — a Haskell meetup titled \"Intro to GHCi\" would otherwise be attributed here."
+  }
+ ],
+ "audits": [
+  {
+   "key": "user-events",
+   "result": {
+    "findings": [
+     {
+      "file": "lib/scrapers/pipeline.ts",
+      "line": 332,
+      "severity": "blocker",
+      "what": "pruneStale() deletes on { startDateTime < now-7d, lastSeenAt < now-7d } with no ownership predicate. lastSeenAt is set once at creation (lib/models/Event.ts:224) and is only ever refreshed by ingestEvents (lib/scrapers/ingestion.ts:346). Nothing re-reports a user-authored event, so its lastSeenAt is frozen at creation time.",
+      "consequence": "Every user-created event is silently deleted 7 days after it ends (immediately at the 7-day mark for the normal case, where the event was entered more than a week before it happened). No re-scrape recovers it because there is no upstream. The user gets no error and no notice — the row simply stops existing. Dangling referrers: TrackerEntry.eventId (lib/models/TrackerEntry.ts:73, required, compound-unique {userId,eventId} at :112) — app/tracker/page.tsx:100 filters out entries whose populate returned null, so the tracked entry AND its status/notes/connections disappear from the kanban with no message; Folder.eventId (lib/models/Folder.ts:67) dangles but survives because name/date/venue are denormalised; lib/helpers/phase6.ts:194 and :342 already null-guard so no 500.",
+      "action": "Add `createdByUserId: { $exists: false }` (or `$in: [null, undefined]` to also cover explicit nulls) to the deleteMany filter at pipeline.ts:335-338, and give user events their own explicit retention rule. Also update the PipelineOptions.onlySources docblock at pipeline.ts:74-80, which currently states pruning's contract as 'any past event no source has reported for a week' — that sentence becomes false the moment events exist that no source ever reports."
+     },
+     {
+      "file": "lib/scrapers/ingestion.ts",
+      "line": 324,
+      "severity": "blocker",
+      "what": "The clusterKey lookup `Event.findOne({ clusterKey: event.clusterKey })` has no ownership or source predicate, and POST /api/events computes clusterKey with the same generator the pipeline uses (app/api/events/route.ts:126 calls Event.generateClusterKey, identical to lib/models/Event.ts:300-311). A user event titled 'React Meetup' on the same IST calendar day as the scraped one shares a clusterKey by construction — normalizeTitleForMatch strips city words and noise, so collisions are easy, not exotic.",
+      "consequence": "A scrape merges INTO the user-created document. mergeInto (ingestion.ts:104-266) then overwrites the user's description if the incoming one is 20+ chars longer (:131), fills venue/address/area/city/organizer/imageUrl (:107-117), REPLACES category and isTechEvent when incoming tagConfidence is higher (:176-185), recomputes companies (:234-244), and refreshes lastSeenAt (:346). Worse, `Event.create(event)` at :360 is never reached and the merge is counted as crossSourceMerged at :352 — so the real, public event never gets a document of its own. If the user document is private, the whole city loses that event from the feed, silently, and the run reports success.",
+      "action": "Add an owner exclusion to all four lookups: ingestion.ts:301, :312, :316, :324. Belt and braces: make mergeInto return false (or throw) when `existing.createdByUserId` is set, so a future fourth lookup path cannot reintroduce this. The cleanest structural fix is to namespace the derived keys for owned events (see the dedupHash/clusterKey finding), so an owned document is incapable of entering a scraped cluster."
+     },
+     {
+      "file": "app/api/events/route.ts",
+      "line": 124,
+      "severity": "blocker",
+      "what": "`dedupHash: body.dedupHash || Event.generateDedupHash(...)` — the caller can supply an arbitrary dedupHash. Separately, line 110 spreads the entire request body into the document (`...body`), so the caller also controls `source` (:108 `body.source || 'manual'`), `sourceEventId`, `spotlightAt`, `connectionScore`, `isTechEvent`, `companies`, `lastSeenAt`, `seenInSources` — and, once the fields exist, `createdByUserId` and `visibility` themselves.",
+      "consequence": "Three distinct attacks once a user-scoped create path exists. (1) A user pre-claims the dedupHash of an event not yet scraped; the next run matches at ingestion.ts:312 and merges the public event into the user's private document instead of inserting it — same swallow as the clusterKey path but deliberate. (2) A user sets `visibility: 'public'` on a submission that was supposed to await review, or sets `createdByUserId` to somebody else's id, transferring ownership by request body. (3) A user sets `spotlightAt: <now>` and `connectionScore: 100` and pins their own event into the home page Spotlight (app/page.tsx:540-544 renders whatever `?spotlight=true` returns) — the field CLAUDE.md documents as 'editorial, human-chosen, nothing may recompute it'.",
+      "action": "Replace the `...body` spread with an explicit allowlist of accepted fields. Never accept dedupHash, clusterKey, source, sourceEventId, spotlightAt, connectionScore, companies, isTechEvent, lastSeenAt, seenInSources, createdByUserId or visibility from the body. Derive createdByUserId from the session and assign it LAST, copying the `{ ...input, userId }` ordering already used at app/api/tracker/route.ts:80. Force `source: 'manual'`. Take `visibility` from a single validated enum check, not from a spread."
+     },
+     {
+      "file": "lib/events/query.ts",
+      "line": 154,
+      "severity": "blocker",
+      "what": "buildEventFilter has no visibility or ownership predicate. It is the ONLY filter builder, shared by app/api/events/route.ts:35 (list, and the countDocuments at :62) and app/api/events/facets/route.ts:26-31 (all six facet aggregations plus baseFilter). Its own header (query.ts:1-6) states the reason it is shared: a filter that behaves differently between the list and the counts is a bug users notice immediately.",
+      "consequence": "Every user's private events appear in every other user's feed, in the pagination total, in every facet count, and in the search results — full titles, venues, organizers and descriptions, to signed-out visitors included. This is the primary privacy leak.",
+      "action": "Add the clause INSIDE the `and` array before line 246, never as a top-level `filter.$or` — the search branch already owns `$or` inside `and` (:239) and top-level keys are set unconditionally at :158-169, so a second top-level `$or` would be silently overwritten by a future param or conflict with `$text`. The clause needs three arms, not two: `{ $or: [ { visibility: 'public' }, { visibility: { $exists: false } }, { createdByUserId: viewerId } ] }` — the ~1500 existing documents have no `visibility` key at all, and omitting that arm empties the entire feed on deploy. Make viewerId a REQUIRED parameter (or required field of EventQueryParams): an optional one fails open, and failing open here is the leak. Note tests/search-filter.test.ts:20/69/86/97 casts its argument through `Parameters<typeof buildEventFilter>[0]`, so the test suite will NOT catch a caller that forgets it — the type must be required at the call site."
+     },
+     {
+      "file": "app/api/events/facets/route.ts",
+      "line": 19,
+      "severity": "blocker",
+      "what": "The facets route has no auth call of any kind — no `auth()`, no `getCurrentUserId()`, no guard. It cannot identify the caller, so it cannot pass a viewerId into any of its seven buildEventFilter calls (:26-31).",
+      "consequence": "Even after the list route is fixed, the counts beside the filters would still be computed over every user's private events. The list and the counts would disagree — the exact failure the shared query builder exists to prevent — and the facet numbers alone disclose how many private events exist per category, area, source, format and company.",
+      "action": "Add a NULLABLE session read (`getCurrentUserId()`, not `requireUser()`) — the feed must stay public for signed-out visitors, which scripts/diag-api-auth.ts:138 asserts as a 200. Pass the resulting viewerId (or null) into all six dimension filters and baseFilter. Same for the `$match` at :41 and :56, which spread the dimension filters and would otherwise lose the clause."
+     },
+     {
+      "file": "app/api/events/[id]/route.ts",
+      "line": 20,
+      "severity": "blocker",
+      "what": "`GET /api/events/[id]` is fully public: `Event.findById(id).lean()` with no visibility or ownership check. The `related` query at :28-36 likewise matches on category + upcoming with no visibility clause.",
+      "consequence": "A private event is readable in full by anyone who has or guesses its id — and Mongo ObjectIds are not secrets: they embed a timestamp and an incrementing counter, so one known id makes neighbours enumerable. Independently, other users' private events surface as 'similar events' at the bottom of every public event's detail page (app/events/[id]/page.tsx:46 renders `data.related`), which leaks them with no id guessing at all.",
+      "action": "Return 404 (not 403 — a 403 confirms the row exists) when the event is private and the caller is not its owner. Add the same visibility clause to the `related` query. Do the ownership check after `connectDB()` but before building `related`, so a refused request costs one query."
+     },
+     {
+      "file": "app/api/events/[id]/ics/route.ts",
+      "line": 56,
+      "severity": "blocker",
+      "what": "Same unguarded `Event.findById(id).lean()`, and the response sets `Cache-Control: public, max-age=3600` at :112. The body carries title, full description, organizer, venue, address, area, city and sourceUrl (:68-100).",
+      "consequence": "A private event's entire contents are fetchable by id with no session, and then cached for an hour by any shared or CDN cache along the path — so revoking access does not revoke the cached copy. CLAUDE.md §9 already records this exact distinction for the CSV export ('the route serving it must send no-store — do not copy the ICS route's public, max-age=3600, since that is a shared calendar and this is one person's private list'); a private event turns the ICS route into the second instance of that mistake.",
+      "action": "Gate on ownership, 404 otherwise, and send `Cache-Control: no-store` whenever the event is not public."
+     },
+     {
+      "file": "app/api/tracker/route.ts",
+      "line": 68,
+      "severity": "blocker",
+      "what": "`Event.findById(eventId)` with no visibility check, then `TrackerEntry.create({ ...input, userId })` at :80 and `.populate('eventId')` at :81, returning the fully populated event in the 201 body. GET at :65 re-populates it on every subsequent read.",
+      "consequence": "Any signed-in user can track another user's private event by id and get the complete event document back in the response — and then keep reading it forever through GET /api/tracker. This turns the id-guessing oracle into a durable read channel, and it survives the fix to GET /api/events/[id] because it is a different route. Downstream, moving that entry to Confirmed/Attended calls ensureFolderForEvent (lib/contacts/service.ts:218-247), which copies the private event's title, startDateTime and venue into a Folder the attacker owns — a permanent denormalised copy that no later access-control change can claw back.",
+      "action": "After the findById at :68, refuse (404, matching the existing 'Event not found' shape) when the event is private and `event.createdByUserId !== userId`. Keep it after the guard and the validator so the ordering rule in CLAUDE.md §6 still holds."
+     },
+     {
+      "file": "public/sw.js",
+      "line": 29,
+      "severity": "blocker",
+      "what": "`PRIVATE_API` (:29-38) lists /api/tracker, /api/contacts, /api/folders, /api/me/, /api/phase6, /api/notifications, /api/admin and /api/auth — but NOT /api/events. So /api/events falls into the network-first branch at :96-103 and every successful response is written to the origin-wide `pulseblr-dynamic-v3` cache (:101-102) and served offline at :105-106.",
+      "consequence": "Once /api/events returns the caller's private events, account A's private event titles are cached on the device and served to account B offline. This is precisely the cross-account leak the v3 bump exists to close (sw.js:3, :17). The `purge-caches` message (:140+) only mitigates it when the app itself sends it before signOut(); a session expiry, a cleared cookie, a sign-out from another tab, or a crash leaves the cache intact.",
+      "action": "Pick one: keep private events off /api/events entirely and serve them from a new path added to PRIVATE_API; or add '/api/events' to PRIVATE_API and accept that the feed is no longer readable offline (state that cost explicitly, as sw.js:3 does for the others). Either way bump STATIC_CACHE/DYNAMIC_CACHE to v4 (:25-26) so existing clients drop the already-poisoned cache. Note this cannot be verified under `npm run dev` — app/layout.tsx unregisters the worker in development."
+     },
+     {
+      "file": "scripts/cleanup-duplicate-clusters.ts",
+      "line": 60,
+      "severity": "blocker",
+      "what": "The `$match` at :61 groups every upcoming event by clusterKey with no ownership predicate, sorts each group by `completeness()` (:81), keeps the winner and `deleteMany`s the rest (:183). It repoints TrackerEntry (:143-155) and Folder.eventId (:169-176) but has no concept of an owner.",
+      "consequence": "Two symmetrical data-loss paths on a user/scraper clusterKey collision. If the scraped document is more complete, the user's hand-entered event is DELETED — and unlike a scraped row nothing re-creates it, so that is permanent loss of user-authored content from a script whose stated job is deduplication. If the user's document wins (it easily can: it has venue, description, image, price and organizer if they filled the form in), the PUBLIC scraped document is deleted and the whole city loses that event to a row only one person can see.",
+      "action": "Add `createdByUserId: { $exists: false }` to the `$match` at :61 so owned documents never enter a cluster group. Do not try to solve this inside `completeness()` — the fix belongs at selection, before anything is a candidate."
+     },
+     {
+      "file": "scripts/cleanup-non-bengaluru.ts",
+      "line": 163,
+      "severity": "blocker",
+      "what": "`Event.find({})` over the whole collection (:163), judged by offCityReason (:180-189), deleted with `deleteMany` at :260. The only spare is 'a user tracked it or built a Folder for it' (:225-249). Ownership is not considered.",
+      "consequence": "A user's own event whose venue or title contains a gazetteer hit — 'Mysore Road', a Chennai-office demo, a title naming another city — is deleted with `--apply` and cannot be recovered, because the spare only fires if the user ALSO tracked it. The script's own header argues that a deliberate human action outranks a geo heuristic; typing the event in by hand is a stronger human action than tracking one.",
+      "action": "Exclude owned documents from the `find` at :163, or at minimum add 'created by a user' to `protectedIds` at :232-236 on the same footing as tracked/foldered, and name the spared rows in the report the way the tracked ones are named at :244-248."
+     },
+     {
+      "file": "scripts/cleanup-implausible.ts",
+      "line": 21,
+      "severity": "blocker",
+      "what": "`Event.find({})` (:21) then `deleteMany` (:54) on any event starting before 2020-01-01 (:31) or more than 550 days out (:32), plus `updateMany` clearing endDateTime (:58). No ownership predicate. Same shape in scripts/migrate-events.ts:103-110 (junkFilter deleteMany, whose dedupHash-regex arm is unscoped by source), scripts/cleanup-past.ts:39-49 and scripts/cleanup-seed.ts:27-41.",
+      "consequence": "A date typo in the add-event form (`2026` mistyped as `2016`), or a genuinely far-out conference the user wants to remember, is permanently deleted by a maintenance script the user never ran and cannot see. The dedupHash regex in migrate-events.ts:105 is a prefix match over a hex hash and could in principle catch a user-supplied dedupHash (see the body-spread finding).",
+      "action": "Add an ownership exclusion to the selection in each of these four scripts, or invert them to opt-in with an explicit `--include-user-events` flag. Update the scripts table in CLAUDE.md, which currently describes them as operating on 'stored events' with no ownership caveat."
+     },
+     {
+      "file": "lib/models/Event.ts",
+      "line": 282,
+      "severity": "important",
+      "what": "`generateDedupHash` mixes title + instant + venue + source (:288) — not the owner. `dedupHash` is `{ required: true, unique: true }` (:222). The pre('validate') hook only derives it when absent (:343), so a caller-supplied value wins. `generateClusterKey` (:300-311) is title + IST day, with no owner either.",
+      "consequence": "Two users adding the same event privately (same title, time, venue, source 'manual') collide on the global unique index. The second gets the 409 at app/api/events/route.ts:132 saying 'Event already exists' — an existence oracle for a document they are not allowed to see, and a hard block: the feature simply does not work for the second person. And because clusterKey carries no owner, every owned document remains eligible for scraper cluster merges and for cleanup-duplicate-clusters.",
+      "action": "For owned events, namespace both keys: include createdByUserId in the generateDedupHash input, and prefix clusterKey (e.g. `user:<id>|<normalized title>|<istDay>`). That single change makes the ingest merge (ingestion.ts:301/312/316/324) and the cluster cleanup structurally incapable of touching a user event, which is a stronger guarantee than adding a predicate to each of the five call sites. Keep the derivation in pre('validate') — pre('save') runs after validation and would leave the required field unset (scripts/diag-hook-order.ts)."
+     },
+     {
+      "file": "app/api/events/route.ts",
+      "line": 88,
+      "severity": "important",
+      "what": "POST is `requireAdmin()`, while proxy.ts:22-31 lists `/add-event` as merely signed-in. So a signed-in non-admin can already reach the form and submit it.",
+      "consequence": "Today that path ends in a 403 rendered as `alert(data.error)` at app/add-event/page.tsx:103 — a dead-end form with no explanation. The user-ownership feature has to resolve this split, and getting the order wrong reintroduces a documented defect: if the new validation or the visibility branch runs above the guard, an anonymous caller with a bad body gets 400 instead of 401, which is the ordering rule CLAUDE.md §6 spells out and scripts/diag-api-auth.ts asserts.",
+      "action": "Branch inside POST: `requireUser()` for a create that is private or a pending submission; keep `requireAdmin()` for anything that lands in the shared corpus directly. Keep the gate above `request.json()` at :94 (it currently is — preserve that). Add the new cases to scripts/diag-api-auth.ts:30-32 including a deliberately-invalid-body probe, which is how a validator that outran the guard gets caught."
+     },
+     {
+      "file": "app/api/events/route.ts",
+      "line": 109,
+      "severity": "important",
+      "what": "The create path sets none of the derived fields the scraper computes. lib/scrapers/normalizer.ts:197-206 sets isTechEvent, companies and connectionScore; POST sets neither, so the schema defaults apply: `isTechEvent: true` (lib/models/Event.ts:226) and `connectionScore: 20` (:228). No off-city gate runs either — lib/scrapers/pipeline.ts:611-627 applies offCityReason to scraped batches only.",
+      "consequence": "Every user-submitted event is flagged tech by default, so it lands in the DEFAULT feed (lib/events/query.ts:165 sets `filter.isTechEvent = true`) regardless of what it actually is — a book club, a wedding, a Chennai workshop. connectionScore 20 puts it near the bottom of the default `connections` sort, so it is simultaneously in the tech feed and unrankable. And a user-submitted off-city event enters the corpus the stage-5c gate exists to keep clean, where scripts/diag-offcity.ts will report it as a leak with no source to attribute it to.",
+      "action": "Run user submissions through the same normalizer path — tagEvents/keywordTagging for category+isTechEvent, resolveCompanies, connectionScore — or, if that is too much for a synchronous request, default `isTechEvent: false` for anything unreviewed rather than inheriting the schema's `true`. Apply offCityReason to the submission and reject with a 400 that names the city it matched."
+     },
+     {
+      "file": "app/admin/AdminDashboard.tsx",
+      "line": 634,
+      "severity": "important",
+      "what": "The admin events panel lists events by fetching `/api/events?${params}` — the same public feed endpoint that will start filtering by viewer. There is no admin-only event listing endpoint and no review state in the model (visibility is proposed as a two-value enum, private | public).",
+      "consequence": "'Submitted for inclusion in the shared corpus' has nowhere to be reviewed. Once /api/events scopes to the caller, other users' submissions become invisible to the admin too — so submissions are either instantly public (no review at all, and app/events/[id]/page.tsx renders applyLink into an href, which is the phishing vector the admin guard at app/api/events/route.ts:82-86 was added to close) or invisible forever. The admin's per-event controls at :688 (spotlight pin) and :716 (isTechEvent toggle) also cannot reach a submission they cannot list.",
+      "action": "Decide the review model before writing the schema. Either add a third state (`pending`) plus an admin-only listing endpoint, or add an explicit bypass parameter to the shared filter that the ROUTE gates with requireAdmin() — never a bypass the query builder decides for itself, since the query builder is also called by the unauthenticated facets route."
+     },
+     {
+      "file": "app/api/companies/route.ts",
+      "line": 26,
+      "severity": "important",
+      "what": "Both aggregations match only on `startDateTime >= now`: the counts pipeline at :27 and the unmatchedHosts pipeline at :70-74. No visibility clause, no auth on the route at all.",
+      "consequence": "A private event whose organizer resolves to a registry company inflates that company's public `upcoming` and `techEvents` counts, and can supply the `nextEventAt` (`$min` at :34) and the representative cover `image` (`$first` at :36) shown on /companies. `unmatchedHosts` (:76) publishes the raw organizer string of private events to every visitor — and the /companies page exists specifically to surface unrecognised hosts, so it is the one surface guaranteed to display them.",
+      "action": "Add the shared visibility clause to both `$match` stages. Since this route has no session read, either add a nullable one or restrict both aggregations to `visibility: 'public'` plus the no-key legacy arm — a company browse page arguably should show only the shared corpus regardless of who is looking."
+     },
+     {
+      "file": "app/api/events/calendar/route.ts",
+      "line": 51,
+      "severity": "important",
+      "what": "The filter is hand-built at :51 (`{ startDateTime: { $gte: from, $lt: to } }`, plus isTechEvent at :52) rather than going through buildEventFilter, and the route has no auth.",
+      "consequence": "Other users' private events light up day dots and inflate the monthly total on the public calendar grid, and the numbers will not agree with the feed once the feed is scoped. Because this filter is a hand-rolled copy, it is also the place a visibility fix is most likely to be forgotten — the same duplicated-constant failure mode CLAUDE.md documents for CATEGORY_KEYWORDS and the source caps.",
+      "action": "Export the visibility clause as a single helper from lib/events/query.ts and apply it here rather than reimplementing it, so this route cannot drift from the feed."
+     },
+     {
+      "file": "lib/scrapers/ingestion.ts",
+      "line": 386,
+      "severity": "important",
+      "what": "`getNewEventsSince` (:388) and `getEventsWithDeadlineSoon` (:398) query Events with no user or visibility predicate. lib/notifications/digest.ts:70 and :73 put their results straight into `newEvents` and `upcomingDeadlines`.",
+      "consequence": "Every user's daily email contains every OTHER user's private event titles, areas, food flags and registration deadlines — rendered at digest.ts:136-138 (text) and :270-271 (HTML). generateDailyDigest is already scoped per user and its header (:51-60) records that both TrackerEntry queries once ran unscoped and leaked private notes; these two are the same defect in the half that was assumed 'global by nature'. That assumption stops being true the moment an event can be private.",
+      "action": "Give both functions a required userId parameter and apply the visibility clause — required, not optional, for the same reason generateDailyDigest's userId is required (digest.ts:57-60): an optional parameter lets a caller silently reintroduce the leak with TypeScript saying nothing."
+     },
+     {
+      "file": "app/api/admin/stats/route.ts",
+      "line": 41,
+      "severity": "important",
+      "what": "Every Event query here is unscoped: total (:41), upcoming (:42), tech (:43), addedToday (:44), withoutClusterKey (:48), byCategory (:51), bySource (:58) and nextEvents (:69-73), which returns titles, venues, organizers and connectionScores.",
+      "consequence": "Not a leak to strangers (requireAdmin at :20), but it silently redefines what 'the corpus' means on the operator console — and scripts/diag-admin-stats.ts:33-37 asserts invariants (source buckets sum, `tech <= upcoming`, non-empty breakdowns) that would start describing a mixed population of shared and private rows. addedToday in particular becomes a mix of scrape output and user submissions with no way to tell them apart, which is exactly the signal the dashboard exists to give.",
+      "action": "Decide whether admin stats mean 'the shared corpus' (filter to public) or 'everything stored' (keep unfiltered but report the split as a separate figure, e.g. userSubmitted / pendingReview). Mirror whichever you choose in scripts/diag-admin-stats.ts so the dashboard and the CLI keep telling one story."
+     },
+     {
+      "file": "scripts/retag-events.ts",
+      "line": 99,
+      "severity": "important",
+      "what": "Selects on a time window with no ownership clause (filter built :64-92) and `updateOne`s categories and isTechEvent at :135. Same pattern in scripts/retag-category.ts:64 and :107, scripts/backfill-companies.ts:29 and :58, scripts/backfill-connection-score.ts:29 and :57, and scripts/diag-overtagged.ts:24 with :43/:61 under --fix.",
+      "consequence": "These scripts REPLACE the categories a user chose by hand in the add-event form (app/add-event/page.tsx:246-275) with LLM or keyword output, and rewrite their companies and connectionScore. For a scraped event that is correct — those fields are derived and recomputable. For a user's own event the categories are user INPUT, and CLAUDE.md's rule for spotlightAt ('editorial, not derived — nothing may recompute or clear it') applies with equal force. The user sees their event silently re-labelled by a job they never ran.",
+      "action": "Exclude owned events from the selection in each script, or add an explicit `--include-user-events` opt-in that says what it will overwrite. Same treatment for scripts/migrate-categories.ts:33/71."
+     },
+     {
+      "file": "lib/models/Event.ts",
+      "line": 244,
+      "severity": "important",
+      "what": "Every index leads with startDateTime, isTechEvent, source, createdAt, lastSeenAt, companies or spotlightAt (:244-269). None mentions visibility or an owner. The hot path is :252, `{ isTechEvent: 1, connectionScore: -1, startDateTime: 1 }`, which backs the default feed sort.",
+      "consequence": "A visibility `$or` added inside `$and` cannot be served by any existing index, so the default feed query degrades to a filter-after-fetch on every request over ~1500 documents and growing. The facets route runs six aggregations over the same predicate, so the cost multiplies there.",
+      "action": "Add `visibility` and `createdByUserId` to the schema, fold visibility into the two feed indexes (:248 and :252), and add `{ createdByUserId: 1, startDateTime: 1 }` for a 'my events' view. If any index over createdByUserId is ever made unique, use `partialFilterExpression`, NEVER `sparse` — on a compound key sparse only skips a document when every field is missing, and userId-style fields are always present, which is the bug that capped every user at one folder (CLAUDE.md §9)."
+     },
+     {
+      "file": "app/api/events/route.ts",
+      "line": 131,
+      "severity": "minor",
+      "what": "The 409 branch returns the full colliding document in the response body (`{ error: 'Event already exists', event: existing }`).",
+      "consequence": "On a user-scoped create path this hands back an event the caller may have no right to see — including another user's private event that happens to share the dedupHash. It is also the existence oracle described in the dedupHash finding, with the contents attached.",
+      "action": "Return the conflict without the document, or return only the id when the caller owns it."
+     },
+     {
+      "file": "app/api/folders/route.ts",
+      "line": 72,
+      "severity": "minor",
+      "what": "`Event.findById(body.eventId).select('title startDateTime venue area')` with no visibility check, then copies title/date/venue into the Folder (:73-76). Same at app/api/folders/[id]/route.ts:70.",
+      "consequence": "A user can link a folder to another user's private event and read its title, start time and venue back through the denormalised copy — and because the copy is denormalised on purpose (the folder must survive pruneStale), the leaked values persist in the attacker's own document after any access-control fix.",
+      "action": "Add the same ownership/visibility check used in the tracker fix before assigning doc.eventId, and silently skip the link rather than 403ing — the route already treats a missing event as 'just do not link' (:69)."
+     },
+     {
+      "file": "lib/helpers/phase6.ts",
+      "line": 437,
+      "severity": "minor",
+      "what": "`Event.countDocuments()` (:437), `Event.countDocuments({ createdAt: { $gte: thisMonth } })` (:438) and `Event.countDocuments({ isTargetCompany: true })` (:451) are unscoped inside getStats(userId), whose every other query is correctly filtered by userId.",
+      "consequence": "The per-user dashboard's totalEvents, eventsThisMonth and targetCompanyEvents count other users' private events. Numeric disclosure only, but the dashboard presents these as facts about the corpus the user can browse, and they will not match what the feed returns.",
+      "action": "Apply the visibility clause with the same userId the function already takes."
+     },
+     {
+      "file": "proxy.ts",
+      "line": 22,
+      "severity": "minor",
+      "what": "PROTECTED already contains '/add-event' (:25), so today's form is behind sign-in. The matcher at :54 excludes `api`, so nothing here protects any events endpoint — every guard must live in the handler.",
+      "consequence": "Nothing is broken today, but the prefix-matching trap documented at :12-21 makes the naming of any new page load-bearing. A 'my events' page at `/events/mine` would NOT be protected (only `/events/...` public pages exist and `/events` is deliberately absent from PROTECTED), and adding `/events` to PROTECTED would redirect the public event detail page to /login for every signed-out visitor.",
+      "action": "Put any owner-facing page at a distinct top-level segment (e.g. `/my-events`) and add that exact prefix to PROTECTED. Do not add `/events`. Re-read the `/c/` and `/f/` note at :12-21 before choosing the segment, and re-run scripts/diag-api-auth.ts, which asserts a 307 to /login for every protected page."
+     },
+     {
+      "file": "app/layout.tsx",
+      "line": 28,
+      "severity": "minor",
+      "what": "There is no sitemap or robots route in the repo — `app/sitemap.ts`, `app/sitemap.xml`, `app/robots.ts` do not exist, layout metadata (:28) is static, and the only generateMetadata functions are app/c/[token]/page.tsx:48 and app/f/[token]/page.tsx:39, both of which read Folder/card data rather than Events.",
+      "consequence": "Nothing leaks today. But a sitemap is the natural next addition for a public event feed, and it is the one surface where a forgotten visibility clause publishes private event titles to search engines permanently — a leak that outlives the fix.",
+      "action": "When the visibility predicate is written, export it as a single named helper from lib/events/query.ts (not an inline object literal in two routes), so any future sitemap, RSS or OG-image author reaches for the same thing. State in the helper's docblock that it must be applied to every Event read that is not owner-scoped."
+     },
+     {
+      "file": "scripts/diag-scorecard.ts",
+      "line": 92,
+      "severity": "minor",
+      "what": "Roughly 30 read-only diagnostics query Events with no ownership predicate and will start measuring a mixed population: diag-scorecard.ts:92, diag-events.ts:25-99, diag-tech-fp.ts:32, diag-offcity.ts:113-122, diag-tech-consistency.ts:44-55, diag-flagship-events.ts:60, diag-tagquality.ts:11-22, diag-tag-supply.ts:37-77, diag-legacy-docs.ts:34-69, diag-clusterkey.ts:24, diag-company-leak.ts:38, diag-recent-writes.ts:30-32, diag-coaching-leak.ts:54, diag-gamingxr-leak.ts:42, diag-city-spelling-dupes.ts:65, diag-hardware-corpus-delta.ts:59, diag-district-precision.ts:28-43, diag-organizers.ts:38-58, diag-search.ts:17-58, diag-dupe.ts:13-23, diag-seed-dupes.ts:33-78, diag-attended-coverage.ts:40-70, diag-venue-attribution.ts:28, diag-tech-recall.ts:54-61, diag-tech-precision.ts:65, diag-hardware-gap.ts:46-54, diag-meetup-geo-leak.ts:70, cleanup-dryrun.ts:38-102. Two of these WRITE: diag-overtagged.ts:43/:61 under --fix, and diag-clusterkey-selfheal.ts:20-55, which picks an arbitrary `findOne({})` victim, strips its clusterKey and re-saves it.",
+      "consequence": "Tech-precision, off-city and duplicate-cluster figures start including events no scraper produced, so a user's mis-categorised private event reads as a classifier regression. diag-scorecard.ts is the one that matters most because it EXITS NON-ZERO on a capability shortfall — it would begin failing CI on user content. diag-clusterkey-selfheal.ts could pick a user's event as its mutation victim.",
+      "action": "Exclude owned events from the selection in each, so every figure keeps describing the shared corpus. Prioritise diag-scorecard.ts (exits non-zero), diag-overtagged.ts --fix and diag-clusterkey-selfheal.ts (both write), then diag-offcity.ts and diag-tech-fp.ts (both feed cleanup decisions)."
+     }
+    ],
+    "summary": "Adding `createdByUserId` + `visibility` to `Event` touches far more than the model. I found 28 required changes; 12 are blockers.\n\nThe four structural ones, in the order they will bite:\n\n1. **`pruneStale()` deletes user events, permanently.** `lib/scrapers/pipeline.ts:335-338` selects on `{ startDateTime < now-7d, lastSeenAt < now-7d }`. `lastSeenAt` is only ever refreshed by `ingestEvents` (`lib/scrapers/ingestion.ts:346`), and nothing re-reports a hand-entered event, so it is frozen at creation. Consequence confirmed: any user event created more than a week before it happens is deleted exactly 7 days after it ends. Referrers — `TrackerEntry.eventId` is `required` and `app/tracker/page.tsx:100` *drops* entries whose populate came back null, so the tracked entry and its notes vanish from the kanban with no error; `Folder.eventId` dangles but survives on denormalised fields; `lib/helpers/phase6.ts:194,342` already null-guard.\n\n2. **A scrape can merge INTO a user event and swallow the public one.** `POST /api/events:126` computes `clusterKey` with the same generator as the pipeline, so a manual event collides with a scraped one on title+IST day by construction. `ingestion.ts:324` then finds the user's document, `mergeInto` overwrites its description, venue, categories and `isTechEvent`, `Event.create` at `:360` never runs, and the merge is counted as `crossSourceMerged` at `:352`. If the user's row is private, the city loses that event and the run reports success. Two more routes into the same hole: the `sourceEventId` match at `:316` (which then rewrites title/start/dedupHash/clusterKey at `:334-338`), and `dedupHash: body.dedupHash || …` at `route.ts:124`, which lets a caller pre-claim a hash. **My recommendation: namespace both keys for owned events** (owner in the dedupHash input, `user:<id>|…` clusterKey prefix) rather than patching five call sites — it makes an owned document structurally ineligible for merging or cluster-collapsing.\n\n3. **The feed and the facet counts share one unfiltered builder.** `buildEventFilter` (`lib/events/query.ts:154`) has no visibility predicate and is the only one, used by the list *and* `countDocuments` *and* all six facet aggregations. The clause must go inside the `and` array (not a top-level `$or`, which the search branch would collide with) and needs a **three-arm** `$or` — the `{ visibility: { $exists: false } }` arm is not optional, or the ~1500 existing documents disappear on deploy. Make `viewerId` **required** in the signature: `tests/search-filter.test.ts` casts its argument, so the suite will not catch a caller that forgets it, and an optional parameter fails open. `app/api/events/facets/route.ts` has *no auth call at all* and needs a nullable session read (not `requireUser()` — `diag-api-auth.ts:138` asserts the facets route stays 200 signed-out).\n\n4. **Four id-addressable read paths bypass the feed entirely.** `GET /api/events/[id]:20`, its `related` query at `:28` (which leaks other users' private events onto every public detail page with no id guessing), `app/api/events/[id]/ics/route.ts:56` (which also sends `Cache-Control: public, max-age=3600`), and — the worst — `app/api/tracker/route.ts:68`, where any signed-in user can track a private event by id and read the fully populated document back forever through `GET /api/tracker`. Return 404, not 403.\n\nAlso blocking: `public/sw.js:29` omits `/api/events` from `PRIVATE_API`, so private rows get written to the origin-wide dynamic cache and served to the next account offline — the exact leak the v3 bump closed for the other routes. And three destructive scripts delete without an ownership predicate: `cleanup-duplicate-clusters.ts:60` (which can delete *either* side — losing the user's event, or losing the public one to a private survivor), `cleanup-non-bengaluru.ts:163`, `cleanup-implausible.ts:21`.\n\nTwo decisions worth making before any schema edit. **`visibility: 'public'` as written has no review surface** — `app/admin/AdminDashboard.tsx:634` lists events through `/api/events`, so once that scopes to the caller, submissions become invisible to the admin too, and the alternative (instant publication) reopens the `applyLink`-into-an-href phishing vector the admin guard exists to close. A third `pending` state plus an admin-only listing is the honest shape. And **user submissions currently inherit `isTechEvent: true`** (`lib/models/Event.ts:226`), because `POST /api/events:109` bypasses the normalizer entirely — so every submission lands in the default tech feed with `connectionScore: 20` and no off-city gate. Note `/add-event` is already signed-in-only in `proxy.ts:25` while `POST /api/events` is `requireAdmin()`, so today the form is a dead end that 403s on submit."
+   }
+  },
+  {
+   "key": "people-view",
+   "result": {
+    "findings": [
+     {
+      "file": "app/api/contacts/route.ts",
+      "line": 41,
+      "severity": "blocker",
+      "what": "`GET /api/contacts` supports exactly two query params — `folderId` (lines 28-34) and `pendingFollowUp=true` (36-39) — then runs `Contact.find(filter).sort({ scannedAt: -1 }).limit(2000).lean()` on line 41. There is no `company`, `companies`, `tag`, `role`, `q`, `folderIds`, `skip`, `cursor`, `sort` or `limit` param, no `$text` or regex search branch, and no facet/count aggregate anywhere for contacts (compare `lib/events/query.ts`, which the events feed shares with `/api/events/facets` precisely so counts and rows cannot disagree). The endpoint also has ZERO consumers in `app/` — grep for `api/contacts` finds only `[id]` PATCH/DELETE from the folder page and `lib/scan/outbox.ts` POSTing. There is no `app/contacts` or `app/people` directory; `NavBar.tsx:22` maps the label \"People\" to `/folders`, which lists folders, not people.",
+      "consequence": "The feature does not exist and cannot be built client-side without accepting a hard ceiling: with no filter params every filter has to be applied in the browser over a payload capped at 2000 rows, so the 2001st contact is silently invisible and \"who do I know at Razorpay\" is answerable only for an arbitrary recent slice. With no facet endpoint the filter chips and their counts would be computed from that same truncated page, so the counts would be wrong rather than merely incomplete.",
+      "action": "Add `company`/`tag`/`role`/`q` params plus cursor pagination to `GET /api/contacts`, and factor the filter builder into `lib/contacts/query.ts` so a companion facet route (distinct `companies`, distinct `tags`, distinct `role`, each with a count) is built from the same function the list uses — the arrangement `lib/events/query.ts` already establishes. Then build `app/people/page.tsx` against it and repoint the \"People\" nav item."
+     },
+     {
+      "file": "app/components/scan/ContactFields.tsx",
+      "line": 28,
+      "severity": "blocker",
+      "what": "`Contact.tags[]` has no input surface anywhere in `app/`. `ContactDraft` declares `tags?: string[]` on line 28 and the component renders no field for it — the rendered inputs are name, company, role, phone, note, follow-up chips, then LinkedIn/headline/X/GitHub/email/website behind `showAll`. The only other mentions of contact tags in `app/` are pass-throughs: `app/folders/[id]/page.tsx:596` copies `tags: contact.tags` into the draft and `:136` preserves it in the optimistic update, so an edit round-trips existing tags without ever being able to change them. `app/api/intake/[token]/route.ts:71` deliberately does not accept tags either.",
+      "consequence": "The \"user creates their own tag and applies it to people\" half of the requirement has no way to be exercised at all — `tags` is permanently `[]` for every contact, so a tag facet would render empty on a real database and the registry-unknown-employer case has no fallback.",
+      "action": "Add a tag input to `ContactFields.tsx` (chips with type-ahead over the user's existing vocabulary plus free entry) so both the post-scan capture sheet and the folder table's `EditContactSheet` gain it from one definition, as that file's header intends. Also add a bulk \"tag these people\" affordance on the new cross-folder page — tagging 40 contacts one sheet at a time is the difference between a usable feature and a demo."
+     },
+     {
+      "file": "lib/companies/resolve.ts",
+      "line": 121,
+      "severity": "blocker",
+      "what": "`deriveContactMeta` (lib/contacts/service.ts:98-102) feeds `tags` straight into `resolveCompanies`, and `resolve.ts:121` matches the tag string with the FULL alias matcher for every company regardless of `strength`, scoring 60 — above the title branch's 50, which is itself gated on `strength === 'distinctive'`. So a user-created tag is treated as stronger company evidence than an event title. Verified the boundary regex behaviour directly: the joined tag string `\"embedded arm\"` matches Arm's matcher, and a bare `slice` tag matches slice. The registry is full of names that are ordinary tag words — `Arm`, `slice`, `Navi`, `Shell`, `Target`, `Visa`, `Elastic`, `Jupiter`, `Zeta`, `Setu`, `Accel`, `Fractal`, `Meta`, `Apple`, `Docker`, `Redis`, `Intel`, `CRED` (registry.ts:62-196, all `ambiguous`). `updateOwnedContact` (service.ts:518) recomputes on `isModified('tags')`, so this fires the moment the new tag UI saves. Note the asymmetry: `matchesTargetCompany` (service.ts:69) reads only company/role/headline, so a tag changes `companies` but never `isTargetCompany` — the two derived fields disagree about whether a tag is evidence.",
+      "consequence": "Tagging a hardware contact `embedded, arm` files them under the company Arm in the company filter; tagging someone `slice` or `shell` or `target` attributes them to slice, Shell or Target. This is exactly the false-attribution class `strength` exists to prevent, arriving from the direction `strength` cannot defend — the same shape as the documented `Docker` → \"SriVidya Tradition\" leak. It is also self-defeating: custom tags exist precisely for employers the registry does NOT know, and this path launders them back into registry output, so the one facet that is supposed to be trustworthy becomes the one polluted by free text.",
+      "action": "Stop passing `tags` to `resolveCompanies` from `deriveContactMeta` (drop `tags: fields.tags ?? null` at service.ts:101) so a contact's `companies` is derived only from what the person stated about themselves. Keep user tags in `Contact.tags` as an independent facet dimension. If tag-driven attribution is ever wanted back, gate it on `strength === 'distinctive'` at resolve.ts:121 and score it below title — but the event-side `tags` are organiser-supplied topic tags, a different thing from a user's private label, so the honest fix is to sever them. Re-run `scripts/backfill-contact-companies.ts --apply` afterwards."
+     },
+     {
+      "file": "lib/models/Contact.ts",
+      "line": 126,
+      "severity": "important",
+      "what": "Existing indexes (126-132): `{userId,clientId}` unique, `{userId,folderId,scannedAt:-1}`, `{userId,contactKey}`, `{userId,followUpAt}`, `{userId,linkedinSlug}` sparse, plus single-field `userId` (line 91) and `folderId` (92). None serves the cross-folder query: `{userId,folderId,scannedAt:-1}` cannot supply sorted `scannedAt` when `folderId` is absent from the filter, so an unfiltered people list selects on `userId` and sorts in memory. There is no index on `tags`, `companies`, `role` or `company`, and no text index on this collection at all (only `Event` has one, `event_text_search`).",
+      "consequence": "Every people-page query does an in-memory sort over the user's whole contact set, and a company/tag/role filter is a full scan of it. Tolerable at today's row counts, silently quadratic as the collection grows — and the 32 MB in-memory sort limit turns it into a hard query failure rather than a slowdown at the top end.",
+      "action": "Add `{userId:1, scannedAt:-1}` (base cross-folder order), `{userId:1, companies:1, scannedAt:-1}` and `{userId:1, tags:1, scannedAt:-1}`. Three index traps, in order of how much they cost if missed: (1) **Never put `tags` and `companies` in the same compound index** — MongoDB rejects two array fields in one key with \"cannot index parallel arrays\", which surfaces as a write failure on any contact that has both, not as an index-creation error; they must be two separate indexes. (2) The repo's documented `sparse`-on-compound-`unique` bug does NOT recur here, because none of these needs `unique` — but do not reach for `sparse` on the tag/company indexes either: `tags` and `companies` default to `[]` (109/119), an empty array indexes as the missing-key sentinel, so a sparse index would omit most rows and be unusable for the unfiltered sort. Use no option at all, or `partialFilterExpression` if the intent is genuinely \"only rows that have tags\". (3) Only ONE text index is permitted per collection, so if the people-page search box is to use `$text`, decide its full field set and weights in a single index up front; and mirror `lib/events/query.ts`'s dual path, since `$text` matches whole words only and a search box must work mid-typing."
+     },
+     {
+      "file": "lib/contacts/service.ts",
+      "line": 147,
+      "severity": "important",
+      "what": "`contactToDTO` emits `folderId` as a bare string and nothing else about the folder — no name, no `eventDate`, no `eventId`. `GET /api/contacts` (route.ts:41) does not `.populate('folderId')`; the only place that joins is `detectRepeatConnections` (phase6.ts:308) and `getPendingFollowUps` (145-152).",
+      "consequence": "A combined list of people from many folders cannot say where you met each person — the single most valuable column on that page — without either N fetches of `/api/folders/[id]` or the client holding the full folder list and joining by id, which breaks for an archived folder that the default `listFolders` filter (service.ts:276) excludes.",
+      "action": "Have the list route project the folder name and date alongside each contact (a `$lookup`, or one `Folder.find` over the distinct folderIds of the page plus an in-memory join — cheap, and the same one-round-trip discipline `listFolders` already uses for its counts) and add `folderName`/`folderEventDate` to `ContactDTO` in lib/contacts/types.ts."
+     },
+     {
+      "file": "lib/helpers/phase6.ts",
+      "line": 364,
+      "severity": "important",
+      "what": "`detectRepeatConnections(userId)` returns `RepeatConnection[]` — `{ name, details:{role,company,linkedin}, eventCount, eventIds, contactKey, matchedOn, places }` — grouped by `contactKey` and unioned with legacy `TrackerEntry.connections[]`. Two properties make it unusable as-is for a people page: line 364 filters to `eventIds.size >= 2`, so it knows nothing about anyone met once, and the returned objects carry no `Contact._id`, only a name and a key. It also loads every contact for the user with `.populate('folderId')` unbounded (line 308) and groups in memory. Its only consumer is `app/dashboard/page.tsx` via `/api/phase6/repeat-connections`; nothing in the scan/folder UI surfaces it.",
+      "consequence": "To badge rows on a people page you would have to match this function's output back to contacts by `name` — reintroducing the exact defect the `contactKey` work exists to fix (two Rahuls collapsing, one Rahul splitting). And because singletons are dropped, the page cannot render \"met 1 time\" versus \"met 3 times\" from one call; it would need a second pass.",
+      "action": "Do not extend `detectRepeatConnections` for this. Add a small aggregate in `lib/contacts/` that returns `contactKey → { eventCount, contactIds[] }` for all of a user's contacts (no `>= 2` filter), served by the `{userId,contactKey}` index already on Contact.ts:130, and join it onto the list page by `contactKey` — which every DTO already carries (types.ts:59). Keep `detectRepeatConnections` as the dashboard's legacy-union view."
+     },
+     {
+      "file": "lib/models/User.ts",
+      "line": 80,
+      "severity": "important",
+      "what": "There is no model for a per-user tag vocabulary and no model that fits one. The closest precedent is `User.targetCompanies: { type: [String], default: () => [...DEFAULT_TARGET_COMPANIES] }` (line 80) — a per-user string list on the User document, read through one accessor (`getTargetCompanies`, service.ts:50) that falls back to a seed. The only other option available today is deriving the vocabulary from the contacts themselves, for which the precedent is `Contact.distinct('folderId', { userId })` at phase6.ts:448.",
+      "consequence": "Without a stored vocabulary the tag list can only be `Contact.distinct('tags')`, which means: a tag created but not yet applied to anybody does not exist; a typo'd tag is a permanent phantom facet entry with one member and no way to rename it; and there is nowhere to hold ordering or colour. With a full `Tag` collection you inherit a `{userId,slug}` unique index and a rename-cascade over `Contact.tags[]`, which is materially more work than this feature needs.",
+      "action": "Add `User.contactTags: string[]` following the `targetCompanies` shape exactly (per-user, on the User doc, read through one accessor in `lib/contacts/service.ts`, seeded empty rather than from a default list), and build the facet as the union of `contactTags` with `Contact.distinct('tags')` so a tag applied before the vocabulary knew about it still shows. Note `ensureUser()` (lib/user-record.ts) must be used to read it, not `findOne` — a valid session can legitimately have no `User` row, which is what made `/api/me/card` 404. Defer a `Tag` collection until rename or colour is actually asked for."
+     },
+     {
+      "file": "lib/contacts/service.ts",
+      "line": 399,
+      "severity": "important",
+      "what": "`tags` IS writable and DOES persist — traced end to end: `pickWritable` handles it at 399-407, `upsertContact` passes it into `Contact.create` (479-486), `updateOwnedContact` assigns it and `.save()`s (507-526), `PATCH /api/contacts/[id]` calls that, `ContactInput.tags` (types.ts:101) means the offline outbox carries it too (`QueuedContactRecord extends ContactInput`, outbox.ts:74), and the export already emits it (folders/[id]/export/route.ts:45). But `pickWritable` performs no canonicalisation: it filters to strings, trims, drops blanks and `.slice(0, 20)` the array — no case folding, no dedupe, and no per-tag length cap (the schema's `tags: [String]` at Contact.ts:109 has no `maxlength` either, unlike every sibling text field).",
+      "consequence": "`\"AI/ML\"` and `\"ai/ml\"` become two separate facet entries for what the user means as one tag, so the filter splits their people in half with no way to notice; `['ibm','ibm']` stores twice and inflates any per-tag count; and a single tag can be an arbitrarily long string, which a chip UI will render as a broken row.",
+      "action": "Canonicalise inside `pickWritable` so every write path (scan, manual add, PATCH, offline drain) gets it identically: trim, collapse internal whitespace, lowercase for comparison while preserving the first-seen display form or simply storing lowercase, dedupe, cap each tag at ~40 chars, keep the 20-item cap. Add `maxlength` to the schema path to match. Pin it in `tests/` — `pickWritable` is pure, so it belongs with the other pure-function suites rather than in a diag script."
+     },
+     {
+      "file": "app/api/folders/[id]/export/route.ts",
+      "line": 45,
+      "severity": "minor",
+      "what": "The CSV export keeps user tags and registry attribution in separate columns — `{ label: 'Tags', value: c => c.tags?.join(', ') }` on line 45 and `{ label: 'Known companies', value: c => c.companies?.join(', ') }` on line 49 — with `lib/scan/csv.ts#csvCell` escaping each against formula injection. The route is folder-scoped throughout (`findOwnedFolder` at 61, `folderId: folder._id` at 64) and there is no all-people export.",
+      "consequence": "A cross-folder export bolted on without reusing these columns would either merge the two tag kinds into one cell — destroying the distinction between \"the registry recognised this employer\" and \"the user made this label up\", which is the whole point of the feature — or lose the formula escaping, which matters because both fields now originate in free text and QR payloads.",
+      "action": "Add an export to the new people route that reuses `COLUMNS` from this file (export it) plus a `Folder` column, keeping `Tags` and `Known companies` separate, and copy the `Cache-Control: no-store` header at line 93 — it is a bulk PII export for the same reason this one is. Note the existing export is served from a bare `<a>` (`app/folders/[id]/page.tsx:307`) with no error state, so a 500 renders a raw error page; do not repeat that on a route that will be slower."
+     },
+     {
+      "file": "lib/models/Contact.ts",
+      "line": 97,
+      "severity": "minor",
+      "what": "`role` is free text, `{ type: String, trim: true, maxlength: 200 }` (line 97), populated from a hand-typed field (`ContactFields.tsx:113-122`) or from a vCard `TITLE`. There is no controlled vocabulary, no normalisation, and no index. `headline` (96) holds an overlapping free-text claim, and the folder table already treats them as interchangeable (`contact.role || contact.headline`, folders/[id]/page.tsx:418).",
+      "consequence": "A \"by role\" facet built from `distinct('role')` is a long tail of one-off strings — \"SDE\", \"SDE II\", \"Software Engineer\", \"Sr. Software Engineer\" all separate — so the filter looks broken rather than sparse. Substring matching instead requires an unanchored regex per query with no index behind it.",
+      "action": "Treat role as a search dimension, not a facet: include it in the `q` free-text path rather than rendering role chips, or derive a small bucketed seniority/discipline label at write time in `deriveContactMeta` (where `companies`/`isTargetCompany` already live, so it stays recomputable by `backfill-contact-companies.ts`) and facet on the derived field instead of the raw string."
+     }
+    ],
+    "summary": "The data layer is largely ready; the feature is missing its read surface, its tag input, and one fix to stop user tags corrupting registry attribution.\n\nWhat exists: `Contact` is a top-level collection with `role`, `company`, `tags[]`, registry-resolved `companies[]`, `isTargetCompany` and a derived `contactKey`. Tags are fully writable and persist through every path (scan, manual add, PATCH, offline outbox) and already appear in the CSV export — traced line by line. `GET /api/contacts` already serves cross-folder rows. `Contact.distinct` and `{userId,contactKey}` give repeat detection an index.\n\nThree blockers. (1) `GET /api/contacts` (route.ts:41) accepts only `folderId` and `pendingFollowUp`, sorts `scannedAt:-1`, caps at 2000 with no pagination, has no search and no facet companion — and has zero consumers; there is no `app/people` and the \"People\" nav item points at the folder list. (2) `Contact.tags[]` has no input anywhere in `app/` — `ContactFields.tsx:28` types it and renders nothing, so the custom-tag half of the requirement cannot be exercised at all. (3) `deriveContactMeta` feeds tags into `resolveCompanies`, and `resolve.ts:121` matches them with the full alias matcher for ambiguous companies too, scoring 60 — above the strength-gated title branch. Verified: a tag pair `embedded, arm` matches Arm, a bare `slice` tag matches slice. So the tags meant for employers the registry does *not* know get laundered back into the registry facet — the `Docker`/\"SriVidya\" leak shape, from a direction `strength` cannot defend.\n\nIndexes needed: `{userId,scannedAt:-1}`, `{userId,companies,scannedAt:-1}`, `{userId,tags,scannedAt:-1}`. The documented `sparse`-on-compound-`unique` bug does not recur (nothing here needs `unique`), but three other traps do: tags and companies can never share one compound index (MongoDB's parallel-array restriction, which fails at write time), `sparse` would omit the `[]` default that most rows carry, and only one text index per collection is allowed.\n\nTag vocabulary belongs on `User.contactTags`, mirroring `User.targetCompanies` (User.ts:80) — read via `ensureUser()`, unioned with `Contact.distinct('tags')`. A `Tag` collection is more machinery than this needs until rename is asked for."
+   }
+  },
+  {
+   "key": "outbox",
+   "result": {
+    "findings": [
+     {
+      "file": "lib/scan/outbox.ts",
+      "line": 219,
+      "severity": "blocker",
+      "what": "`saveContact()` treats ANY 2xx as \"on the server\" — `if (response.ok) { const data = await response.json().catch(() => ({})); return { outcome: 'saved', contact: data.contact }; }`. It never checks that the body was JSON or that it contained a contact. A captive-portal Wi-Fi (the standard conference-hall condition this whole queue exists for) answers every request with 200 and an HTML login interstitial. `response.ok` is true, `.json()` throws, `.catch(() => ({}))` swallows it, `data.contact` is undefined, and the function returns 'saved'.",
+      "consequence": "The person is neither on the server nor in IndexedDB. `/scan` prints \"Saved <name>\", the recent-captures chip shows a green tick, and the record is gone — the one outcome outbox.ts's header promises is impossible. It is worse than being stuck, because nothing anywhere counts it. `app/folders/page.tsx:366` (NewFolderSheet) has the identical shape for folder creation: a 200 HTML portal response passes `!res.ok`, calls `onCreated()`, and the folder is never created and never queued.",
+      "action": "On a 2xx, require evidence that the API answered: parse without a swallowing catch and require `data.contact` (or `created`) to be present. Anything else is not a success — classify it as transient, `queueContact(record)`, and return 'queued'. Same guard in NewFolderSheet: require the created folder in the body before treating the POST as done."
+     },
+     {
+      "file": "lib/scan/outbox.ts",
+      "line": 486,
+      "severity": "blocker",
+      "what": "The module-level `draining` latch is guarded only by `finally`, and neither outbox fetch has a timeout (`AbortSignal.timeout` appears in lib/scrapers/core/http.ts, lib/security/safe-fetch.ts and lib/llm/tagger.ts, but nowhere in lib/scan/outbox.ts). A saturated hall network that accepts the connection and never responds leaves `await fetch('/api/contacts/sync')` pending indefinitely, so `finally` never runs and `draining` stays `true` for the life of the page.",
+      "consequence": "This is the reported bug exactly. Every subsequent drain — including `drain({ force: true })` from \"Sync now\" — returns `NOTHING` at line 486 before doing anything. On /folders the note falls through to \"Could not reach the server. Everything is still saved on this device.\"; on /scan it prints \"Nothing to upload\" while the chip above it says N waiting. The queue is wedged until a page reload, and no record is ever marked, so the waiting banner keeps promising the upload.",
+      "action": "Put `signal: AbortSignal.timeout(20000)` on the sync POST and on `saveContact`'s POST. Make the latch recoverable rather than boolean: store `drainStartedAt` and let a new drain proceed if the previous one has been in flight beyond the timeout. Have `drain()` distinguish \"a drain is already running\" from \"queue empty\" and \"offline\" in `DrainResult` (three separate reasons, not one `skipped: true`), so no caller can report a concurrency skip as a network failure."
+     },
+     {
+      "file": "lib/scan/outbox.ts",
+      "line": 215,
+      "severity": "blocker",
+      "what": "`queueContact()` can reject — `tx()` rejects when `openDb()` fails or a write fails (iOS Safari private browsing, storage-quota pressure, a blocked upgrade). In `saveContact` every `await queueContact(record)` sits on a path with no handler: the one at line 215 is inside the `catch` block itself, so a throw there escapes `saveContact` entirely. No caller wraps it — `app/scan/page.tsx:196`, `app/c/[token]/SaveToFolder.tsx:66` and `app/folders/[id]/page.tsx:717` all `await saveContact(...)` bare.",
+      "consequence": "Unhandled rejection. `setSaving(false)` on the line after never runs, so the Save button stays disabled reading \"Saving…\" forever, the sheet does not close, no toast appears, and the capture exists nowhere — server, queue, or screen. The user is standing in front of the person with a frozen button and no way to know the scan was lost.",
+      "action": "Wrap the queue write: `try { await queueContact(record) } catch { return { outcome: 'lost', reason: 'This device would not store the capture — write the details down.' } }`, add that outcome to `SaveOutcome`, and have all three capture sites render it as an error that keeps the sheet open with the typed fields intact. Independently, wrap each `await saveContact(...)` call site in try/finally so `setSaving(false)` cannot be skipped."
+     },
+     {
+      "file": "lib/scan/outbox.ts",
+      "line": 524,
+      "severity": "blocker",
+      "what": "`drain()` posts the ENTIRE queue in one request and the route refuses >500 items with 413 (`app/api/contacts/sync/route.ts:107`). `classifyStatus(413)` is 'permanent', so the `!response.ok` branch marks every contact AND every folder in the batch `blocked: true` with \"There are too many queued captures to upload in one go.\" There is no chunking anywhere. The same 413 arrives well below 500 items on Vercel, whose 4.5 MB request-body limit is reachable at ~500 records because `rawPayload` alone is capped at 4000 chars each.",
+      "consequence": "One oversized batch permanently blocks 500 good captures. `queued.every(r => r.blocked)` is then true, so the auto-drain stops attempting them entirely; the only affordance the UI offers for a blocked row is Discard, rendered as 500 individual Cards. A retry via \"Try again\" re-sends the same oversized batch and gets the same 413 forever. The failure is entirely self-inflicted — every record is individually acceptable.",
+      "action": "Chunk in `drain()`: send at most MAX_ITEMS/2 records per request (folders always in the first chunk so `folderMap` precedes its contacts), and loop until the queue is empty or a chunk fails. A 413 should then be structurally unreachable; if one still arrives, halve the chunk and retry rather than condemning records. Do not mark a batch-level 413 permanent on the individual records — the record is not what is wrong."
+     },
+     {
+      "file": "lib/scan/outbox.ts",
+      "line": 559,
+      "severity": "important",
+      "what": "`DrainResult.synced` counts contacts only. The folder loop does `await removeFolder(item.clientId); continue;` with no `synced++` (compare line 572 in the contacts loop), while `attempted` counts both stores — so `synced + failed !== attempted` and the accounting the `attempted` docblock claims to have fixed is still broken on the other axis.",
+      "consequence": "A queue holding one folder and no contacts (create a folder offline, come online, press Sync now) uploads the folder successfully and reports `synced: 0`. `app/folders/page.tsx:100` then skips `await load()`, so the folder never appears in the grid; the note reads \"Everything is uploaded\" over an unchanged empty page. On /scan the same drain prints \"Still offline\" (`app/scan/page.tsx:241`) immediately after a successful upload. Both read as \"Sync now did nothing\".",
+      "action": "Increment `synced` for a confirmed folder too, or add a separate `foldersSynced` and have both callers reload on `synced + foldersSynced > 0`. Also make `/folders`'s `subscribe()` handler call `load()` alongside `refreshQueue()` — `app/folders/[id]/page.tsx:110` already does this, so the folder list is the one screen that ignores its own queue notifications."
+     },
+     {
+      "file": "lib/scan/outbox.ts",
+      "line": 487,
+      "severity": "important",
+      "what": "`if (typeof navigator !== 'undefined' && navigator.onLine === false) return NOTHING;` runs BEFORE the `options.force` check, so an explicit \"Sync now\" is discarded on the browser's word alone. `navigator.onLine` is false for a captive portal, a VPN transition, and several documented Windows/Android states where HTTP works fine.",
+      "consequence": "Sync now does literally nothing and returns `skipped: true` with no status — /folders reports \"Could not reach the server\" without having attempted one, /scan reports \"Nothing to upload\". No record is judged, so the waiting banner keeps promising an upload that no code path will attempt until the OS flips the flag.",
+      "action": "Move the `onLine` check below `if (options.force)` — a person pressing a button outranks a heuristic. Return a distinct reason ('offline') in `DrainResult` for the automatic path so the two callers can say \"waiting for a network\" rather than \"could not reach the server\"."
+     },
+     {
+      "file": "lib/scan/outbox.ts",
+      "line": 541,
+      "severity": "important",
+      "what": "A 401 sets `authExpired` and marks nothing — no `attempts`, no `lastError`, no `blocked` (correct: the records are fine). But `startAutoDrain()`'s `run` is `void drain()`, so `authExpired` is discarded on every automatic drain, and the only place it surfaces is a transient `syncNote` on /folders and a toast on /scan, both of which require the user to press the button first.",
+      "consequence": "A session that lapses mid-event (a conference day outlasts a token) puts the queue into a silent infinite retry: one POST on every `visibilitychange` and every `online` event, forever, all 401. The waiting banner keeps saying \"They are saved on this device and will upload on their own\", which is false until a sign-in that the UI never asks for. The blocked list is empty, so nothing names the problem.",
+      "action": "Persist the auth state where the banner can read it (a module-level `authExpiredAt` exposed through `subscribe`, or an `authBlocked` flag on the records that a non-401 drain clears). Render the waiting banner in an auth variant — \"Sign in again and N captures will upload\" — with a real link to /login. Have the auto-drain back off after an authExpired result rather than firing on every focus change."
+     },
+     {
+      "file": "app/folders/page.tsx",
+      "line": 203,
+      "severity": "important",
+      "what": "The only action offered on a blocked row is Discard. There is no retry-one, no edit, and no reassign-folder — even though `PATCH /api/contacts/[id]` already validates a destination folder and `POST /api/contacts/sync` would accept any owned folder id. `blockedCaptures()` also carries no folder name, only `label` and `reason`. The escape hatch that does exist is broken: a pending row's `_id` is `pending:<clientId>` (`app/folders/[id]/page.tsx:73`), and `saveContact()` at line 141 PATCHes `/api/contacts/pending:<clientId>`, which cannot resolve; the rollback then does `setContacts(previous)` on an array that never contained the pending row, so the edit is a silent no-op behind \"Could not save that change.\"",
+      "consequence": "The most likely real refusal — `folder-not-found`, i.e. the folder was deleted after the scan — leaves the user with one button that destroys a real person's contact details. The `missing-name` refusal is worse: its copy is \"This capture has no name yet. Add one and it will upload\", and there is no UI anywhere that can add one.",
+      "action": "Add \"Move to another folder\" (a folder picker that rewrites `folderId` in IndexedDB and clears `blocked`) and \"Retry\" per row on the blocked list; that turns `folder-not-found` and `no-folder` into recoverable states. Make the pending-row edit sheet write back to IndexedDB via a new `updateQueuedContact(clientId, draft)` instead of PATCHing a `pending:` id — that also makes the `missing-name` copy true. Show the folder name on each blocked row."
+     },
+     {
+      "file": "app/folders/[id]/page.tsx",
+      "line": 106,
+      "severity": "important",
+      "what": "The folder detail page never calls `startAutoDrain()` — only `app/folders/page.tsx:75` and `app/scan/page.tsx:105` do — and it has no Sync button. It subscribes to the outbox and renders `local`/`stuck` chips, so it displays the queue without ever draining it.",
+      "consequence": "/folders/[id] is the screen the user lands on after \"Save & close\" and the one they read between people. Captures sit there showing a grey `local` chip indefinitely while signal is available; nothing uploads until the user navigates to /folders or /scan. Combined with the wedged-latch bug it reads as a scanner that quietly stopped working.",
+      "action": "Call `startAutoDrain()` here too (it is idempotent enough — the `draining` latch is shared), and surface the same waiting/blocked banner pair with a Sync button, so every screen that shows queued rows can also move them."
+     },
+     {
+      "file": "lib/scan/outbox.ts",
+      "line": 565,
+      "severity": "important",
+      "what": "Records are removed and marked by the clientId the SERVER echoes, and an echo that matches nothing is silently ignored: `const record = contacts.find(c => c.clientId === item.clientId); if (record) await markContactFailed(...)`. The route echoes `clientId.trim()` (`app/api/contacts/sync/route.ts:187`) and substitutes the literal `'(missing)'` when the id is blank (lines 131, 189), which by construction matches no IndexedDB key — and collides across items when two records are affected.",
+      "consequence": "`failed++` and `blocked++` are counted for a record that gets no `blocked` flag, no `attempts`, no `lastError`. It stays in the `waiting` bucket, is re-sent on every drain forever, and appears in no blocked list — so `DrainResult.blocked` and `pendingSummary().blocked` disagree and the row is invisible in exactly the way the fix commit set out to eliminate. The same silent path opens for any echo mismatch (whitespace-trimmed ids).",
+      "action": "Never key results on the echoed id: send an array index or correlate on the id the client sent. Treat an unmatched result as a defect — log it and mark the record `blocked` with a generic reason rather than dropping the verdict. Refuse to queue a record whose `clientId` is not a non-empty trimmed string, so `'(missing)'` cannot arise."
+     },
+     {
+      "file": "lib/scan/outbox.ts",
+      "line": 420,
+      "severity": "important",
+      "what": "Nothing in the app ever sets `folderClientId` — the only occurrences outside outbox.ts/the sync route are `lib/contacts/types.ts:88` and `scripts/diag-contact-flow.ts:208`. `/scan` derives `folderId` from `GET /api/folders` (line 86), which fails offline, leaving `folders: []`, `folderId: null` and the \"Pick a folder first\" screen; a folder queued by `NewFolderSheet` is never offered in the picker. `/folders` renders only server folders, so a queued folder is invisible there too — it appears solely as an increment in the \"N captures not synced yet\" count.",
+      "consequence": "The offline flow the queue was designed around — make the folder on the way to the venue, scan people into it — cannot be performed. `applyFolderMap()` and the whole `folderClientId` branch in the sync route are correct code that is unreachable through the product, which is the same trap CLAUDE.md §9 records for `Folder.eventId`. Meanwhile the user who creates a folder offline sees a warning about an unsynced \"capture\" and no folder anywhere.",
+      "action": "Render queued folders as rows on /folders (a `local`/`stuck` chip, same as the contact table does) and include them in /scan's folder picker, with `saveContact` writing `folderClientId` instead of `folderId` when the chosen folder has no server id. That makes `applyFolderMap` reachable and the offline path real. Until then, label the banner by kind rather than calling a folder a \"capture\"."
+     },
+     {
+      "file": "lib/scan/outbox.ts",
+      "line": 103,
+      "severity": "important",
+      "what": "The outbox database is per-origin and carries no user identity: `DB_NAME = 'pulseblr-outbox'`, no `userId` on `QueuedContactRecord`, and sign-out (`app/settings/page.tsx:30`) purges Cache Storage only — deliberately, so captures are not lost. `drain()` posts whatever it finds under whoever is signed in now.",
+      "consequence": "Sign out, sign in with a second Google account (the exact scenario sw.js v3 was bumped for), and account A's queued captures are posted as account B. `findOwnedFolder(B, folderIdOfA)` returns null, so each is refused `folder-not-found` and marked permanently blocked — and the blocked list on /folders then displays account A's captured people by name to account B, with Discard as the only option. A's captures are also now unrecoverable by A, since the reason is latched against a folder id B will never own.",
+      "action": "Stamp every queued record with the `session.user.id` that captured it, drain only records matching the current session, and show the rest as \"captured by another account — sign back in to upload\". This is the outbox analogue of the v3 network-only rule and should be verified the same way (sign out, sign in as a different account, confirm the first account's rows are neither uploaded nor displayed)."
+     },
+     {
+      "file": "app/folders/page.tsx",
+      "line": 366,
+      "severity": "important",
+      "what": "`NewFolderSheet.submit()` still has the pre-fix shape that `lib/scan/failure.ts` documents as the bug: `if (res.status === 409) {…} if (!res.ok) throw new Error(...)` and then `catch { await queueFolder(...) }`. It never calls `classifyStatus`, and `queueFolder()` — unlike `queueContact()` — takes no `blockedReason` parameter at all, so a folder can only ever be queued as \"waiting\".",
+      "consequence": "A 400, 403, 404 or any other refusal from `POST /api/folders` is queued as if the network ate it, under the banner promising it will upload on its own. It then has to be rediscovered by a drain before the user learns anything, and if the refusal is not one the sync route reproduces, the row waits indefinitely.",
+      "action": "Route folder creation through the same three-outcome shape as `saveContact` — a `saveFolder()` in outbox.ts that classifies the status, gives `queueFolder` a `blockedReason` parameter, and returns 'saved' | 'queued' | 'auth' | 'blocked' — so the sheet can keep itself open with the reason instead of closing on a refusal."
+     },
+     {
+      "file": "app/api/contacts/sync/route.ts",
+      "line": 83,
+      "severity": "minor",
+      "what": "`fromThrown()` returns no `refusal` code, only prose: permanent → \"The server could not accept this record as it stands.\", transient → \"The server could not be reached for this record.\" The permanent branch fires for any Mongoose ValidationError or CastError (`isSchemaRejection`, lib/tracker/validate.ts:217).",
+      "consequence": "A record blocked this way gets a reason that names nothing actionable, and the client has no code to branch on — so the blocked list can only offer Discard even where the defect is a single fixable field. It is also the one permanent path the client cannot render specific copy for, which is the drift `ITEM_REFUSALS` exists to prevent.",
+      "action": "Extend `ITEM_REFUSALS` with a code for a shape rejection (and, if the field is knowable from `error.errors`, name the field without echoing Mongoose's wording), so the blocked row can say what to change. Keep the message body server-side as it is now."
+     },
+     {
+      "file": "lib/scan/outbox.ts",
+      "line": 270,
+      "severity": "minor",
+      "what": "`pendingCount()` is exported and called from nowhere — `pendingSummary()` replaced it at every site. It sums folders and contacts into a single number, the exact conflation the `PendingSummary` docblock says made the bug unreadable.",
+      "consequence": "A dead export that models the discredited shape is the one a future capture surface will import, reintroducing the single misleading count.",
+      "action": "Delete it, or mark it `@deprecated` pointing at `pendingSummary()`."
+     },
+     {
+      "file": "app/api/contacts/route.ts",
+      "line": 115,
+      "severity": "minor",
+      "what": "The 500 branch still returns `details: err.message ?? String(error)` — the leak pattern CLAUDE.md §6 lists this route as an outstanding instance of. `POST /api/contacts` is on the capture hot path, so the string reaches the phone.",
+      "consequence": "A Mongoose error hands back the model name and schema path to any signed-in caller. `saveContact` ignores `details` (it reads `error`/`refusal`), so nothing benefits from it; a 500 is classified transient regardless.",
+      "action": "Drop `details` and keep the `console.error` above it, matching the fix already applied to the tracker write paths and to `app/api/contacts/sync/route.ts:263`."
+     },
+     {
+      "file": "lib/scan/outbox.ts",
+      "line": 546,
+      "severity": "minor",
+      "what": "`const result = await response.json()` on the 200 path is unguarded, and `result.folders ?? []` / `result.contacts ?? []` silently accept a body that omits them.",
+      "consequence": "A 200 that is not the API's JSON (portal interstitial, proxy) throws into the catch-all at line 602, which returns `{ attempted: 0, failed: 0, skipped: false }` — indistinguishable from \"the request never left\" — and reports \"Could not reach the server\" for a server that answered. A 200 with a valid-JSON but empty body silently removes nothing and marks nothing while reporting `attempted: N, synced: 0, failed: 0`.",
+      "action": "Parse with a catch and treat an unparseable or arrays-missing 200 as its own transient outcome with a distinct reason, so \"the server answered with something we do not understand\" is never reported as \"offline\"."
+     }
+    ],
+    "summary": "The `417138c` fix landed and works: `classifyStatus`/`ITEM_REFUSALS` split transient from permanent, `blocked` is re-evaluated per drain rather than latched, `markFolderFailed` exists, `attempted` counts both stores, `applyFolderMap` converts `folderClientId` to a durable `folderId`, and /folders shows two banners plus a named blocked list with Discard. Seventeen ways a capture still gets stuck (or lost) survive it.\\n\\nThe reported symptom — \\\"1 capture not synced yet\\\", Sync now does nothing — has three live causes, in order of likelihood. (1) Neither outbox fetch has a timeout while `draining` is a bare module boolean cleared only in `finally`, so one hung request on hall Wi-Fi wedges the queue for the life of the page: every later drain, forced or not, returns at `outbox.ts:486` and the UI reports \\\"Could not reach the server\\\" without attempting anything. (2) `navigator.onLine === false` is checked *before* `options.force`, so an explicit Sync now is discarded on a flag that is wrong behind captive portals and VPNs. (3) `DrainResult.synced` counts contacts only — the folder loop at `outbox.ts:559` never increments it — so a folder-only queue uploads successfully, `folders/page.tsx:100` skips `load()`, and the folder never appears; /scan reports \\\"Still offline\\\" right after the upload succeeded.\\n\\nWorse than stuck: `saveContact` treats any 2xx as saved without checking that the body was the API's JSON, so a captive-portal 200/HTML returns `outcome: 'saved'` and the person is written nowhere — the queue's core guarantee broken by the one network condition it was built for. And `queueContact` can reject (Safari private mode, quota); the throw escapes `saveContact` from inside its own catch block, no call site handles it, so the Save button sticks on \\\"Saving…\\\" and the capture is lost with no message.\\n\\nEvery `ok:false` from `POST /api/contacts/sync`, classified: **folders** — `missing-client-id` (permanent, echoed as the literal `'(missing)'`, so it matches no IndexedDB key and nothing gets marked); `missing-name` (permanent, no UI can supply one); `fromThrown` ValidationError/CastError (permanent, no `refusal` code, unactionable prose); `fromThrown` other, e.g. E11000 or a dropped Atlas connection (transient, self-heals via the next drain's `findOne({slug})` adopt). **Contacts** — `missing-client-id` (permanent, same unmatchable echo); `missing-name` (permanent, and its copy \\\"Add one and it will upload\\\" promises an action no screen offers); `no-folder` inherited from a folder that failed permanently in the same batch (permanent, correct); \\\"Waiting for its folder to upload first\\\" (transient, correctly clears `blocked`); `no-folder` with no folder id at all (permanent, unreachable today since every capture site passes a real `folderId`); `folder-not-found` (permanent — the realistic one, a folder deleted after the scan, and Discard is the only thing offered even though `PATCH /api/contacts/[id]` already supports moving); `fromThrown` permanent/transient as above. **Batch level** — 413 (permanent, and because `drain()` never chunks it stamps all 500 good records `blocked`, after which the auto-drain refuses to try them and Discard is the only affordance); 401 (auth, nothing marked — correct, but discarded silently by `startAutoDrain`, so the queue retries forever on every focus change while the banner keeps promising \\\"they will upload on their own\\\" and no sign-in link is ever shown); 5xx (transient); a 200 that is not the API's JSON (falls into the catch-all and is reported as offline).\\n\\nTwo structural gaps behind those. `folderClientId` is set by nothing in the app (only `types.ts` and `diag-contact-flow.ts` mention it), and /scan requires a folder id from a server list it cannot fetch offline, so the offline-folder-then-scan-into-it flow — the one `applyFolderMap` and the folders-first ordering exist for — is unreachable through the product; a queued folder is invisible on /folders, counted only as an unsynced \\\"capture\\\". And the outbox carries no user identity, so after switching Google accounts the previous account's captures drain as the new one, come back `folder-not-found`, and are displayed by name to the wrong user — the same class of leak as the sw.js v2 cache bug, in the store the v3 sweep deliberately cannot touch."
+   }
+  }
+ ]
+}

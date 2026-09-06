@@ -649,6 +649,140 @@ Shared by `/api/events` and `/api/events/facets` so the list and the counts besi
 
 NextAuth v5 (Auth.js) config lives in the root `auth.ts`, imported as `@/auth`. Strategy is **JWT** (no DB session): the `jwt` callback stashes the Google `sub`/email/name/picture into the token *and* upserts the `User` doc by `googleId` on first sign-in; `session` surfaces `token.sub` as `session.user.id`. Server code uses `getCurrentUserId()` (`lib/auth-helpers.ts`). `proxy.ts` redirects `/dashboard`, `/tracker`, `/add-event` and `/settings` to `/login`. **Everything user-owned must be scoped by `userId`** — `TrackerEntry` has a compound-unique index `{ userId, eventId }`.
 
+> **`proxy.ts` NO LONGER GATES PAGES, AND EVERY PROXY NOTE BELOW IS NOW HISTORY.** Read the two
+> warnings that follow as the record of why this layer was removed, not as current behaviour.
+>
+> The check looked for an Auth.js session cookie BY NAME in the edge runtime. Two independent
+> problems, neither fixable there:
+>
+> · **It secured nothing.** The edge has no secret to verify a JWT with, so it could only ask "is a
+>   cookie present". Measured against production: `Cookie: __Secure-authjs.session-token=dummy`
+>   returned **200** on all eight protected paths. A stranger walked past it by inventing a cookie.
+>   Putting the secret in the edge to make it real is the wrong trade too - getting that wrong
+>   signs out every user at once.
+> · **It locked out users who were signed in.** Confirmed from the app's own screen, which is the
+>   only reason this was finally provable: `/login?callbackUrl=%2Ffolders` rendered "You're already
+>   signed in as <the address>". So the browser held a session `/api/auth/session` could decode
+>   while the proxy had just refused the navigation that led there. Only `proxy.ts` writes that URL
+>   shape, so the redirect was unambiguously from there.
+>
+> A check that cannot refuse an attacker but does refuse a real user has negative value. **Two
+> earlier attempts to fix this by tuning the cookie matching (chunked-cookie support, then
+> forwarding `callbackUrl`) were both real defects and neither was this bug** - which is the lesson
+> worth keeping: the instrument was wrong, not its calibration.
+>
+> **Where the gate lives now.** Authorisation is unchanged: `requireUser()` / `requireAdmin()` on
+> every private API route, and `/admin`'s own server-component session + allowlist check, which
+> still `redirect()`s and is still asserted by `diag-api-auth.ts`. What to DRAW is
+> `app/components/ProtectedRouteGate.tsx`, mounted inside `Providers` in the root layout, which
+> asks `useSession()` - the same session the API routes see - so the page and its data cannot
+> disagree. `lib/protected-routes.ts` holds the path list, and `tests/protected-routes.test.ts`
+> pins the prefix-matching trap that `/c/<token>` and `/f/<token>` depend on.
+>
+> **`loading` renders the page, deliberately.** `useSession()` starts as `loading` on every hard
+> navigation, and treating that as signed-out would flash a sign-in wall at a signed-in user - the
+> same false-negative class, moved to the client. Only a settled `unauthenticated` gates, so the
+> gate fails OPEN.
+>
+> **Consequence for `diag-api-auth.ts`: a 200 on those seven pages is now CORRECT.** They are all
+> client components, so no user data is in the HTML; the script asserts that separately by scanning
+> the anonymous response for an email address. Its canary needs an ALPHABETIC TLD - a looser
+> pattern matched `FILL@100..700` from the Material Symbols URL in `app/layout.tsx` and reported
+> all seven as leaking, and a canary that cries wolf everywhere gets switched off.
+
+> **`/dashboard` HAD ITS OWN NAV AND ITS OWN HERO, WHICH IS WHY IT LOOKED LIKE A DIFFERENT APP.**
+> It hand-rolled a desktop nav, a mobile header and a bottom bar from a local `NAV_LINKS` array,
+> and that array had gone **stale**: it offered Feed / Calendar / Tracker / Add / Settings and was
+> missing Companies, People and Dashboard itself. So opening the dashboard changed the whole chrome
+> AND dropped links the rest of the app has. It also drew a full-bleed **black** hero, the loudest
+> element in the product, on exactly one page - against the globals.css rule that keeps everything
+> greyscale so cover images are the only colour. Now uses the shared `DesktopNav` /
+> `MobileBottomNav`. A second copy of the nav cannot stay in step with the first; do not reintroduce
+> one.
+
+> **THE LOGIN PAGE THREW AWAY THE `callbackUrl`, WHICH IS WHY SIGNING IN LOOKED LIKE IT FAILED.**
+> `proxy.ts` carefully appends `?callbackUrl=<path>` when it bounces a signed-out visitor, and
+> `app/login/page.tsx` passed a hard-coded `signIn('google', { callbackUrl: '/' })`. So the
+> sequence was: tap **Tracker**, get sent to `/login`, sign in with Google, and land on the **home
+> page**. Nothing tells the user the sign-in worked, and the page they asked for never opens - which
+> is indistinguishable from being refused, and is exactly how it was reported ("clicking on the
+> tracker and people it redirects to sign in").
+>
+> **Forwarding the parameter is not the whole fix, because the value is attacker-chosen.** Passing
+> it through raw is a textbook open redirect: `…/login?callbackUrl=https://evil.example/login` gives
+> a real sign-in on the real domain that lands on somebody else's page - better phishing than a
+> lookalike domain, because every signal up to the final hop is genuine. `lib/auth-callback-url.ts`
+> allows exactly one shape, a same-origin absolute path, and `tests/auth-callback-url.test.ts` pins
+> the rejections that a `startsWith('/')` check would wave through: `//evil.example` and
+> `/\evil.example` (browsers read both as a HOST), their percent-encoded forms - which is why
+> decoding happens BEFORE inspection - and control characters, since browsers strip tab/CR/LF while
+> parsing a URL so `/<TAB>/evil.example` would BECOME protocol-relative.
+>
+> It also refuses `/login` itself. Otherwise the proxy sends you to `/login`, `/login` sends you to
+> `/login`, forever.
+>
+> **The second half: `/login` now says when you are ALREADY signed in.** Reaching it with a live
+> session is not hypothetical - the proxy decides on the session COOKIE while the page reads the
+> session through `/api/auth/session`, and when those disagree the user is shown a "Sign in" button
+> while holding a perfectly good session. It now names the account and offers **Continue**.
+> Deliberately a BUTTON, not an auto-redirect: if the proxy is going to bounce that navigation
+> again, redirecting automatically turns one confusing screen into an infinite loop, which is
+> strictly worse. Verified end to end against the production build - `callbackUrl=%2Ftracker`
+> reaches Auth.js as `/tracker` where it used to be `/`, and `%2F%2Fevil.example%2Fsteal` is
+> coerced to `/`.
+
+> **`proxy.ts` WAS BLIND TO A CHUNKED SESSION COOKIE, and that failure mode is a total sign-out
+> that looks like the app forgetting you.** It compared the cookie name against two exact strings.
+> `@auth/core/lib/utils/cookie.js` splits the session cookie once the value passes
+> `ALLOWED_COOKIE_SIZE - ESTIMATED_EMPTY_COOKIE_SIZE` (4096 - 160 = **3936** chars) into
+> `<name>.0`, `<name>.1`, ... and **the unchunked name then does not exist at all** - so a perfectly
+> valid session read as "signed out" on `/tracker`, `/folders`, `/add-event`, `/settings`, `/admin`,
+> `/scan` and `/card` simultaneously, while the client still drew the avatar because
+> `/api/auth/session` reassembles the chunks and this did not. Measured against production:
+>
+> | `Cookie:` sent to `/tracker` | response |
+> | --- | --- |
+> | *(none)* | 307 to `/login?callbackUrl=%2Ftracker` |
+> | `__Secure-authjs.session-token=x` | **200** |
+> | `__Secure-authjs.session-token.0=x` | **307 to `/login`** |
+>
+> **It is latent, not currently firing.** A real Google session encoded with this app's own
+> `encode()` measured **649-883 chars** against the 3936 threshold, so nothing chunks today. It goes
+> live the moment a token grows - a longer `picture` URL, a longer display name, one more claim in
+> the `jwt` callback. `tests/proxy-session-cookie.test.ts` pins it (23 cases), including that
+> `__Host-authjs.csrf-token`, `__Secure-authjs.callback-url` and the PKCE verifier must NOT count as
+> a session (all three are set on any anonymous visit to `/api/auth/csrf`, so accepting one would
+> admit every visitor), and that `/c/<token>` and `/f/<token>` stay public.
+>
+> **The check stays a PRESENCE check, deliberately.** Verifying the JWT in the proxy needs the
+> secret in the edge runtime, and getting that wrong logs out every user at once - the blast radius
+> is the whole app, not one route. The boundary is `requireUser()` in each handler. So this layer may
+> only ever become MORE permissive.
+
+> **`GET /api/me/whoami` exists to tell "looks signed in" apart from "is signed in", because the app
+> can be both at once.** `NavBar` draws the avatar when `session.user` is merely TRUTHY, while
+> `getCurrentUserId()` returns `session?.user?.id ?? null` and every `requireUser()` route answers
+> 401 on null. **A session missing `user.id` therefore looks signed in and behaves signed out** -
+> the avatar renders, and `/tracker` loads its shell and then shows its own "Sign in to use your
+> tracker" panel, whose button links to `/login`. That is indistinguishable from a redirect to
+> anyone reporting it, and it is why a report of "it sends me to the login page" must not be assumed
+> to be `proxy.ts`.
+>
+> The route is deliberately **not** behind a guard - it has to work exactly when the session is
+> broken, which is when a guard would refuse it. Safe because every field derives from the caller's
+> own cookies: it returns cookie **names**, never values, and truncates the user id, so an anonymous
+> request gets all-false and learns nothing. `sentSessionCookie` vs `hasUserId` is the whole
+> diagnostic - cookie absent is a cookie/domain/expiry problem, cookie present with no user id is a
+> token-shape problem, and the two have nothing in common.
+
+> **NOTHING EXERCISES THE GOOGLE JWT PATH.** Every `scripts/diag-*.ts` that signs in uses the
+> DEV_LOGIN provider, and `auth.ts`'s dev-login branch sets `token.sub` **explicitly** while the
+> Google branch relies on `profile.sub ?? token.sub`. So the one field every `requireUser()` route
+> depends on is set by hand in every test and inferred in production. `next start` cannot close this
+> gap either - `lib/dev-login.ts` requires `NODE_ENV !== 'production'`, so the provider is correctly
+> unavailable in exactly the build that behaves like production. Treat a production-only auth report
+> as plausible even when the whole diag suite is green.
+
 > **`proxy.ts` protects NO API route.** Its matcher is `'/((?!api|_next/static|…).*)'` — `api` is the first negative-lookahead term, so the proxy never runs for `/api/*`. Every API guard must live in its own handler. Six endpoints were reachable with no credentials because of this (`POST /api/events`, `PUT`+`DELETE /api/events/[id]`, `POST /api/sources`, `PUT`+`DELETE /api/sources/[id]`, `POST /api/scrape`, `POST /api/scrape-url`, `POST`+`GET /api/notifications/send-digest`). `scripts/diag-api-auth.ts` hits every one signed-out and asserts a refusal; run it after touching any route.
 
 > **A route that hands the raw body to Mongoose reports the CALLER's mistake as a 500, and
@@ -767,6 +901,80 @@ The scraper and source controls used to live in `/settings`, which every signed-
 > dev server holding a stale schema silently drops the write. Verified from a fresh `tsx` process
 > instead: the write persisted, `spotlight=true` matched it, an explicit null stopped matching, and
 > `0` of ~1500 documents carry the key when nothing is pinned.
+
+> **"Curated by us" is a SECOND curation surface, and it is not the Spotlight.** A pin promotes
+> something the scraper already found; this shelf shows supply the scraper never had —
+> `source: 'manual'`, which is what `POST /api/events` writes when a body names no source, i.e.
+> every event added by hand through `/add-event`. Those are the events platform coverage misses: an
+> invite-only company evening, a college fest, anything announced only in a WhatsApp group.
+>
+> **The measurement that justifies the section rather than just a badge.** With 5 hand-added
+> upcoming events in the corpus, the ranked first page rendered 28 rows and **not one of the 5 was
+> among them** — they do not score highly enough on `connectionScore` to reach page 1, so before
+> this they were reachable only by paging or by `?source=manual` in the URL. A badge alone would
+> have marked them without making them findable.
+>
+> Four things worth knowing:
+>
+> · **It sorts `soonest`, NOT `connections` — a deliberate exception to this app's own thesis.**
+>   Everywhere else the ranking is the product. Here a human already made the quality judgement by
+>   typing the event in, so re-ranking the shelf by `connectionScore` would second-guess the
+>   curation with a heuristic and could bury the event the admin most wanted seen. What a reader
+>   still needs is WHEN, so the shelf is chronological.
+> · **Precedence is enforced by SUBTRACTION at each step: live > spotlight > curated > coming up.**
+>   The sets are NOT disjoint — a hand-added event can be in progress, an admin can pin one, and it
+>   can rank onto page 1 on merit, so the same `_id` legitimately arrives from three requests.
+>   Whichever section claims it first wins.
+> · **`CURATED_COUNT` is capped at 6** so a burst of manual adds cannot push the ranked feed off
+>   the screen. It still goes through `buildParams`, so a hand-added event must be upcoming and
+>   still respects `techOnly` — being typed in by an admin does not exempt a row from the visible
+>   filters. All 5 current rows happen to be `isTechEvent: true`, so the default feed shows them;
+>   a manually-added NON-tech event would correctly be invisible until "show all events" is on.
+> · **The mobile treatment is a horizontal shelf, and the first attempt got it wrong.** Five
+>   vertical rows measured 877px and pushed the first ranked row to **y=1899 on 375x812 — 2.34
+>   screens of scroll before the feed**, worse than the y=1511 the note above already calls out as
+>   too far. A horizontal snap scroller costs one card height instead of five: section 877 -> 412px,
+>   feed start 1899 -> **1435px**. Note this is the OPPOSITE width-switch from the Spotlight (which
+>   is a grid on desktop and a rail on mobile) for the same reason — two covers fit side by side,
+>   six do not stack.
+>
+> **A shorter list was NOT an option, and this is the trap.** The memo REMOVES these events from
+> "Coming up" so nothing renders twice, so a row dropped on mobile is gone from the phone entirely
+> rather than merely deferred — the same mistake the Spotlight comment warns about. Every card in
+> the scroller stays reachable by swipe or by Tab.
+
+> **When verifying a rebuild in a browser that has this PWA installed, clear the service worker
+> first — a stale build looks exactly like your change not working.** Verifying this shelf,
+> `next start` rendered markup with no shelf in it while the production build on disk demonstrably
+> contained it (`grep -rl overscroll-x-contain .next/static` matched, and the source line was
+> there). Unregistering the SW and emptying Cache Storage fixed it:
+> ```js
+> (await navigator.serviceWorker.getRegistrations()).forEach(r => r.unregister());
+> (await caches.keys()).forEach(k => caches.delete(k));  // held pulseblr-static-v3 + -dynamic-v3
+> ```
+> **The exact mechanism was NOT established, and the obvious explanation is ruled out by the code.**
+> `sw.js:78` is `if (url.pathname.startsWith('/_next/')) return;` — the worker never touches Next
+> build assets at all — and `sw.js:97` makes navigations **network-first**, with cache used only as
+> an offline fallback. So the chunks cannot have come from Cache Storage, and the document is only
+> served from cache when the network fetch **fails**. The most likely reading is that the navigation
+> landed inside the `next start` stop/restart window, failed, and took the `sw.js:107` offline
+> fallback to the previous HTML. The fix is also confounded: the reload that worked used a new query
+> string, so it busted the browser's own HTTP cache at the same time.
+>
+> **So do NOT conclude that deploys fail to reach users.** An earlier draft of this note claimed the
+> `v3` cache name pins returning visitors to the previous build until the version is bumped. That is
+> wrong for this worker, for the two reasons above — and `sw.js:5` records that serving navigations
+> cache-first was the **v1** bug, already fixed. A version bump is not required for a release to
+> reach existing installs.
+
+> **`npm run build` does NOT disturb a running `next dev` on Next 16.3.2 — the earlier note in this
+> file was over-broad.** Dev artifacts live under `.next/dev/` (observable: `.next/dev/static/
+> chunks/`, `.next/dev/server/`), while a production build writes `.next/BUILD_ID`, `.next/static/`
+> and `.next/server/`. Verified directly: built while another session held port 3000 and that
+> server still answered 200 immediately afterwards. What a build DOES clobber is what a
+> **`next start`** server is serving — which is what the phantom-404 incident behind
+> `diag-api-auth.ts` actually was. So `pulseblr-verify` on 3100 is safe to use alongside another
+> chat's dev server; just rebuild before starting it, not while it runs.
 
 > **`/admin` is a server component and that is load-bearing.** `proxy.ts` can only see whether a session cookie exists; it cannot know whether that session is an admin. So the page re-checks the allowlist server-side and `redirect()`s a non-admin to `/` before any admin markup is generated. `session.user.isAdmin` (set in `auth.ts`) exists **only** to decide whether to draw the nav link — it is a courtesy, not authorisation, and editing it in devtools buys a 403 from `requireAdmin()`. `token.isAdmin` is recomputed on every JWT callback rather than written once at sign-in, so removing someone from `ADMIN_EMAILS` takes effect on their next request instead of whenever their weeks-long token happens to expire.
 

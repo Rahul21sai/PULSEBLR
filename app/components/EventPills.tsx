@@ -29,6 +29,20 @@ export default function EventPills({
         </span>
       )}
 
+      {/* Hand-added by an admin rather than scraped. Placed straight after "Happening now" and
+          before price, because it is a PROVENANCE claim: it says a human chose to put this here,
+          which changes how much the rest of the card is worth trusting. `source` is the same
+          marker `POST /api/events` writes (`body.source || 'manual'`), so nothing new is stored
+          to support this. */}
+      {event.source === 'manual' && (
+        <span
+          className="pill pill-quiet"
+          title="Added by hand rather than scraped — curated by PulseBLR"
+        >
+          Curated
+        </span>
+      )}
+
       {event.soldOut ? (
         <span className="pill pill-sold">Sold out</span>
       ) : (
