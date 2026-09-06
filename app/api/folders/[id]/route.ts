@@ -4,6 +4,7 @@ import Contact from '@/lib/models/Contact';
 import Event from '@/lib/models/Event';
 import { requireUser } from '@/lib/api-auth';
 import { findOwnedFolder, folderToDTO, contactToDTO, isValidId } from '@/lib/contacts/service';
+import { canViewEvent } from '@/lib/events/visibility';
 
 /**
  * One folder: read it with its contacts, rename it, archive it, or delete it.
@@ -65,8 +66,24 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       if (!body.eventId) {
         folder.eventId = undefined;
       } else if (isValidId(body.eventId)) {
-        const event = await Event.findById(body.eventId).select('startDateTime venue area');
-        if (event) {
+        const event = await Event.findById(body.eventId).select(
+          'startDateTime venue area visibility createdByUserId'
+        );
+        /**
+         * A FIFTH ID-ADDRESSABLE PATH, and it needs the same guard as the other four.
+         *
+         * This route copies the event's `startDateTime` and `venue` onto a folder the CALLER owns.
+         * Without the check, anybody could link their own folder to a stranger's private event by id
+         * and read its date and venue straight back out of their own folder — and it is a durable
+         * copy, denormalised on purpose so the folder survives `pruneStale()`, which means no later
+         * access-control change can claw it back. Exactly the shape of the `POST /api/tracker` leak.
+         *
+         * Silently ignored rather than 404'd, matching the existing behaviour for a nonexistent
+         * event: this is one optional field of a PATCH that also renames and archives, so refusing
+         * the whole request would fail a rename because of an unrelated bad id. The folder simply
+         * stays unlinked.
+         */
+        if (event && canViewEvent(event, gate.userId)) {
           folder.eventId = event._id;
           if (!folder.eventDate) folder.eventDate = event.startDateTime;
           if (!folder.venue) folder.venue = event.venue || event.area || undefined;

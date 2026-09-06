@@ -58,9 +58,30 @@ const port =
     ? process.argv[portFlag + 1]
     : process.env.PORT || (dev ? '3201' : '3200');
 
+/**
+ * No build to serve. Name BOTH ways out, not just the one.
+ *
+ * The original message printed only the build command, which is a dead end when what you actually
+ * wanted was a server to look at — a production build takes minutes, and nine times out of ten the
+ * `--dev` entry is the right answer anyway because it is the only one where sign-in works. The
+ * failure is easy to hit: `.next-*` is gitignored scratch state, so anything that tidies build
+ * artefacts (including this session's own cleanup) leaves the production entry with nothing to
+ * serve and no hint that a zero-setup alternative exists.
+ *
+ * NOT auto-built here on purpose. A build is minutes long, and running one inside what the caller
+ * asked to be a server start would blow the launcher's startup window and look like a hang — the
+ * worse failure of the two.
+ */
 if (!dev && !fs.existsSync(path.join(process.cwd(), distDir, 'BUILD_ID'))) {
   console.error(
-    `No build found in ${distDir}/. Run this first:\n\n  PULSEBLR_DIST_DIR=${distDir} npm run build\n`
+    `No build found in ${distDir}/.\n\n` +
+      `Either build one (a few minutes):\n` +
+      `  PULSEBLR_DIST_DIR=${distDir} npm run build\n` +
+      `  node scripts/start-verify.js\n\n` +
+      `Or start the DEV server instead — no build step, and the only mode where DEV_LOGIN works:\n` +
+      `  node scripts/start-verify.js --dev\n\n` +
+      `Production mode is only needed for the service worker and offline behaviour, which\n` +
+      `app/layout.tsx deliberately disables in development.\n`
   );
   process.exit(1);
 }

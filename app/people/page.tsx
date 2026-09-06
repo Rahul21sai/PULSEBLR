@@ -330,9 +330,16 @@ export default function PeoplePage() {
           selected={tag}
           onSelect={setTag}
         />
-        {facets.folders.length > 1 && (
+        {/*
+          Shown from ONE folder up, not two.
+          `> 1` hid the rail entirely for somebody with a single folder — which is the state right
+          after confirming your first event, and precisely when you are looking for confirmation that
+          the folder exists. The rail is where an empty folder becomes visible at all.
+        */}
+        {facets.folders.length > 0 && (
           <FilterRail
             title="Event"
+            hint="Every folder, including ones you haven't scanned anybody into yet."
             buckets={facets.folders}
             selected={folderId}
             onSelect={setFolderId}
@@ -415,13 +422,28 @@ export default function PeoplePage() {
             ))}
           </div>
         ) : contacts.length === 0 ? (
+          /*
+            THREE empty states, not two. The middle one is the regression fix.
+            "No people yet" over a page that also showed no folders is what made a freshly
+            auto-created folder look like it had never been created. If folders exist, say so and
+            point at them — the answer to "where did my folder go" has to be on this page, because
+            this is the page the nav sends you to.
+          */
           <EmptyState
             icon="group"
-            title={activeFilters ? 'Nobody matches that' : 'No people yet'}
+            title={
+              activeFilters
+                ? 'Nobody matches that'
+                : facets.folders.length > 0
+                  ? 'No people scanned yet'
+                  : 'No people yet'
+            }
             body={
               activeFilters
                 ? 'Try a different filter, or clear them all.'
-                : 'Scan somebody’s LinkedIn QR at your next event and they will appear here.'
+                : facets.folders.length > 0
+                  ? `You have ${facets.folders.length} event folder${facets.folders.length === 1 ? '' : 's'} ready — confirming an event in the tracker creates one. Scan somebody in and they will appear here.`
+                  : 'Confirm an event in the tracker to get a folder, then scan somebody’s LinkedIn QR into it.'
             }
             action={
               activeFilters ? (
@@ -429,9 +451,14 @@ export default function PeoplePage() {
                   Clear filters
                 </Button>
               ) : (
-                <ButtonLink href="/scan" tone="primary" icon="qr_code_scanner">
-                  Open the scanner
-                </ButtonLink>
+                <div className="flex flex-wrap justify-center gap-2">
+                  <ButtonLink href="/scan" tone="primary" icon="qr_code_scanner">
+                    Open the scanner
+                  </ButtonLink>
+                  <ButtonLink href="/folders" tone="quiet" icon="folder">
+                    {facets.folders.length > 0 ? 'See your folders' : 'Make a folder'}
+                  </ButtonLink>
+                </div>
               )
             }
           />

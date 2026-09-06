@@ -7,6 +7,9 @@ import EditTrackerModal from './components/EditTrackerModal';
 import { DesktopNav, MobileBottomNav } from '../components/NavBar';
 import EventCover from '../components/EventCover';
 import { dayLabelIST, timeIST, relativeTime, categoryAccent, locationLabel } from '@/lib/format';
+// From the PURE validator module, not lib/contacts/service.ts — this is a client component and
+// service.ts imports mongoose.
+import { FOLDER_ON_TRACKER_STATUS } from '@/lib/tracker/validate';
 
 interface Connection {
   name: string;
@@ -60,6 +63,20 @@ const COLUMNS = [
 ] as const;
 
 const COLUMN_IDS = COLUMNS.map(c => c.id) as readonly string[];
+
+/**
+ * Which columns create a folder to scan people into.
+ *
+ * Imported from `lib/contacts/service.ts`, NOT retyped — the label on the board and the branch on
+ * the server have to be the same list, and a hardcoded copy here would eventually claim a folder
+ * that never gets made (or stay silent about one that does).
+ *
+ * IT IS LABELLED AT ALL because of a real report: an event was moved to `Shortlisted` and no folder
+ * appeared, which is correct behaviour and completely undiscoverable. Nothing on this board said
+ * that `Confirmed` is the step that gets you somewhere to put the people you meet, so the only way
+ * to find out was to guess the right column.
+ */
+const FOLDER_COLUMNS = new Set<string>(FOLDER_ON_TRACKER_STATUS);
 
 type ViewMode = 'board' | 'list';
 
@@ -472,6 +489,17 @@ export default function TrackerPage() {
                         aria-hidden="true"
                       />
                       {column.label}
+                      {FOLDER_COLUMNS.has(column.id) && (
+                        <span
+                          title="Moving an event here creates a folder under People, ready to scan people into"
+                          className="inline-flex items-center gap-0.5 rounded-full bg-white px-1.5 py-0.5 text-[10px] font-bold text-[#6E6E73]"
+                        >
+                          <span aria-hidden="true" className="material-symbols-outlined text-[11px]">
+                            folder
+                          </span>
+                          folder
+                        </span>
+                      )}
                     </span>
                     <span className="tnum text-[11.5px] font-semibold text-[#86868B] bg-white rounded-full px-2 py-0.5">
                       {byColumn[column.id]?.length || 0}

@@ -270,7 +270,9 @@ export async function findOwnedFolder(userId: string, id: string) {
 }
 
 /** Tracker statuses that mean "I am going to this", and so should have a folder ready. */
-export const FOLDER_ON_TRACKER_STATUS = ['Confirmed', 'Attended'] as const;
+// Re-exported, not declared: it now lives in `lib/tracker/validate.ts` so the kanban board can
+// import it without dragging mongoose into the client bundle. See the note there.
+export { FOLDER_ON_TRACKER_STATUS } from '../tracker/validate';
 
 /**
  * Get or create this user's folder for a corpus event. Idempotent.

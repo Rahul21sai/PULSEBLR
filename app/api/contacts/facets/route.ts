@@ -106,15 +106,36 @@ export async function GET(request: NextRequest) {
        * The page renders vocabulary entries with no members as empty chips rather than hiding them.
        */
       tagVocabulary: vocabulary,
-      folders: folderRows
-        .filter(r => r._id)
-        .map(r => ({
-          value: String(r._id),
-          // A folder the user has deleted, or one `pruneStale` orphaned, still has contacts
-          // pointing at it. Naming it honestly beats dropping the bucket and losing the people.
-          label: folderNames.get(String(r._id)) ?? 'Folder no longer exists',
-          count: r.count,
-        })),
+      /**
+       * EVERY folder, including the ones with nobody in them yet.
+       *
+       * The buckets come from an aggregate over CONTACTS, so a folder with zero contacts produces
+       * no bucket at all — and that made a regression: confirming an event in the tracker
+       * auto-creates an empty folder, and after the "People" nav item was repointed from `/folders`
+       * to here, that folder appeared NOWHERE on the page the user now opens to look for it. It
+       * read as "confirming the event did not create a folder", which is exactly how it was
+       * reported. The folder existed with the right `eventId` the whole time.
+       *
+       * So the empty ones are appended at count 0, the same treatment `tagVocabulary` gets for a
+       * tag created but not yet applied to anybody — and for the same reason: a thing the user just
+       * made must be visible, or the button that made it looks broken.
+       *
+       * Ordered contacts-first, then empty, so the useful buckets stay at the front of the rail.
+       */
+      folders: [
+        ...folderRows
+          .filter(r => r._id)
+          .map(r => ({
+            value: String(r._id),
+            // A folder the user has deleted, or one `pruneStale` orphaned, still has contacts
+            // pointing at it. Naming it honestly beats dropping the bucket and losing the people.
+            label: folderNames.get(String(r._id)) ?? 'Folder no longer exists',
+            count: r.count,
+          })),
+        ...folders
+          .filter(f => !folderRows.some(r => String(r._id) === f._id))
+          .map(f => ({ value: f._id, label: f.name, count: 0 })),
+      ],
       targetCount,
       followUpCount,
     });

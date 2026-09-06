@@ -55,6 +55,28 @@ export const TRACKER_STATUSES = [
 
 export type TrackerStatus = (typeof TRACKER_STATUSES)[number];
 
+/**
+ * The tracker statuses that get you a folder to scan people into.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────────────────────
+ * IT LIVES IN THIS FILE, not in `lib/contacts/service.ts` where it started, for one reason: the
+ * kanban board needs it to LABEL the columns, and `app/tracker/page.tsx` is a client component.
+ * Importing it from `service.ts` would pull mongoose and every model into the browser bundle. This
+ * module is pure — mongoose appears only in its comments — which is the same property that lets
+ * `lib/models/TrackerEntry.ts` import `TRACKER_STATUSES` from here without a cycle.
+ *
+ * `service.ts` re-exports it, so every existing importer is unaffected.
+ *
+ * WHY THE BOARD LABELS IT AT ALL. Reported by a user: an event was moved to `Shortlisted` and no
+ * folder appeared. That is correct behaviour and completely undiscoverable — nothing on the board
+ * said that `Confirmed` is the step that produces somewhere to put the people you meet, so the only
+ * way to learn it was to guess the right column out of seven. One shared constant means the badge on
+ * the column and the branch on the server can never disagree about which ones qualify.
+ * ─────────────────────────────────────────────────────────────────────────────────────────────
+ */
+export const FOLDER_ON_TRACKER_STATUS = ['Confirmed', 'Attended'] as const;
+
+
 /** One rejected field. `field` uses dotted/indexed paths, e.g. `connections[1].name`. */
 export type TrackerIssue = { field: string; message: string };
 
