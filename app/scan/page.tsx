@@ -53,7 +53,14 @@ function ScanScreen() {
   const [draft, setDraft] = useState<ContactDraft>({ name: '' });
   const [showAllFields, setShowAllFields] = useState(false);
   const [recent, setRecent] = useState<string[]>([]);
-  const [pending, setPending] = useState<PendingSummary>({ waiting: 0, blocked: 0, total: 0 });
+  const [pending, setPending] = useState<PendingSummary>({
+    waiting: 0,
+    blocked: 0,
+    otherAccount: 0,
+    waitingFolders: 0,
+    total: 0,
+    authExpired: false,
+  });
   const [toast, setToast] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -193,17 +200,34 @@ function ScanScreen() {
        * screen used to say "Saved <name> on this device" for a 404 whose folder had been
        * deleted, which is a promise the queue could not keep. See `lib/scan/failure.ts`.
        */
-      const result = await saveContact(record);
-      setSaving(false);
+      // try/finally so `setSaving(false)` cannot be skipped. `saveContact` is written not to
+      // throw, but the Save button freezing on "Saving…" with the person standing in front of you
+      // is bad enough that it should not depend on that promise holding.
+      let result: Awaited<ReturnType<typeof saveContact>>;
+      try {
+        result = await saveContact(record);
+      } finally {
+        setSaving(false);
+      }
 
-      const blocked = result.outcome === 'blocked' || result.outcome === 'auth';
+      const blocked = result.outcome !== 'saved' && result.outcome !== 'queued';
       setToast(
         result.outcome === 'saved'
           ? `Saved ${record.name}`
           : result.outcome === 'queued'
             ? `Saved ${record.name} on this device`
-            : `Kept ${record.name} on this device — ${result.reason}`
+            : result.outcome === 'lost'
+              ? // The one outcome where the record is genuinely gone. Say so plainly rather than
+                // implying it is queued.
+                `NOT SAVED — ${result.reason}`
+              : `Kept ${record.name} on this device — ${result.reason}`
       );
+
+      if (result.outcome === 'lost') {
+        // Keep the capture card open with the typed fields intact, so the details can be
+        // re-entered or written down. Everything below unwinds the card.
+        return;
+      }
 
       // Remember what was saved so the loop does not immediately re-offer the same code.
       lastSavedRef.current = { raw: captured.raw, at: Date.now() };
@@ -229,16 +253,23 @@ function ScanScreen() {
 
     // Reporting only `synced > 0` was half the original bug: every other outcome looked
     // identical to doing nothing, which is precisely what "Sync now doesn't work" meant.
+    const uploaded = result.synced + result.foldersSynced;
     setToast(
       result.authExpired
         ? 'Sign in again and these will upload'
-        : result.synced > 0
-          ? `Uploaded ${result.synced}${summary.blocked ? ` · ${summary.blocked} still stuck` : ''}`
-          : summary.blocked > 0
-            ? `${summary.blocked} cannot upload — open People to fix`
-            : result.skipped
-              ? 'Nothing to upload'
-              : 'Still offline'
+        : uploaded > 0
+          ? `Uploaded ${uploaded}${summary.blocked ? ` · ${summary.blocked} still stuck` : ''}`
+          : result.batchRefused
+            ? 'The server refused the upload — your captures are safe'
+            : summary.blocked > 0
+              ? `${summary.blocked} cannot upload — open People to fix`
+              : result.skipReason === 'offline'
+                ? 'No network yet'
+                : result.skipReason === 'no-owner'
+                  ? 'These were captured on another account'
+                  : result.skipped
+                    ? 'Nothing to upload'
+                    : 'Still offline'
     );
     setTimeout(() => setToast(null), summary.blocked > 0 || result.authExpired ? 6000 : 2500);
   }

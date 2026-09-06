@@ -40,6 +40,40 @@ const CONTACTS = 'contacts';
 const FOLDERS = 'folders';
 
 /**
+ * Every network call here is bounded. NONE OF THEM USED TO BE, and that is a wedge.
+ *
+ * `drain()` holds a module-level latch cleared in `finally`. A saturated hall network that
+ * completes the TCP handshake and then never answers leaves `await fetch(…)` pending
+ * indefinitely, so `finally` never runs, the latch stays set, and every later drain — INCLUDING
+ * a forced "Sync now" — returns at the guard without attempting anything. The queue is dead
+ * until a page reload, while the banner keeps promising an upload. That is the reported symptom
+ * exactly, and it is invisible because no record is ever marked.
+ *
+ * `lib/scrapers/core/http.ts`, `lib/security/safe-fetch.ts` and `lib/llm/tagger.ts` all use
+ * `AbortSignal.timeout`; this file was the one network caller that did not.
+ */
+const SAVE_TIMEOUT_MS = 15_000;
+const SYNC_TIMEOUT_MS = 30_000;
+
+/**
+ * A drain in flight for longer than this is treated as dead, so a new one may start.
+ *
+ * A bare boolean latch cannot recover from a hung request. Comfortably above
+ * `SYNC_TIMEOUT_MS` so a slow-but-alive request is never cut in on.
+ */
+const STALE_DRAIN_MS = SYNC_TIMEOUT_MS + 15_000;
+
+/**
+ * Records per sync request. Well under the route's `MAX_ITEMS` of 500, and chosen for the
+ * BODY size rather than the count: `rawPayload` alone is capped at 4000 characters per
+ * contact, so 500 records can approach Vercel's 4.5 MB request-body limit and earn a 413 the
+ * route never even sees. A 413 is a `classifyStatus` 'permanent', so before chunking one
+ * oversized batch could mark hundreds of individually-perfect captures as blocked, after which
+ * the auto-drain refused to attempt them at all. Chunking makes that unreachable.
+ */
+const SYNC_CHUNK = 100;
+
+/**
  * What every queued record carries about its own failures.
  *
  * `attempts` and `lastError` existed and were WRITE-ONLY — `markContactFailed()` maintained
@@ -60,6 +94,26 @@ interface QueueFailureState {
   /** Set when the server refused on the merits. Cleared again if a later drain is merely unlucky. */
   blocked?: boolean;
   blockedReason?: string;
+  /**
+   * WHICH SIGNED-IN USER CAPTURED THIS.
+   *
+   * IndexedDB is per-origin, not per-account, and sign-out deliberately does not clear it —
+   * `app/settings/page.tsx` purges Cache Storage only, precisely so captures survive. Without
+   * an owner stamp, `drain()` posts whatever it finds as whoever happens to be signed in now.
+   * Sign out, sign in with a second Google account — the exact scenario `sw.js` was bumped to
+   * v3 for — and account A's queued people are posted as account B, refused `folder-not-found`
+   * because B does not own A's folders, marked permanently blocked, and then LISTED BY NAME on
+   * B's screen with Discard as the only option. A's captures become unrecoverable at the same
+   * time, since the reason is pinned to a folder id B will never own.
+   *
+   * So it is the outbox analogue of v3's network-only rule: same class of leak, in the one
+   * store the v3 cache sweep cannot touch.
+   *
+   * Optional because records written before this field existed have no owner. Those are drained
+   * as before rather than stranded — one account per device is the overwhelmingly common case,
+   * and refusing to upload somebody's real captures on a technicality would be the worse bug.
+   */
+  queuedFor?: string;
 }
 
 export interface QueuedFolderRecord extends QueueFailureState {
@@ -75,7 +129,7 @@ export interface QueuedContactRecord extends ContactInput, QueueFailureState {
   queuedAt: number;
 }
 
-/** One stuck record, flattened for the UI that offers to retry or discard it. */
+/** One stuck record, flattened for the UI that offers to retry, move or discard it. */
 export interface BlockedCapture {
   kind: 'contact' | 'folder';
   clientId: string;
@@ -84,6 +138,65 @@ export interface BlockedCapture {
   reason: string;
   attempts: number;
   queuedAt: number;
+  /** Contacts only: the folder it is aimed at, so "move it somewhere that exists" is offerable. */
+  folderId?: string;
+}
+
+/* ────────────────────────────── who owns the queue ────────────────────────────── */
+
+let owner: string | null = null;
+
+/**
+ * Tell the outbox which account is signed in.
+ *
+ * Called by `<OutboxOwner />` inside the session provider, so it tracks sign-in and sign-out
+ * for every page without each capture site having to pass a session down. `null` means signed
+ * out, which is why `drain()` treats an unknown owner as "do not send" rather than "send
+ * everything".
+ */
+export function setOutboxOwner(userId: string | null): void {
+  if (owner === userId) return;
+  owner = userId;
+  notify();
+}
+
+export function outboxOwner(): string | null {
+  return owner;
+}
+
+/* ────────────────────────────── lapsed session ────────────────────────────── */
+
+let authExpiredAt: number | null = null;
+
+/**
+ * Remember that the server said 401, so a banner can say so without the user pressing anything.
+ *
+ * A 401 marks no record — correctly, the records are fine — but `startAutoDrain()`'s trigger is
+ * `void drain()`, which discards the result. So a session lapsing mid-event (a conference day
+ * outlasts a token) put the queue into a silent infinite retry: one POST on every
+ * `visibilitychange` and every `online` event, forever, all 401, with the banner still promising
+ * "they will upload on their own" and nothing anywhere offering a sign-in. Holding the state
+ * here is what lets the banner switch to an auth variant with a link to /login.
+ */
+function noteAuthExpired(): void {
+  authExpiredAt = Date.now();
+  notify();
+}
+
+/** Cleared by any drain that gets a non-401 answer, so signing back in heals the banner. */
+function clearAuthExpired(): void {
+  if (authExpiredAt === null) return;
+  authExpiredAt = null;
+  notify();
+}
+
+export function authExpired(): boolean {
+  return authExpiredAt !== null;
+}
+
+/** Is this record ours to upload? Unstamped legacy records are, on purpose — see `queuedFor`. */
+function ownedByCurrentUser(record: QueueFailureState): boolean {
+  return record.queuedFor === undefined || record.queuedFor === owner;
 }
 
 /** A client-generated id, which is the idempotency key the server dedupes on. */
@@ -149,10 +262,17 @@ function tx<T>(
 /* ────────────────────────────── queue + read ────────────────────────────── */
 
 export async function queueContact(record: ContactInput, blockedReason?: string): Promise<void> {
+  // A blank `clientId` would be stored under an unusable key AND echoed back by the server as
+  // the literal '(missing)', which matches nothing on the way home — so the record's verdict is
+  // silently discarded and it sits in the queue forever, counted as waiting and appearing in no
+  // blocked list. Mint one rather than refuse: an id is recoverable, a person is not.
+  const clientId = record.clientId?.trim() || newClientId();
   await tx<IDBValidKey>(CONTACTS, 'readwrite', s =>
     s.put({
       ...record,
+      clientId,
       queuedAt: Date.now(),
+      ...(owner ? { queuedFor: owner } : {}),
       // Queued already-blocked when the server has ALREADY refused this exact record. Waiting
       // for a drain to rediscover that would show the user a reassuring "will upload on their
       // own" for the seconds or minutes until the next one, which is the wrong first
@@ -165,7 +285,7 @@ export async function queueContact(record: ContactInput, blockedReason?: string)
 
 /* ────────────────────────────── the one capture path ────────────────────────────── */
 
-export type SaveOutcome = 'saved' | 'queued' | 'blocked' | 'auth';
+export type SaveOutcome = 'saved' | 'queued' | 'blocked' | 'auth' | 'lost';
 
 export interface SaveResult {
   outcome: SaveOutcome;
@@ -173,6 +293,33 @@ export interface SaveResult {
   reason?: string;
   /** The stored document, on `saved`. */
   contact?: unknown;
+}
+
+/**
+ * Queue a record, and never let the queue write itself throw at a call site.
+ *
+ * `tx()` REJECTS when `openDb()` fails or a write fails — iOS Safari private browsing, storage
+ * quota pressure, a blocked version upgrade. Every `await queueContact(record)` in `saveContact`
+ * sat on a path with no handler, and the one inside the fetch `catch` block would escape
+ * `saveContact` entirely. No call site wrapped it, so the `setSaving(false)` on the following
+ * line never ran: the Save button stayed disabled reading "Saving…", the sheet never closed, no
+ * toast appeared, and the capture existed nowhere at all. The user is standing in front of the
+ * person with a frozen button and no way to know the scan was lost.
+ *
+ * 'lost' is the honest outcome for that, and it is the ONLY one that means the record is gone.
+ * It exists so the UI can say "write this down" instead of freezing.
+ */
+async function queueOrReport(record: ContactInput, blockedReason?: string): Promise<SaveResult> {
+  try {
+    await queueContact(record, blockedReason);
+  } catch {
+    return {
+      outcome: 'lost',
+      reason: 'This device would not store the capture. Write their details down — nothing was saved.',
+    };
+  }
+  if (blockedReason) return { outcome: 'blocked', reason: blockedReason };
+  return { outcome: 'queued', reason: 'Saved on this device. It will upload on its own.' };
 }
 
 /**
@@ -207,25 +354,49 @@ export async function saveContact(record: ContactInput): Promise<SaveResult> {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(record),
+      // Without this a hall network that accepts the connection and stops answering leaves the
+      // Save button spinning with no ceiling.
+      signal: AbortSignal.timeout(SAVE_TIMEOUT_MS),
     });
   } catch {
-    // `fetch` rejected, so there is no response and the server formed no opinion. This is the
-    // ONLY case that is genuinely "the request never left", and the only one the original code
-    // was actually right about.
-    await queueContact(record);
-    return { outcome: 'queued', reason: 'Saved on this device. It will upload on its own.' };
+    // `fetch` rejected or timed out, so there is no response and the server formed no opinion.
+    // This is the ONLY case that is genuinely "the request never left", and the only one the
+    // original code was actually right about.
+    return queueOrReport(record);
   }
 
   if (response.ok) {
-    const data = (await response.json().catch(() => ({}))) as { contact?: unknown };
-    return { outcome: 'saved', contact: data.contact };
+    /**
+     * A 2xx IS NOT PROOF THE API ANSWERED, and assuming it was is how a capture vanished.
+     *
+     * Captive-portal Wi-Fi — the standard conference-hall condition this entire queue exists
+     * for — answers every request with 200 and an HTML sign-in interstitial (directly, or via a
+     * redirect `fetch` follows for us). `response.ok` is then true, `.json()` throws on the
+     * HTML, and the old `.catch(() => ({}))` swallowed that and returned `outcome: 'saved'`
+     * with `contact: undefined`. The scanner printed "Saved <name>", the record was never
+     * queued, and the person was neither on the server nor on the device — the one outcome
+     * this module's header promises is impossible. Worse than stuck, because nothing counted it.
+     *
+     * So a success has to be EVIDENCED: the body must parse and must carry the document the API
+     * returns. Anything else is not a success, and the record goes to the queue where it
+     * belongs.
+     */
+    const data = (await response.json().catch(() => null)) as
+      | { contact?: unknown; created?: unknown }
+      | null;
+    if (data && typeof data === 'object' && data.contact) {
+      return { outcome: 'saved', contact: data.contact };
+    }
+    return queueOrReport(record);
   }
 
   const body = (await response.json().catch(() => ({}))) as { error?: string; refusal?: string };
   const kind = classifyStatus(response.status);
 
   if (kind === 'auth') {
-    await queueContact(record);
+    noteAuthExpired();
+    const queued = await queueOrReport(record);
+    if (queued.outcome === 'lost') return queued;
     return {
       outcome: 'auth',
       reason: 'Your session expired. Sign in again and this will upload.',
@@ -233,18 +404,112 @@ export async function saveContact(record: ContactInput): Promise<SaveResult> {
   }
 
   if (kind === 'permanent') {
-    const reason = refusalMessage(body.refusal, body.error);
-    await queueContact(record, reason);
-    return { outcome: 'blocked', reason };
+    return queueOrReport(record, refusalMessage(body.refusal, body.error));
   }
 
-  await queueContact(record);
+  return queueOrReport(record);
+}
+
+/**
+ * Create a folder, with the same three outcomes as a capture.
+ *
+ * `NewFolderSheet` kept the pre-fix shape this module was rewritten to eliminate — `if (!res.ok)
+ * throw` and queue in the `catch` — so a 400 or 403 from `POST /api/folders` was queued as if
+ * the network had eaten it, and a captive-portal 200 with HTML called `onCreated()` for a folder
+ * that was never created and never queued.
+ *
+ * 409 is handled by the caller rather than here: a name clash is not a queueing decision, it is
+ * a question for the person typing the name.
+ */
+export interface SaveFolderResult {
+  outcome: SaveOutcome | 'name-taken';
+  reason?: string;
+  folder?: unknown;
+}
+
+export async function saveFolder(
+  record: Omit<QueuedFolderRecord, 'queuedAt'>
+): Promise<SaveFolderResult> {
+  const body = {
+    name: record.name,
+    eventDate: record.eventDate,
+    venue: record.venue,
+    note: record.note,
+  };
+
+  let response: Response;
+  try {
+    response = await fetch('/api/folders', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(SAVE_TIMEOUT_MS),
+    });
+  } catch {
+    return queueFolderOrReport(record);
+  }
+
+  if (response.ok) {
+    const data = (await response.json().catch(() => null)) as { folder?: unknown } | null;
+    if (data && typeof data === 'object' && data.folder) {
+      return { outcome: 'saved', folder: data.folder };
+    }
+    // Same evidence rule as `saveContact`: a 200 that is not the API's JSON is a portal, not a
+    // created folder.
+    return queueFolderOrReport(record);
+  }
+
+  if (response.status === 409) {
+    return { outcome: 'name-taken', reason: 'You already have a folder with that name.' };
+  }
+
+  const parsed = (await response.json().catch(() => ({}))) as { error?: string; refusal?: string };
+  const kind = classifyStatus(response.status);
+
+  if (kind === 'auth') {
+    noteAuthExpired();
+    const queued = await queueFolderOrReport(record);
+    if (queued.outcome === 'lost') return queued;
+    return { outcome: 'auth', reason: 'Your session expired. Sign in again and this will upload.' };
+  }
+  if (kind === 'permanent') {
+    return queueFolderOrReport(record, refusalMessage(parsed.refusal, parsed.error));
+  }
+  return queueFolderOrReport(record);
+}
+
+async function queueFolderOrReport(
+  record: Omit<QueuedFolderRecord, 'queuedAt'>,
+  blockedReason?: string
+): Promise<SaveFolderResult> {
+  try {
+    await queueFolder(record, blockedReason);
+  } catch {
+    return {
+      outcome: 'lost',
+      reason: 'This device would not store the folder. Nothing was saved.',
+    };
+  }
+  if (blockedReason) return { outcome: 'blocked', reason: blockedReason };
   return { outcome: 'queued', reason: 'Saved on this device. It will upload on its own.' };
 }
 
-export async function queueFolder(record: Omit<QueuedFolderRecord, 'queuedAt'>): Promise<void> {
+export async function queueFolder(
+  record: Omit<QueuedFolderRecord, 'queuedAt'>,
+  blockedReason?: string
+): Promise<void> {
+  const clientId = record.clientId?.trim() || newClientId();
   await tx<IDBValidKey>(FOLDERS, 'readwrite', s =>
-    s.put({ ...record, queuedAt: Date.now() } satisfies QueuedFolderRecord)
+    s.put({
+      ...record,
+      clientId,
+      queuedAt: Date.now(),
+      ...(owner ? { queuedFor: owner } : {}),
+      // `queueContact` grew this parameter and `queueFolder` did not, which meant a folder could
+      // only ever be queued as "waiting" — so a refusal from `POST /api/folders` was filed under
+      // "the network ate it" and the user learned nothing until a later drain rediscovered it.
+      ...(blockedReason ? { blocked: true, blockedReason, attempts: 1, lastError: blockedReason } : {}),
+    } satisfies QueuedFolderRecord)
   );
   notify();
 }
@@ -267,10 +532,15 @@ export async function pendingFolders(): Promise<QueuedFolderRecord[]> {
   }
 }
 
-export async function pendingCount(): Promise<number> {
-  const [contacts, folders] = await Promise.all([pendingContacts(), pendingFolders()]);
-  return contacts.length + folders.length;
-}
+/**
+ * `pendingCount()` IS GONE ON PURPOSE. Use `pendingSummary()`.
+ *
+ * It summed folders and contacts into one number, which is the exact conflation that made the
+ * original bug unreadable: "1 capture not synced yet … will upload on their own" was a true
+ * statement about a record waiting for signal, a lie about one the server had refused, and it
+ * called a folder a capture. Leaving a dead export behind that models the discredited shape is
+ * an invitation for the next capture surface to import it and reintroduce the misleading count.
+ */
 
 /**
  * The queue split by whether it is actually going anywhere.
@@ -284,22 +554,87 @@ export interface PendingSummary {
   waiting: number;
   /** Records the server has refused on the merits. These need a decision from the user. */
   blocked: number;
+  /** Records captured under a DIFFERENT account. Not ours to upload and not ours to show. */
+  otherAccount: number;
+  /** How many of `waiting` are folders — so a banner never calls a folder a "capture". */
+  waitingFolders: number;
+  /** Ours, whatever their state: `waiting + blocked`. */
   total: number;
+  /** The server last said 401. The records are fine; the session is not. */
+  authExpired: boolean;
 }
 
 export async function pendingSummary(): Promise<PendingSummary> {
   const [contacts, folders] = await Promise.all([pendingContacts(), pendingFolders()]);
   const all = [...contacts, ...folders];
-  const blocked = all.filter(r => r.blocked).length;
-  return { waiting: all.length - blocked, blocked, total: all.length };
+  const mine = all.filter(ownedByCurrentUser);
+  const blocked = mine.filter(r => r.blocked).length;
+  return {
+    waiting: mine.length - blocked,
+    blocked,
+    otherAccount: all.length - mine.length,
+    waitingFolders: folders.filter(f => ownedByCurrentUser(f) && !f.blocked).length,
+    total: mine.length,
+    authExpired: authExpired(),
+  };
 }
 
-/** Every stuck record, so the UI can name it rather than counting it. */
+/**
+ * Clear a record's blocked mark and let the next drain judge it again.
+ *
+ * The blocked list used to offer Discard and nothing else, which for the realistic refusal —
+ * `folder-not-found`, i.e. the folder was deleted after the scan — meant the only button on
+ * screen destroyed a real person's details. Retrying is the other half: the condition may have
+ * passed, and `blocked` was always designed to be re-derived rather than latched.
+ */
+export async function retryCapture(kind: 'contact' | 'folder', clientId: string): Promise<void> {
+  const store = kind === 'contact' ? CONTACTS : FOLDERS;
+  const record = await tx<QueuedContactRecord | QueuedFolderRecord | undefined>(
+    store,
+    'readonly',
+    s => s.get(clientId) as IDBRequest<QueuedContactRecord | QueuedFolderRecord | undefined>
+  );
+  if (!record) return;
+  const cleared = { ...record };
+  delete cleared.blocked;
+  delete cleared.blockedReason;
+  await tx<IDBValidKey>(store, 'readwrite', s => s.put(cleared));
+  notify();
+}
+
+/**
+ * Repoint a queued contact at a different folder, and unblock it.
+ *
+ * This is what makes `folder-not-found` and `no-folder` RECOVERABLE instead of only
+ * discardable. The write is local — the record has never reached the server, so there is nothing
+ * to PATCH; `app/folders/[id]` tried to edit a pending row by PATCHing `/api/contacts/pending:<id>`,
+ * which cannot resolve, and then rolled back against an array that never held the row, so the
+ * edit was a silent no-op behind "Could not save that change."
+ */
+export async function moveQueuedContact(clientId: string, folderId: string): Promise<void> {
+  const record = await tx<QueuedContactRecord | undefined>(CONTACTS, 'readonly', s =>
+    s.get(clientId) as IDBRequest<QueuedContactRecord | undefined>
+  );
+  if (!record) return;
+  const moved: QueuedContactRecord = { ...record, folderId };
+  delete moved.folderClientId;
+  delete moved.blocked;
+  delete moved.blockedReason;
+  await tx<IDBValidKey>(CONTACTS, 'readwrite', s => s.put(moved));
+  notify();
+}
+
+/**
+ * Every stuck record OF THE CURRENT USER, so the UI can name it rather than counting it.
+ *
+ * The ownership filter is not cosmetic: without it, switching Google accounts made this list
+ * display the previous account's captured people, by name, to somebody else.
+ */
 export async function blockedCaptures(): Promise<BlockedCapture[]> {
   const [contacts, folders] = await Promise.all([pendingContacts(), pendingFolders()]);
   const rows: BlockedCapture[] = [
     ...folders
-      .filter(f => f.blocked)
+      .filter(f => f.blocked && ownedByCurrentUser(f))
       .map(f => ({
         kind: 'folder' as const,
         clientId: f.clientId,
@@ -309,7 +644,7 @@ export async function blockedCaptures(): Promise<BlockedCapture[]> {
         queuedAt: f.queuedAt,
       })),
     ...contacts
-      .filter(c => c.blocked)
+      .filter(c => c.blocked && ownedByCurrentUser(c))
       .map(c => ({
         kind: 'contact' as const,
         clientId: c.clientId,
@@ -317,6 +652,7 @@ export async function blockedCaptures(): Promise<BlockedCapture[]> {
         reason: c.blockedReason ?? c.lastError ?? 'The server refused this capture.',
         attempts: c.attempts ?? 0,
         queuedAt: c.queuedAt,
+        folderId: c.folderId,
       })),
   ];
   // Folders first, matching the order they sync in — a blocked folder is often the reason its
@@ -433,8 +769,20 @@ async function applyFolderMap(folderMap: Record<string, string>): Promise<void> 
     await tx<IDBValidKey>(CONTACTS, 'readwrite', s => s.put(rewritten));
   }
 }
-
 /* ────────────────────────────── drain ────────────────────────────── */
+
+/** Why a drain did nothing. One reason each, because the three read completely differently. */
+export type SkipReason =
+  /** Queue is empty. */
+  | 'empty'
+  /** Another drain is already in flight. */
+  | 'busy'
+  /** The browser says there is no network. Only ever an automatic-path decision. */
+  | 'offline'
+  /** Signed out — nothing may be uploaded on nobody's behalf. */
+  | 'no-owner'
+  /** Every queued record is one the server has already refused. Automatic path only. */
+  | 'all-blocked';
 
 export interface DrainResult {
   /**
@@ -446,165 +794,331 @@ export interface DrainResult {
    * unreadable as a bug report and unusable as a status line.
    */
   attempted: number;
+  /** Contacts confirmed. */
   synced: number;
+  /**
+   * Folders confirmed, counted SEPARATELY and not folded into `synced`.
+   *
+   * The folder loop used to confirm-and-remove without incrementing anything, so a folder-only
+   * queue — create a folder offline, come back online, press Sync now — uploaded successfully and
+   * reported `synced: 0`. Both callers gate their reload on `synced > 0`, so the folder never
+   * appeared in the grid and /scan printed "Still offline" immediately after a successful
+   * upload. Two of the three "Sync now does nothing" reports trace to this line.
+   */
+  foldersSynced: number;
   failed: number;
   /** Of `failed`, how many the server refused on the merits. These will not fix themselves. */
   blocked: number;
-  /** True when nothing was tried: the queue was empty, we are offline, or a drain is running. */
+  /** True when nothing was tried. `skipReason` says which nothing. */
   skipped: boolean;
+  skipReason?: SkipReason;
   /** The session has lapsed. Nothing is wrong with the records; the user needs to sign in. */
   authExpired?: boolean;
+  /**
+   * The server answered and refused the UPLOAD ITSELF, rather than any record in it.
+   *
+   * Distinct from `blocked`, and the distinction is the fix for a self-inflicted disaster: a
+   * batch-level refusal used to be stamped onto every record in the batch, so one 413 marked up
+   * to 500 individually-perfect captures as permanently broken, after which the auto-drain
+   * refused to attempt them and Discard was the only button on offer. A record is not what is
+   * wrong when the envelope is rejected.
+   */
+  batchRefused?: boolean;
   /** HTTP status, when the request completed and was refused wholesale. */
   status?: number;
   /** Contacts the server accepted, so the UI can replace its pending rows with real ones. */
   saved?: unknown[];
 }
 
-const NOTHING: DrainResult = {
-  attempted: 0,
-  synced: 0,
-  failed: 0,
-  blocked: 0,
-  skipped: true,
-};
+function skip(reason: SkipReason): DrainResult {
+  return { attempted: 0, synced: 0, foldersSynced: 0, failed: 0, blocked: 0, skipped: true, skipReason: reason };
+}
 
-let draining = false;
+/**
+ * When the in-flight drain started, or `null`.
+ *
+ * A TIMESTAMP RATHER THAN A BOOLEAN, and that is the whole point. The boolean was cleared only
+ * in `finally`, so a `fetch` that never settled left it set for the life of the page and every
+ * later drain — forced ones included — returned at the guard without attempting anything. The
+ * fetch now has a timeout, which should make that impossible; this is the belt to that braces,
+ * because "should be impossible" is what the boolean was too.
+ */
+let drainStartedAt: number | null = null;
+
+interface SyncItemResult {
+  clientId: string;
+  ok: boolean;
+  error?: string;
+  permanent?: boolean;
+  refusal?: string;
+}
+
+interface SyncResponseBody {
+  folderMap?: Record<string, string>;
+  folders?: SyncItemResult[];
+  contacts?: SyncItemResult[];
+  saved?: unknown[];
+}
+
+/**
+ * Apply one chunk's per-item verdicts.
+ *
+ * RESULTS ARE CORRELATED BY INDEX, NOT BY THE ECHOED `clientId`. The route pushes exactly one
+ * result per input item in input order, so the index is exact — whereas the echo is not: it is
+ * `clientId.trim()`, and for a blank id the route substitutes the literal `'(missing)'`, which by
+ * construction matches no IndexedDB key. The old `contacts.find(c => c.clientId === item.clientId)`
+ * then silently found nothing and dropped the verdict, while `failed++` and `blocked++` still
+ * counted it — so `DrainResult.blocked` and `pendingSummary().blocked` disagreed and the row was
+ * invisible in exactly the way this rewrite exists to prevent.
+ *
+ * If the lengths ever disagree the response is not the contract, so nothing is applied by index
+ * and we fall back to the id — a mismatch must not mis-assign one person's verdict to another.
+ */
+async function applyItemResults<T extends QueuedContactRecord | QueuedFolderRecord>(
+  sent: T[],
+  results: SyncItemResult[] | undefined,
+  remove: (clientId: string) => Promise<void>,
+  mark: (record: T, reason: string, kind: FailureKind) => Promise<void>
+): Promise<{ confirmed: number; failed: number; blocked: number }> {
+  const items = results ?? [];
+  const aligned = items.length === sent.length;
+  if (!aligned && items.length) {
+    console.warn(
+      `[outbox] sync returned ${items.length} results for ${sent.length} records; falling back to id matching`
+    );
+  }
+
+  let confirmed = 0;
+  let failed = 0;
+  let blocked = 0;
+
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    const record = aligned ? sent[i] : sent.find(r => r.clientId === item.clientId);
+
+    if (item.ok) {
+      // Removal is keyed on OUR id, never the echo — a trimmed or substituted echo would
+      // otherwise delete nothing and the record would re-upload forever (harmlessly, thanks to
+      // `clientId` idempotency, but permanently).
+      await remove(record?.clientId ?? item.clientId);
+      confirmed++;
+      continue;
+    }
+
+    failed++;
+    const kind: FailureKind = item.permanent ? 'permanent' : 'transient';
+    if (kind === 'permanent') blocked++;
+    if (record) {
+      await mark(record, refusalMessage(item.refusal, item.error), kind);
+    } else {
+      // An unmatched result is a contract violation, not a record to ignore. Say so loudly
+      // rather than dropping a verdict on the floor, which is what used to happen.
+      console.error('[outbox] sync result matched no queued record', item);
+    }
+  }
+
+  return { confirmed, failed, blocked };
+}
 
 /**
  * Push everything queued to the server and remove what it confirms.
  *
- * FOLDERS GO FIRST, in the same request, because a contact captured offline may belong to a
- * folder that also only exists offline; the response's `folderMap` resolves the client id to
- * a real one.
+ * FOLDERS GO FIRST, and in the FIRST CHUNK, because a contact captured offline may belong to a
+ * folder that also only exists offline; the response's `folderMap` resolves the client id to a
+ * real one and `applyFolderMap()` makes that durable.
  *
- * A record is removed ONLY when the server confirms it — including when it reports the record
- * as a duplicate, which means an earlier attempt actually succeeded and the response was lost.
- * A record that fails for any other reason stays queued, because the alternative is losing a
- * person.
+ * A record is removed ONLY when the server confirms it — including when it reports the record as
+ * a duplicate, which means an earlier attempt actually succeeded and the response was lost. A
+ * record that fails for any other reason stays queued, because the alternative is losing a
+ * person. Nothing in this function ever discards a capture; only `discardContact` /
+ * `discardFolder`, at the user's explicit request, can do that.
  */
 export async function drain(options: { force?: boolean } = {}): Promise<DrainResult> {
-  if (draining) return NOTHING;
-  if (typeof navigator !== 'undefined' && navigator.onLine === false) return NOTHING;
+  const now = Date.now();
+  if (drainStartedAt !== null && now - drainStartedAt < STALE_DRAIN_MS) return skip('busy');
 
-  draining = true;
+  /**
+   * `force` OUTRANKS `navigator.onLine`, and the order used to be the other way round.
+   *
+   * `onLine` is a heuristic that is wrong in exactly the situations this app is used in: it
+   * reports false behind captive portals, during VPN transitions, and in several documented
+   * Windows and Android states where HTTP works perfectly. Checking it before `force` meant
+   * "Sync now" did literally nothing on the browser's word alone, judged no record, and reported
+   * "Could not reach the server" without having attempted one request. A person pressing a
+   * button is better evidence than a flag.
+   */
+  if (!options.force && typeof navigator !== 'undefined' && navigator.onLine === false) {
+    return skip('offline');
+  }
+
+  drainStartedAt = now;
   try {
-    const [contacts, folders] = await Promise.all([pendingContacts(), pendingFolders()]);
+    const [allContacts, allFolders] = await Promise.all([pendingContacts(), pendingFolders()]);
+    const contacts = allContacts.filter(ownedByCurrentUser);
+    const folders = allFolders.filter(ownedByCurrentUser);
     const queued = [...contacts, ...folders];
-    if (!queued.length) return NOTHING;
+
+    if (!queued.length) {
+      // Distinguish "yours is empty" from "there are records but they belong to someone else",
+      // so the UI can tell the user to sign back in rather than reporting all-clear.
+      return skip(allContacts.length + allFolders.length > 0 ? 'no-owner' : 'empty');
+    }
 
     /**
      * An automatic drain does not re-post a queue that is entirely blocked.
      *
-     * `startAutoDrain()` fires on every `visibilitychange` and every `online` event, so a
-     * single doomed record otherwise means a request every time the user glances at another
-     * app — forever, achieving nothing. An explicit "Sync now" always goes, because the user
-     * may well have just fixed the thing that was wrong, and one deliberate request is cheap.
-     * The moment ONE record is still waiting the whole batch goes as before: blocked records
-     * ride along at no extra cost, and being re-judged is how they unblock themselves.
+     * `startAutoDrain()` fires on every `visibilitychange` and every `online` event, so a single
+     * doomed record otherwise means a request every time the user glances at another app —
+     * forever, achieving nothing. An explicit "Sync now" always goes, because the user may well
+     * have just fixed the thing that was wrong, and one deliberate request is cheap. The moment
+     * ONE record is still waiting the whole batch goes as before: blocked records ride along at
+     * no extra cost, and being re-judged is how they unblock themselves.
      */
-    if (!options.force && queued.every(r => r.blocked)) {
-      return { ...NOTHING, attempted: 0, blocked: queued.length };
+    if (!options.force && queued.every(r => r.blocked)) return skip('all-blocked');
+
+    /**
+     * CHUNKED. Folders all ride in the first request so `folderMap` always precedes the contacts
+     * that depend on it.
+     */
+    const chunks: Array<{ folders: QueuedFolderRecord[]; contacts: QueuedContactRecord[] }> = [];
+    for (let i = 0; i < Math.max(1, Math.ceil(contacts.length / SYNC_CHUNK)); i++) {
+      chunks.push({
+        folders: i === 0 ? folders : [],
+        contacts: contacts.slice(i * SYNC_CHUNK, (i + 1) * SYNC_CHUNK),
+      });
     }
-
-    const response = await fetch('/api/contacts/sync', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ folders, contacts }),
-    });
-
-    if (!response.ok) {
-      /**
-       * The whole batch was refused, so no individual record learned anything about itself and
-       * none is removed. What the caller needs is WHICH kind of refusal, because the three
-       * demand different words on screen and only one of them is the user's problem:
-       * a 401 is "sign in again", a 5xx is "we will keep trying", and a 413 means the batch is
-       * too big and will be refused identically forever.
-       */
-      const kind = classifyStatus(response.status);
-      if (kind === 'permanent') {
-        // Mark every record, so a batch-level dead end is as visible as an item-level one
-        // instead of being an invisible no-op on each drain.
-        const reason =
-          response.status === 413
-            ? 'There are too many queued captures to upload in one go.'
-            : 'The server refused this upload.';
-        for (const record of contacts) await markContactFailed(record, reason, 'permanent');
-        for (const record of folders) await markFolderFailed(record, reason, 'permanent');
-        notify();
-      }
-      return {
-        attempted: queued.length,
-        synced: 0,
-        failed: queued.length,
-        blocked: kind === 'permanent' ? queued.length : 0,
-        skipped: false,
-        authExpired: kind === 'auth',
-        status: response.status,
-      };
-    }
-
-    const result = (await response.json()) as {
-      folderMap?: Record<string, string>;
-      folders?: Array<{ clientId: string; ok: boolean; error?: string; permanent?: boolean; refusal?: string }>;
-      contacts?: Array<{ clientId: string; ok: boolean; error?: string; permanent?: boolean; refusal?: string }>;
-      saved?: unknown[];
-    };
 
     let synced = 0;
+    let foldersSynced = 0;
     let failed = 0;
     let blocked = 0;
+    const saved: unknown[] = [];
+    let folderMap: Record<string, string> = {};
 
-    for (const item of result.folders ?? []) {
-      if (item.ok) {
-        await removeFolder(item.clientId);
-        continue;
-      }
-      failed++;
-      const kind: FailureKind = item.permanent ? 'permanent' : 'transient';
-      if (kind === 'permanent') blocked++;
-      const record = folders.find(f => f.clientId === item.clientId);
-      if (record) await markFolderFailed(record, refusalMessage(item.refusal, item.error), kind);
-    }
+    for (const chunk of chunks) {
+      if (!chunk.folders.length && !chunk.contacts.length) continue;
 
-    for (const item of result.contacts ?? []) {
-      if (item.ok) {
-        await removeContact(item.clientId);
-        synced++;
-        continue;
+      let response: Response;
+      try {
+        response = await fetch('/api/contacts/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ folders: chunk.folders, contacts: chunk.contacts }),
+          signal: AbortSignal.timeout(SYNC_TIMEOUT_MS),
+        });
+      } catch {
+        // The request never left, or timed out. Nothing is judged — a request that did not
+        // arrive is not evidence about any record in it. Stop rather than hammering the rest of
+        // the chunks against a network that just failed.
+        return {
+          attempted: queued.length,
+          synced,
+          foldersSynced,
+          failed,
+          blocked,
+          skipped: false,
+        };
       }
-      failed++;
-      const kind: FailureKind = item.permanent ? 'permanent' : 'transient';
-      if (kind === 'permanent') blocked++;
-      const record = contacts.find(c => c.clientId === item.clientId);
-      if (record) await markContactFailed(record, refusalMessage(item.refusal, item.error), kind);
+
+      if (!response.ok) {
+        /**
+         * THE ENVELOPE WAS REFUSED, NOT THE RECORDS — so no record is marked, whatever the
+         * status. This is the corrected version of a rule that did real damage: marking every
+         * record on a `classifyStatus` 'permanent' turned one 413 into hundreds of permanently
+         * blocked captures, each individually acceptable, and then the all-blocked guard above
+         * stopped the auto-drain from ever retrying them.
+         *
+         * The three kinds still read differently to a person, which is what the flags are for:
+         * 401 is "sign in", a 5xx is "we will keep trying", and a permanent batch refusal (413,
+         * or a 404 meaning the route is not deployed) is "the upload itself is being rejected" —
+         * a report, not a verdict on anybody's contact details.
+         */
+        const kind = classifyStatus(response.status);
+        if (kind === 'auth') noteAuthExpired();
+        else clearAuthExpired();
+        return {
+          attempted: queued.length,
+          synced,
+          foldersSynced,
+          failed: failed + chunk.folders.length + chunk.contacts.length,
+          blocked,
+          skipped: false,
+          authExpired: kind === 'auth',
+          batchRefused: kind === 'permanent',
+          status: response.status,
+        };
+      }
+
+      clearAuthExpired();
+
+      /**
+       * A 200 IS NOT PROOF THE API ANSWERED — same rule as `saveContact`, same reason. An
+       * unguarded `await response.json()` on a captive-portal HTML body threw into the outer
+       * catch-all, which returned `attempted: 0` and was reported to the user as "offline" for a
+       * server that had in fact answered.
+       */
+      const body = (await response.json().catch(() => null)) as SyncResponseBody | null;
+      if (!body || (!Array.isArray(body.folders) && !Array.isArray(body.contacts))) {
+        return {
+          attempted: queued.length,
+          synced,
+          foldersSynced,
+          failed: failed + chunk.folders.length + chunk.contacts.length,
+          blocked,
+          skipped: false,
+          batchRefused: true,
+          status: response.status,
+        };
+      }
+
+      folderMap = { ...folderMap, ...(body.folderMap ?? {}) };
+
+      const folderOutcome = await applyItemResults(
+        chunk.folders,
+        body.folders,
+        removeFolder,
+        markFolderFailed
+      );
+      const contactOutcome = await applyItemResults(
+        chunk.contacts,
+        body.contacts,
+        removeContact,
+        markContactFailed
+      );
+
+      foldersSynced += folderOutcome.confirmed;
+      synced += contactOutcome.confirmed;
+      failed += folderOutcome.failed + contactOutcome.failed;
+      blocked += folderOutcome.blocked + contactOutcome.blocked;
+      if (Array.isArray(body.saved)) saved.push(...body.saved);
     }
 
     /**
      * LAST, and the order is load-bearing.
      *
-     * `markContactFailed()` writes the whole in-memory `record`, which still carries the
-     * pre-map `folderClientId`. Applying the map first would have every transiently-failed
-     * contact immediately overwritten back to its old reference — undoing the fix on exactly
-     * the records that need it, and only on those, which is the sort of thing that looks like
-     * it works right up until a contact fails once.
+     * `markContactFailed()` writes the whole in-memory `record`, which still carries the pre-map
+     * `folderClientId`. Applying the map first would have every transiently-failed contact
+     * immediately overwritten back to its old reference — undoing the fix on exactly the records
+     * that need it, and only on those, which is the sort of thing that looks like it works right
+     * up until a contact fails once.
      */
-    await applyFolderMap(result.folderMap ?? {});
+    await applyFolderMap(folderMap);
 
     notify();
     return {
       attempted: queued.length,
       synced,
+      foldersSynced,
       failed,
       blocked,
       skipped: false,
-      saved: result.saved,
+      saved,
     };
   } catch {
-    // Offline, or the request never left. Everything stays queued and nothing is judged —
-    // a request that did not arrive is not evidence about any record in it.
-    return { attempted: 0, synced: 0, failed: 0, blocked: 0, skipped: false };
+    // A local failure — IndexedDB unavailable, a read rejected. Nothing is judged.
+    return { attempted: 0, synced: 0, foldersSynced: 0, failed: 0, blocked: 0, skipped: false };
   } finally {
-    draining = false;
+    drainStartedAt = null;
   }
 }
 
@@ -638,24 +1152,40 @@ function notify(): void {
 export function startAutoDrain(): () => void {
   if (typeof window === 'undefined') return () => {};
 
+  /**
+   * A lapsed session backs the automatic path off for this long.
+   *
+   * Without it, a token that expires mid-event means one doomed POST on every
+   * `visibilitychange` — so every glance at another app and back — forever, all 401, while the
+   * banner keeps promising the upload. The banner now reads `authExpired()` and offers a sign-in
+   * link, so the retries were achieving nothing but noise. `online` still fires through, because
+   * a network change is genuinely new information.
+   */
+  const AUTH_BACKOFF_MS = 5 * 60_000;
+  let lastAuthSkip = 0;
+
   // Not `force`: an automatic trigger declines to re-post a queue that is entirely blocked.
   // See the note in `drain()` — the user's own "Sync now" passes `{ force: true }` and always
   // goes, because a person pressing a button is evidence that something may have changed.
-  const run = () => {
-    void drain();
+  const run = (ignoreAuthBackoff = false) => {
+    if (!ignoreAuthBackoff && authExpired() && Date.now() - lastAuthSkip < AUTH_BACKOFF_MS) return;
+    void drain().then(result => {
+      if (result.authExpired) lastAuthSkip = Date.now();
+    });
   };
 
+  const onOnline = () => run(true);
   const onVisible = () => {
     if (document.visibilityState === 'visible') run();
   };
 
-  window.addEventListener('online', run);
+  window.addEventListener('online', onOnline);
   document.addEventListener('visibilitychange', onVisible);
   // Once on boot, deferred so it never competes with the first paint.
-  const timer = setTimeout(run, 1200);
+  const timer = setTimeout(() => run(true), 1200);
 
   return () => {
-    window.removeEventListener('online', run);
+    window.removeEventListener('online', onOnline);
     document.removeEventListener('visibilitychange', onVisible);
     clearTimeout(timer);
   };

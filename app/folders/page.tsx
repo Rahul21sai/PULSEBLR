@@ -11,12 +11,17 @@ import {
   discardContact,
   discardFolder,
   drain,
+  moveQueuedContact,
   newClientId,
+  pendingFolders,
   pendingSummary,
+  retryCapture,
+  saveFolder,
   startAutoDrain,
   subscribe,
   type BlockedCapture,
   type PendingSummary,
+  type QueuedFolderRecord,
 } from '@/lib/scan/outbox';
 import type { FolderDTO } from '@/lib/contacts/types';
 
@@ -32,8 +37,24 @@ export default function FoldersPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
-  const [pending, setPending] = useState<PendingSummary>({ waiting: 0, blocked: 0, total: 0 });
+  const [pending, setPending] = useState<PendingSummary>({
+    waiting: 0,
+    blocked: 0,
+    otherAccount: 0,
+    waitingFolders: 0,
+    total: 0,
+    authExpired: false,
+  });
   const [stuck, setStuck] = useState<BlockedCapture[]>([]);
+  /**
+   * Folders that exist only on this device.
+   *
+   * Rendered as real rows, because otherwise a folder created offline is INVISIBLE — the grid
+   * shows server folders only, so the single trace of it was an increment in a count that called
+   * it a "capture". A user who made a folder on the way to the venue saw a warning about an
+   * unsynced capture and no folder anywhere.
+   */
+  const [queuedFolders, setQueuedFolders] = useState<QueuedFolderRecord[]>([]);
   const [syncing, setSyncing] = useState(false);
   /** What the last "Sync now" actually did. Its absence was half of the reported bug. */
   const [syncNote, setSyncNote] = useState<string | null>(null);
@@ -63,21 +84,35 @@ export default function FoldersPage() {
 
   // Keep the unsynced count honest without polling.
   const refreshQueue = useCallback(async () => {
-    const [summary, blocked] = await Promise.all([pendingSummary(), blockedCaptures()]);
+    const [summary, blocked, local] = await Promise.all([
+      pendingSummary(),
+      blockedCaptures(),
+      pendingFolders(),
+    ]);
     setPending(summary);
     setStuck(blocked);
+    setQueuedFolders(local.filter(f => !f.blocked));
   }, []);
 
   useEffect(() => {
-    const refresh = () => void refreshQueue();
-    refresh();
+    // `load()` too, not just the queue: a drain that uploads a FOLDER changes the server list,
+    // and this was the one screen that ignored its own queue notifications for the folder grid
+    // (app/folders/[id] already reloaded both).
+    const refresh = () => {
+      void refreshQueue();
+      void load();
+    };
+    // Deferred by a tick so the effect does not setState synchronously — the same pattern
+    // app/folders/[id], the feed and the tracker use.
+    const timer = setTimeout(() => void refreshQueue(), 0);
     const unsubscribe = subscribe(refresh);
     const stopAutoDrain = startAutoDrain();
     return () => {
+      clearTimeout(timer);
       unsubscribe();
       stopAutoDrain();
     };
-  }, [refreshQueue]);
+  }, [refreshQueue, load]);
 
   /**
    * Sync, and SAY WHAT HAPPENED.
@@ -97,20 +132,31 @@ export default function FoldersPage() {
     const summary = await pendingSummary();
     setSyncing(false);
     await refreshQueue();
-    if (result.synced > 0) await load();
+    // BOTH counters. Gating the reload on `synced` alone meant a folder-only queue uploaded
+    // successfully and the folder never appeared, over a note reading "Everything is uploaded".
+    const uploaded = result.synced + result.foldersSynced;
+    if (uploaded > 0) await load();
 
     setSyncNote(
       result.authExpired
         ? 'Your session has expired. Sign in again and these will upload on their own.'
-        : result.synced > 0
-          ? `Uploaded ${result.synced}.${summary.blocked ? ` ${summary.blocked} still need attention below.` : ''}`
-          : summary.blocked > 0 && summary.waiting === 0
-            ? 'Nothing uploaded — every remaining capture is one the server has refused. See below.'
-            : result.status
-              ? `The server refused the upload (HTTP ${result.status}). Nothing was lost.`
-              : summary.total === 0
-                ? 'Everything is uploaded.'
-                : 'Could not reach the server. Everything is still saved on this device.'
+        : uploaded > 0
+          ? `Uploaded ${uploaded}.${summary.blocked ? ` ${summary.blocked} still ${summary.blocked === 1 ? 'needs' : 'need'} attention below.` : ''}`
+          : result.batchRefused
+            ? // The records are fine — the server refused the upload itself. Saying "captures
+              // could not upload" here would blame the wrong thing and invite a discard.
+              `The server refused the upload itself (HTTP ${result.status}), not your captures. Nothing was lost — try again shortly.`
+            : summary.blocked > 0 && summary.waiting === 0
+              ? 'Nothing uploaded — every remaining capture is one the server has refused. See below.'
+              : result.skipReason === 'offline'
+                ? 'No network. Everything is still saved on this device.'
+                : result.skipReason === 'busy'
+                  ? 'A sync is already running.'
+                  : result.skipReason === 'no-owner'
+                    ? 'These captures were made on another account. Sign back in as that account to upload them.'
+                    : summary.total === 0
+                      ? 'Everything is uploaded.'
+                      : 'Could not reach the server. Everything is still saved on this device.'
     );
   }
 
@@ -119,6 +165,24 @@ export default function FoldersPage() {
     else await discardContact(item.clientId);
     await refreshQueue();
     setSyncNote(`Discarded “${item.label}”.`);
+  }
+
+  /** Clear the blocked mark and try again — the condition may have passed. */
+  async function retry(item: BlockedCapture) {
+    await retryCapture(item.kind, item.clientId);
+    await syncNow();
+  }
+
+  /**
+   * Point a stuck capture at a folder that exists.
+   *
+   * This is what turns `folder-not-found` — the realistic refusal, where the folder was deleted
+   * after the scan — from "your only button destroys a real person's details" into a recoverable
+   * state.
+   */
+  async function moveTo(item: BlockedCapture, folderId: string) {
+    await moveQueuedContact(item.clientId, folderId);
+    await syncNow();
   }
 
   return (
@@ -147,17 +211,55 @@ export default function FoldersPage() {
         */}
         {pending.waiting > 0 && (
           <div className="mb-4">
-            <Banner tone="warn">
+            <Banner tone={pending.authExpired ? 'error' : 'warn'}>
               <span className="flex flex-wrap items-center justify-between gap-2">
-                <span>
-                  <strong className="tnum">{pending.waiting}</strong> capture
-                  {pending.waiting === 1 ? '' : 's'} not synced yet. They are saved on this device
-                  and will upload on their own.
-                </span>
+                {/*
+                  THE AUTH VARIANT IS NOT COSMETIC. A session that lapses mid-event leaves records
+                  that are perfectly good and cannot upload until somebody signs in — and the
+                  banner used to keep saying "they will upload on their own", which was false and
+                  named no remedy.
+                */}
+                {pending.authExpired ? (
+                  <span>
+                    <strong className="tnum">{pending.waiting}</strong> capture
+                    {pending.waiting === 1 ? '' : 's'} cannot upload because your session expired.
+                    They are safe on this device.{' '}
+                    <Link href="/login" className="font-bold underline">
+                      Sign in again
+                    </Link>{' '}
+                    and they will go on their own.
+                  </span>
+                ) : (
+                  <span>
+                    <strong className="tnum">{pending.waiting}</strong>{' '}
+                    {/* Named by kind: calling a folder a "capture" is how an offline folder
+                        became invisible. */}
+                    {pending.waitingFolders === pending.waiting
+                      ? `folder${pending.waiting === 1 ? '' : 's'}`
+                      : `capture${pending.waiting === 1 ? '' : 's'}`}{' '}
+                    not synced yet. They are saved on this device and will upload on their own.
+                  </span>
+                )}
                 <Button size="sm" tone="quiet" onClick={syncNow} disabled={syncing}>
                   {syncing ? 'Syncing…' : 'Sync now'}
                 </Button>
               </span>
+            </Banner>
+          </div>
+        )}
+
+        {pending.otherAccount > 0 && (
+          <div className="mb-4">
+            {/*
+              Counted but never shown in detail, and never uploaded. Before the owner stamp these
+              records were posted as whoever was signed in now, refused, and then LISTED BY NAME
+              to the wrong person — so this banner deliberately says nothing about who they are.
+            */}
+            <Banner tone="info">
+              <strong className="tnum">{pending.otherAccount}</strong> unsynced capture
+              {pending.otherAccount === 1 ? '' : 's'} on this device{' '}
+              {pending.otherAccount === 1 ? 'was' : 'were'} made on a different account. Sign in as
+              that account to upload {pending.otherAccount === 1 ? 'it' : 'them'}.
             </Banner>
           </div>
         )}
@@ -168,9 +270,12 @@ export default function FoldersPage() {
               <span className="flex flex-wrap items-center justify-between gap-2">
                 <span>
                   <strong className="tnum">{stuck.length}</strong> capture
-                  {stuck.length === 1 ? '' : 's'} cannot upload. They are still saved on this
-                  device — nothing has been lost — but the server has refused them, so they will
-                  not go on their own.
+                  {stuck.length === 1 ? '' : 's'} cannot upload.{' '}
+                  {stuck.length === 1 ? 'It is' : 'They are'} still saved on this device — nothing
+                  has been lost — but the server has refused{' '}
+                  {stuck.length === 1 ? 'it' : 'them'}, so{' '}
+                  {stuck.length === 1 ? 'it will' : 'they will'} not go on{' '}
+                  {stuck.length === 1 ? 'its' : 'their'} own.
                 </span>
                 {pending.waiting === 0 && (
                   <Button size="sm" tone="quiet" onClick={syncNow} disabled={syncing}>
@@ -197,14 +302,51 @@ export default function FoldersPage() {
                         {item.reason}
                       </p>
                     </div>
-                    <Button
-                      size="sm"
-                      tone="quiet"
-                      onClick={() => void discard(item)}
-                      aria-label={`Discard ${item.label}`}
-                    >
-                      Discard
-                    </Button>
+
+                    {/*
+                      THREE ACTIONS, NOT ONE. Discard was the only button here, and the most
+                      likely refusal is `folder-not-found` — the folder was deleted after the
+                      scan — so the single affordance on offer destroyed a real person's details.
+                      Retry covers a condition that has since passed; Move covers the folder case
+                      directly, rewriting the queued record locally (there is nothing on the
+                      server to PATCH).
+                    */}
+                    <div className="flex shrink-0 flex-wrap items-center gap-2">
+                      {item.kind === 'contact' && folders.length > 0 && (
+                        <select
+                          aria-label={`Move ${item.label} to another folder`}
+                          defaultValue=""
+                          onChange={e => {
+                            if (e.target.value) void moveTo(item, e.target.value);
+                          }}
+                          className="h-8 rounded-full bg-[#F7F7F9] px-3 text-[12px] font-semibold text-[#1D1D1F] outline-none focus:shadow-[inset_0_0_0_2px_var(--blue)]"
+                        >
+                          <option value="">Move to…</option>
+                          {folders.map(f => (
+                            <option key={f._id} value={f._id}>
+                              {f.name}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                      <Button
+                        size="sm"
+                        tone="quiet"
+                        onClick={() => void retry(item)}
+                        disabled={syncing}
+                        aria-label={`Retry ${item.label}`}
+                      >
+                        Retry
+                      </Button>
+                      <Button
+                        size="sm"
+                        tone="quiet"
+                        onClick={() => void discard(item)}
+                        aria-label={`Discard ${item.label}`}
+                      >
+                        Discard
+                      </Button>
+                    </div>
                   </div>
                 </Card>
               ))}
@@ -233,7 +375,7 @@ export default function FoldersPage() {
               </Card>
             ))}
           </div>
-        ) : folders.length === 0 ? (
+        ) : folders.length === 0 && queuedFolders.length === 0 ? (
           <EmptyState
             icon="groups"
             title="No folders yet"
@@ -246,6 +388,33 @@ export default function FoldersPage() {
           />
         ) : (
           <div className="grid gap-3 sm:grid-cols-2">
+            {/*
+              Device-only folders FIRST and as real cards. They used to render nowhere — the grid
+              shows server folders only — so a folder made offline existed solely as +1 on a count
+              that called it a "capture". Not links: there is no server id to open yet.
+            */}
+            {queuedFolders.map(folder => (
+              <Card key={`local:${folder.clientId}`}>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <h2 className="t-sub truncate text-[#1D1D1F]">{folder.name}</h2>
+                    <p className="mt-1 text-[12.5px] text-[#6E6E73]">
+                      {folder.eventDate ? dayHeading(folder.eventDate) : 'No date'}
+                      {folder.venue ? ` · ${folder.venue}` : ''}
+                    </p>
+                  </div>
+                  <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-[#F5F5F7] px-2 py-0.5 text-[10.5px] font-bold text-[#6E6E73]">
+                    <span aria-hidden="true" className="material-symbols-outlined text-[12px]">
+                      cloud_off
+                    </span>
+                    local
+                  </span>
+                </div>
+                <p className="mt-3 text-[12px] text-[#8E8E93]">
+                  On this device only. It will upload on its own, and you can open it then.
+                </p>
+              </Card>
+            ))}
             {folders.map(folder => (
               <FolderCard key={folder._id} folder={folder} />
             ))}
@@ -352,28 +521,28 @@ function NewFolderSheet({ onClose, onCreated }: { onClose: () => void; onCreated
      */
     const isoDate = eventDate ? `${eventDate}T12:00:00+05:30` : undefined;
 
+    /**
+     * `saveFolder()` rather than a local fetch, for the reasons in `lib/scan/failure.ts`.
+     *
+     * This function used to carry the pre-fix shape verbatim — `if (!res.ok) throw` and queue in
+     * the `catch` — with two consequences. A 400 or 403 was filed as "the network ate it" under a
+     * banner promising an upload, and a captive-portal 200 with an HTML body passed `!res.ok`,
+     * called `onCreated()`, and closed the sheet on a folder that was created NOWHERE: not on the
+     * server and not in the queue.
+     */
     try {
-      const res = await fetch('/api/folders', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: name.trim(), eventDate: isoDate, venue: venue.trim() }),
-      });
-
-      if (res.status === 409) {
-        setError('You already have a folder with that name.');
-        return;
-      }
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      onCreated();
-    } catch {
-      // Offline: keep it locally and let the outbox deal with it.
-      const { queueFolder } = await import('@/lib/scan/outbox');
-      await queueFolder({
+      const result = await saveFolder({
         clientId: newClientId(),
         name: name.trim(),
         eventDate: isoDate,
         venue: venue.trim() || undefined,
       });
+
+      if (result.outcome === 'name-taken' || result.outcome === 'blocked' || result.outcome === 'lost' || result.outcome === 'auth') {
+        // Keep the sheet open with the reason on it, and the typed name still in the field.
+        setError(result.reason ?? 'That folder could not be created.');
+        return;
+      }
       setError(null);
       onCreated();
     } finally {

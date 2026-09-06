@@ -95,8 +95,20 @@ export function classifyStatus(status: number): FailureKind {
 export const ITEM_REFUSALS = {
   'missing-client-id': 'This capture lost its id, so it cannot be uploaded without risking a duplicate.',
   'missing-name': 'This capture has no name yet. Add one and it will upload.',
-  'no-folder': 'This capture is not attached to any folder.',
-  'folder-not-found': 'The folder this capture belonged to no longer exists.',
+  'no-folder': 'This capture is not attached to any folder. Move it to one and it will upload.',
+  'folder-not-found':
+    'The folder this capture belonged to no longer exists. Move it to another folder and it will upload.',
+  /**
+   * A Mongoose ValidationError or CastError — the server rejecting the record's SHAPE.
+   *
+   * It has a code so the blocked row can say something specific and the client has something to
+   * branch on. It deliberately does NOT relay the server's message: on a ValidationError that
+   * reads "Contact validation failed: name: Path `name` is required", which names the model and
+   * the schema path. This was the one permanent path with no code, so it was also the one the
+   * client could only ever offer Discard for.
+   */
+  'shape-rejected':
+    'The server could not accept this capture as it stands — a field is too long or malformed.',
 } as const;
 
 export type ItemRefusal = keyof typeof ITEM_REFUSALS;

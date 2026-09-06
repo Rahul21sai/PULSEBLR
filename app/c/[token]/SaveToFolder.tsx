@@ -63,10 +63,14 @@ export default function SaveToFolder({ card }: { card: PublicCardDTO }) {
 
     // Same path the scanner takes, for the same reason: queued locally rather than lost, but
     // honest about whether "locally" means "for a moment" or "until you deal with it".
-    const result = await saveContact(record);
-    setSaving(false);
+    let result: Awaited<ReturnType<typeof saveContact>>;
+    try {
+      result = await saveContact(record);
+    } finally {
+      setSaving(false);
+    }
 
-    if (result.outcome === 'blocked' || result.outcome === 'auth') {
+    if (result.outcome !== 'saved' && result.outcome !== 'queued') {
       // NOT a success screen. The old code reported "Saved to <folder> (on this device)" for a
       // refusal, then invited the visitor to move on — so the one moment they could have fixed
       // it, standing in front of the person, passed silently.

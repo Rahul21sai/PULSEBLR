@@ -81,15 +81,16 @@ function refuse(clientId: string, refusal: ItemRefusal): ItemResult {
  * The real wording goes to the server log, where it is useful and not published.
  */
 function fromThrown(clientId: string, error: unknown, context: string): ItemResult {
-  const permanent = isSchemaRejection(error);
   console.error(`[contacts/sync] ${context} ${clientId} failed:`, error);
+  // A shape rejection gets a real refusal CODE, so the client can render specific copy and offer
+  // more than Discard. It was previously the one permanent path with prose and no code, which is
+  // exactly the drift `ITEM_REFUSALS` exists to prevent.
+  if (isSchemaRejection(error)) return refuse(clientId, 'shape-rejected');
   return {
     clientId,
     ok: false,
-    permanent,
-    error: permanent
-      ? 'The server could not accept this record as it stands.'
-      : 'The server could not be reached for this record.',
+    permanent: false,
+    error: 'The server could not be reached for this record.',
   };
 }
 

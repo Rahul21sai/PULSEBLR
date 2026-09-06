@@ -8,7 +8,7 @@ import QrCode from '../../components/QrCode';
 import ContactFields, { type ContactDraft } from '../../components/scan/ContactFields';
 import { Banner, Button, ButtonLink, Card, EmptyState, PageHeader } from '../../components/ui';
 import { dayHeading, fullDateIST, relativeTime, timeIST } from '@/lib/format';
-import { newClientId, pendingContacts, subscribe } from '@/lib/scan/outbox';
+import { newClientId, pendingContacts, startAutoDrain, subscribe } from '@/lib/scan/outbox';
 import type { ContactDTO, FolderDTO } from '@/lib/contacts/types';
 
 /**
@@ -111,9 +111,17 @@ export default function FolderPage({ params }: { params: Promise<{ id: string }>
       void refreshPending();
       void load();
     });
+    /**
+     * DRAIN HERE TOO. This page displayed the queue without ever moving it: only /folders and
+     * /scan wired the auto-drain, and this is the screen you land on after "Save & close" and
+     * read between people. Captures sat here under a grey `local` chip indefinitely while signal
+     * was available, which reads as a scanner that quietly stopped working.
+     */
+    const stopAutoDrain = startAutoDrain();
     return () => {
       clearTimeout(timer);
       unsubscribe();
+      stopAutoDrain();
     };
   }, [refreshPending, load]);
 
@@ -714,12 +722,18 @@ function ManualAddSheet({
     // Same path a scan takes — `saveContact` queues rather than losing the person, and tells us
     // whether the queue can actually deliver it.
     const { saveContact } = await import('@/lib/scan/outbox');
-    const result = await saveContact({ ...draft, clientId, folderId, capturedVia: 'manual' });
-    setSaving(false);
+    let result: Awaited<ReturnType<typeof saveContact>>;
+    try {
+      result = await saveContact({ ...draft, clientId, folderId, capturedVia: 'manual' });
+    } finally {
+      // In a `finally` so the Save button cannot be left disabled reading "Saving…" forever.
+      setSaving(false);
+    }
 
-    if (result.outcome === 'blocked' || result.outcome === 'auth') {
-      // Keep the sheet open with the reason on it. The record is queued either way, but closing
-      // on a refusal is what let a doomed capture disappear behind a success animation.
+    if (result.outcome !== 'saved' && result.outcome !== 'queued') {
+      // Keep the sheet open with the reason on it AND the typed fields intact. The record is
+      // queued on every outcome except 'lost', but closing on a refusal is what let a doomed
+      // capture disappear behind a success animation.
       setError(result.reason ?? 'That could not be saved.');
       return;
     }

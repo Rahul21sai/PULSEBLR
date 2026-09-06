@@ -111,9 +111,11 @@ export async function POST(request: NextRequest) {
       }
     }
     console.error('Error creating contact:', error);
-    return NextResponse.json(
-      { error: 'Failed to save contact', details: err.message ?? String(error) },
-      { status: 500 }
-    );
+    // No `details`. It carried `err.message`, which on a Mongoose error names the model and the
+    // schema path — the leak the tracker write paths had to stop, and this route is on the
+    // capture hot path so the string reaches a phone at an event. `saveContact` never read it
+    // (it reads `error`/`refusal`), and a 500 is classified transient regardless, so nothing
+    // anywhere depended on it. The real wording is in the log line above.
+    return NextResponse.json({ error: 'Failed to save contact' }, { status: 500 });
   }
 }

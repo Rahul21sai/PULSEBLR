@@ -96,28 +96,37 @@ describe('classifyStatus', () => {
 });
 
 describe('ITEM_REFUSALS', () => {
-  it('covers exactly the four refusals the sync route can issue', () => {
+  it('covers exactly the five refusals the sync route can issue', () => {
+    // Pinned as an exact set, not a subset: the client renders copy per code, so a code the
+    // server can send and this object does not know falls back to the server's prose — which is
+    // the drift the codes exist to prevent.
     expect(Object.keys(ITEM_REFUSALS).sort()).toEqual([
       'folder-not-found',
       'missing-client-id',
       'missing-name',
       'no-folder',
+      'shape-rejected',
     ]);
   });
 
   it('never leaks Mongoose or schema vocabulary into user-facing copy', () => {
     // The tracker routes had to stop echoing "Contact validation failed: name: Path `name` is
     // required" back to callers. These strings are shown to a person standing at an event, and
-    // are also the fallback path for a thrown error, so the same rule applies.
+    // are also the fallback path for a thrown error, so the same rule applies. `shape-rejected`
+    // is the one that would be most tempting to write as a passthrough of `err.message`.
     const all = Object.values(ITEM_REFUSALS).join(' ');
     for (const leak of ['ValidationError', 'CastError', 'Path `', 'schema', 'Mongoose', 'ObjectId']) {
       expect(all).not.toContain(leak);
     }
   });
 
-  it('says what to do wherever the user can do something', () => {
-    // A blocked row whose reason gives no next step is the state this change exists to remove.
+  it('names a next step on every refusal the user can act on', () => {
+    // A blocked row whose reason gives no next step is the state this change exists to remove,
+    // and the folders page now offers Retry, "Move to…" and Discard — so the copy has to point at
+    // the one that applies.
     expect(ITEM_REFUSALS['missing-name']).toMatch(/add one/i);
+    expect(ITEM_REFUSALS['folder-not-found']).toMatch(/move it/i);
+    expect(ITEM_REFUSALS['no-folder']).toMatch(/move it/i);
   });
 });
 
