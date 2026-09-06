@@ -742,8 +742,25 @@ interface AdminEvent {
   spotlightAt?: string | null;
 }
 
+/**
+ * What the events panel is currently listing.
+ *
+ * DEFAULTS TO 'tech', which is a change of default rather than a new capability. The panel listed
+ * everything, and "everything" is ~1200 rows of which roughly 80% is concerts, treks, comedy and
+ * book clubs — so the first screen was Karigar Bazaar, Mahabaleshwar Diaries and TELUGU TASHAN
+ * NIGHT FRIDAY, and finding a real tech event to correct meant scrolling past all of it.
+ *
+ * 'other' is kept and is not an afterthought: this panel's other stated job is "remove junk", and
+ * non-tech IS where the junk lives. Filtering to it is the fastest way to find a mis-tagged
+ * concert. 'all' stays available because a mis-tag is invisible from either side alone — an event
+ * wrongly flagged tech only shows up under 'tech', and one wrongly flagged non-tech only under
+ * 'other'.
+ */
+type EventScope = 'tech' | 'other' | 'all';
+
 function EventsPanel({ onChanged }: { onChanged: () => void }) {
   const [q, setQ] = useState('');
+  const [scope, setScope] = useState<EventScope>('tech');
   const [events, setEvents] = useState<AdminEvent[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -752,11 +769,23 @@ function EventsPanel({ onChanged }: { onChanged: () => void }) {
   /** Which event the edit modal is open for. Null = closed. */
   const [editingId, setEditingId] = useState<string | null>(null);
 
-  const search = useCallback(async (term: string) => {
+  const search = useCallback(async (term: string, view: EventScope) => {
     setLoading(true);
     try {
       const params = new URLSearchParams({ limit: '40', sort: 'soonest' });
       if (term.trim()) params.set('q', term.trim());
+      /**
+       * `techOnly` is the feed's own parameter, so this panel narrows exactly the way the feed
+       * does rather than by a second definition of "tech". There is no `techOnly=false` inverse —
+       * the flag only ever ADDS `isTechEvent: true` — so 'other' is filtered client-side on the
+       * page that comes back.
+       *
+       * The honest consequence, stated rather than hidden: 'other' filters ONE PAGE of 40, so its
+       * count is "how many of the 40 fetched are non-tech", not how many exist. Turning it into a
+       * real query would mean a `techOnly=false` arm in `buildEventFilter`, which is a change to
+       * the one function every public read path shares — not worth it for an operator screen.
+       */
+      if (view === 'tech') params.set('techOnly', 'true');
       const res = await fetch(`/api/events?${params}`);
       const data = await res.json();
       setEvents(data.events || []);
@@ -769,9 +798,9 @@ function EventsPanel({ onChanged }: { onChanged: () => void }) {
   }, []);
 
   useEffect(() => {
-    const t = setTimeout(() => search(q), 250);
+    const t = setTimeout(() => search(q, scope), 250);
     return () => clearTimeout(t);
-  }, [q, search]);
+  }, [q, scope, search]);
 
   async function remove(e: AdminEvent) {
     if (!window.confirm(`Delete "${e.title}"?\n\nIt will come back on the next scrape if the source still lists it.`)) {
@@ -858,16 +887,57 @@ function EventsPanel({ onChanged }: { onChanged: () => void }) {
     }
   }
 
+  /**
+   * 'other' is applied here, not in the query — `techOnly` has no false arm. See the note in
+   * `search()` for why that boundary was left where it is.
+   */
+  const visible = scope === 'other' ? events.filter(e => !e.isTechEvent) : events;
+
   return (
     <Card
       title="Events"
-      subtitle={`${total} match${total === 1 ? 'es' : ''} · fix a mis-tagged event or remove junk`}
+      subtitle={
+        scope === 'tech'
+          ? `${total} tech event${total === 1 ? '' : 's'} · fix a mis-tagged event or remove junk`
+          : scope === 'other'
+            ? `${visible.length} non-tech of the ${events.length} fetched · this is where junk lives`
+            : `${total} match${total === 1 ? 'es' : 'es'} · fix a mis-tagged event or remove junk`
+      }
       action={
         <Link href="/add-event" className="text-[12.5px] font-semibold text-[#0071E3] hover:underline">
           Add manually
         </Link>
       }
     >
+      {/*
+        Tech first, because that is what this app is for and what an operator is almost always
+        looking for. "Non-tech" is not a lesser view — it is the fastest route to the junk this
+        panel exists to remove — and "All" is the only way to see a mis-tag from both sides at once.
+      */}
+      <div className="flex flex-wrap gap-1.5 pb-3">
+        {(
+          [
+            ['tech', 'Tech only'],
+            ['other', 'Non-tech'],
+            ['all', 'All'],
+          ] as Array<[EventScope, string]>
+        ).map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => setScope(id)}
+            aria-pressed={scope === id}
+            className={`h-8 rounded-full px-3.5 text-[12.5px] font-semibold border transition-colors ${
+              scope === id
+                ? 'bg-[#1D1D1F] text-white border-[#1D1D1F]'
+                : 'bg-white text-[#1D1D1F] border-[#e5e5ea] hover:bg-[#f3f3f5]'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
       <label className="relative block pb-3">
         <span className="sr-only">Search events</span>
         <span aria-hidden="true" className="material-symbols-outlined absolute left-3 top-[18px] -translate-y-1/2 text-[18px] text-[#a1a1a6]">
@@ -885,12 +955,20 @@ function EventsPanel({ onChanged }: { onChanged: () => void }) {
 
       {loading ? (
         <Empty>Loading…</Empty>
-      ) : events.length === 0 ? (
-        <Empty>No events match “{q}”.</Empty>
+      ) : visible.length === 0 ? (
+        <Empty>
+          {/* Distinguish "your search found nothing" from "this filter found nothing", or a full
+              page of tech events reads as a broken search box. */}
+          {q.trim()
+            ? `No ${scope === 'tech' ? 'tech ' : scope === 'other' ? 'non-tech ' : ''}events match “${q}”.`
+            : scope === 'other'
+              ? 'None of the events on this page are non-tech. Search, or switch to All.'
+              : 'No events found.'}
+        </Empty>
       ) : (
         <div className="max-h-[560px] overflow-y-auto">
           <ul className="divide-y divide-[#f0f0f2]">
-            {events.map(e => (
+            {visible.map(e => (
               <li key={e._id} className="flex items-center gap-3 py-2.5">
                 <div className="w-[58px] shrink-0 text-center">
                   <p className="text-[11px] font-semibold uppercase tracking-wide text-[#86868B]">
@@ -991,7 +1069,9 @@ function EventsPanel({ onChanged }: { onChanged: () => void }) {
           onSaved={title => {
             setEditingId(null);
             setNote({ ok: true, text: `Saved “${title}”.` });
-            search(q);
+            // Re-search in the CURRENT scope. Passing only `q` would silently reset the panel to
+            // whatever `search`'s default was and drop the operator's filter after every save.
+            search(q, scope);
             onChanged();
           }}
         />
