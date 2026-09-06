@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import connectDB from '@/lib/mongodb';
 import Event from '@/lib/models/Event';
 import { parseEventParams, buildEventFilter } from '@/lib/events/query';
+import { getCurrentUserId } from '@/lib/auth-helpers';
 
 /**
  * GET /api/events/facets — counts for every filter option, under the CURRENT
@@ -22,13 +23,28 @@ export async function GET(request: NextRequest) {
 
     const params = parseEventParams(request.nextUrl.searchParams);
 
+    /**
+     * A NULLABLE session read, deliberately NOT `requireUser()`.
+     *
+     * The feed and its counts must stay readable signed-out — that is the product ("browse events
+     * without an account") and `scripts/diag-api-auth.ts` asserts this route answers 200 to an
+     * un-authenticated caller. So the viewer is identified when there is one and the filter simply
+     * falls back to the two public arms when there is not.
+     *
+     * Without this the route could not identify the caller at all, so it could not pass a viewerId
+     * — and the counts beside the filters would have been computed over every user's private
+     * events, disagreeing with the list right next to them. The facet numbers alone would disclose
+     * how many private events exist per category, area, source, format and company.
+     */
+    const viewerId = await getCurrentUserId();
+
     // Each dimension is counted with its OWN selection removed.
-    const categoryFilter = buildEventFilter({ ...params, category: undefined });
-    const areaFilter = buildEventFilter({ ...params, area: undefined });
-    const sourceFilter = buildEventFilter({ ...params, source: undefined });
-    const formatFilter = buildEventFilter({ ...params, format: undefined });
-    const companyFilter = buildEventFilter({ ...params, company: undefined });
-    const baseFilter = buildEventFilter(params);
+    const categoryFilter = buildEventFilter({ ...params, category: undefined }, viewerId);
+    const areaFilter = buildEventFilter({ ...params, area: undefined }, viewerId);
+    const sourceFilter = buildEventFilter({ ...params, source: undefined }, viewerId);
+    const formatFilter = buildEventFilter({ ...params, format: undefined }, viewerId);
+    const companyFilter = buildEventFilter({ ...params, company: undefined }, viewerId);
+    const baseFilter = buildEventFilter(params, viewerId);
 
     const [categories, areas, sources, formats, companies, totals] = await Promise.all([
       Event.aggregate([

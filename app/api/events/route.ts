@@ -2,7 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import connectDB from '@/lib/mongodb';
 import Event from '@/lib/models/Event';
 import { parseEventParams, buildEventFilter, buildSort, SortKey } from '@/lib/events/query';
-import { requireAdmin } from '@/lib/api-auth';
+import { requireAdmin, requireUser } from '@/lib/api-auth';
+import { TECH_FLAG_CATEGORIES } from '@/lib/event-types';
+import { validateManualEvent, manualEventError } from '@/lib/events/manual-input';
+import { getCurrentUserId } from '@/lib/auth-helpers';
 
 /**
  * GET /api/events — the feed.
@@ -32,7 +35,8 @@ export async function GET(request: NextRequest) {
 
     const searchParams = request.nextUrl.searchParams;
     const params = parseEventParams(searchParams);
-    const filter = buildEventFilter(params);
+    // Nullable, not `requireUser()`: the feed is public. See the note in the facets route.
+    const filter = buildEventFilter(params, await getCurrentUserId());
 
     const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10) || 1);
     const limit = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') || '30', 10) || 30));
@@ -79,62 +83,90 @@ export async function GET(request: NextRequest) {
 }
 
 /**
- * POST /api/events — manual event creation. ADMIN ONLY.
+ * POST /api/events — add an event by hand.
  *
- * Gated because an event is GLOBAL, not per-user: anything created here appears in
- * everyone's feed, and app/events/[id]/page.tsx renders `applyLink` straight into an
- * href, so an open create endpoint is a phishing-link injector.
+ * ─────────────────────────────────────────────────────────────────────────────────────────────
+ * TWO THINGS A USER MIGHT MEAN, AND THEY NEED DIFFERENT PERMISSIONS.
+ *
+ *   "Add it just for me"     → `visibility: 'private'`. Any signed-in user. Only they see it, and
+ *                              they can track it and scan people into it like any other event. This
+ *                              is the common case and the reason the feature exists: the corpus
+ *                              cannot know about a company's internal hackathon or a reading group.
+ *   "Add it for everyone"    → `visibility: 'pending'`. Any signed-in user. Goes to an admin review
+ *                              queue; visible meanwhile only to its author.
+ *   Straight into the corpus → `visibility: 'public'`. ADMIN ONLY, and unchanged from before: no
+ *                              owner, no visibility key, exactly what the scraper produces.
+ *
+ * WHY 'public' STAYS ADMIN-ONLY. This route was `requireAdmin()` outright, and the reason is
+ * written down: Google sign-in is open to anyone with a Google account, so "signed in" is not a bar
+ * for an operation that affects everyone. `app/events/[id]/page.tsx` renders `applyLink` straight
+ * into an `href`, so direct publication is a phishing-link injector, and a stranger could otherwise
+ * pollute the corpus the whole product depends on. The review step is what makes "contribute to
+ * everyone" safe to OFFER rather than refuse — which is the point: before this, `/add-event` was
+ * signed-in-only in `proxy.ts` while this route was admin-only, so the form was a dead end that
+ * 403'd on submit.
+ *
+ * GUARD FIRST, VALIDATE SECOND. `requireUser()` runs before the body is read, so an anonymous
+ * caller with a bad payload gets 401 and not 400 — a 400 would tell a stranger their body parsed
+ * far enough to be judged, and `scripts/diag-api-auth.ts` asserts the refusal code.
+ * ─────────────────────────────────────────────────────────────────────────────────────────────
  */
 export async function POST(request: NextRequest) {
-  const gate = await requireAdmin();
+  const gate = await requireUser();
   if ('response' in gate) return gate.response;
+
+  // Validated BEFORE connectDB(): a malformed request needs no database to refuse.
+  const body = await request.json().catch(() => ({}));
+  const { fields, visibility, issues } = validateManualEvent(body);
+  if (!fields) return NextResponse.json(manualEventError(issues), { status: 400 });
+
+  /**
+   * Publishing straight to the corpus is re-checked against the admin allowlist here, not inferred
+   * from the earlier guard. `session.user.isAdmin` exists only to decide whether to draw a nav
+   * link — editing it in devtools must buy a 403, which is what `requireAdmin()` gives.
+   */
+  if (visibility === 'public') {
+    const adminGate = await requireAdmin();
+    if ('response' in adminGate) return adminGate.response;
+  }
 
   try {
     await connectDB();
-    const body = await request.json();
 
-    if (!body.title || !body.startDateTime) {
-      return NextResponse.json(
-        { error: 'title and startDateTime are required' },
-        { status: 400 }
-      );
-    }
-
-    const startDateTime = new Date(body.startDateTime);
-    if (Number.isNaN(startDateTime.getTime())) {
-      return NextResponse.json({ error: 'startDateTime is not a valid date' }, { status: 400 });
-    }
-
-    const source = body.source || 'manual';
+    /**
+     * `source: 'manual'` is FORCED, never taken from the body. It is provenance, and a caller
+     * claiming `source: 'luma'` would make their row look scraped to every diagnostic in
+     * `scripts/` — and to `pruneStale`, whose ownership exclusion is the only thing keeping it.
+     *
+     * `createdByUserId` is assigned LAST and from the session, copying the `{ ...input, userId }`
+     * ordering `POST /api/tracker` uses so a body cannot claim someone else's ownership.
+     *
+     * The derived keys are deliberately absent: the `pre('validate')` hook computes both, and for
+     * an owned document it NAMESPACES them by owner — which is what makes the row structurally
+     * incapable of being merged into by a scrape. See `Event.generateClusterKey`.
+     */
+    const owned = visibility !== 'public';
     const doc = {
-      ...body,
-      source,
-      startDateTime,
-      endDateTime: body.endDateTime ? new Date(body.endDateTime) : undefined,
-      description: body.description || body.title,
-      // 'Meetup', not the retired 'Networking/Meetup': the latter was dropped from the
-      // schema enum in the 32 -> 22 taxonomy consolidation, so this default made every
-      // manual creation fail validation with an unhelpful enum error.
-      category: Array.isArray(body.category) && body.category.length > 0
-        ? body.category
-        : ['Meetup'],
-      format: body.format || 'offline',
-      sourceUrl: body.sourceUrl || body.applyLink || 'https://pulseblr.local/manual',
-      dedupHash:
-        body.dedupHash ||
-        Event.generateDedupHash(body.title, startDateTime, body.venue, source),
-      clusterKey: Event.generateClusterKey(body.title, startDateTime),
+      ...fields,
+      source: 'manual' as const,
+      sourceUrl: fields.sourceUrl ?? 'https://pulseblr.local/manual',
       lastSeenAt: new Date(),
-      seenInSources: [source],
+      seenInSources: ['manual'],
+      /**
+       * A hand-entered event is NOT assumed to be a tech event.
+       *
+       * The old path spread the body into the document and never touched `isTechEvent`, so every
+       * manual creation inherited the schema default of `true` — landing straight in the default
+       * tech feed with no classification at all. `isTechEvent` is what `techOnly` filters on, so
+       * getting it wrong for free is not a small thing. Derived from the chosen categories against
+       * the same `TECH_FLAG_CATEGORIES` set the keyword tagger uses, so the app's two definitions of
+       * "tech" cannot drift — that drift already hid `IndiaFOSS 2026` from the default feed once.
+       */
+      isTechEvent: fields.category.some(c => TECH_FLAG_CATEGORIES.has(c)),
+      // Keyword-floor confidence: a human chose the categories, but nothing verified them.
+      tagConfidence: 0.6,
+      ...(owned ? { visibility, createdByUserId: gate.userId } : {}),
     };
-
-    const existing = await Event.findOne({ dedupHash: doc.dedupHash });
-    if (existing) {
-      return NextResponse.json(
-        { error: 'Event already exists', event: existing },
-        { status: 409 }
-      );
-    }
 
     const event = await Event.create(doc);
     return NextResponse.json(event, { status: 201 });
@@ -142,11 +174,16 @@ export async function POST(request: NextRequest) {
     const err = error as { code?: number; message?: string };
     console.error('Error creating event:', error);
     if (err.code === 11000) {
-      return NextResponse.json({ error: 'Duplicate event detected' }, { status: 409 });
+      // With the owner folded into `dedupHash`, this now means the SAME user adding the same event
+      // twice — not a clash with somebody else's row, which is what it used to mean and which
+      // handed the second user the first one's document.
+      return NextResponse.json(
+        { error: 'You have already added this event.' },
+        { status: 409 }
+      );
     }
-    return NextResponse.json(
-      { error: 'Failed to create event', details: err.message },
-      { status: 500 }
-    );
+    // No `details`. It carried `err.message`, which on a Mongoose error names the model and the
+    // schema path — the leak the tracker write paths had to stop.
+    return NextResponse.json({ error: 'Failed to create event' }, { status: 500 });
   }
 }

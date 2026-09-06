@@ -29,6 +29,17 @@ import './load-env';
 import mongoose from 'mongoose';
 import connectDB from '../lib/mongodb';
 import Event from '../lib/models/Event';
+
+// A hand-entered event is never a candidate for automated deletion.
+//
+// `$exists: false` rather than `null`, because the ~1500 documents that predate ownership have no
+// such key and they ARE the intended targets. The reasoning is the same in every script that
+// deletes events: a maintenance job the user never ran and cannot see must not destroy something
+// they typed in themselves. Typing an event in by hand is a stronger signal of intent than the
+// heuristics these scripts apply — a date typo, a venue on "Mysore Road", or a genuinely far-out
+// conference is theirs to fix or keep, and nothing re-creates it because there is no upstream.
+const SCRAPED_ONLY = { createdByUserId: { $exists: false } } as const;
+
 import TrackerEntry from '../lib/models/TrackerEntry';
 import Folder from '../lib/models/Folder';
 
@@ -58,7 +69,7 @@ async function main() {
   const now = new Date();
 
   const groups = await Event.aggregate<{ _id: string; ids: mongoose.Types.ObjectId[]; n: number }>([
-    { $match: { startDateTime: { $gte: now }, clusterKey: { $exists: true, $nin: [null, ''] } } },
+    { $match: { ...SCRAPED_ONLY, startDateTime: { $gte: now }, clusterKey: { $exists: true, $nin: [null, ''] } } },
     { $group: { _id: '$clusterKey', ids: { $push: '$_id' }, n: { $sum: 1 } } },
     { $match: { n: { $gt: 1 } } },
     { $sort: { n: -1 } },
@@ -190,7 +201,7 @@ async function main() {
   if (APPLY) {
     console.log(`Merged ${merged} cluster(s); deleted ${deleted} duplicate document(s); repointed ${trackerRelinked} tracker entry(ies) and ${foldersRelinked} folder(s).`);
     const left = await Event.aggregate([
-      { $match: { startDateTime: { $gte: now } } },
+      { $match: { ...SCRAPED_ONLY, startDateTime: { $gte: now } } },
       { $group: { _id: '$clusterKey', n: { $sum: 1 } } },
       { $match: { n: { $gt: 1 } } },
     ]);

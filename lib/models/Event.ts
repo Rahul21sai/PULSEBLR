@@ -158,6 +158,10 @@ export interface IEvent extends Document {
    * which is why re-scraping is already safe), and no backfill may clear it.
    */
   spotlightAt?: Date;
+  /** Owner of a hand-entered event. Absent on everything the scraper produced. */
+  createdByUserId?: string;
+  /** Absent means public, which is what every scraped document is. */
+  visibility?: 'private' | 'pending' | 'public';
   /**
    * Canonical company names this event is attributable to, resolved from the
    * host/title/tags by lib/companies/resolve.ts. Empty for the many community
@@ -230,6 +234,40 @@ const EventSchema = new Schema<IEvent>(
     // every one of the ~1500 documents, and the query filters on `$type: 'date'` — which is also
     // the shape that avoids the compound-sparse trap documented in CLAUDE.md §9.
     spotlightAt: { type: Date },
+
+    /**
+     * Who typed this event in by hand. ABSENT for everything the scraper produced.
+     *
+     * A PLAIN STRING — the Google `sub`, or `devlogin:<email>` under the dev provider. Never an
+     * ObjectId and never `ref: 'User'`, matching `TrackerEntry.userId` and `Contact.userId`.
+     *
+     * Its ABSENCE is the load-bearing state. Roughly 1500 documents predate this field, every one
+     * of them scraped and public, and a great deal of code has to keep treating them that way — so
+     * every ownership predicate is written as "`createdByUserId` does not exist" rather than
+     * "`createdByUserId` is null", and every visibility filter has an explicit arm for documents
+     * with no `visibility` key at all. Omitting that arm empties the entire feed on deploy.
+     */
+    createdByUserId: { type: String, index: true },
+
+    /**
+     * Who may see this event. ABSENT means public, which is what every scraped document is.
+     *
+     *   'private'  Only its owner. "Add it just for me" — the common case, and the reason this
+     *              field exists: the corpus cannot possibly know about a company's internal
+     *              hackathon or a friend's reading group.
+     *   'pending'  The owner submitted it for the shared feed and it is awaiting review. Visible
+     *              to its owner and to an admin, nobody else.
+     *   'public'   In the shared corpus.
+     *
+     * WHY THERE IS A `pending` STATE RATHER THAN LETTING A USER PUBLISH DIRECTLY. `POST
+     * /api/events` is `requireAdmin()` today, and the reason is written down: Google sign-in is
+     * open to anyone with a Google account, so "signed in" is not a bar for an operation that
+     * affects everyone. A directly-publishing user could put an arbitrary `applyLink` in front of
+     * every visitor — the phishing vector that guard exists to close — and could pollute the corpus
+     * the whole product depends on. Review is what makes "contribute to everyone" safe to offer.
+     */
+    visibility: { type: String, enum: ['private', 'pending', 'public'] },
+
     tagConfidence: { type: Number, default: 0.6, min: 0, max: 1 },
     isTargetCompany: { type: Boolean, default: false },
     recruiterMentioned: { type: Boolean, default: false },
@@ -283,9 +321,19 @@ EventSchema.statics.generateDedupHash = function (
   title: string,
   startDateTime: Date,
   venue?: string,
-  source?: string
+  source?: string,
+  /**
+   * Owner of a hand-entered event, folded into the hash.
+   *
+   * NOT optional politeness — without it the feature is broken and leaky. `dedupHash` is
+   * unique-indexed, and every hand-entered event has `source: 'manual'`, so two DIFFERENT users
+   * adding the same event compute the identical hash. `POST /api/events` answers a hash collision
+   * with `409 { error: 'Event already exists', event: existing }` — so the second user would be
+   * refused their own event AND handed the first user's document, private or not.
+   */
+  ownerId?: string
 ): string {
-  const input = `${title.toLowerCase().trim()}-${startDateTime.toISOString()}-${venue || ''}-${source || ''}`;
+  const input = `${title.toLowerCase().trim()}-${startDateTime.toISOString()}-${venue || ''}-${source || ''}-${ownerId || ''}`;
   return crypto.createHash('sha256').update(input).digest('hex');
 };
 
@@ -299,7 +347,35 @@ EventSchema.statics.generateDedupHash = function (
  */
 EventSchema.statics.generateClusterKey = function (
   title: string,
-  startDateTime: Date
+  startDateTime: Date,
+  /**
+   * Owner of a hand-entered event. Present ⇒ the key is NAMESPACED, and that is the whole defence
+   * for user-created events.
+   *
+   * ─────────────────────────────────────────────────────────────────────────────────────────────
+   * WHY NAMESPACE RATHER THAN GUARD THE LOOKUPS. `clusterKey` is normalized title + IST day, with
+   * no source in it, so a hand-entered "React Meetup" on the same day as the scraped one shares a
+   * key BY CONSTRUCTION — `normalizeTitleForMatch` strips city words and noise, so collisions are
+   * easy rather than exotic. What happens then is not a duplicate card, it is silent loss:
+   * `ingestEvents` finds the user's document first, `mergeInto` overwrites its description, venue,
+   * categories and `isTechEvent`, `Event.create` is never reached, and the merge is counted as a
+   * success. If the user's row was private, the whole city loses that event from the feed and the
+   * scrape reports no error.
+   *
+   * The lookups could each be guarded, and they are — but there are four of them plus two cleanup
+   * scripts that group by this key, and "remember to exclude owned documents" is a rule a fifth
+   * call site will break. A namespaced key makes an owned document STRUCTURALLY incapable of
+   * entering a scraped cluster, so a new lookup written next year inherits the protection.
+   *
+   * THE COST, STATED PLAINLY: an approved public user event keeps its namespaced key, so if the
+   * scraper later finds the same event the city gets two cards for it. That is a visible duplicate
+   * rather than invisible data loss, which is the right way round — and the review step is exactly
+   * where somebody can notice the event is already in the corpus and reject the submission.
+   * De-namespacing on approval was considered and rejected: it would mutate an identity mid-life,
+   * which is the thing `clusterKey` being frozen at ingest exists to prevent.
+   * ─────────────────────────────────────────────────────────────────────────────────────────────
+   */
+  ownerId?: string
 ): string {
   const istDay = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Kolkata',
@@ -307,7 +383,8 @@ EventSchema.statics.generateClusterKey = function (
     month: '2-digit',
     day: '2-digit',
   }).format(startDateTime);
-  return `${normalizeTitleForMatch(title)}|${istDay}`;
+  const base = `${normalizeTitleForMatch(title)}|${istDay}`;
+  return ownerId ? `user:${ownerId}|${base}` : base;
 };
 
 /**
@@ -330,8 +407,8 @@ EventSchema.statics.generateClusterKey = function (
 EventSchema.pre('validate', function () {
   const self = this as unknown as IEvent;
   const statics = this.constructor as unknown as {
-    generateDedupHash: (t: string, d: Date, v?: string, s?: string) => string;
-    generateClusterKey: (t: string, d: Date) => string;
+    generateDedupHash: (t: string, d: Date, v?: string, s?: string, o?: string) => string;
+    generateClusterKey: (t: string, d: Date, o?: string) => string;
   };
 
   // Both generators read `startDateTime`, and `generateClusterKey` throws
@@ -340,22 +417,33 @@ EventSchema.pre('validate', function () {
   const start = self.startDateTime;
   if (!(start instanceof Date) || Number.isNaN(start.getTime())) return;
 
+  // Threaded into BOTH generators. Absent for every scraped document, so their keys are byte
+  // identical to what they were before ownership existed — no migration, no re-keying.
+  const owner = self.createdByUserId;
+
   if (!self.dedupHash) {
     self.dedupHash = statics.generateDedupHash(
       self.title,
       start,
       self.venue,
-      self.source
+      self.source,
+      owner
     );
   }
   if (!self.clusterKey) {
-    self.clusterKey = statics.generateClusterKey(self.title, start);
+    self.clusterKey = statics.generateClusterKey(self.title, start, owner);
   }
 });
 
 export interface EventModel extends Model<IEvent> {
-  generateDedupHash(title: string, startDateTime: Date, venue?: string, source?: string): string;
-  generateClusterKey(title: string, startDateTime: Date): string;
+  generateDedupHash(
+    title: string,
+    startDateTime: Date,
+    venue?: string,
+    source?: string,
+    ownerId?: string
+  ): string;
+  generateClusterKey(title: string, startDateTime: Date, ownerId?: string): string;
 }
 
 const Event =

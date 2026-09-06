@@ -1,4 +1,5 @@
-import { EVENT_CATEGORIES, TECH_CATEGORY_NAMES } from '../models/Event';
+import { EVENT_CATEGORIES } from '../models/Event';
+import { TECH_FLAG_CATEGORIES } from '../event-types';
 
 export interface TaggingResult {
   categories: string[];
@@ -793,7 +794,10 @@ export const CATEGORY_KEYWORDS: Array<[string, RegExp]> = [
  * genuinely technical fintech talk as tech; this floor just stops the keyword
  * tagger from over-claiming when the LLM is unavailable.
  */
-const TECH_CATEGORIES = new Set<string>([...TECH_CATEGORY_NAMES, 'Hackathon']);
+// Imported, not redeclared: `isTechEvent` is derived from categories in two places now (here
+// and the manual-add route), and a second copy of this set is how the two definitions of
+// "tech" drift apart. See the note on TECH_FLAG_CATEGORIES.
+const TECH_CATEGORIES = TECH_FLAG_CATEGORIES;
 
 const FOOD_RE =
   /\b(food|snacks?|refreshments?|lunch|dinner|breakfast|pizza|beverages?|drinks?|meal|catering|high tea|buffet)\b/i;

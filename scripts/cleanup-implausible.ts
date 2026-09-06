@@ -11,6 +11,17 @@ import mongoose from 'mongoose';
 import connectDB from '../lib/mongodb';
 import Event from '../lib/models/Event';
 
+// A hand-entered event is never a candidate for automated deletion.
+//
+// `$exists: false` rather than `null`, because the ~1500 documents that predate ownership have no
+// such key and they ARE the intended targets. The reasoning is the same in every script that
+// deletes events: a maintenance job the user never ran and cannot see must not destroy something
+// they typed in themselves. Typing an event in by hand is a stronger signal of intent than the
+// heuristics these scripts apply — a date typo, a venue on "Mysore Road", or a genuinely far-out
+// conference is theirs to fix or keep, and nothing re-creates it because there is no upstream.
+const SCRAPED_ONLY = { createdByUserId: { $exists: false } } as const;
+
+
 const DRY = process.argv.includes('--dry');
 const DAY = 24 * 3600 * 1000;
 
@@ -18,7 +29,7 @@ async function main() {
   await connectDB();
   const now = Date.now();
 
-  const all = await Event.find({}).select('title startDateTime endDateTime source').lean();
+  const all = await Event.find(SCRAPED_ONLY).select('title startDateTime endDateTime source').lean();
   const doomed: string[] = [];
   const truncateEnd: string[] = [];
 

@@ -8,6 +8,7 @@ import {
   trackerValidationError,
   isSchemaRejection,
 } from '@/lib/tracker/validate';
+import { canViewEvent } from '@/lib/events/visibility';
 
 // GET /api/tracker — list entries for the signed-in user
 export async function GET(request: NextRequest) {
@@ -67,6 +68,26 @@ export async function POST(request: NextRequest) {
 
     const event = await Event.findById(eventId);
     if (!event) return NextResponse.json({ error: 'Event not found' }, { status: 404 });
+
+    /**
+     * A PRIVATE EVENT YOU DO NOT OWN CANNOT BE TRACKED, and this is the most important of the
+     * four id-addressable guards — it is the one that turns id-guessing into a DURABLE read.
+     *
+     * Without it, any signed-in user could track another user's private event by id and get the
+     * fully populated document back in the 201 body, then keep re-reading it forever through
+     * `GET /api/tracker`, which re-populates on every call. It survives fixing
+     * `GET /api/events/[id]` because it is a different route.
+     *
+     * Worse downstream: moving that entry to Confirmed or Attended calls `ensureFolderForEvent()`,
+     * which copies the private event's title, date and venue into a `Folder` the tracker owns —
+     * a denormalised copy that no later access-control change can claw back.
+     *
+     * Same 404 and the same message as a genuinely missing event, so existence is not observable.
+     * After the guard and the validator, keeping the CLAUDE.md §6 ordering intact.
+     */
+    if (!canViewEvent(event, userId)) {
+      return NextResponse.json({ error: 'Event not found' }, { status: 404 });
+    }
 
     // One entry per user per event
     const existing = await TrackerEntry.findOne({ userId, eventId });

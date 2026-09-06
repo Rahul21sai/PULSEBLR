@@ -31,6 +31,20 @@ function AddEventForm() {
   const [saving, setSaving] = useState(false);
   const [autoFillUrl, setAutoFillUrl] = useState('');
   const [autoFilling, setAutoFilling] = useState(false);
+  /**
+   * WHO THIS EVENT IS FOR — the choice this page previously could not offer.
+   *
+   * `POST /api/events` was admin-only while `/add-event` was merely signed-in, so for everybody
+   * else this form was a dead end that 403'd on submit. Now the answer to "who is it for" decides
+   * what happens: 'private' is yours alone, 'pending' goes to review before it reaches the shared
+   * feed.
+   *
+   * DEFAULTS TO 'private', deliberately. The safe option is the one that does not publish, and it
+   * is also the common case — most events somebody types in by hand are ones the scraper cannot
+   * know about and nobody else needs.
+   */
+  const [visibility, setVisibility] = useState<'private' | 'pending'>('private');
+  const [submitted, setSubmitted] = useState<null | 'private' | 'pending'>(null);
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -86,18 +100,27 @@ function AddEventForm() {
     }
     setSaving(true);
     try {
+      // `source` is NOT sent: the route forces `'manual'`, and a body that claims to be scraped
+      // would make the row look like corpus data to every diagnostic in scripts/.
       const res = await fetch('/api/events', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...formData,
-          source: 'manual',
+          visibility,
           price: formData.price ? parseFloat(formData.price) : undefined,
           category: formData.category.length > 0 ? formData.category : ['Meetup'],
         }),
       });
       if (res.ok) {
-        router.push('/');
+        // A private event is in the feed immediately, so going there shows the result. A submission
+        // is NOT, so redirecting to a feed that does not contain it reads as a failed save —
+        // confirm in place instead.
+        if (visibility === 'private') {
+          router.push('/');
+        } else {
+          setSubmitted('pending');
+        }
       } else {
         const data = await res.json();
         alert(data.error || 'Failed to add event');
@@ -147,8 +170,126 @@ function AddEventForm() {
 
   const inputCls = "w-full px-4 py-3 bg-[#f9f9fb] border border-[#e2e2e4] rounded-xl text-label-md text-[#1D1D1F] focus:outline-none focus:border-[#0071E3] focus:ring-1 focus:ring-[#0071E3]/20 transition-colors placeholder:text-[#c7c7cc]";
 
+  /**
+   * The confirmation for a submission, shown in place.
+   *
+   * Not a redirect: a submitted event is `pending`, so it is NOT in the shared feed yet. Sending
+   * somebody to a feed that does not contain what they just added is indistinguishable from the
+   * save having failed. Their own copy IS visible to them, which is what the link offers.
+   */
+  if (submitted === 'pending') {
+    return (
+      <section className="bg-white rounded-[20px] card-shadow p-8 text-center">
+        <span
+          aria-hidden="true"
+          className="material-symbols-outlined text-[32px] text-[#1D8A44]"
+          style={{ fontVariationSettings: "'FILL' 1" }}
+        >
+          how_to_reg
+        </span>
+        <h2 className="mt-2 text-[19px] font-bold tracking-[-0.02em] text-[#1D1D1F]">
+          Sent for review
+        </h2>
+        <p className="mx-auto mt-2 max-w-[420px] text-[13.5px] leading-relaxed text-[#6E6E73]">
+          It will appear in everyone&apos;s feed once an admin has looked at it. You can see it in
+          your own feed straight away, and you can track it and scan people into it now — approval
+          only affects who else sees it.
+        </p>
+        <div className="mt-5 flex flex-wrap justify-center gap-2">
+          <Link
+            href="/"
+            className="inline-flex h-11 items-center rounded-full bg-[#0071E3] px-6 text-[14px] font-semibold text-white hover:bg-[#0061C3] pressable"
+          >
+            See it in my feed
+          </Link>
+          <button
+            type="button"
+            onClick={() => setSubmitted(null)}
+            className="inline-flex h-11 items-center rounded-full bg-[#F5F5F7] px-6 text-[14px] font-semibold text-[#1D1D1F] hover:bg-[#EEEEF0] pressable"
+          >
+            Add another
+          </button>
+        </div>
+      </section>
+    );
+  }
+
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
+
+      {/*
+        WHO IS IT FOR — first, because it changes what the rest of the form means.
+        Putting it at the end, next to the submit button, would have people fill in twenty fields
+        under one assumption and discover the choice at the moment of committing.
+      */}
+      <section className="bg-white rounded-[20px] card-shadow p-6">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="w-8 h-8 rounded-xl bg-[#1D1D1F] flex items-center justify-center shrink-0">
+            <span
+              aria-hidden="true"
+              className="material-symbols-outlined text-white text-[16px]"
+              style={{ fontVariationSettings: "'FILL' 1" }}
+            >
+              visibility
+            </span>
+          </div>
+          <div>
+            <h2 className="text-label-md font-semibold text-[#1D1D1F]">Who is this for?</h2>
+            <p className="text-label-sm text-[#86868B]">
+              You can track it and scan people into it either way
+            </p>
+          </div>
+        </div>
+
+        <div className="grid gap-2 sm:grid-cols-2">
+          {([
+            {
+              value: 'private' as const,
+              icon: 'lock',
+              title: 'Just for me',
+              body: 'Only you can see it. Right for an internal hackathon, a reading group, or anything the scraper cannot know about.',
+            },
+            {
+              value: 'pending' as const,
+              icon: 'public',
+              title: 'Add for everyone',
+              body: 'Goes to an admin for review before it joins the shared feed. Yours to use immediately either way.',
+            },
+          ]).map(option => {
+            const active = visibility === option.value;
+            return (
+              <button
+                key={option.value}
+                type="button"
+                aria-pressed={active}
+                onClick={() => setVisibility(option.value)}
+                className={`rounded-xl p-4 text-left transition-colors ${
+                  active
+                    ? 'bg-[#EBF4FE] shadow-[inset_0_0_0_2px_var(--blue)]'
+                    : 'bg-[#f9f9fb] shadow-[inset_0_0_0_1px_var(--hairline)] hover:bg-[#f2f2f5]'
+                }`}
+              >
+                <span className="flex items-center gap-2">
+                  <span
+                    aria-hidden="true"
+                    className={`material-symbols-outlined text-[18px] ${active ? 'text-[#0058B0]' : 'text-[#8E8E93]'}`}
+                  >
+                    {option.icon}
+                  </span>
+                  <span
+                    className={`text-[14px] font-semibold ${active ? 'text-[#0058B0]' : 'text-[#1D1D1F]'}`}
+                  >
+                    {option.title}
+                  </span>
+                </span>
+                <span className="mt-1 block text-[12.5px] leading-relaxed text-[#6E6E73]">
+                  {option.body}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </section>
 
       {/* Auto-fill from URL */}
       <section className="bg-white rounded-[20px] card-shadow p-6">

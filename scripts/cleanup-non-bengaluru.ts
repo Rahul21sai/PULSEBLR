@@ -160,8 +160,24 @@ function print(entry: { row: Row; why: string }, extra = '') {
 async function main() {
   await connectDB();
 
+  /**
+   * HAND-ENTERED EVENTS ARE EXCLUDED AT SELECTION, not spared later.
+   *
+   * `$exists: false` rather than `null`: the ~1500 documents predating ownership have no such key,
+   * and they are exactly the rows this script is for.
+   *
+   * This script's own header argues that a deliberate human action outranks a geo heuristic — that
+   * is why it already spares anything a user has tracked or built a `Folder` for. Typing the event
+   * in by hand is a STRONGER human action than tracking one, so it belongs on the same footing or
+   * better. And a user's own event has every reason to be somewhere else: they travel, and the
+   * gazetteer would happily condemn a venue on "Mysore Road" or a title naming another city, with
+   * no upstream to re-create it from.
+   *
+   * Excluded rather than added to `protectedIds` so these rows never become candidates at all —
+   * the same reasoning as `cleanup-duplicate-clusters.ts`: the fix belongs at selection.
+   */
   const rows = (await Event.find(
-    {},
+    { createdByUserId: { $exists: false } },
     {
       title: 1, venue: 1, address: 1, city: 1, area: 1, lat: 1, lng: 1,
       format: 1, onlineLink: 1, source: 1, isTechEvent: 1, startDateTime: 1,

@@ -95,9 +95,9 @@ verified. Duplicating those as unit tests would only produce slow, flaky copies.
 | `check-llm.ts` | Which LLM providers are configured, whether their credentials work, and end-to-end tagging latency. |
 | `check-nvidia-models.ts` | Times candidate NVIDIA models so `NVIDIA_MODEL` is chosen from evidence. |
 | `retag-events.ts` | Re-tag stored events with the LLM, **replacing** categories. `--ongoing`, `--all`, `--limit N`, `--dry`, **`--inconsistent`** (only documents whose two "tech" signals contradict each other — usually the right flag; see the warning under §3). |
-| `migrate-events.ts` | Backfill documents written before `clusterKey` / `lastSeenAt` / `isTechEvent` existed. |
-| `cleanup-implausible.ts` | Delete evergreen adverts and impossible date ranges. |
-| `cleanup-non-bengaluru.ts` | Delete stored events that are not in Bengaluru. The stage-5c gate stops new ones arriving but filters the incoming batch only — it never queries the collection, so everything that got in before it existed stays in the feed forever. Selects on **the gate's own `offCityReason()`**, imported not mirrored, so it judges `city` / `venue` / `address` / **`title`** and **never the description** — deleting on "lessons from our Chennai rollout" would be the tagger's `\bpm\b` over-match with a DELETE attached. Online events **are** judged (see below); `--keep-online` restores the old exemption and names the rows it spares. Skips any event a user has **tracked** or built a **`Folder`** for, sparing outright rather than repointing. **Destructive** — dry by default, `--apply` to write. |
+| `migrate-events.ts` | Backfill documents written before `clusterKey` / `lastSeenAt` / `isTechEvent` existed. Its junk-stub `deleteMany` is scoped to `createdByUserId: { $exists: false }` — see the user-events note below. |
+| `cleanup-implausible.ts` | Delete evergreen adverts and impossible date ranges. Scoped to scraped events only: a date typo in a hand-entered event is the user's to fix, not a maintenance script's to delete. |
+| `cleanup-non-bengaluru.ts` | Delete stored events that are not in Bengaluru. The stage-5c gate stops new ones arriving but filters the incoming batch only — it never queries the collection, so everything that got in before it existed stays in the feed forever. Selects on **the gate's own `offCityReason()`**, imported not mirrored, so it judges `city` / `venue` / `address` / **`title`** and **never the description** — deleting on "lessons from our Chennai rollout" would be the tagger's `\bpm\b` over-match with a DELETE attached. Online events **are** judged (see below); `--keep-online` restores the old exemption and names the rows it spares. Skips any event a user has **tracked** or built a **`Folder`** for, sparing outright rather than repointing, and **excludes hand-entered events at selection** (a user's own event may legitimately be in another city). **Destructive** — dry by default, `--apply` to write. |
 | `backfill-companies.ts` | Recompute `Event.companies` from the registry. Run after editing it. |
 | `diag-organizers.ts` | Which hosts and known companies appear in the corpus. |
 | `diag-overtagged.ts` | Documents with more categories than the tagger emits. `--fix` / `--trim`. |
@@ -160,8 +160,8 @@ verified. Duplicating those as unit tests would only produce slow, flaky copies.
 | `diag-attended-coverage.ts` | Checks the user's own communities are present **by name** — a rising total does not prove a seed worked. |
 | `diag-legacy-docs.ts` | Groups pre-migration damage by creation date. This is what identified the stale cron as the writer. |
 | `diag-seed-dupes.ts` | Full dedup identity of a suspected duplicate pair, so "why didn't clustering catch this" is answerable. |
-| `cleanup-duplicate-clusters.ts` | Collapse documents sharing a `clusterKey`; keeps the most complete, repoints `TrackerEntry` rows, gap-fills only. **Destructive** — dry by default, `--apply` to write. |
-| `cleanup-past.ts` / `cleanup-seed.ts` / `cleanup-dryrun.ts` | Older one-off cleanups, kept for reference. |
+| `cleanup-duplicate-clusters.ts` | Collapse documents sharing a `clusterKey`; keeps the most complete, repoints `TrackerEntry` rows, gap-fills only. Hand-entered events never enter a cluster group — their `clusterKey` is owner-namespaced AND the `$match` excludes them, because either outcome here is data loss (the user's event deleted, or the PUBLIC one deleted in favour of a row only one person can see). **Destructive** — dry by default, `--apply` to write. |
+| `cleanup-past.ts` / `cleanup-seed.ts` / `cleanup-dryrun.ts` | Older one-off cleanups, kept for reference. `cleanup-past.ts` is scoped to scraped events only. |
 
 > **OUTSTANDING as of 2026-08-24: `cleanup-non-bengaluru.ts --apply` has NOT been run.** The script
 > is fixed and verified; the database is not cleaned. Its dry run reports **39 rows total, 29
@@ -1001,21 +1001,23 @@ and exposes no page↔worker channel.
 > captured through the production path. **Recall does not.** None of the following exists, and
 > every one is UI-only work against a data layer that already supports it:
 >
-> - **No cross-folder view of people, and no search.** `GET /api/contacts` already serves it
->   (capped `.limit(2000)`, `app/api/contacts/route.ts:40`) and nothing consumes it — there is no
->   `app/contacts` or `app/people` — so "who do I know at Razorpay" is unanswerable in the product.
-> - **Repeat connections are surfaced NOWHERE in the scan/folder UI.** `Contact.contactKey` exists
->   precisely so "have I met this person before" is an index lookup rather than a lowercased-name
->   guess, and its only consumer is the old `/dashboard`. The most valuable networking signal in
->   the feature is invisible.
+> - ~~**No cross-folder view of people, and no search.**~~ **BUILT 2026-09-06 — `/people`.** See §11
+>   below. `GET /api/contacts` now takes `q`/`company`/`tag`/`folderId`/`targetOnly`/`followUpDue`/
+>   `repeatOnly` plus pagination, and `/api/contacts/facets` counts each dimension from the same
+>   `buildContactFilter()`.
+> - ~~**Repeat connections are surfaced NOWHERE in the scan/folder UI.**~~ **BUILT** — the `met N×`
+>   badge on `/people`, from `contactKeyEventCounts()`. Note it counts distinct EVENTS
+>   (`folder.eventId ?? folder._id`), not folders, so two folders for one event is not two meetings.
 > - **No folder rename, delete or archive.** `PATCH /api/folders/[id]` handles
 >   name/note/venue/eventDate/archive and `DELETE` cascades its contacts; the UI calls neither. The
 >   only `PATCH` calls anywhere in `app/` are `app/folders/[id]/page.tsx:138` and `:171`, both to
 >   `/api/contacts/`.
-> - **No move-contact-between-folders**, though `PATCH /api/contacts/[id]` already validates that
->   the destination folder is yours.
-> - **`Contact.tags[]` has no input.** It is in the model and in the CSV export and is always
->   empty; `ContactFields.tsx:28` types it and renders no field.
+> - **No move-contact-between-folders** for a SYNCED contact, though `PATCH /api/contacts/[id]`
+>   already validates that the destination folder is yours. (A *queued* one can now be moved, from
+>   the stuck-captures list on `/folders` — that was needed to make `folder-not-found` recoverable.)
+> - ~~**`Contact.tags[]` has no input.**~~ **BUILT** — `TagField` in `ContactFields.tsx`, so it
+>   appears in both the capture sheet and the folder editor from one definition, plus bulk apply on
+>   `/people`. Tags are canonicalised by `canonicaliseTags()` because a tag is a facet KEY.
 > - **A pending (unsynced) capture cannot be edited or discarded** — the edit sheet blocks it by
 >   design, so a name mistyped offline stays wrong until it syncs.
 > - **CSV export is a bare `<a>`** — no loading or error state, so a 500 renders a raw error page.
@@ -1079,6 +1081,189 @@ and exposes no page↔worker channel.
 
 `generateDailyDigest()` assembles new events (24 h), upcoming deadlines, tracker updates, follow-up reminders, and **unhealthy sources** — a source that silently stops producing events is reported rather than quietly shrinking the feed.
 
-### 11. Automation
+### 11. People — everyone you have met (`app/people/`, `lib/contacts/query.ts`)
+
+Capture worked and recall did not. `/folders` answers "who did I meet at this event", which is the
+right question on the day and the wrong one a week later — by then you want "who do I know at
+Razorpay". `GET /api/contacts` had always been able to serve every contact across every folder and
+**nothing consumed it**: there was no `app/people`, and the nav item labelled "People" pointed at the
+folder list.
+
+**TWO KINDS OF TAG, SIDE BY SIDE, DELIBERATELY NOT MERGED.** This is the central design decision.
+
+- **Company** — `Contact.companies[]`, resolved against the registry by `lib/companies/resolve.ts`.
+  Trustworthy: a name only lands there when the resolver could justify it, and `strength` governs
+  how freely each name may match.
+- **Tag** — `Contact.tags[]`, typed by the user. For the long tail the registry cannot cover:
+  Bengaluru has thousands of employers and the registry knows 375.
+
+One rail for both would be less code and would destroy the distinction between "the registry
+recognised this employer" and "somebody typed this".
+
+> **CONTACT TAGS MUST NOT REACH `resolveCompanies()`, and they used to.** `deriveContactMeta()`
+> forwarded `tags`, and `resolve.ts` scores a tag match at **60 with no `strength` gate** — above the
+> title branch's 50, which *is* gated on `distinctive`. So a label the user typed counted as stronger
+> company evidence than an event title, and every ambiguous registry name became reachable from it.
+> Measured against the real resolver:
+>
+> ```
+> ['embedded','arm'] → ['Arm']      ['shell']  → ['Shell']
+> ['slice']          → ['slice']    ['target'] → ['Target']
+> ['visa']           → ['Visa']     ['setu']   → ['Setu']
+> ```
+>
+> A hardware engineer tagged `embedded, arm` was filed under the company **Arm**. Same class as the
+> documented `Docker` → "SriVidya Tradition" leak, from the one direction `strength` cannot defend.
+> And self-defeating: custom tags exist *precisely* for employers the registry does not know, and
+> forwarding them laundered that free text back into the facet meant to be trustworthy.
+>
+> The two `tags` are not the same thing despite the shared name — on an `Event` they are
+> organiser-supplied topic tags, where 60 is reasonable; on a `Contact` they are one person's private
+> labels. Severed at the contact seam. Re-run `backfill-contact-companies.ts --apply` after touching
+> this.
+
+`lib/contacts/query.ts` is the single filter builder, shared by the list, its `countDocuments` and
+the facet route — the arrangement `lib/events/query.ts` establishes so a chip cannot say 12 and show
+9. **Each facet counts with its OWN dimension dropped**, so picking Razorpay still shows what
+switching to Postman would give; counting with the filter applied shows zero everywhere else and
+makes the rail useless for changing your mind.
+
+> **Search is a REGEX, not `$text`.** Only one text index is permitted per collection and `Contact`
+> has none; and `$text` matches whole words, so it returns nothing for "razor" until you finish
+> typing "razorpay". Both reasons are sufficient on their own.
+
+> **A tag is a FACET KEY, not a label** — hence `canonicaliseTags()` (lowercase, trim, collapse
+> whitespace, dedupe, cap 40). `"AI/ML"` and `"ai/ml"` were not untidiness, they were two chips for
+> one idea silently splitting a person's cohort in half with nothing on screen to suggest it. It is
+> called from exactly one place (`pickWritable`), which is what makes scan, manual add, PATCH and the
+> offline drain agree — a tag typed offline and synced hours later must land in the same bucket.
+
+> **`tags` AND `companies` CAN NEVER SHARE ONE INDEX.** MongoDB refuses two array fields in a single
+> key ("cannot index parallel arrays") and refuses at **write** time, on the first contact that has
+> both — so it presents as contacts failing to save, not as an index that would not build. They are
+> `{userId,tags,scannedAt}` and `{userId,companies,scannedAt}`, two indexes, on purpose.
+> **And no `sparse` on either**: both fields default to `[]`, which indexes as the missing-key
+> sentinel, so `sparse` would omit most rows and be useless for the unfiltered listing they exist to
+> serve. (A second, distinct way that option misleads — the first capped every user at one folder.)
+
+> **`{userId, folderId, scannedAt}` cannot serve the cross-folder list.** A compound index only
+> supplies a sort from a prefix, and with `folderId` absent from the filter — the whole point of a
+> combined view — `scannedAt` is unreachable, so the query sorted the user's entire contact set in
+> memory. Tolerable now, a hard failure at the 32 MB in-memory sort limit.
+
+Tag vocabulary lives on `User.contactTags`, following `targetCompanies` exactly, and the facet is the
+**union** of that with `Contact.distinct('tags')` — each half covers the other's gap. `distinct`
+alone cannot represent a tag created but not yet applied to anybody (so the create button looks
+broken); the stored list alone misses a tag that arrived on a contact without going through the
+vocabulary. Read it with `ensureUser()`, never `findOne`.
+
+Two defects found by verifying rather than reasoning, both worth knowing:
+
+> **A ROUTE MODULE MUST NEVER BE IMPORTED FROM ANOTHER ROUTE MODULE.** `/api/contacts/export`
+> imported `COLUMNS` from `app/api/folders/[id]/export/route.ts`. Legal TypeScript; it put **every
+> `/api/*` path into a 404**, including `/api/auth/csrf`. A route file is a framework entry point, and
+> importing one from another puts it into a second module graph. The symptom is indistinguishable
+> from the phantom-404s §9 records for building into a `.next` a dev server is using — both read as
+> "routes that exist return 404" and the causes are unrelated. Shared column set now lives in
+> `lib/contacts/export-columns.ts`.
+
+> **`repeatOnly` is a TWO-STAGE query, not a post-filter.** "Have I met this person before" is a
+> property of a group sharing a `contactKey`, so it cannot be one predicate. The first attempt
+> filtered the page after the query: the list correctly narrowed to two rows while the heading beside
+> it still read "6 people", because `countDocuments` had run against the unfiltered filter — and
+> pagination was broken too. Now `contactKey: { $in: repeatKeys(counts) }`, so the count and
+> "load more" are simply correct.
+
+---
+
+### 12. User-added events (`Event.createdByUserId` / `visibility`)
+
+A user can add an event the corpus cannot know about — an internal hackathon, a reading group — and
+either keep it to themselves or offer it to everyone.
+
+- `visibility: 'private'` — only its owner. Any signed-in user. The common case.
+- `visibility: 'pending'` — submitted for the shared feed, awaiting review. Owner + admin only.
+- `visibility: 'public'` / **absent** — in the shared corpus. Setting it is **admin only**.
+- `createdByUserId` — absent on everything the scraper produced.
+
+**ABSENCE IS THE LOAD-BEARING STATE.** ~1500 documents predate both fields. Every ownership predicate
+is written `createdByUserId: { $exists: false }`, and every visibility filter carries an explicit
+`{ visibility: { $exists: false } }` arm. **Omitting that arm does not narrow the feed, it empties
+it** — for everyone, signed-out included. It is the arm somebody deletes as redundant.
+
+> **THE DERIVED KEYS ARE NAMESPACED BY OWNER, and that is the defence — not the lookup guards.**
+> `clusterKey` is normalized title + IST day with no source in it, so a hand-entered "React Meetup"
+> shares a key with the scraped one **by construction**. What follows is not a duplicate card, it is
+> silent loss: ingestion finds the user's row first, `mergeInto` overwrites its description, venue,
+> categories and `isTechEvent`, `Event.create` is never reached, and the merge counts as a success.
+> If the user's row was private, the whole city loses that event and the scrape reports no error.
+>
+> The four lookups are guarded *and* `mergeInto` refuses outright on an owned document *and* the key
+> is namespaced — three layers, because "remember to exclude owned documents" is a rule a fifth call
+> site will break. `generateDedupHash` folds the owner in too: it is unique-indexed and every manual
+> event has `source: 'manual'`, so two different users adding the same event computed the identical
+> hash, and the 409 branch handed the second user the first one's document.
+>
+> **Cost, stated plainly:** an approved public user event keeps its namespaced key, so if the scraper
+> later finds the same event there are two cards. A visible duplicate rather than invisible loss, and
+> review is where somebody notices it is already in the corpus.
+
+> **`pruneStale()` WOULD HAVE DELETED EVERY HAND-ENTERED EVENT.** It selects on
+> `startDateTime < 7d ago AND lastSeenAt < 7d ago`, and `lastSeenAt` is only ever refreshed by
+> `ingestEvents()`. Nothing re-reports a user's own event, so it is frozen at creation — for the
+> normal case (entered more than a week before it happens) **both arms are already true the instant
+> it ends**. The row would be deleted at the 7-day mark with nothing to re-scrape. The user would see
+> no error: `TrackerEntry.eventId` is `required` and `app/tracker/page.tsx` **drops** entries whose
+> populate came back null, so the entry and its notes just vanish from the kanban. Now excluded, and
+> user events are kept indefinitely — a hand-entered event is more like a `Folder` than a listing.
+
+> **FOUR ID-ADDRESSABLE PATHS BYPASS THE FEED FILTER**, and each needed its own guard via
+> `canViewEvent()`: `GET /api/events/[id]`, its `related` query, the **ICS** route, and
+> **`POST /api/tracker`**. The tracker one was worst — it turned id-guessing into a *durable* read,
+> returning the populated document and re-populating it on every later `GET /api/tracker`, and
+> moving the entry to Confirmed copies the private event's title and venue into a `Folder` the
+> attacker owns. **A Mongo ObjectId is not a secret** (timestamp + counter, so neighbours are
+> enumerable), and `related` needed no guessing at all. **Always 404, never 403** — a 403 confirms
+> the row exists. The ICS route's `Cache-Control` is now conditional: `public, max-age=3600` for a
+> shared calendar, `no-store` for a private event, which is the same distinction §9 records for the
+> CSV export.
+
+> **`public/sw.js` IS v4.** `/api/events` was not in `PRIVATE_API` because the feed was global. Once
+> it returns the caller's private events, the v2 cross-account leak was back on that one path.
+> **Cost: the event feed no longer renders offline at all.**
+
+> **`POST /api/events` IS AN ALLOWLIST NOW, NOT A SPREAD.** `{ ...body }` was survivable while the
+> route was admin-only; the moment any signed-in user can post it is three escalations — pre-claim a
+> `dedupHash` so the next scrape merges the real event into a private row; set `visibility: 'public'`
+> or somebody else's `createdByUserId`; set `spotlightAt` + `connectionScore: 100` and pin your own
+> event to the home page. `lib/events/manual-input.ts` is pure and tested, and **only http(s) URLs
+> are accepted** — `applyLink` is rendered straight into an `href`, so a `javascript:` URL there is
+> stored XSS against every visitor and against the admin reviewing the submission.
+
+> **`isTechEvent` IS DERIVED FROM `TECH_FLAG_CATEGORIES`, NOT `TECH_CATEGORY_NAMES`.** The old path
+> spread the body and never touched the field, so every manual creation inherited the schema default
+> of `true`. Deriving it from `TECH_CATEGORY_NAMES` was also wrong, and only showed up on
+> verification: `Hackathon` is a *gathering* kind, so a hand-entered "Internal Hack Day" stored
+> `isTechEvent: false` and did not appear in the default tech-only feed — the user adds their own
+> event and it seems to vanish. `lib/llm/tagger.ts`'s keyword floor had always used
+> `[...TECH_CATEGORY_NAMES, 'Hackathon']`; that set is now exported from `lib/event-types.ts` and both
+> use it, so the app's two definitions of "tech" cannot drift again.
+
+Review lives at `/admin` → **Submissions**, backed by `GET`/`PATCH /api/admin/submissions`. It has to
+be a separate endpoint: once `/api/events` scopes to the caller, a pending submission owned by
+somebody else matches none of its arms and is **invisible to the very person meant to approve it**.
+Adding an admin branch to `buildEventFilter` would put a privilege check inside the one function every
+public read path depends on.
+
+> **Approve `$unset`s `visibility`; it does not set `'public'`.** The row ends in exactly the shape
+> ~1500 scraped documents are in. A stored `null` would fail the `{ $exists: false }` arm and leave
+> the approved event invisible — the trap §7 records for `spotlightAt`. **Reject sets `'private'`, it
+> does not delete**: the user typed the event in, so it becomes their own event again and they keep
+> whatever they tracked or scanned against it. `PATCH` is scoped to `visibility: 'pending'` in the
+> **filter**, so it cannot flip an unrelated event public or re-decide a handled one.
+
+---
+
+### 13. Automation
 
 `.github/workflows/daily-scrape.yml` and `daily-digest.yml` run at 8 AM IST. Secrets: `MONGODB_URI`, optionally `NVIDIA_API_KEY`/`NVIDIA_MODEL`/`ICA_*`/`ANTHROPIC_API_KEY`, and `RESEND_API_KEY`.

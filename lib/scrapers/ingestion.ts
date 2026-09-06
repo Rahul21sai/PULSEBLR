@@ -101,7 +101,35 @@ export async function updateSource(
  * image, Luma has guest counts. Whichever arrives second must upgrade the record
  * rather than clobber it.
  */
+/**
+ * Every ingestion lookup is restricted to SCRAPED documents.
+ *
+ * `$exists: false` rather than `null`: the ~1500 documents that predate ownership have no
+ * `createdByUserId` key at all, and they are exactly the rows ingestion must still match.
+ *
+ * Spread into each of the four `findOne` filters rather than applied afterwards, so a lookup that
+ * forgets it is a visible omission at the call site rather than a missing line somewhere else.
+ */
+const SCRAPED_ONLY = { createdByUserId: { $exists: false } } as const;
+
 function mergeInto(existing: IEvent, incoming: NormalizedEvent): boolean {
+  /**
+   * A SCRAPE MAY NEVER MERGE INTO A HAND-ENTERED EVENT. Refuse before touching a single field.
+   *
+   * The four lookups below all exclude owned documents, and `clusterKey` is namespaced by owner so
+   * an owned row cannot even enter a scraped cluster (see `Event.generateClusterKey`). This is the
+   * third layer, and it is here because the failure is SILENT and expensive: `mergeInto` would
+   * overwrite the user's description, fill their venue and address, REPLACE their categories and
+   * `isTechEvent` whenever the incoming `tagConfidence` is higher, and refresh `lastSeenAt` — after
+   * which `Event.create()` is never reached, the real public event never gets a document of its own,
+   * and the run counts the whole thing as a successful merge.
+   *
+   * If the user's row was private, the entire city loses that event from the feed and the scrape
+   * reports no error at all. A guard at the one function every path funnels through means a fifth
+   * lookup written next year cannot reintroduce that.
+   */
+  if (existing.createdByUserId) return false;
+
   let changed = false;
 
   const fillIfEmpty: Array<keyof NormalizedEvent & keyof IEvent> = [
@@ -298,7 +326,7 @@ export async function ingestEvents(events: NormalizedEvent[]): Promise<Ingestion
       if (seenThisRun.has(event.clusterKey)) {
         // Already handled this logical event this run — still merge so the second
         // sighting's extra fields (image, price) aren't lost.
-        const existing = await Event.findOne({ clusterKey: event.clusterKey });
+        const existing = await Event.findOne({ ...SCRAPED_ONLY, clusterKey: event.clusterKey });
         if (existing && mergeInto(existing, event)) {
           existing.lastSeenAt = new Date();
           await existing.save();
@@ -309,11 +337,12 @@ export async function ingestEvents(events: NormalizedEvent[]): Promise<Ingestion
         continue;
       }
 
-      let existing = await Event.findOne({ dedupHash: event.dedupHash });
+      let existing = await Event.findOne({ ...SCRAPED_ONLY, dedupHash: event.dedupHash });
       let matchedBy: 'hash' | 'sourceId' | 'cluster' | null = existing ? 'hash' : null;
 
       if (!existing && event.sourceEventId) {
         existing = await Event.findOne({
+          ...SCRAPED_ONLY,
           source: event.source,
           sourceEventId: event.sourceEventId,
         });
@@ -321,7 +350,7 @@ export async function ingestEvents(events: NormalizedEvent[]): Promise<Ingestion
       }
 
       if (!existing) {
-        existing = await Event.findOne({ clusterKey: event.clusterKey });
+        existing = await Event.findOne({ ...SCRAPED_ONLY, clusterKey: event.clusterKey });
         if (existing) matchedBy = 'cluster';
       }
 

@@ -73,7 +73,8 @@ export interface PipelineOptions {
    * way to re-ingest a single source after fixing its parser.
    *
    * SETTING THIS FORCES `prune` OFF, and that is not a convenience. `pruneStale()` deletes
-   * any past event no source has reported for a week; the sources that did not run this
+   * any past SCRAPED event no source has reported for a week (hand-entered events are excluded
+   * outright — see the note on `pruneStale`); the sources that did not run this
    * time cannot report theirs, so a partial run must never be allowed to reach the pruner.
    * Today's 7-day grace would usually absorb it, but "usually" is not a guarantee to build
    * a delete on.
@@ -329,12 +330,39 @@ async function runSource(
  * has reported them for a week. Past events are kept for a while on purpose —
  * the tracker references them and users look back at what they attended.
  */
+/**
+ * Delete past events no source has reported for a week.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────────────────────
+ * `createdByUserId: { $exists: false }` IS WHAT STOPS THIS DELETING EVERY HAND-ENTERED EVENT.
+ *
+ * The predicate is "old AND not seen recently", and `lastSeenAt` is only ever refreshed by
+ * `ingestEvents()`. Nothing re-reports an event somebody typed in themselves — there is no
+ * upstream to report it — so its `lastSeenAt` is frozen at the moment of creation. For the normal
+ * case, where the event is entered more than a week before it happens, BOTH arms are already true
+ * the instant it ends: the row is deleted exactly at the 7-day mark, and no re-scrape can recover
+ * it because there is nothing to re-scrape.
+ *
+ * The user would see no error. `TrackerEntry.eventId` is `required` and `app/tracker/page.tsx`
+ * DROPS entries whose populate came back null — so the tracked entry and its status, notes and
+ * connections would simply vanish from the kanban with no message at all.
+ *
+ * Note what this does to the sentence in `PipelineOptions.onlySources`: pruning is no longer "any
+ * past event no source has reported for a week", because events now exist that no source ever
+ * reports. That docblock is corrected accordingly.
+ *
+ * User events are kept indefinitely and deliberately. A hand-entered event is a record of
+ * something the user chose to remember, more like a `Folder` than a scraped listing, and deleting
+ * one is theirs to do.
+ * ─────────────────────────────────────────────────────────────────────────────────────────────
+ */
 async function pruneStale(): Promise<number> {
   await connectDB();
   const cutoff = new Date(Date.now() - 7 * 24 * 3600 * 1000);
   const outcome = await Event.deleteMany({
     startDateTime: { $lt: cutoff },
     lastSeenAt: { $lt: cutoff },
+    createdByUserId: { $exists: false },
   });
   return outcome.deletedCount || 0;
 }

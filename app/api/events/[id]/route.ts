@@ -3,6 +3,9 @@ import connectDB from '@/lib/mongodb';
 import Event from '@/lib/models/Event';
 import mongoose from 'mongoose';
 import { requireAdmin } from '@/lib/api-auth';
+import { getCurrentUserId } from '@/lib/auth-helpers';
+import { canViewEvent } from '@/lib/events/visibility';
+import { visibilityClause } from '@/lib/events/query';
 
 // GET /api/events/[id] - Get a single event
 export async function GET(
@@ -23,12 +26,29 @@ export async function GET(
       return NextResponse.json({ error: 'Event not found' }, { status: 404 });
     }
 
+    /**
+     * Ownership check BEFORE `related` is built, so a refused request costs one query.
+     *
+     * 404 rather than 403: a 403 confirms the row exists, and an ObjectId embeds a timestamp and a
+     * counter, so one known id makes its neighbours enumerable. The message is identical to the
+     * genuinely-missing case on purpose.
+     */
+    const viewerId = await getCurrentUserId();
+    if (!canViewEvent(event, viewerId)) {
+      return NextResponse.json({ error: 'Event not found' }, { status: 404 });
+    }
+
     // "Similar events" for the detail page: same categories, still upcoming,
     // soonest first. Excludes this event and anything already finished.
+    //
+    // THE VISIBILITY CLAUSE HERE IS NOT BELT-AND-BRACES. Without it, other users' private events
+    // appear as suggestions at the bottom of every public event page — a leak that needs no id
+    // guessing at all, just a visit to any event.
     const related = await Event.find({
       _id: { $ne: event._id },
       startDateTime: { $gte: new Date() },
       category: { $in: event.category?.length ? event.category : ['Networking/Meetup'] },
+      ...visibilityClause(viewerId),
     })
       .select('title startDateTime venue area format imageUrl category isFree price organizer')
       .sort({ startDateTime: 1 })

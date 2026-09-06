@@ -22,11 +22,41 @@
 // sweep below cannot touch — but a folder's already-synced rows will not render
 // with no network. That is the right trade: showing one user another user's
 // contacts is worse than showing nobody anything.
-const STATIC_CACHE = 'pulseblr-static-v3';
-const DYNAMIC_CACHE = 'pulseblr-dynamic-v3';
+//
+// ─────────────────────────────────────────────────────────────────────────────
+// WHY v4 — the same leak, through a route nobody thought of as private.
+//
+// `/api/events` was not in PRIVATE_API, because the event feed was global: every
+// row in it was scraped and public, so caching it origin-wide was harmless and
+// let the feed render offline. Then events gained an owner and a `visibility`,
+// and /api/events began returning the CALLER's private events alongside the
+// public ones. At that moment the v2 bug came back on this one path — account A's
+// private event titles written to a shared cache and served to account B offline.
+//
+// The alternative was serving private events from a separate path so /api/events
+// could stay cacheable. Rejected: it means two definitions of the feed, and the
+// query builder being shared between the list and the facet counts is the
+// property that keeps them honest. One filtered endpoint that cannot be cached
+// beats two endpoints that can disagree.
+//
+// COST OF v4, ON TOP OF v3: the event feed no longer renders offline at all.
+// Worth naming, because it is a real regression for a PWA — and it is bounded by
+// the same reasoning as v3. `purge-caches` only helps when the app sends it
+// before signOut(); a session expiry, a cleared cookie, a sign-out in another
+// tab or a crash leaves the cache intact, which is why this has to be a
+// never-write rule rather than a cleanup.
+//
+// The cache NAMES are bumped so existing clients drop an already-poisoned cache
+// on activate rather than keeping it.
+// ─────────────────────────────────────────────────────────────────────────────
+const STATIC_CACHE = 'pulseblr-static-v4';
+const DYNAMIC_CACHE = 'pulseblr-dynamic-v4';
 
 // Everything under these prefixes is one user's private data.
 const PRIVATE_API = [
+  // Returns the caller's own private and pending events mixed in with the public feed, so it
+  // cannot be cached in an origin-wide store. See the v4 note above.
+  '/api/events',
   '/api/tracker',
   '/api/contacts',
   '/api/folders',

@@ -151,9 +151,45 @@ export const MIN_SEARCH_CHARS = 2;
  */
 export const DESCRIPTION_SEARCH_CHARS = 4;
 
-export function buildEventFilter(params: EventQueryParams): EventFilter {
+/**
+ * The visibility clause. Three arms, and every one of them is load-bearing.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────────────────────
+ * `{ visibility: { $exists: false } }` IS NOT OPTIONAL. Roughly 1500 stored documents predate the
+ * field entirely and carry no `visibility` key at all. Omitting this arm does not narrow the feed,
+ * it EMPTIES it — on deploy, for everybody, including signed-out visitors. It is the arm somebody
+ * removes as redundant after the corpus has been rewritten once.
+ *
+ * IT GOES INSIDE `and`, NEVER AS A TOP-LEVEL `filter.$or`. The search branch already owns `$or`
+ * inside `and`, and the top-level keys above are assigned unconditionally — so a second top-level
+ * `$or` would be silently clobbered by whichever assignment ran last, or collide with `$text`.
+ * A filter that is quietly dropped is exactly the failure mode this is defending against.
+ *
+ * `viewerId` IS REQUIRED, and positional. An optional parameter here fails OPEN: forget it at one
+ * call site and every user's private events appear in that response. `tests/search-filter.test.ts`
+ * casts its argument through `Parameters<typeof buildEventFilter>[0]`, so the suite would NOT catch
+ * a caller that omitted it — only the type can, and only if it is required.
+ * ─────────────────────────────────────────────────────────────────────────────────────────────
+ */
+export function visibilityClause(viewerId: string | null): EventFilter {
+  const arms: EventFilter[] = [
+    { visibility: 'public' },
+    { visibility: { $exists: false } },
+  ];
+  // Signed-out visitors get the two public arms and nothing else. `createdByUserId: null` would
+  // match documents whose owner field is absent, i.e. the entire scraped corpus — harmless here but
+  // meaningless, and it would read as though anonymous callers owned something.
+  if (viewerId) arms.push({ createdByUserId: viewerId });
+  return { $or: arms };
+}
+
+export function buildEventFilter(
+  params: EventQueryParams,
+  /** The signed-in user, or `null` for an anonymous visitor. Required — see `visibilityClause`. */
+  viewerId: string | null
+): EventFilter {
   const filter: EventFilter = {};
-  const and: EventFilter[] = [];
+  const and: EventFilter[] = [visibilityClause(viewerId)];
 
   if (params.category?.length) filter.category = { $in: params.category };
   if (params.area?.length) filter.area = { $in: params.area };

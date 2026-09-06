@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import SubmissionsPanel from './SubmissionsPanel';
 import { DesktopNav } from '@/app/components/NavBar';
 import { relativeTime, dayLabelIST, timeIST } from '@/lib/format';
 
@@ -60,7 +61,7 @@ interface Stats {
   admin: { email: string };
 }
 
-type Tab = 'overview' | 'scraper' | 'sources' | 'events';
+type Tab = 'overview' | 'scraper' | 'sources' | 'events' | 'submissions';
 
 export default function AdminDashboard({
   adminEmail,
@@ -200,6 +201,7 @@ export default function AdminDashboard({
                 ['scraper', 'Scraper', 'sync'],
                 ['sources', 'Sources', 'rss_feed'],
                 ['events', 'Events', 'event'],
+                ['submissions', 'Submissions', 'how_to_reg'],
               ] as Array<[Tab, string, string]>
             ).map(([id, label, icon]) => (
               <button
@@ -227,6 +229,7 @@ export default function AdminDashboard({
               {tab === 'scraper' && <ScraperPanel stats={stats} onDone={load} />}
               {tab === 'sources' && stats && <SourcesPanel stats={stats} onChanged={load} />}
               {tab === 'events' && <EventsPanel onChanged={load} />}
+              {tab === 'submissions' && <SubmissionsPanel />}
             </>
           )}
         </div>

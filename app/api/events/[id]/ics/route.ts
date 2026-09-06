@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import mongoose from 'mongoose';
 import connectDB from '@/lib/mongodb';
 import Event from '@/lib/models/Event';
+import { getCurrentUserId } from '@/lib/auth-helpers';
+import { canViewEvent } from '@/lib/events/visibility';
 
 /**
  * GET /api/events/[id]/ics — download the event as a calendar file.
@@ -9,6 +11,18 @@ import Event from '@/lib/models/Event';
  * Serving a real .ics beats a "Add to Google Calendar" deep link: it works with
  * whatever calendar the user actually uses (Apple, Outlook, Google), survives
  * being forwarded, and needs no third-party URL format that can change.
+ *
+ * THE CACHE HEADER IS CONDITIONAL, and that is the interesting part of this route.
+ *
+ * A public event is shared-calendar data and `public, max-age=3600` is right for it. A user's own
+ * private event is not: the body carries its title, full description, organizer, venue, address,
+ * area, city and sourceUrl, and a public cache directive lets any shared or CDN cache along the path
+ * keep a copy for an hour — so revoking access would not revoke the cached copy.
+ *
+ * CLAUDE.md §9 already records this exact distinction for the CSV export: "do not copy the ICS
+ * route's `public, max-age=3600`, since that is a shared calendar and this is one person's private
+ * list". A private event makes THIS route the second instance of the same mistake, which is why the
+ * header is decided per-event rather than being a constant.
  */
 
 /** RFC 5545 requires escaping these characters inside TEXT values. */
@@ -57,6 +71,13 @@ export async function GET(
     if (!event) {
       return NextResponse.json({ error: 'Event not found' }, { status: 404 });
     }
+
+    // 404, not 403 — a 403 confirms the row exists. See lib/events/visibility.ts.
+    const viewerId = await getCurrentUserId();
+    if (!canViewEvent(event, viewerId)) {
+      return NextResponse.json({ error: 'Event not found' }, { status: 404 });
+    }
+    const isPublic = !event.visibility || event.visibility === 'public';
 
     const start = new Date(event.startDateTime);
     // No end time published: assume two hours, the typical meetup length. Emitting
@@ -109,7 +130,8 @@ export async function GET(
       headers: {
         'Content-Type': 'text/calendar; charset=utf-8',
         'Content-Disposition': `attachment; filename="${filename}"`,
-        'Cache-Control': 'public, max-age=3600',
+        // See the header: a shared calendar may be cached, one person's private event may not.
+        'Cache-Control': isPublic ? 'public, max-age=3600' : 'no-store',
       },
     });
   } catch (error) {

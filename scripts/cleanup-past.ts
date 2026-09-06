@@ -14,6 +14,17 @@ import mongoose from 'mongoose';
 import connectDB from '../lib/mongodb';
 import Event from '../lib/models/Event';
 
+// A hand-entered event is never a candidate for automated deletion.
+//
+// `$exists: false` rather than `null`, because the ~1500 documents that predate ownership have no
+// such key and they ARE the intended targets. The reasoning is the same in every script that
+// deletes events: a maintenance job the user never ran and cannot see must not destroy something
+// they typed in themselves. Typing an event in by hand is a stronger signal of intent than the
+// heuristics these scripts apply — a date typo, a venue on "Mysore Road", or a genuinely far-out
+// conference is theirs to fix or keep, and nothing re-creates it because there is no upstream.
+const SCRAPED_ONLY = { createdByUserId: { $exists: false } } as const;
+
+
 function fmt(d: Date | undefined): string {
   return d ? new Date(d).toISOString().slice(0, 16).replace('T', ' ') : '(none)';
 }
@@ -25,6 +36,7 @@ async function main() {
   // Identical to cleanup-dryrun.ts's pastFilter — an event is "past" if its end
   // (or start, when no end) is before now.
   const pastFilter = {
+    ...SCRAPED_ONLY,
     $or: [
       { endDateTime: { $exists: true, $ne: null, $lt: now } },
       {
