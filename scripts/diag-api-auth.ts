@@ -144,6 +144,10 @@ const CLIENT_GATED = [
   // card, opened from a QR by a stranger) and `/f/<token>` (add yourself to a folder). proxy.ts
   // matches by PREFIX, so `/card` is safe only because `'/c/abc'.startsWith('/card')` is false.
   '/folders',
+  // The cross-folder People list. It renders every contact the signed-in user has ever scanned —
+  // names, employers, phone numbers, private "how we met" notes — so "carries nothing private in
+  // the signed-out HTML" is the assertion that matters most on this page, not merely that it loads.
+  '/people',
   '/scan',
   '/card',
 ];
