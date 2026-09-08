@@ -30,6 +30,26 @@ describe('isBlockedAddress', () => {
     ['::ffff:127.0.0.1', 'v4-mapped loopback — the classic bypass'],
     ['::ffff:169.254.169.254', 'v4-mapped metadata'],
     ['not-an-ip', 'unparseable input must be refused, not guessed at'],
+
+    /*
+     * THE HEX FORMS ARE THE ONES THAT MATTER, and the two dotted cases above are why that
+     * was missed. `new URL()` NORMALISES an IPv6 literal to compressed hex — a bracketed
+     * `[::ffff:169.254.169.254]` comes out of `url.hostname` as `[::ffff:a9fe:a9fe]` — so
+     * the dotted spelling is the one spelling that never reaches this function from a URL.
+     * A check written against it passes every real attack while looking tested.
+     */
+    ['::ffff:a9fe:a9fe', 'v4-mapped metadata, as new URL() actually spells it'],
+    ['::ffff:7f00:1', 'v4-mapped loopback, as new URL() actually spells it'],
+    ['::7f00:1', 'v4-compatible loopback'],
+    ['::ffff:0:7f00:1', 'v4-mapped via ::ffff:0:0/96'],
+    ['64:ff9b::7f00:1', 'NAT64 loopback'],
+    ['64:ff9b::a9fe:a9fe', 'NAT64 metadata'],
+    ['2002:7f00:1::', '6to4 loopback'],
+    ['2002:a9fe:a9fe::', '6to4 metadata'],
+    ['2002:c0a8:101::', '6to4 private'],
+    ['fec0::1', 'fec0::/10 site-local'],
+    ['2001:0:1234::5678', 'Teredo'],
+    ['::', 'unspecified'],
   ])('blocks %s (%s)', ip => {
     expect(isBlockedAddress(ip)).toBe(true);
   });
@@ -41,6 +61,10 @@ describe('isBlockedAddress', () => {
     ['172.32.0.1'], // just above it
     ['192.167.0.1'], // just below 192.168/16
     ['2606:4700::1111'],
+    // The transitional prefixes must be judged on the address they EMBED, not blocked
+    // wholesale — 6to4 and NAT64 wrapping a public v4 address are public.
+    ['2002:808:808::'], // 6to4 wrapping 8.8.8.8
+    ['64:ff9b::808:808'], // NAT64 wrapping 8.8.8.8
   ])('allows the public address %s', ip => {
     expect(isBlockedAddress(ip)).toBe(false);
   });
@@ -59,6 +83,23 @@ describe('assertSafeUrl', () => {
     ['http://2130706433/', 'decimal-encoded 127.0.0.1'],
     ['not a url at all', 'unparseable'],
     ['http://metadata/', 'single-label internal hostname'],
+
+    /*
+     * BRACKETED LITERALS, THROUGH THE REAL ENTRY POINT. Everything above this block was
+     * already covered; these were not, and that gap is the whole reason the v4-mapped
+     * bypass shipped with a green suite. `isBlockedAddress` was asserted directly with a
+     * hand-written dotted string, so the normalisation `new URL()` performs — the step that
+     * actually defeats the check — never happened in a test.
+     *
+     * Assert through `assertSafeUrl`, which is what `/api/scrape-url` calls.
+     */
+    ['http://[::ffff:169.254.169.254]/latest/meta-data/', 'v4-mapped metadata literal'],
+    ['http://[::ffff:127.0.0.1]:3000/', 'v4-mapped loopback literal'],
+    ['http://[::7f00:1]/', 'v4-compatible loopback literal'],
+    ['http://[64:ff9b::a9fe:a9fe]/', 'NAT64 metadata literal'],
+    ['http://[2002:a9fe:a9fe::]/', '6to4 metadata literal'],
+    ['http://[fec0::1]/', 'site-local literal'],
+    ['http://[::]/', 'unspecified literal'],
   ])('rejects %s (%s)', async url => {
     await expect(assertSafeUrl(url)).rejects.toBeInstanceOf(UnsafeUrlError);
   });

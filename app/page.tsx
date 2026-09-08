@@ -118,7 +118,7 @@ export default function Home() {
   // to surface Bengaluru SOFTWARE and HARDWARE events worth attending for the
   // connections; the other ~70% of the corpus (concerts, treks, book clubs) is
   // noise for that purpose and is one toggle away in the filter rail.
-  const [filters, setFilters] = useState<FilterState>({ ...EMPTY_FILTERS, techOnly: true });
+  const [filters, setFilters] = useState<FilterState>(EMPTY_FILTERS);
   const [view, setView] = useState<ViewMode>('rail');
   const [sheetOpen, setSheetOpen] = useState(false);
 
@@ -199,15 +199,11 @@ export default function Home() {
           format: format ?? prev.format,
           freeOnly: p.get('isFree') === 'true' ? true : prev.freeOnly,
           foodOnly: p.get('hasFood') === 'yes' ? true : prev.foodOnly,
-          // Always true. Not `prev.techOnly` — that would still carry a false through a
-          // client-side navigation once anything else set it.
-          techOnly: true,
         };
         const unchanged =
           next.format === prev.format &&
           next.freeOnly === prev.freeOnly &&
           next.foodOnly === prev.foodOnly &&
-          next.techOnly === prev.techOnly &&
           sameList(next.companies, prev.companies) &&
           sameList(next.categories, prev.categories) &&
           sameList(next.areas, prev.areas);
@@ -313,7 +309,14 @@ export default function Home() {
       if (filters.format) params.set('format', filters.format);
       if (filters.freeOnly) params.set('isFree', 'true');
       if (filters.foodOnly) params.set('hasFood', 'yes');
-      if (filters.techOnly) params.set('techOnly', 'true');
+      /*
+       * UNCONDITIONAL, and this is the single place that decides it. It used to read
+       * `filters.techOnly`, which meant any state path that produced `false` — notably the two
+       * resets passing `EMPTY_FILTERS` — silently reopened the 74%-non-tech feed. `techOnly` is
+       * no longer in `FilterState` at all, so `false` is now unrepresentable rather than merely
+       * unreachable. See the note above `FilterState` in FilterRail.tsx.
+       */
+      params.set('techOnly', 'true');
       params.set('sort', sort);
       params.set('page', String(page));
       params.set('limit', '30');
@@ -609,15 +612,19 @@ export default function Home() {
      *
      * Only on the untouched landing view. Once someone searches or narrows the filters they have
      * said what they want, and promoting two rows above their own query is noise, not curation.
-     * `countActive(filters) <= 1` is the test because `techOnly` is on by default and counts as
-     * one — so this means "nothing beyond the default".
+     *
+     * The test is `countActive(filters) === 0`. It was `<= 1`, justified by a comment saying
+     * `techOnly` "is on by default and counts as one" — but `countActive` has never counted
+     * `techOnly`, so the allowance was spurious and the Spotlight kept rendering above a feed the
+     * user had already narrowed with one real filter. `techOnly` is not in `FilterState` at all
+     * now, which makes the off-by-one unambiguous.
      *
      * The events are the top of the SAME ranking the list below uses, not a separate hand-picked
      * set. That is the difference from the site this was compared against, where the spotlight is
      * editorial and paid ("FLAGSHIP", "INVITE ONLY", "GET TICKETS"): ours is just the ranking
      * being honest about its own top result, so it cannot disagree with the list underneath it.
      */
-    const eligible = !query && countActive(filters) <= 1;
+    const eligible = !query && countActive(filters) === 0;
     /*
      * AN ADMIN PIN WINS OVER THE RANKING, and the fallback is the ranking rather than nothing.
      *
@@ -1009,11 +1016,10 @@ export default function Home() {
                 skipped. Visual weight is unchanged: `.t-display` does the sizing, not the tag. */}
             <div className="mb-5" aria-live="polite" aria-atomic="true">
               <h2 className="t-display text-[#1D1D1F]">
-                {query
-                  ? `“${query}”`
-                  : filters.techOnly
-                    ? 'Tech events in Bengaluru'
-                    : 'Events in Bengaluru'}
+                {/* Always the tech heading: the feed is unconditionally tech-only, so the old
+                    `filters.techOnly` ternary had a branch that could only ever render if the
+                    feed had silently stopped being what it says it is. */}
+                {query ? `“${query}”` : 'Tech events in Bengaluru'}
               </h2>
               <p id="search-hint" className="mt-1.5 text-[13px] text-[#6E6E73] tracking-[0]">
                 {loading ? (

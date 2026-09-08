@@ -43,6 +43,17 @@ const MUST_BLOCK = [
   ['ff02::1', 'IPv6 multicast'],
   ['::ffff:127.0.0.1', 'v4-mapped loopback — the classic bypass'],
   ['::ffff:169.254.169.254', 'v4-mapped metadata'],
+  // THE HEX SPELLINGS ARE THE ONES AN ATTACKER ACTUALLY GETS. `new URL()` normalises an IPv6
+  // literal to compressed hex, so the two dotted cases above are the one spelling that can never
+  // arrive from a URL — the guard used to check only those and allowed everything below.
+  ['::ffff:a9fe:a9fe', 'v4-mapped metadata, as new URL() spells it'],
+  ['::ffff:7f00:1', 'v4-mapped loopback, as new URL() spells it'],
+  ['::7f00:1', 'v4-compatible loopback'],
+  ['::ffff:0:7f00:1', 'IPv4-translated loopback (::ffff:0:0/96)'],
+  ['64:ff9b::a9fe:a9fe', 'NAT64 metadata'],
+  ['2002:a9fe:a9fe::', '6to4 metadata'],
+  ['fec0::1', 'fec0::/10 site-local'],
+  ['2001:0:1234::5678', 'Teredo'],
   ['not-an-ip', 'refuse anything unparseable'],
 ];
 for (const [ip, why] of MUST_BLOCK) check(`block ${ip.padEnd(22)} (${why})`, isBlockedAddress(ip));
@@ -80,6 +91,15 @@ async function main() {
     ['http://10.0.0.1/', 'private literal'],
     ['http://user:pass@example.com/', 'embedded credentials'],
     ['http://2130706433/', 'decimal-encoded 127.0.0.1'],
+    // Bracketed literals, through the entry point /api/scrape-url calls. This is the gap that let
+    // the v4-mapped bypass ship: isBlockedAddress was asserted directly with a dotted string, so
+    // the normalisation new URL() performs never happened in a check.
+    ['http://[::ffff:169.254.169.254]/latest/meta-data/', 'v4-mapped metadata literal'],
+    ['http://[::ffff:127.0.0.1]:3000/', 'v4-mapped loopback literal'],
+    ['http://[::7f00:1]/', 'v4-compatible loopback literal'],
+    ['http://[64:ff9b::a9fe:a9fe]/', 'NAT64 metadata literal'],
+    ['http://[2002:a9fe:a9fe::]/', '6to4 metadata literal'],
+    ['http://[fec0::1]/', 'site-local literal'],
     ['not a url at all', 'unparseable'],
     ['http://metadata/', 'single-label internal hostname'],
   ];

@@ -63,18 +63,101 @@ export function isBlockedAddress(ip: string): boolean {
     return false;
   }
 
-  const lower = ip.toLowerCase();
-  // v4-mapped and v4-compatible forms delegate to the v4 rules above.
-  const mapped = lower.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/) || lower.match(/^::(\d+\.\d+\.\d+\.\d+)$/);
-  if (mapped) return isBlockedAddress(mapped[1]);
+  /*
+   * IPv6 IS DECIDED ON THE EXPANDED ADDRESS, NEVER ON ITS SPELLING.
+   *
+   * This used to delegate v4-mapped forms with `/^::ffff:(\d+\.\d+\.\d+\.\d+)$/` — a check
+   * against the DOTTED spelling. `new URL()` normalises an IPv6 literal to compressed hex,
+   * so `http://[::ffff:169.254.169.254]/` arrives here as `::ffff:a9fe:a9fe`, matched
+   * nothing, fell through to the prefix checks below, and was ALLOWED. Cloud metadata and
+   * loopback were both reachable through POST /api/scrape-url by any signed-in user.
+   *
+   * The dotted spelling is the one spelling a URL can never produce, so the old check was
+   * unreachable from the attack path while looking thorough — and the suite agreed with it,
+   * because it asserted `isBlockedAddress('::ffff:127.0.0.1')` directly and never sent a
+   * bracketed URL through `assertSafeUrl`. Both forms are now covered, and the tests assert
+   * through the entry point the route actually calls.
+   *
+   * One code path, on 16 bytes, is what makes that class of bug impossible rather than
+   * merely fixed: there is no longer a spelling to get wrong.
+   */
+  const groups = expandIpv6(ip);
+  if (!groups) return true; // net.isIP said v6 but we cannot expand it — refuse rather than guess
 
-  if (lower === '::' || lower === '::1') return true; // unspecified, loopback
-  if (lower.startsWith('fe8') || lower.startsWith('fe9') || lower.startsWith('fea') || lower.startsWith('feb')) {
-    return true; // fe80::/10 link-local
+  const embeddedV4 = (hi: number, lo: number) =>
+    `${hi >> 8}.${hi & 0xff}.${lo >> 8}.${lo & 0xff}`;
+  const zeros = (from: number, to: number) => groups.slice(from, to).every(g => g === 0);
+
+  // ::ffff:0:0/96 v4-mapped, and ::/96 v4-compatible (which also covers :: and ::1).
+  if (zeros(0, 5) && (groups[5] === 0xffff || groups[5] === 0)) {
+    return isBlockedAddress(embeddedV4(groups[6], groups[7]));
   }
-  if (/^f[cd]/.test(lower)) return true; // fc00::/7 unique-local
-  if (lower.startsWith('ff')) return true; // multicast
+  // ::ffff:0:0/96 IPv4-TRANSLATED (RFC 2765 SIIT), spelled `::ffff:0:a.b.c.d`. Note the
+  // 0xffff sits in group 4 here, not group 5 as in the mapped form above — that is the
+  // whole difference between the two, and getting it backwards silently allows loopback.
+  if (zeros(0, 4) && groups[4] === 0xffff && groups[5] === 0) {
+    return isBlockedAddress(embeddedV4(groups[6], groups[7]));
+  }
+  // 64:ff9b::/96 NAT64, and 64:ff9b:1::/48 local-use NAT64.
+  if (groups[0] === 0x64 && groups[1] === 0xff9b) {
+    return isBlockedAddress(embeddedV4(groups[6], groups[7]));
+  }
+  // 2002::/16 6to4 embeds the v4 address in the next 32 bits.
+  if (groups[0] === 0x2002) {
+    return isBlockedAddress(embeddedV4(groups[1], groups[2]));
+  }
+  // 2001:0::/32 Teredo. The embedded client address is obfuscated (XOR 0xffffffff) and the
+  // server address is only half the story, so the prefix is refused outright.
+  if (groups[0] === 0x2001 && groups[1] === 0) return true;
+
+  if (groups[0] >= 0xfe80 && groups[0] <= 0xfebf) return true; // fe80::/10 link-local
+  if (groups[0] >= 0xfec0 && groups[0] <= 0xfeff) return true; // fec0::/10 site-local (deprecated)
+  if (groups[0] >= 0xfc00 && groups[0] <= 0xfdff) return true; // fc00::/7 unique-local
+  if (groups[0] >= 0xff00) return true; // ff00::/8 multicast
   return false;
+}
+
+/**
+ * Expand an IPv6 string to its eight 16-bit groups, or null if it cannot be parsed.
+ *
+ * Handles `::` compression, an embedded trailing dotted quad (`::ffff:1.2.3.4`) and a zone
+ * index (`fe80::1%eth0`). Exported for the tests: the whole SSRF fix rests on this being
+ * right, so it is asserted directly rather than only through its callers.
+ */
+export function expandIpv6(ip: string): number[] | null {
+  let s = ip.toLowerCase().split('%')[0];
+
+  // A trailing dotted quad occupies the last two groups.
+  const quad = s.match(/(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/);
+  if (quad) {
+    const o = quad[1].split('.').map(Number);
+    if (o.some(x => !Number.isInteger(x) || x < 0 || x > 255)) return null;
+    const hi = ((o[0] << 8) | o[1]).toString(16);
+    const lo = ((o[2] << 8) | o[3]).toString(16);
+    s = s.slice(0, quad.index) + hi + ':' + lo;
+  }
+
+  const halves = s.split('::');
+  if (halves.length > 2) return null;
+
+  const split = (part: string) => (part === '' ? [] : part.split(':'));
+  const head = split(halves[0]);
+  const tail = halves.length === 2 ? split(halves[1]) : [];
+  if ([...head, ...tail].some(g => g === '' || !/^[0-9a-f]{1,4}$/.test(g))) return null;
+
+  let out: string[];
+  if (halves.length === 1) {
+    if (head.length !== 8) return null;
+    out = head;
+  } else {
+    const fill = 8 - head.length - tail.length;
+    if (fill < 1) return null; // "::" must stand for at least one zero group
+    out = [...head, ...Array(fill).fill('0'), ...tail];
+  }
+
+  const groups = out.map(g => parseInt(g, 16));
+  if (groups.length !== 8 || groups.some(g => !Number.isInteger(g) || g < 0 || g > 0xffff)) return null;
+  return groups;
 }
 
 /** Throw unless `raw` is an http(s) URL whose host resolves only to public addresses. */

@@ -3,6 +3,22 @@
 import { useState } from 'react';
 import { CATEGORY_GROUPS, Facets } from '@/lib/event-types';
 
+/**
+ * `techOnly` IS DELIBERATELY NOT A MEMBER OF THIS TYPE.
+ *
+ * It used to be, defaulting to `false` in `EMPTY_FILTERS` — and both whole-reset paths pass
+ * `EMPTY_FILTERS` straight through (the rail's own Reset button, and the empty state's "Clear
+ * filters" in `app/page.tsx`). So one tap on Reset flipped the feed from 297 tech events to all
+ * 1158: concerts, treks, comedy and book clubs, i.e. exactly the listings site that commit
+ * 7cd13b6 removed the toggle to prevent. It was worse than the old toggle, because `countActive`
+ * (correctly) does not count `techOnly`, so with no other filter left the Reset button unmounted
+ * and there was NO control on screen to undo it — only a reload.
+ *
+ * Making it unrepresentable is the fix. `buildParams` in `app/page.tsx` now sets
+ * `techOnly=true` unconditionally, so no reset path, no URL parameter and no future state
+ * mutation can express `false`. If tech-only ever becomes a user choice again, it belongs in
+ * this type WITH a control in the rail — never in the state without one.
+ */
 export interface FilterState {
   categories: string[];
   areas: string[];
@@ -10,7 +26,6 @@ export interface FilterState {
   format: string;
   freeOnly: boolean;
   foodOnly: boolean;
-  techOnly: boolean;
 }
 
 export const EMPTY_FILTERS: FilterState = {
@@ -20,7 +35,6 @@ export const EMPTY_FILTERS: FilterState = {
   format: '',
   freeOnly: false,
   foodOnly: false,
-  techOnly: false,
 };
 
 /** Format options, in the order they matter for meeting people in person. */
@@ -39,9 +53,9 @@ export function countActive(filters: FilterState): number {
     (filters.format ? 1 : 0) +
     (filters.freeOnly ? 1 : 0) +
     (filters.foodOnly ? 1 : 0)
-    // `techOnly` is deliberately NOT counted. It is unconditional now, so counting it would show
-    // "1 filter active" on a completely unfiltered feed, next to a Clear button that cannot clear
-    // it — a control that lies about what it will do.
+    // `techOnly` is not counted because it is no longer part of `FilterState` at all — see the
+    // note above the interface. Counting it would have shown "1 filter active" on a completely
+    // unfiltered feed, next to a Clear button that could not clear it.
   );
 }
 
