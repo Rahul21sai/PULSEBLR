@@ -4,6 +4,7 @@ import Folder, { folderSlug } from '@/lib/models/Folder';
 import Event from '@/lib/models/Event';
 import { requireUser } from '@/lib/api-auth';
 import { listFolders, folderToDTO } from '@/lib/contacts/service';
+import { canViewEvent } from '@/lib/events/visibility';
 
 /**
  * GET  /api/folders — every folder the signed-in user owns, with counts.
@@ -69,8 +70,30 @@ export async function POST(request: NextRequest) {
      * it is named after.
      */
     if (typeof body.eventId === 'string' && body.eventId) {
-      const event = await Event.findById(body.eventId).select('title startDateTime venue area');
-      if (event) {
+      const event = await Event.findById(body.eventId).select(
+        'title startDateTime venue area visibility createdByUserId'
+      );
+      /**
+       * `canViewEvent` IS THE WHOLE POINT OF THIS BRANCH, and it was missing here while the PATCH
+       * sibling in `[id]/route.ts` had it — the same operation, guarded on one route and not the
+       * other. This was the "sixth id-addressable path" CLAUDE.md said to assume existed.
+       *
+       * Without it, any signed-in user POSTs a folder naming a stranger's PRIVATE event by id and
+       * reads its date and venue straight back out of the response. A Mongo ObjectId is not a
+       * secret — it embeds a timestamp and a counter, so one known id makes its neighbours
+       * enumerable. And the copy is DURABLE: `eventDate`/`venue` are denormalised on purpose so the
+       * folder survives `pruneStale()`, which means no later access-control change can claw it back.
+       *
+       * `visibility` and `createdByUserId` had to be added to the `.select()` — without them
+       * `canViewEvent` reads two undefined fields and returns true for everything, which is the
+       * quiet way to add a guard that does nothing.
+       *
+       * Silently ignored rather than 404'd, matching both the nonexistent-event case here and the
+       * PATCH sibling: `eventId` is one optional field of a create that otherwise succeeds, so
+       * refusing the whole request would fail a legitimate folder creation over an unrelated id.
+       * The folder is simply created unlinked.
+       */
+      if (event && canViewEvent(event, gate.userId)) {
         doc.eventId = event._id;
         if (!doc.eventDate) doc.eventDate = event.startDateTime;
         if (!doc.venue) doc.venue = event.venue || event.area || undefined;

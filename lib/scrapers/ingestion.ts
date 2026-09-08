@@ -3,6 +3,9 @@ import Event, { IEvent } from '../models/Event';
 import Source from '../models/Source';
 import { NormalizedEvent } from './normalizer';
 import { resolveCompanies } from '../companies/resolve';
+// The ONE definition of who may see which event, shared with the feed rather than re-stated here.
+// `lib/events/query.ts` imports nothing, so this cannot create a cycle.
+import { visibilityClause } from '../events/query';
 
 export interface IngestionResult {
   total: number;
@@ -409,22 +412,50 @@ export async function ingestEvents(events: NormalizedEvent[]): Promise<Ingestion
 /**
  * Events created since a date — used by the daily digest.
  *
+ * ─────────────────────────────────────────────────────────────────────────────────────────────
+ * `viewerId` IS REQUIRED AND FIRST, for the reason `visibilityClause()` spells out: an optional
+ * viewer parameter fails OPEN, so forgetting it at one call site leaks every user's private events
+ * in that one response. Making it required and positional means the type checker refuses the
+ * mistake rather than the reviewer having to catch it.
+ *
+ * This function had NO visibility filter at all. §12 added `visibility: 'private' | 'pending'`
+ * and every feed read path went through `buildEventFilter`, but these two digest queries do not —
+ * they hand-roll their own `Event.find()`. So `GET /api/notifications/send-digest`, which is only
+ * `requireUser()`, returned every event ANY user had created in the last 24 hours, private and
+ * pending included, with title, venue, description and `createdByUserId`, to any signed-in Google
+ * account. No id guessing and no parameters needed.
+ *
+ * The lesson generalises: when a field like `visibility` is introduced, the audit has to cover
+ * every `Event.find()` in the tree, not just the ones behind the shared builder. Aggregates and
+ * one-off queries are where it was missed here and in `/api/events/calendar`.
+ * ─────────────────────────────────────────────────────────────────────────────────────────────
+ *
  * `.lean()` returns plain objects rather than hydrated documents, so the cast is
  * the accurate description of what callers get: the same fields, no methods.
  */
-export async function getNewEventsSince(since: Date): Promise<IEvent[]> {
+export async function getNewEventsSince(viewerId: string | null, since: Date): Promise<IEvent[]> {
   await connectDB();
-  return Event.find({ createdAt: { $gte: since } })
+  return Event.find({ $and: [visibilityClause(viewerId), { createdAt: { $gte: since } }] })
     .sort({ createdAt: -1 })
     .lean() as unknown as Promise<IEvent[]>;
 }
 
-/** Events whose registration deadline is approaching. */
-export async function getEventsWithDeadlineSoon(daysAhead = 3): Promise<IEvent[]> {
+/**
+ * Events whose registration deadline is approaching.
+ *
+ * `viewerId` is first so it stays required in front of the defaulted `daysAhead` — see
+ * `getNewEventsSince` above for why that matters.
+ */
+export async function getEventsWithDeadlineSoon(
+  viewerId: string | null,
+  daysAhead = 3
+): Promise<IEvent[]> {
   await connectDB();
   const now = new Date();
   const future = new Date(now.getTime() + daysAhead * 24 * 3600 * 1000);
-  return Event.find({ registrationDeadline: { $gte: now, $lte: future } })
+  return Event.find({
+    $and: [visibilityClause(viewerId), { registrationDeadline: { $gte: now, $lte: future } }],
+  })
     .sort({ registrationDeadline: 1 })
     .lean() as unknown as Promise<IEvent[]>;
 }

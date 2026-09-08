@@ -64,13 +64,21 @@ export async function generateDailyDigest(userId: string): Promise<DigestData> {
 
   if (!userId) throw new Error('generateDailyDigest requires a userId');
 
-  // Get events added in the last 24 hours
+  /*
+   * BOTH EVENT QUERIES ARE SCOPED TO THIS USER'S VIEW, and that is not cosmetic. They used to be
+   * unscoped `Event.find()` calls, so this function — served to any signed-in caller by
+   * `GET /api/notifications/send-digest` — returned every event ANY user had created in the last
+   * 24 hours, including ones marked `private` and submissions still `pending` review.
+   *
+   * The tracker queries below were scoped from the start; the event queries were the half nobody
+   * revisited when §12 introduced `visibility`.
+   */
   const yesterday = new Date();
   yesterday.setDate(yesterday.getDate() - 1);
-  const newEvents = await getNewEventsSince(yesterday);
+  const newEvents = await getNewEventsSince(userId, yesterday);
 
   // Get events with registration deadline in next 3 days
-  const upcomingDeadlines = await getEventsWithDeadlineSoon(3);
+  const upcomingDeadlines = await getEventsWithDeadlineSoon(userId, 3);
 
   // Get THIS USER'S tracker entries updated in last 24 hours
   const trackerUpdates = await TrackerEntry.find({
