@@ -127,13 +127,14 @@ export async function PUT(request: NextRequest) {
 
     return NextResponse.json({ card: toDTO(user.card, user.name) });
   } catch (error) {
+    /*
+     * NO `details` ON THE 500. The message here is a Mongoose ValidationError naming the User
+     * model and a `card.*` schema path, an E11000 quoting the `card.token` index, or a
+     * `cardUrl()` throw quoting NEXTAUTH_URL. All three describe the deployment or the schema
+     * rather than the caller's mistake, and the GET sibling has always returned a bare message.
+     * The real wording is in the server log.
+     */
     console.error('Error updating card:', error);
-    return NextResponse.json(
-      {
-        error: 'Failed to update your card',
-        details: error instanceof Error ? error.message : String(error),
-      },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to update your card' }, { status: 500 });
   }
 }

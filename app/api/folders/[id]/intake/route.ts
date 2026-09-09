@@ -63,13 +63,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       url: intakeUrl(folder.intakeToken!),
     });
   } catch (error) {
+    // NO `details` ON THE 500: on this route the message is a Mongoose save error naming the
+    // Folder model and its schema paths, or a `canonicalOrigin()` throw that quotes NEXTAUTH_URL
+    // — deployment configuration, handed to whoever asked. Logged, not returned.
     console.error('Error updating folder intake:', error);
-    return NextResponse.json(
-      {
-        error: 'Failed to update the folder link',
-        details: error instanceof Error ? error.message : String(error),
-      },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to update the folder link' }, { status: 500 });
   }
 }

@@ -74,12 +74,45 @@ describe('rateLimit', () => {
 });
 
 describe('clientKey', () => {
-  it('takes the LEFTMOST x-forwarded-for entry', () => {
-    // Behind a proxy the left-hand entry is the real client; later entries are the chain.
+  /**
+   * THIS TEST USED TO PIN THE DEFECT, and that is worth recording rather than quietly rewriting.
+   *
+   * It asserted the LEFTMOST `x-forwarded-for` entry on the reasoning that "behind a proxy the
+   * left-hand entry is the real client". True of a well-behaved proxy — and irrelevant, because the
+   * leftmost entry is whatever the CALLER sent. A client rotating that header minted a fresh bucket
+   * per request, so the limiter counted to one over and over and never refused anybody.
+   *
+   * The rightmost entry is the address the nearest trusted proxy actually observed, which is the one
+   * value in the chain a client cannot choose. Measured after the fix: three rotated spoofed values
+   * collapse to one bucket, where they previously produced three.
+   *
+   * A test can encode a bug as confidently as it encodes a requirement. This one did, for the same
+   * reason the SSRF suite stayed green over a live bypass: it asserted the shape someone expected
+   * rather than the property that mattered.
+   */
+  it('ignores a client-supplied leftmost x-forwarded-for entry', () => {
     const request = new Request('https://example.com', {
       headers: { 'x-forwarded-for': '203.0.113.5, 10.0.0.1, 10.0.0.2' },
     });
-    expect(clientKey(request)).toBe('203.0.113.5');
+    expect(clientKey(request)).toBe('10.0.0.2');
+  });
+
+  it('cannot be split into separate buckets by rotating the spoofable entry', () => {
+    const spoof = (left: string) =>
+      clientKey(
+        new Request('https://example.com', {
+          headers: { 'x-forwarded-for': `${left}, 10.0.0.1, 10.0.0.2` },
+        })
+      );
+    // The whole point: three different caller-chosen values, one bucket.
+    expect(new Set([spoof('1.1.1.1'), spoof('2.2.2.2'), spoof('3.3.3.3')]).size).toBe(1);
+  });
+
+  it('prefers a platform-set header over x-forwarded-for entirely', () => {
+    const request = new Request('https://example.com', {
+      headers: { 'x-forwarded-for': '9.9.9.9', 'x-real-ip': '198.51.100.7' },
+    });
+    expect(clientKey(request)).toBe('198.51.100.7');
   });
 
   it('falls back to x-real-ip, then to a constant', () => {

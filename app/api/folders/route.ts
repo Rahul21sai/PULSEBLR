@@ -3,7 +3,7 @@ import connectDB from '@/lib/mongodb';
 import Folder, { folderSlug } from '@/lib/models/Folder';
 import Event from '@/lib/models/Event';
 import { requireUser } from '@/lib/api-auth';
-import { listFolders, folderToDTO } from '@/lib/contacts/service';
+import { listFolders, folderToDTO, isValidId } from '@/lib/contacts/service';
 import { canViewEvent } from '@/lib/events/visibility';
 
 /**
@@ -69,7 +69,14 @@ export async function POST(request: NextRequest) {
      * so a folder that depended on the join would lose its own name a week after the event
      * it is named after.
      */
-    if (typeof body.eventId === 'string' && body.eventId) {
+    /*
+     * `isValidId` BEFORE `findById`, and it is not cosmetic. A malformed id reaches Mongoose as a
+     * CastError, which the catch-all below answered as a 500 carrying `Cast to ObjectId failed …
+     * at path "_id" for model "Event"` — the shortest way in the whole app to make it name a
+     * model and a path. Refusing the id here removes that path entirely rather than only
+     * censoring the response.
+     */
+    if (typeof body.eventId === 'string' && body.eventId && isValidId(body.eventId)) {
       const event = await Event.findById(body.eventId).select(
         'title startDateTime venue area visibility createdByUserId'
       );
@@ -135,10 +142,18 @@ export async function POST(request: NextRequest) {
         { status: 409 }
       );
     }
+    /*
+     * NO `details` ON THE 500 — the message here was a Mongoose ValidationError or CastError
+     * naming the model and the schema path. It stays in the log, which is where the real wording
+     * belongs; see the same removal on the tracker write paths.
+     *
+     * The duplicate-key branch ABOVE deliberately keeps branching on `err.keyPattern`. That is a
+     * different thing from this leak: it is how a genuine name clash gets reported as a name
+     * clash. A handler that guesses its own cause once reported a schema bug (every user capped
+     * at one folder) as "You already have a folder with that name" — the only thing that was not
+     * wrong. Do not collapse the two branches.
+     */
     console.error('Error creating folder:', error);
-    return NextResponse.json(
-      { error: 'Failed to create folder', details: err.message ?? String(error) },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to create folder' }, { status: 500 });
   }
 }

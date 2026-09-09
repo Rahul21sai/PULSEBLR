@@ -4,11 +4,32 @@ import Source from '@/lib/models/Source';
 import { requireAdmin } from '@/lib/api-auth';
 import { validateNewSource, sourceValidationError } from '@/lib/sources/admin-validate';
 
+/**
+ * GET /api/sources -- the whole scraper inventory. ADMIN ONLY.
+ *
+ * THIS HAD NO GUARD AT ALL, and the shape of the file is why nobody noticed: `requireAdmin`
+ * is imported right above and used by POST, so the module reads as guarded while this handler
+ * was reachable with no cookie. Measured against the live database: **423 Source documents to
+ * an anonymous caller**, unprojected — every `kind`, `handle` and upstream `url` (the complete
+ * target list for anyone wanting to poison this deployment's supply, plus the discovery state
+ * CLAUDE.md §1 describes as taking many runs to compound), and **304 rows carrying internal
+ * `lastError` text**, which is upstream wording verbatim and is exactly the field that ends up
+ * holding a URL with a query string in it.
+ *
+ * `/api/admin/stats` already states the boundary this contradicted: "a regular user never sees
+ * the scraping machinery at all." This served the same source health, in more detail, to
+ * callers with no session. `app/admin/AdminDashboard.tsx` is the only consumer and already runs
+ * as an admin, so gating costs nothing. Both GETs are now in `MUST_REFUSE` in
+ * `scripts/diag-api-auth.ts` — they were in neither list, which is why no test had an opinion.
+ */
 export async function GET() {
+  const gate = await requireAdmin();
+  if ('response' in gate) return gate.response;
+
   try {
     await dbConnect();
     const sources = await Source.find().sort({ name: 1 });
-    
+
     return NextResponse.json({ sources });
   } catch (error) {
     console.error('Error fetching sources:', error);

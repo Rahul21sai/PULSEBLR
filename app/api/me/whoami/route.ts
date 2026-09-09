@@ -17,11 +17,29 @@
  * nothing ever exercised.
  *
  * WHAT IT IS SAFE TO RETURN. This route is deliberately NOT behind `requireUser()`: it has to
- * work precisely when the session is broken, which is when a guard would refuse it. That is
- * safe because every field is derived from the CALLER'S OWN cookies — an anonymous request
- * gets all-false and learns nothing, and a signed-in request learns only about itself. It
- * returns cookie NAMES, never cookie VALUES, so the session token cannot be read back out;
- * `userId` is truncated because its presence is the diagnostic, not its value.
+ * work precisely when the session is broken, which is when a guard would refuse it. THAT PART IS
+ * CORRECT AND MUST STAY. It is safe only because every field is derived from the CALLER'S OWN
+ * cookies — an anonymous request gets all-false and learns nothing, and a signed-in request
+ * learns only about itself. It returns cookie NAMES, never cookie VALUES, so the session token
+ * cannot be read back out; `userId` is truncated because its presence is the diagnostic, not its
+ * value.
+ *
+ * WHAT WAS REMOVED, AND WHY IT DID NOT BELONG. The response also carried `nodeEnv`,
+ * `nextAuthUrlSet`, `nextAuthUrlHost`, `requestHost`, `adminEmailsConfigured` and the raw
+ * `auth()` exception message — to ANY anonymous caller. None of that derives from the caller, so
+ * it fell outside the sentence above that justifies the route being open. It is reconnaissance on
+ * the deployment: `nextAuthUrlSet: false` is this app's documented cause of total auth failure,
+ * `nextAuthUrlHost` versus `requestHost` says whether the canonical origin matches the host being
+ * served, and `adminEmailsConfigured: false` tells a stranger every admin route is currently
+ * answering 503 — a "come back later" signal about a window when the operator has locked
+ * themselves out.
+ *
+ * The deployment block is now gated on `session !== null`, which costs the diagnostic nothing:
+ * its whole purpose is to let a user comparing "looks signed in" with "is signed in" read the
+ * session fields correctly, and that person has a session by definition. `authError`'s message is
+ * never returned at all — a throw from `auth()` leaves no session to gate on, so gating it would
+ * make it dead weight; the boolean `authThrew` carries the signal and the wording goes to the
+ * server log, where an operator can read it.
  *
  * `no-store`, because a cached answer here would be worse than no answer.
  */
@@ -48,13 +66,18 @@ export async function GET(request: NextRequest) {
   const sessionCookieNames = authCookieNames.filter(n => n.includes('session-token'));
 
   let session: Session | null = null;
-  let authError: string | null = null;
+  let authThrew = false;
   try {
     session = await auth();
   } catch (error) {
-    // If `auth()` itself throws, every protected route is 401 and nothing else in the app
-    // says so out loud. The message is the caller's own failure, not another user's.
-    authError = error instanceof Error ? error.message : 'auth() threw a non-Error';
+    /*
+     * If `auth()` itself throws, every protected route is 401 and nothing else in the app says so
+     * out loud — so the FACT is worth reporting. The MESSAGE is not: it can quote NEXTAUTH_SECRET
+     * handling, the configured origin, or a provider's response, and it was going to anonymous
+     * callers. It goes to the log instead, which is where an operator can act on it.
+     */
+    authThrew = true;
+    console.error('whoami: auth() threw', error);
   }
 
   const userId = session?.user?.id ?? null;
@@ -68,8 +91,7 @@ export async function GET(request: NextRequest) {
       authCookieNames,
 
       // ── what auth() made of it ────────────────────────────────────────────────────
-      authThrew: authError !== null,
-      authError,
+      authThrew,
       hasSession: session !== null,
       hasSessionUser: Boolean(session?.user),
 
@@ -83,20 +105,31 @@ export async function GET(request: NextRequest) {
       email: session?.user?.email ?? null,
       isAdmin: session?.user?.isAdmin === true,
 
-      // ── deployment facts that change how the above should be read ─────────────────
-      // A missing NEXTAUTH_URL in production is the documented cause of auth failures on
-      // non-Vercel hosts, and a mismatched one breaks cookies on the host actually served.
-      nodeEnv: process.env.NODE_ENV,
-      nextAuthUrlSet: Boolean(process.env.NEXTAUTH_URL),
-      nextAuthUrlHost: (() => {
-        try {
-          return process.env.NEXTAUTH_URL ? new URL(process.env.NEXTAUTH_URL).host : null;
-        } catch {
-          return 'UNPARSEABLE';
-        }
-      })(),
-      requestHost: request.headers.get('host'),
-      adminEmailsConfigured: Boolean((process.env.ADMIN_EMAILS || '').trim()),
+      /*
+       * ── deployment facts, FOR A SIGNED-IN CALLER ONLY ────────────────────────────
+       *
+       * A missing NEXTAUTH_URL in production is the documented cause of auth failures on
+       * non-Vercel hosts, and a mismatched one breaks cookies on the host actually served — so
+       * these belong in the diagnostic. They do not belong in an ANONYMOUS response: none of
+       * them derives from the caller, which is the property that makes this route safe to leave
+       * unguarded. Spread conditionally so the keys are simply absent rather than present-and-
+       * null, which would still confirm which questions the route can answer.
+       */
+      ...(session
+        ? {
+            nodeEnv: process.env.NODE_ENV,
+            nextAuthUrlSet: Boolean(process.env.NEXTAUTH_URL),
+            nextAuthUrlHost: (() => {
+              try {
+                return process.env.NEXTAUTH_URL ? new URL(process.env.NEXTAUTH_URL).host : null;
+              } catch {
+                return 'UNPARSEABLE';
+              }
+            })(),
+            requestHost: request.headers.get('host'),
+            adminEmailsConfigured: Boolean((process.env.ADMIN_EMAILS || '').trim()),
+          }
+        : {}),
     },
     { headers: NO_STORE }
   );

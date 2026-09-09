@@ -31,6 +31,19 @@ const MUST_REFUSE: Case[] = [
   { method: 'PUT', path: `/api/events/${GHOST}`, body: { title: 'x' }, why: 'rewrite any event' },
   { method: 'DELETE', path: `/api/events/${GHOST}`, why: 'delete any event — ids come from the public feed' },
   { method: 'POST', path: '/api/sources', body: { kind: 'meetup-group', handle: 'x' }, why: 'inject a handle the next scrape will fetch' },
+  /*
+   * THE TWO SOURCE READS WERE IN NEITHER LIST — not MUST_REFUSE, not MUST_ALLOW — so nothing here
+   * had an opinion about them, and both were reachable with no cookie. Measured before the fix:
+   * `GET /api/sources` returned 423 Source documents anonymously, including every upstream URL and
+   * handle and 304 rows carrying internal `lastError` text. `requireAdmin` was imported in the
+   * file and used only by POST, which is exactly why the module read as guarded.
+   *
+   * The general lesson for this script: a list of MUTATING endpoints is not a list of endpoints.
+   * A GET that returns the scraping machinery is the same disclosure as `/api/admin/stats`, which
+   * has always been asserted below.
+   */
+  { method: 'GET', path: '/api/sources', why: 'full scraper inventory — every upstream URL, handle and lastError' },
+  { method: 'GET', path: `/api/sources/${GHOST}`, why: 'one source row, same disclosure as the collection' },
   { method: 'PUT', path: `/api/sources/${GHOST}`, body: { enabled: false }, why: 'disable a source, silently shrinking the feed' },
   { method: 'DELETE', path: `/api/sources/${GHOST}`, why: 'destroy persisted discovery state' },
   { method: 'POST', path: '/api/scrape', body: { fast: true }, why: '~700 upstream requests + LLM spend + prune deleteMany' },
@@ -185,6 +198,32 @@ const MUST_BE_PUBLIC_404: Case[] = [
   },
 ];
 
+/**
+ * Endpoints that must stay PUBLIC while disclosing nothing about the deployment.
+ *
+ * `GET /api/me/whoami` is deliberately unguarded — it has to work precisely when the session is
+ * broken, which is when a guard would refuse it — so "does it 200" is the wrong question and
+ * "what is IN the 200" is the right one. It used to answer an anonymous `curl` with `nodeEnv`,
+ * `nextAuthUrlHost`, `requestHost` and `adminEmailsConfigured`: none of those derive from the
+ * caller, which is the property the route's own header cites to justify being open.
+ *
+ * `adminEmailsConfigured: false` is the sharpest of them — it tells a stranger that every admin
+ * route is currently answering 503, i.e. that the operator has locked themselves out right now.
+ *
+ * Asserted as ABSENT keys rather than falsy ones: `nodeEnv: null` would still confirm which
+ * questions the route can answer.
+ */
+const MUST_NOT_DISCLOSE: Array<{ path: string; forbidden: string[]; required: string[]; why: string }> = [
+  {
+    path: '/api/me/whoami',
+    forbidden: ['nodeEnv', 'nextAuthUrlSet', 'nextAuthUrlHost', 'requestHost', 'adminEmailsConfigured', 'authError'],
+    // The session half must survive the trim, or the route stops doing the job it exists for:
+    // telling "looks signed in" apart from "is signed in".
+    required: ['sentSessionCookie', 'hasSession', 'hasUserId'],
+    why: 'unguarded by design; must diagnose a session without describing the deployment',
+  },
+];
+
 const REFUSING = new Set([401, 403, 503]);
 
 async function hit(c: Case) {
@@ -231,6 +270,27 @@ async function main() {
     } catch (err) {
       failures++;
       console.log(`  FAIL  ERR  ${c.method} ${c.path} — ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  console.log('\nPUBLIC BUT MUST NOT DESCRIBE THE DEPLOYMENT\n');
+  for (const c of MUST_NOT_DISCLOSE) {
+    try {
+      const res = await fetch(BASE + c.path, {
+        redirect: 'manual',
+        signal: AbortSignal.timeout(30000),
+      });
+      const body = (await res.json().catch(() => null)) as Record<string, unknown> | null;
+      const leaked = body ? c.forbidden.filter(k => k in body) : [];
+      const missing = body ? c.required.filter(k => !(k in body)) : c.required;
+      const ok = res.status === 200 && leaked.length === 0 && missing.length === 0;
+      if (!ok) failures++;
+      console.log(`  ${ok ? 'PASS' : 'FAIL'}  ${res.status}  GET    ${c.path.padEnd(42)} ${c.why}`);
+      if (leaked.length) console.log(`         DISCLOSES: ${leaked.join(', ')}`);
+      if (missing.length) console.log(`         MISSING the session diagnostic: ${missing.join(', ')}`);
+    } catch (err) {
+      failures++;
+      console.log(`  FAIL  ERR  GET ${c.path} — ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 

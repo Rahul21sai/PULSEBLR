@@ -47,9 +47,15 @@ export async function POST() {
       { status: process.env.RESEND_API_KEY ? 500 : 503 }
     );
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    /*
+     * NO ECHOED MESSAGE. This path reaches Mongoose (the digest reads Event, TrackerEntry,
+     * Contact and Source) and the Resend SDK, so the message can name a model and a schema path,
+     * or quote the provider's response. The 503 branch above is the counter-example worth
+     * keeping: `RESEND_API_KEY is not configured` is a deliberate, hand-written sentence about
+     * this endpoint's own configuration, not an exception the caller was handed by accident.
+     */
     console.error('Digest API error:', error);
-    return NextResponse.json({ success: false, error: message }, { status: 500 });
+    return NextResponse.json({ success: false, error: 'Failed to send the digest' }, { status: 500 });
   }
 }
 
@@ -82,8 +88,10 @@ export async function GET() {
       },
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    // NO ECHOED MESSAGE — and this was the worst of the eight sites, because `requireUser()`
+    // means ANY signed-in Google account could read it, where the POST sibling above is
+    // admin-only. Logged, not returned.
     console.error('Digest preview error:', error);
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: 'Failed to build the digest preview' }, { status: 500 });
   }
 }

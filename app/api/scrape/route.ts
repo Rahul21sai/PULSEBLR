@@ -64,9 +64,15 @@ export async function POST(request: NextRequest) {
       errorCount: result.errors.length,
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    /*
+     * NO ECHOED MESSAGE. A pipeline failure surfaces whatever threw deepest: a Mongoose
+     * ValidationError naming the Event model and a schema path, an LLM provider's rejection body,
+     * or an upstream fetch error carrying the full source URL. `result.errors` already reports
+     * per-source health to the admin dashboard in the SUCCESS body, which is the right channel
+     * for it; the crash wording is in the server log.
+     */
     console.error('Scraper API error:', error);
-    return NextResponse.json({ success: false, error: message }, { status: 500 });
+    return NextResponse.json({ success: false, error: 'The scrape run failed' }, { status: 500 });
   }
 }
 

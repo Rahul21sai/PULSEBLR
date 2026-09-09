@@ -281,8 +281,14 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ event: null });
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    /*
+     * NO ECHOED MESSAGE. This is the catch-all, so what lands here is an internal fault — a
+     * regex/parse throw, or a `safeFetch` failure carrying network detail about the deployment's
+     * own egress. The `UnsafeUrlError` branch ABOVE is the deliberate exception and must stay:
+     * that message is written by `lib/security/safe-fetch.ts` for the caller, and it is the only
+     * way they learn WHY their URL was refused rather than merely that it was.
+     */
     console.error('scrape-url error:', error);
-    return NextResponse.json({ event: null, error: message }, { status: 200 });
+    return NextResponse.json({ event: null, error: 'Could not read that URL' }, { status: 200 });
   }
 }
