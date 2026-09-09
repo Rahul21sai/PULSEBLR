@@ -79,6 +79,26 @@ export interface IContact extends Document {
   scannedAt: Date;
   /** Derived cross-folder identity. See lib/scan/contact-key.ts. */
   contactKey: string;
+  /**
+   * The HUMAN this capture is about. Assigned by `resolvePerson()` on the server, never by a client.
+   *
+   * `contactKey` above answers "is this the same person" as a STRING that gets recomputed the moment
+   * a LinkedIn slug arrives — which is why it is a pointer and not an identity. This is the identity:
+   * a `Person._id` that survives every key upgrade, so notes, follow-ups and the interaction timeline
+   * stay attached to the human rather than to a spelling of their name.
+   *
+   * OPTIONAL, AND ABSENCE IS A REAL STATE. Every contact written before the spine existed has none
+   * until `scripts/backfill-person-spine.ts --apply` runs, and `scripts/diag-people-spine.ts` counts
+   * them. Nothing may assume it is set.
+   *
+   * DELIBERATELY ABSENT FROM `pickWritable`'s ALLOWLIST. That function is the trust boundary for every
+   * contact write path — scan, manual add, PATCH, the offline drain, `/c/<token>`, `/f/<token>`. A
+   * client able to set this could staple its capture onto any person id it guessed, fabricating an
+   * encounter history and corrupting every derived field on that person: `displayName`, `company`,
+   * `eventCount` and `lastInteractionAt` are all computed from whichever contacts point here.
+   * Server-derived, always.
+   */
+  personId?: mongoose.Types.ObjectId | null;
   /** Derived from the registry by `lib/companies/resolve.ts`. */
   companies: string[];
   isTargetCompany: boolean;
@@ -119,6 +139,9 @@ const ContactSchema = new Schema<IContact>(
     scannedAt: { type: Date, default: () => new Date() },
 
     contactKey: { type: String, required: true },
+    // No `required`, no default. See the interface comment: an unset value means "not yet
+    // backfilled", and defaulting it to anything would hide that from the diagnostic.
+    personId: { type: Schema.Types.ObjectId, ref: 'Person' },
     companies: { type: [String], default: [] },
     isTargetCompany: { type: Boolean, default: false },
   },
@@ -131,6 +154,16 @@ ContactSchema.index({ userId: 1, clientId: 1 }, { unique: true });
 ContactSchema.index({ userId: 1, folderId: 1, scannedAt: -1 });
 // Repeat-connection detection: "have I met this person before?" is now a lookup.
 ContactSchema.index({ userId: 1, contactKey: 1 });
+/**
+ * "Every encounter with this human", which is what `recomputePerson()` reads on EVERY capture, note
+ * and follow-up — so it is the hottest query the spine adds. It is also what the two delete paths use
+ * to decide whether a person still has any history left, and what `personIdsInFolder()` collects
+ * before a folder cascade.
+ *
+ * No `sparse`: an unset `personId` is precisely the state `scripts/diag-people-spine.ts` has to find,
+ * and sparse would hide those rows from the index the diagnostic scans.
+ */
+ContactSchema.index({ userId: 1, personId: 1 });
 ContactSchema.index({ userId: 1, followUpAt: 1 });
 ContactSchema.index({ userId: 1, linkedinSlug: 1 }, { sparse: true });
 

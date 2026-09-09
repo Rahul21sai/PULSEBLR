@@ -701,6 +701,67 @@ export interface UpsertResult {
 }
 
 /**
+ * Attach a saved capture to the HUMAN it is about, and append a `met` row to that human's timeline.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────────────────────────
+ * WHY THIS IS A LAZY `import()` AND MUST STAY ONE.
+ *
+ * The design rule is "`lib/contacts/service.ts` calls into `lib/people/service.ts`, one direction
+ * only", and the module graph must be ACYCLIC. But the derivation rules also require `lib/people`
+ * to reuse `deriveContactMeta()` / `matchesTargetCompany()` / `canonicaliseTags()` from THIS file —
+ * "must not be recomputed independently, or the person page and the contact row can disagree". Those
+ * two requirements together are a cycle unless one edge is lazy.
+ *
+ * So the STATIC edge points people → contacts (pure helpers), and the RUNTIME call points
+ * contacts → people, from here. Hoisting this to a top-level import closes the cycle; do not do it.
+ *
+ * NON-FATAL BY DESIGN, and this is the same judgement `ensureFolderForEvent()` makes. The contact is
+ * already saved and is what the user asked for. A capture at an event, on a phone, on conference
+ * wifi, is the one write in this app that must not be lost — so a failure in the identity layer is
+ * logged and the capture stands. `scripts/backfill-person-spine.ts` is idempotent and re-attaches
+ * anything that slipped, and `scripts/diag-people-spine.ts` counts what is unattached.
+ * ─────────────────────────────────────────────────────────────────────────────────────────────────
+ */
+async function attachToPerson(userId: string, contact: IContact, folder?: IFolder | null) {
+  try {
+    const { resolvePerson, recordInteraction } = await import('../people/service');
+
+    const { person } = await resolvePerson(userId, contact);
+
+    // `personId` is written HERE, not through `pickWritable` — it is server-derived and absent from
+    // that allowlist on purpose. A direct assignment plus `.save()` rather than `findOneAndUpdate`,
+    // because `pre('validate')` (which derives `contactKey`) does not run on an update.
+    if (String(contact.personId ?? '') !== String(person._id)) {
+      contact.personId = person._id as mongoose.Types.ObjectId;
+      await contact.save();
+    }
+
+    /**
+     * The `at` is the SCAN TIME, not now — a capture drained from the outbox hours later happened
+     * when it happened, and `lastInteractionAt` is only meaningful if it says so.
+     *
+     * `eventId` comes from the folder, which is the whole point of the spine: it replaces the
+     * `Contact → Folder → Event` chain whose second hop is null in practice. Folders created by the
+     * tracker's Confirmed/Attended transition DO carry one; a hand-made folder does not, and a `met`
+     * with no `eventId` is correct there rather than a gap to paper over.
+     *
+     * Idempotent on a replay: the partial unique index on `{ userId, contactId }` filtered to
+     * `kind: 'met'` refuses the second row, and `recordInteraction` returns the existing one. Without
+     * that, a retried scan would make a person met once read "met 2 x".
+     */
+    await recordInteraction(userId, {
+      personId: person._id as mongoose.Types.ObjectId,
+      kind: 'met',
+      at: contact.scannedAt ?? new Date(),
+      eventId: folder?.eventId ?? null,
+      contactId: contact._id as mongoose.Types.ObjectId,
+    });
+  } catch (err) {
+    console.error('[contacts] person spine failed for contact', String(contact._id), err);
+  }
+}
+
+/**
  * Create a contact, idempotently on `clientId`.
  *
  * THE IDEMPOTENCY CONTRACT: a replayed POST returns the EXISTING document with
@@ -718,7 +779,18 @@ export async function upsertContact(
   input: ContactInput
 ): Promise<UpsertResult> {
   const existing = await Contact.findOne({ userId, clientId: input.clientId });
-  if (existing) return { contact: existing, created: false };
+  if (existing) {
+    /**
+     * THE REPLAY PATH. Attaching is skipped when the capture already has a person — the timeline row
+     * exists, and `recordInteraction` would only re-derive what is already there.
+     *
+     * It is NOT skipped when `personId` is absent, and that is the point: `attachToPerson` is
+     * non-fatal, so a capture whose first attach failed (or one written before the spine existed and
+     * then re-posted) gets its retry here rather than waiting for the backfill.
+     */
+    if (!existing.personId) await attachToPerson(userId, existing, await folderFor(userId, folderId));
+    return { contact: existing, created: false };
+  }
 
   const targets = await getTargetCompanies(userId);
   const fields = pickWritable(input as unknown as Record<string, unknown>);
@@ -746,7 +818,33 @@ export async function upsertContact(
     ...meta,
   });
 
+  // AFTER the save, because `resolvePerson` reads `contactKey`, which the `pre('validate')` hook
+  // derives — before the save there is nothing to resolve on.
+  await attachToPerson(userId, contact, await folderFor(userId, folderId));
+
   return { contact, created: true };
+}
+
+/**
+ * The folder a capture landed in, read only for its `eventId`.
+ *
+ * One extra query on the capture path, and worth it: `folder.eventId` is what makes
+ * `Interaction.eventId` — the spine — carry an event at all, and without it "who did I meet at this
+ * event" stays unanswerable, which is the defect the whole design exists to fix.
+ *
+ * Not `findOwnedFolder()`: ownership has already been established by the route (and by the fact that
+ * the contact saved against this folder), and this returns null rather than throwing, because a
+ * missing folder must degrade to an event-less `met` row rather than fail the capture.
+ */
+async function folderFor(
+  userId: string,
+  folderId: mongoose.Types.ObjectId | string
+): Promise<IFolder | null> {
+  try {
+    return await Folder.findOne({ _id: folderId, userId }).select('eventId').lean<IFolder | null>();
+  } catch {
+    return null;
+  }
 }
 
 /**

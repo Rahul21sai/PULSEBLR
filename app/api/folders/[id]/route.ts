@@ -127,8 +127,40 @@ export async function DELETE(
     // Contacts are deleted with their folder. They are meaningless without it — a contact
     // records "who I met at this event" — and leaving them behind would make them
     // unreachable rather than preserved. Scoped by userId as well as folderId on principle.
+
+    /*
+     * COLLECT THE AFFECTED PERSONS BEFORE THE DELETE. The order is the whole point.
+     *
+     * `personIdsInFolder` reads `Contact.personId` for this folder. After the `deleteMany` those
+     * rows are gone, so there is no way left to discover which Persons need recomputing — their
+     * counters would silently keep counting encounters that no longer exist, and a Person whose
+     * only contacts lived here would remain as a ghost row in `/people` with no history behind it.
+     * There is no recovering that ordering later.
+     */
+    let affectedPersonIds: string[] = [];
+    try {
+      const { personIdsInFolder } = await import('@/lib/people/service');
+      affectedPersonIds = await personIdsInFolder(gate.userId, folder._id);
+    } catch (err) {
+      console.error('Could not read the person ids for this folder before deleting it:', err);
+    }
+
     const removed = await Contact.deleteMany({ userId: gate.userId, folderId: folder._id });
     await folder.deleteOne();
+
+    /*
+     * Non-fatal, and after the fact: the delete the user asked for has committed. A failure here is
+     * a consistency problem to log and repair with `recomputePerson`, not a reason to report that
+     * their delete failed when it did not.
+     */
+    if (affectedPersonIds.length) {
+      try {
+        const { onFolderDeleted } = await import('@/lib/people/service');
+        await onFolderDeleted(gate.userId, affectedPersonIds);
+      } catch (err) {
+        console.error('Folder deleted but the person spine was not updated:', err);
+      }
+    }
 
     return NextResponse.json({ message: 'Deleted', contactsDeleted: removed.deletedCount ?? 0 });
   } catch (error) {
