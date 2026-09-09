@@ -50,7 +50,7 @@ describe('isIndexableEvent', () => {
     ['public', true, 'explicitly public'],
     ['private', false, 'owner-only'],
     ['pending', false, 'awaiting review — visible to owner and admin, indexable by nobody'],
-  ])('visibility %s → indexable %s (%s)', (visibility, expected) => {
+  ])('visibility %s → indexable %s (%s)', (visibility, expected, _why) => {
     expect(isIndexableEvent({ ...PUBLIC_EVENT, visibility: visibility as never })).toBe(expected);
   });
 });
