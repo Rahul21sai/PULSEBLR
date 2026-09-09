@@ -93,7 +93,37 @@ export default function TrackerPage() {
   const [folderNote, setFolderNote] = useState<{ id: string; name: string; adopted: boolean } | null>(
     null
   );
+  /**
+   * THE BOARD IS THE WRONG DEFAULT ON A PHONE, and the numbers are not marginal.
+   *
+   * Measured at 390x844: the kanban scroller lays out 2126px wide — 5.45 screens of horizontal
+   * scroll — and the only column fully on screen is `New`, which by construction holds ZERO cards
+   * (nothing is ever saved into it; `SaveButton` writes `Interested`). So opening the tracker on a
+   * phone showed a correct "22 Tracked" stat block above an empty column captioned "Drop here",
+   * with all 22 events off the right edge and nothing saying so. Drag-and-drop, the board's primary
+   * interaction, is not viable across 5.4 screens either.
+   *
+   * List view already exists and shows every entry with its own `Move` control, so the fix is a
+   * default rather than a new surface.
+   *
+   * WHY AN EFFECT AND NOT AN INITIALISER. `window` does not exist during the server render, and
+   * seeding this from `matchMedia` in `useState` would make the client's first render disagree with
+   * the server's HTML — a hydration mismatch. It runs once, so a user who then taps `Board` keeps
+   * it; and it costs no visible flash, because `loading` is still true at this point and the
+   * skeleton is the same either way.
+   *
+   * Deferred by a tick, which is this repo's established shape for exactly this (see the load
+   * effects in `app/page.tsx`): React's compiler rules reject a setState called synchronously in an
+   * effect body, and `react-hooks/set-state-in-effect` fails the lint on it.
+   */
   const [view, setView] = useState<ViewMode>('board');
+  useEffect(() => {
+    // Below Tailwind's `md` (768px), i.e. exactly the widths where the board does not fit.
+    const timer = setTimeout(() => {
+      if (window.matchMedia('(max-width: 767px)').matches) setView('list');
+    }, 0);
+    return () => clearTimeout(timer);
+  }, []);
   const [selected, setSelected] = useState<TrackerEntry | null>(null);
   const [editing, setEditing] = useState<TrackerEntry | null>(null);
   /** `${entryId}:${connectionName}` while a follow-up completion is in flight. */
@@ -304,14 +334,19 @@ export default function TrackerPage() {
           </div>
 
           <div className="flex items-center gap-2">
-            <div className="flex items-center gap-1 bg-white border border-[#e5e5ea] rounded-full p-0.5">
+            {/* 44px TOUCH TARGET OVER A 32px PILL. Measured at 64x32 and 50x32, both under the
+                WCAG 2.5.5 floor. The height is grown with an `::after` overlay so the painted pill
+                and its type scale are untouched (CLAUDE.md section 7, rule 1), and `gap-1` becomes
+                `gap-0` so the two overlays are contiguous rather than separated by a 4px dead
+                strip. Width is already 50-64px, so height was the only failing axis. */}
+            <div className="flex items-center gap-0 bg-white border border-[#e5e5ea] rounded-full p-0.5">
               {(['board', 'list'] as const).map(mode => (
                 <button
                   key={mode}
                   type="button"
                   onClick={() => setView(mode)}
                   aria-pressed={view === mode}
-                  className={`px-3.5 h-8 rounded-full text-[12.5px] font-semibold transition-colors ${
+                  className={`relative px-3.5 h-8 rounded-full text-[12.5px] font-semibold transition-colors after:absolute after:inset-x-0 after:-inset-y-1.5 after:content-[''] ${
                     view === mode ? 'bg-[#f3f3f5] text-[#1D1D1F]' : 'text-[#86868B] hover:text-[#1D1D1F]'
                   }`}
                 >
@@ -786,7 +821,14 @@ function TrackerCard({
             e.stopPropagation();
             onMove(next.id);
           }}
-          className="w-full mt-2.5 pt-2.5 border-t border-[#f0f0f2] text-[11.5px] font-semibold text-[#0071E3] hover:text-[#0060C0] transition-colors text-left"
+          /* 44px TALL, and the label has not moved. Measured at 243x28 — the smallest primary
+             action in the app, on the surface most likely to be used one-handed at an event.
+             `min-h-11` with `flex items-start` reserves the height BELOW the text rather than
+             centring it, so the hairline rule and the label stay exactly where they were; the card
+             simply grows by ~16px. An `::after` overlay was the alternative and is wrong here: the
+             card itself is `role="button"` with an `onClick`, so an overlay reaching into the
+             card's padding would silently convert "open this entry" taps into status changes. */
+          className="flex w-full items-start min-h-11 mt-2.5 pt-2.5 border-t border-[#f0f0f2] text-[11.5px] font-semibold text-[#0071E3] hover:text-[#0060C0] transition-colors text-left"
         >
           Move to {next.label} →
         </button>
@@ -828,10 +870,15 @@ function ListView({
               className="w-10 h-10 rounded-lg shrink-0"
               monogramSize="text-[11px]"
             />
+            {/* LIST VIEW IS NOW THE DEFAULT BELOW `md`, so these two controls are the ones a phone
+                actually meets and both were under the 44px floor: this row-opener measured ~34px
+                (its two lines of text) and the status select ~30px. `min-h-11` on a button with no
+                background of its own is a pure hit-area change — the hover tint belongs to the row,
+                not to this element, so nothing painted moves. */}
             <button
               type="button"
               onClick={() => onOpen(entry)}
-              className="min-w-0 flex-1 text-left"
+              className="flex min-h-11 min-w-0 flex-1 flex-col justify-center text-left"
             >
               <p className="text-[14px] font-semibold text-[#1D1D1F] truncate">{event.title}</p>
               <p className="text-[12px] text-[#86868B] tnum truncate">
@@ -850,7 +897,12 @@ function ListView({
               <select
                 value={entry.status}
                 onChange={e => onMove(entry._id, e.target.value)}
-                className="text-[12px] font-semibold rounded-full px-3 py-1.5 border border-[#e5e5ea] bg-white focus:outline-none focus:border-[#0071E3] cursor-pointer"
+                /* `min-h-11` rather than an `::after` overlay, because an overlay on the wrapping
+                   label would be painted OVER the select and swallow the tap that opens it. This is
+                   the one place in this pass where the painted control does grow (30 -> 44px); the
+                   type size, weight and radius are untouched, and it is the primary action of the
+                   default mobile view. */
+                className="min-h-11 text-[12px] font-semibold rounded-full px-3 py-1.5 border border-[#e5e5ea] bg-white focus:outline-none focus:border-[#0071E3] cursor-pointer"
                 style={{ color: column?.tint }}
               >
                 {COLUMNS.map(c => (

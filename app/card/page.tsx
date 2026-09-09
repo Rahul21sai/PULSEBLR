@@ -20,6 +20,21 @@ export default function CardPage() {
   const [card, setCard] = useState<MyCardDTO | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  /**
+   * The outcome of the two footer actions, said out loud.
+   *
+   * Distinct from `error`, which replaces the whole screen when the card cannot be loaded. This is
+   * transient feedback about an action, on the one screen whose entire job is handing your link to
+   * somebody standing in front of you — so silence is the worst possible response.
+   */
+  const [notice, setNotice] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
+
+  function say(tone: 'ok' | 'error', text: string) {
+    setNotice({ tone, text });
+    // Long enough to read a failure and act on it, and it does not matter if it outlives a
+    // navigation: this screen is a dead end with a close button.
+    setTimeout(() => setNotice(null), tone === 'error' ? 5000 : 2200);
+  }
 
   const load = useCallback(async () => {
     try {
@@ -38,6 +53,39 @@ export default function CardPage() {
     const timer = setTimeout(load, 0);
     return () => clearTimeout(timer);
   }, [load]);
+
+  /**
+   * COPY THE LINK, AND SURVIVE A REFUSAL.
+   *
+   * This was `onClick={() => void navigator.clipboard?.writeText(card.url!)}`, and it produced the
+   * ONLY uncaught exception in a 200-event click-through crawl of the whole app:
+   * `Failed to execute 'writeText' on 'Clipboard': Write permission denied.` `void` discards the
+   * RETURN VALUE, not the rejection — the promise still rejects, unhandled.
+   *
+   * `writeText` rejects routinely, not exceptionally: whenever the document is not focused, the
+   * context is not secure, a permissions policy denies it, or — on iOS Safari — when the call is
+   * not inside a direct user gesture. So the failure path is the normal path often enough to need
+   * words, and this repo already handles it correctly in two other places
+   * (`app/folders/[id]/page.tsx` and `app/events/[id]/page.tsx`); this was the third call site and
+   * the only one that did not.
+   *
+   * The absence check is separate from the `.catch()` on purpose: optional chaining SHORT-CIRCUITS
+   * the rest of the chain, so with no Clipboard API at all `navigator.clipboard?.writeText(x)
+   * .catch(...)` quietly evaluates to `undefined` and the user is told nothing — a silent no-op,
+   * which is the bug this fix exists to remove.
+   */
+  function copyLink() {
+    const url = card?.url;
+    if (!url) return;
+    if (!navigator.clipboard) {
+      say('error', 'This browser will not let a page copy for you — press and hold the code above.');
+      return;
+    }
+    void navigator.clipboard
+      .writeText(url)
+      .then(() => say('ok', 'Link copied.'))
+      .catch(() => say('error', 'Could not copy — your browser blocked clipboard access.'));
+  }
 
   async function enable() {
     try {
@@ -130,23 +178,34 @@ export default function CardPage() {
 
       {card?.enabled && card.url && (
         <div
-          className="flex items-center justify-center gap-2 p-4"
+          className="p-4"
           style={{ paddingBottom: 'max(16px, env(safe-area-inset-bottom))' }}
         >
-          <Button
-            tone="quiet"
-            icon="download"
-            onClick={() => void downloadQrPng(card.url!, 'pulseblr-card.png')}
-          >
-            Save as image
-          </Button>
-          <Button
-            tone="quiet"
-            icon="content_copy"
-            onClick={() => void navigator.clipboard?.writeText(card.url!)}
-          >
-            Copy link
-          </Button>
+          {/* Above the buttons rather than over the code: the code is what somebody else's camera is
+              pointed at, and covering it to report on a copy would break the screen's one job. */}
+          {notice && (
+            <div className="mx-auto mb-3 max-w-[360px]">
+              <Banner tone={notice.tone}>{notice.text}</Banner>
+            </div>
+          )}
+          <div className="flex items-center justify-center gap-2">
+            <Button
+              tone="quiet"
+              icon="download"
+              /* `.catch()` for the same reason `copyLink` above has one: `downloadQrPng` is async,
+                 and a bare `void` leaves a second unhandled rejection one line from the first. */
+              onClick={() =>
+                void downloadQrPng(card.url!, 'pulseblr-card.png').catch(() =>
+                  say('error', 'Could not save the image — try a screenshot.')
+                )
+              }
+            >
+              Save as image
+            </Button>
+            <Button tone="quiet" icon="content_copy" onClick={copyLink}>
+              Copy link
+            </Button>
+          </div>
         </div>
       )}
     </div>

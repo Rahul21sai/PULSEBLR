@@ -50,7 +50,9 @@ export default function EventGridCard({ event }: { event: FeedEvent }) {
           <span className="tnum">
             {dayLabelIST(event.startDateTime)} · {timeIST(event.startDateTime)}
           </span>
-          <SaveButton eventId={event._id} />
+          {/* Same as the rail row: the feed can only show what you already saved if the flag
+              the API now sends actually reaches the button. */}
+          <SaveButton eventId={event._id} initiallySaved={event.tracked} />
         </div>
 
         <h3 className="text-[16px] font-semibold leading-snug tracking-[-0.01em] text-[#1D1D1F]">

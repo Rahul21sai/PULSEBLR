@@ -10,12 +10,24 @@ import { FeedEvent, Facets, Pagination } from '@/lib/event-types';
 import { MIN_SEARCH_CHARS } from '@/lib/events/query';
 import { dayKeyIST, dayHeading, fullDateIST, isHappeningNow, NOW_GROUP_KEY } from '@/lib/format';
 
+/**
+ * The time window chips, BROADEST FIRST — and the order is a fix, not a preference.
+ *
+ * `All upcoming` (`id: ''`) is the DEFAULT state, so it is the chip that renders active on a cold
+ * load. It used to be last in a 518px-wide row inside a 390px viewport, which meant a phone opened
+ * on `Today | Tomorrow | …` with **no visible chip highlighted** — the reader could not tell what
+ * the feed was showing, and the scroll needed to find out was unsignalled. Putting the default
+ * first means the active chip is always at x=0 on a cold load, and the sequence then reads as a
+ * narrowing: everything → today → tomorrow → this weekend → this week.
+ *
+ * Order is not load-bearing anywhere else: the URL reader matches by `id` with `.some()`.
+ */
 const WHEN_TABS = [
+  { id: '', label: 'All upcoming' },
   { id: 'today', label: 'Today' },
   { id: 'tomorrow', label: 'Tomorrow' },
   { id: 'weekend', label: 'This weekend' },
   { id: 'week', label: 'Next 7 days' },
-  { id: '', label: 'All upcoming' },
 ] as const;
 
 /**
@@ -121,6 +133,28 @@ export default function Home() {
   const [filters, setFilters] = useState<FilterState>(EMPTY_FILTERS);
   const [view, setView] = useState<ViewMode>('rail');
   const [sheetOpen, setSheetOpen] = useState(false);
+
+  /**
+   * The time-window chip scroller, so the ACTIVE chip can be brought into view.
+   *
+   * Needed because the row is wider than a phone: `?when=week` arriving from a shared link, or the
+   * default landing on `All upcoming`, must not leave the highlighted chip off the right edge —   * which is precisely the state that made the row look like it had only two options.
+   *
+   * `scrollLeft` is assigned directly rather than calling `scrollIntoView()`, for two reasons.
+   * `scrollIntoView` walks every scrollable ancestor, so it can scroll the PAGE as well as the row;
+   * and its `behavior` default is `auto`, which defers to CSS `scroll-behavior` — globals.css
+   * forces that to `auto` under `prefers-reduced-motion`, and an explicit `'smooth'` here would
+   * override the user's setting. A direct assignment is instant and honours it by construction.
+   */
+  const chipRowRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const row = chipRowRef.current;
+    if (!row) return;
+    const active = row.querySelector<HTMLElement>('[data-active="true"]');
+    if (!active) return;
+    const centred = active.offsetLeft - (row.clientWidth - active.offsetWidth) / 2;
+    row.scrollLeft = Math.max(0, Math.min(centred, row.scrollWidth - row.clientWidth));
+  }, [when]);
 
   // Deep links from the companies page arrive as ?company=Google. Read once on
   // mount rather than holding the URL as state, so the filter model stays
@@ -694,7 +728,17 @@ export default function Home() {
         style={{ height: 'var(--commandbar-h)' }}
       >
         <div className="max-w-[1240px] mx-auto px-4 md:px-8">
-          <div className="flex items-center gap-2 py-2.5">
+          {/* `py-1.5` below `md`, and the 4px a side it gives up is spent deliberately.
+              `--commandbar-h` is 98px and lives in globals.css, which this change does not touch,
+              so both rows have to fit inside it. Row 1 at `py-2.5` was 60px, leaving 34px for the
+              chip row — not enough for the 44px touch target the chips were measured below. At
+              `py-1.5` row 1 is 52px and the chip band is 46px, so a 44px overlay fits with 1px of
+              slack top and bottom.
+
+              `sm:` and not `md:`, because `sm` is exactly where the sort control stops collapsing to
+              an icon and row 2 stops needing 44px. Restoring the original spacing only at `md`
+              would leave 12px of dead space at the bottom of the bar between 640px and 767px. */}
+          <div className="flex items-center gap-2 py-1.5 sm:py-2.5">
             <div className="relative flex-1 min-w-0">
               <span aria-hidden="true" className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-[19px] text-[#86868B] pointer-events-none">
                 search
@@ -740,7 +784,12 @@ export default function Home() {
               )}
             </button>
 
-            <div className="hidden sm:flex shrink-0 items-center gap-1 bg-white border border-[#e5e5ea] rounded-full p-0.5">
+            {/* `gap-0`, not `gap-1`: with a 44px-tall `::after` overlay on each half, a 4px gap is
+                a 4px dead strip between two adjacent targets — and the two halves of a segmented
+                control should be contiguous anyway. Height reaches the 44px floor; WIDTH STAYS
+                32px, because widening the painted pill would push it past row 1's 40px content
+                height and out of the fixed command bar. */}
+            <div className="hidden sm:flex shrink-0 items-center gap-0 bg-white border border-[#e5e5ea] rounded-full p-0.5">
               {(['rail', 'grid'] as const).map(mode => (
                 <button
                   key={mode}
@@ -748,7 +797,7 @@ export default function Home() {
                   onClick={() => setView(mode)}
                   aria-pressed={view === mode}
                   aria-label={mode === 'rail' ? 'Schedule view' : 'Grid view'}
-                  className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${
+                  className={`relative w-8 h-8 rounded-full flex items-center justify-center transition-colors after:absolute after:inset-x-0 after:-inset-y-1.5 after:content-[''] ${
                     view === mode ? 'bg-[#f3f3f5] text-[#1D1D1F]' : 'text-[#86868B] hover:text-[#1D1D1F]'
                   }`}
                 >
@@ -760,16 +809,46 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Time window tabs + sort */}
-          <div className="flex items-center justify-between gap-4 pb-1">
-            <div className="flex gap-1 overflow-x-auto no-scrollbar -mx-1 px-1">
+          {/* ── Time window chips + sort ------------------------------------
+              THREE OF FIVE CHIPS WERE UNREACHABLE ON A PHONE. Measured at 390x844: the chip row
+              lays out 518px wide, and the sort control — a native `<select>` sized by its longest
+              option, "Best for connections" — took 174px of the 358px available, leaving the
+              scroller ~168px. It scrolled, but with `no-scrollbar` and nothing cut off mid-chip
+              there was no signal that it did, and the active chip (`All upcoming`) sat off the
+              right edge entirely. Two changes, and BOTH are needed:
+
+                1. The sort control collapses to a 44px icon below `sm` (see below), which returns
+                   roughly 130px to the row.
+                2. `WHEN_TABS` now leads with the DEFAULT window, so the active chip is at x=0 on a
+                   cold load instead of off-screen.
+
+              The row keeps `overflow-x-auto` and gains `snap-x snap-mandatory` — the same idiom as
+              the "Curated by us" shelf — so a partially visible chip settles cleanly rather than
+              being left cut mid-word. `gap-2 sm:gap-4`, because the 16px gutter to the sort control
+              was itself 10% of the row on a phone. */}
+          <div className="flex items-center justify-between gap-2 pb-0 sm:gap-4 sm:pb-1">
+            <div
+              ref={chipRowRef}
+              className="flex snap-x snap-mandatory gap-1 overflow-x-auto overscroll-x-contain no-scrollbar -mx-1 px-1"
+            >
               {WHEN_TABS.map(tab => (
                 <button
                   key={tab.id || 'all'}
                   type="button"
+                  data-active={when === tab.id}
                   onClick={() => setWhen(tab.id)}
                   aria-pressed={when === tab.id}
-                  className={`shrink-0 rounded-full px-3.5 py-1.5 text-[13px] font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0071E3] [touch-action:manipulation] ${
+                  /* The PAINTED pill stays 32px: its height is part of the command bar's density
+                     and of the type scale the design system pins (CLAUDE.md section 7, rule 1).
+                     The TOUCH TARGET grows to 44px with an `::after` overlay instead — the WCAG
+                     2.5.5 floor, and it matters here more than most places, since this is the
+                     primary filter on a product used one-handed while standing at an event.
+
+                     `-inset-y-1.5` is exactly 6px a side (32 -> 44) and no more, because the
+                     command bar is a fixed `--commandbar-h` with `overflow-hidden`: an overlay
+                     taller than the row's band would be clipped, and a clipped overlay is a dead
+                     strip that MEASURES as a hit area without being one. */
+                  className={`relative shrink-0 snap-start rounded-full px-3.5 py-1.5 text-[13px] font-semibold transition-colors after:absolute after:inset-x-0 after:-inset-y-1.5 after:content-[''] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0071E3] [touch-action:manipulation] ${
                     when === tab.id
                       ? 'bg-[#1D1D1F] text-white'
                       : 'text-[#6E6E73] hover:bg-white hover:text-[#1D1D1F]'
@@ -782,22 +861,34 @@ export default function Home() {
 
             {/* Available on EVERY width. This was `hidden md:flex`, which left phones
                 with no sort control — and "Best for connections" is the one ranking this
-                product has that Luma and Meetup do not. */}
+                product has that Luma and Meetup do not.
+
+                BELOW `sm` IT IS A 44px ICON WITH THE NATIVE SELECT LAID TRANSPARENTLY OVER IT.
+                The `<select>` is still the interactive element — native picker, keyboard, screen
+                reader and form semantics all unchanged — it is simply `opacity-0` and stretched to
+                fill the target, with a `swap_vert` glyph painted behind it. That is what buys the
+                chip row its width back: a select sized by "Best for connections" spends 150px of a
+                358px row on a control reached far less often than the time window.
+
+                The focus ring moves to the WRAPPER, because a ring drawn on an invisible element is
+                an invisible ring. `focus-within` rather than `has-[:focus-visible]` so it also
+                fires on the keyboard path in browsers that do not match `:focus-visible` on a
+                select. */}
             <label
               htmlFor="event-sort"
-              className="flex shrink-0 items-center gap-1.5 text-[12.5px] text-[#8E8E93]"
+              className="relative flex h-11 w-11 shrink-0 items-center justify-center gap-1.5 rounded-full text-[12.5px] text-[#8E8E93] focus-within:ring-2 focus-within:ring-[#0071E3] sm:h-auto sm:w-auto sm:justify-start sm:rounded-none sm:focus-within:ring-0"
             >
               <span className="hidden sm:inline">Sort</span>
-              <span className="material-symbols-outlined sm:hidden text-[17px]" aria-hidden="true">
+              <span className="material-symbols-outlined sm:hidden text-[19px]" aria-hidden="true">
                 swap_vert
               </span>
-              <span className="sr-only sm:hidden">Sort events by</span>
               <select
                 id="event-sort"
                 name="sort"
+                aria-label="Sort events by"
                 value={sort}
                 onChange={e => setSort(e.target.value)}
-                className="cursor-pointer rounded-md bg-transparent py-0.5 pr-1 font-semibold text-[#1D1D1F] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0071E3] [touch-action:manipulation]"
+                className="absolute inset-0 h-full w-full cursor-pointer opacity-0 [touch-action:manipulation] sm:static sm:h-auto sm:w-auto sm:rounded-md sm:bg-transparent sm:py-0.5 sm:pr-1 sm:font-semibold sm:text-[#1D1D1F] sm:opacity-100 sm:focus:outline-none sm:focus-visible:ring-2 sm:focus-visible:ring-[#0071E3]"
               >
                 {SORTS.map(option => (
                   <option key={option.id} value={option.id}>

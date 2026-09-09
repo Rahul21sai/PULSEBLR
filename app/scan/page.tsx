@@ -62,6 +62,22 @@ function ScanScreen() {
     authExpired: false,
   });
   const [toast, setToast] = useState<string | null>(null);
+  /**
+   * A failure that happens WHILE THE CAPTURE SHEET IS OPEN, reported inside the sheet.
+   *
+   * WHY THIS IS SEPARATE FROM `toast`. `Sheet` is `z-[70]` and the toast is `z-20`, both in the
+   * scan screen's stacking context (its root is `fixed` with `z-index: auto`, so it creates none).
+   * So every message raised without closing the sheet rendered BEHIND the sheet's own backdrop —   * and those are exactly the two messages that matter: "add a name first", and the `lost` outcome
+   * where the record is genuinely gone and the sheet is deliberately kept open so the details can
+   * be re-entered. A failed capture therefore showed NOTHING while the user was standing in front
+   * of the person they had just scanned.
+   *
+   * The z-index of the toast is raised too (see below), because `syncNow` and the duplicate-code
+   * notice can fire while the folder picker is open. But a message about the form belongs ON the
+   * form rather than floating over it: it survives while the user fixes the field, and a screen
+   * reader meets it inside the dialog it applies to instead of in a region outside the modal.
+   */
+  const [sheetError, setSheetError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   // One fetch for the page; the capture sheet is remounted per person.
   const tagVocabulary = useTagVocabulary();
@@ -151,6 +167,8 @@ function ScanScreen() {
       }
 
       setCaptured(parsed);
+      // A new person, so any verdict about the last one is stale.
+      setSheetError(null);
       setShowAllFields(!parsed.person.linkedinSlug);
       setDraft({
         name: parsed.person.name ?? '',
@@ -176,11 +194,13 @@ function ScanScreen() {
     async (thenScanNext: boolean) => {
       if (!captured || !folderId) return;
       if (!draft.name.trim()) {
-        setToast('Add a name first — the code does not carry one.');
-        setTimeout(() => setToast(null), 3000);
+        // In the sheet, not in a toast: the sheet is still open, so a toast is behind its backdrop,
+        // and the message is about a field the user is looking at.
+        setSheetError('Add a name first — the code does not carry one.');
         return;
       }
 
+      setSheetError(null);
       setSaving(true);
       const record = {
         ...draft,
@@ -228,6 +248,12 @@ function ScanScreen() {
       if (result.outcome === 'lost') {
         // Keep the capture card open with the typed fields intact, so the details can be
         // re-entered or written down. Everything below unwinds the card.
+        //
+        // And say so INSIDE the card. The toast set above is now above the sheet too, but this is
+        // the one outcome where the record is genuinely gone and the user has to act on the words:
+        // it must not time out, and it must sit next to the fields it is asking them to preserve.
+        setSheetError(`NOT SAVED — ${result.reason}`);
+        setToast(null);
         return;
       }
 
@@ -350,9 +376,14 @@ function ScanScreen() {
         )}
       </div>
 
-      {/* ── Toast + pending ─────────────────────────────────────────────── */}
+      {/* ── Toast + pending ───────────────────────────────────────────────
+          `z-[80]`, ABOVE `Sheet`'s `z-[70]`. It was `z-20`, so every toast raised while a sheet was
+          open rendered behind that sheet's backdrop — invisible. The scan root is `fixed` with
+          `z-index: auto` and so creates no stacking context of its own, which is why the two
+          numbers compete directly. `pointer-events-none` is what makes stacking it over a modal
+          safe: it cannot intercept a tap meant for the sheet. */}
       {toast && (
-        <div className="pointer-events-none absolute inset-x-0 top-20 z-20 px-4">
+        <div className="pointer-events-none absolute inset-x-0 top-20 z-[80] px-4">
           <p
             role="status"
             className="mx-auto max-w-[420px] rounded-2xl bg-white/95 px-4 py-3 text-center text-[13px] font-medium leading-relaxed text-[#1D1D1F]"
@@ -402,6 +433,7 @@ function ScanScreen() {
           onClose={() => {
             setCaptured(null);
             setDraft({ name: '' });
+            setSheetError(null);
           }}
           title={draft.name.trim() || 'Who was that?'}
           subtitle={folder ? `Into ${folder.name}` : undefined}
@@ -417,6 +449,18 @@ function ScanScreen() {
             </div>
           }
         >
+          {/* THE FIRST THING IN THE SCROLLPORT, above even the Connect button, so a refusal is on
+              screen without scrolling on a phone. `error` rather than `warn` because both cases it
+              carries are things the save declined to do, and it does NOT time out: the `lost`
+              outcome is asking the user to preserve what they typed. `Banner` sets `role="status"`,
+              and being inside the dialog means a screen reader meets it within the modal it
+              applies to rather than in a live region the modal has hidden. */}
+          {sheetError && (
+            <div className="mb-4">
+              <Banner tone="error">{sheetError}</Banner>
+            </div>
+          )}
+
           {/**
            * The Connect button is FIRST and is a real tap, which is what makes it work: an
            * https linkedin.com/in/<slug> URL is claimed by the LinkedIn app through iOS

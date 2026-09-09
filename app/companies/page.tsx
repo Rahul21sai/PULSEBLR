@@ -40,6 +40,32 @@ export default function CompaniesPage() {
   const [sector, setSector] = useState('');
   const [showEmpty, setShowEmpty] = useState(false);
 
+  /**
+   * READ `?q=` FROM THE URL. Every event detail page links here as `/companies?q=<name>` from each
+   * company it names, and that deep link is the STATED reason this route stays public and unguarded
+   * after Companies left the nav (CLAUDE.md section 4). The parameter was never read, so every one
+   * of those links landed on an unfiltered directory of 375 companies — the link worked, and did
+   * nothing.
+   *
+   * `showEmpty` is forced ON when a name arrives, and that is the non-obvious half. Only 44 of 375
+   * companies have anything scheduled, so the default (hide the quiet ones) would answer a deep
+   * link for a company with no upcoming events with "No companies match" — which reads as "we have
+   * never heard of them" rather than "they have nothing on". The button still toggles it back.
+   *
+   * Deferred a tick and read once, exactly like the feed's `?company=` handling: the filter model
+   * stays the single source of truth, and reading the URL after hydration avoids a server/client
+   * mismatch on the toggle's `aria-pressed`.
+   */
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const q = new URLSearchParams(window.location.search).get('q');
+      if (!q) return;
+      setSearch(q);
+      setShowEmpty(true);
+    }, 0);
+    return () => clearTimeout(timer);
+  }, []);
+
   useEffect(() => {
     let active = true;
     const timer = setTimeout(async () => {

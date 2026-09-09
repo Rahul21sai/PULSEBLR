@@ -7,6 +7,7 @@ import { isValidId } from '@/lib/contacts/service';
 import { buildContactFilter, buildContactSort, parseContactQuery, type ContactSort } from '@/lib/contacts/query';
 import { CONTACT_CSV_COLUMNS } from '@/lib/contacts/export-columns';
 import { toCsv, exportFilename, type CsvColumn } from '@/lib/scan/csv';
+import { buildVCardFile } from '@/lib/contacts/vcf';
 import type { IContact } from '@/lib/models/Contact';
 
 /**
@@ -25,6 +26,17 @@ import type { IContact } from '@/lib/models/Contact';
  *
  * `Cache-Control: no-store`, for the same reason the folder export sets it and a stronger one: this
  * is a bulk PII export of a user's ENTIRE contact list, and `sw.js` caches successful GETs.
+ *
+ * `?format=vcf` IMPORTS STRAIGHT INTO A PHONE'S ADDRESS BOOK, and its absence here was backwards.
+ * The PER-FOLDER export has honoured it from the start, so a user could put one event's people into
+ * their contacts app and not everyone they had ever met — when the complete list is obviously the
+ * one you want in an address book. Same branch, same `buildVCardFile`, same headers discipline.
+ *
+ * The `note` field carries the FOLDER NAME, exactly as the per-folder export does: "where did this
+ * person come from" is the one piece of context a vCard has room for and an address book has no
+ * other column for. It matters more here than there, because a combined export has no filename to
+ * carry it. The folder join below already exists to serve the CSV's `Folder` column, so this costs
+ * no extra query.
  */
 
 /** No cap on the folder export, but this one can span every folder, so it needs a ceiling. */
@@ -61,6 +73,37 @@ export async function GET(request: NextRequest) {
       .select('name')
       .lean();
     const folderName = new Map(folders.map(f => [String(f._id), f.name]));
+
+    // Anything that is not exactly `vcf` is CSV — the same defaulting the folder export uses, so a
+    // typo downloads a spreadsheet rather than a 400.
+    const format = search.get('format') === 'vcf' ? 'vcf' : 'csv';
+
+    if (format === 'vcf') {
+      const body = buildVCardFile(
+        contacts.map(c => ({
+          name: c.name,
+          role: c.role,
+          company: c.company,
+          email: c.email,
+          phone: c.phone,
+          urls: [
+            c.linkedin,
+            c.website,
+            c.github && `https://github.com/${c.github}`,
+            c.x && `https://x.com/${c.x}`,
+          ],
+          note: [folderName.get(String(c.folderId)), c.note].filter(Boolean).join(' — '),
+        }))
+      );
+      return new NextResponse(body, {
+        status: 200,
+        headers: {
+          'Content-Type': 'text/vcard; charset=utf-8',
+          'Content-Disposition': `attachment; filename="${exportFilename('people', 'vcf')}"`,
+          'Cache-Control': 'no-store',
+        },
+      });
+    }
 
     const columns: CsvColumn<IContact>[] = [
       ...CONTACT_CSV_COLUMNS,

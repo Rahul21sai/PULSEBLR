@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import connectDB from '@/lib/mongodb';
 import Event from '@/lib/models/Event';
+import TrackerEntry from '@/lib/models/TrackerEntry';
 import { parseEventParams, buildEventFilter, buildSort, SortKey } from '@/lib/events/query';
 import { requireAdmin, requireUser } from '@/lib/api-auth';
 import { TECH_FLAG_CATEGORIES } from '@/lib/event-types';
@@ -28,15 +29,25 @@ import { getCurrentUserId } from '@/lib/auth-helpers';
  * The list projection deliberately omits the full description: it is up to 6 KB
  * per event and the feed only renders a two-line excerpt, so sending it would
  * multiply the payload for nothing. The detail endpoint returns everything.
+ *
+ * Each row carries `tracked` for a signed-in caller — see `attachTracked` below.
  */
 export async function GET(request: NextRequest) {
+  /*
+   * SESSION FIRST, BEFORE ANY PARAM WORK. Not a guard — the feed is public and this route must
+   * keep answering an anonymous caller with 200 — but the ordering is the same discipline the
+   * POST handler documents, and it is what stops `tracked` from being computed off a user id
+   * resolved halfway down the function next to the thing it is scoping.
+   */
+  const userId = await getCurrentUserId();
+
   try {
     await connectDB();
 
     const searchParams = request.nextUrl.searchParams;
     const params = parseEventParams(searchParams);
     // Nullable, not `requireUser()`: the feed is public. See the note in the facets route.
-    const filter = buildEventFilter(params, await getCurrentUserId());
+    const filter = buildEventFilter(params, userId);
 
     const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10) || 1);
     const limit = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') || '30', 10) || 30));
@@ -67,7 +78,7 @@ export async function GET(request: NextRequest) {
     ]);
 
     return NextResponse.json({
-      events,
+      events: await attachTracked(events, userId),
       pagination: {
         page,
         limit,
@@ -79,6 +90,48 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error('Error fetching events:', error);
     return NextResponse.json({ error: 'Failed to fetch events' }, { status: 500 });
+  }
+}
+
+/**
+ * Mark the rows this caller has already saved to their tracker.
+ *
+ * WHY THE FEED NEEDS THIS AT ALL. `SaveButton` has always accepted `initiallySaved` and derived
+ * its whole visual state from it, and nothing ever passed it — so every card showed an empty
+ * bookmark whatever the user had saved, and the only way to find out you had already saved
+ * something was to save it again and get a 409. A click-through crawl recorded 20 of them in one
+ * session. The button handled the 409 gracefully, which is exactly why it went unnoticed: the
+ * defect was never an error, it was the feed being unable to state a fact it already owned.
+ *
+ * ONE QUERY, NOT ONE PER ROW. `distinct` over `{ userId, eventId: { $in: ids } }` rides the
+ * compound unique index `{ userId, eventId }` the model already declares, and returns ids only —
+ * so the cost does not grow with what a user has tracked, only with the page size (30).
+ *
+ * A FAILURE HERE MUST NOT COST THE FEED. `tracked` is an enhancement to a public list; if the
+ * tracker lookup throws, every row simply comes back without the flag and the button behaves as
+ * it did before — a 500 on the whole feed would be a far worse trade.
+ *
+ * Anonymous callers get the rows untouched: no key, no cost, and nothing per-user in a response
+ * that `sw.js` may cache. (`/api/events` is in that file's `PRIVATE_API` list already, because
+ * the feed can contain the caller's own private events — this adds no new class of leak.)
+ */
+async function attachTracked<T extends { _id: unknown }>(
+  events: T[],
+  userId: string | null
+): Promise<T[]> {
+  if (!userId || events.length === 0) return events;
+  try {
+    // Stringified, not the raw `_id`s: `lean()` types them loosely, and Mongoose casts a string to
+    // an ObjectId for an ObjectId path anyway — so this keeps the query honestly typed without an
+    // assertion that would hide a real shape change later.
+    const ids = events.map(event => String(event._id));
+    const trackedIds = await TrackerEntry.distinct('eventId', { userId, eventId: { $in: ids } });
+    if (trackedIds.length === 0) return events;
+    const tracked = new Set(trackedIds.map(String));
+    return events.map(event => ({ ...event, tracked: tracked.has(String(event._id)) }));
+  } catch (error) {
+    console.error('Could not resolve tracked events for the feed:', error);
+    return events;
   }
 }
 

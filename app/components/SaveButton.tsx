@@ -12,6 +12,16 @@ type State = 'idle' | 'saving' | 'saved' | 'exists' | 'unauthorized' | 'error';
  * you click, and the only states that produce words are the two you can act on
  * — "Sign in to save" and a retryable failure. Silently swallowing errors (the
  * previous behaviour) taught users the button was broken.
+ *
+ * `initiallySaved` COMES FROM `GET /api/events`'s per-row `tracked` flag. It was declared here
+ * from the start and passed by NOBODY, so the feed could never show what the user had already
+ * saved — a crawl of one session recorded 20 × `409 Already tracking`, each of them a user
+ * discovering a fact the feed already had. See `attachTracked` in `app/api/events/route.ts`.
+ *
+ * THE HIT AREA IS 44px AND THE PAINTED CONTROL IS STILL 36px. Grown with an `::after` overlay
+ * rather than by padding, because the pill's diameter is part of the card's density (see the
+ * design-system rules in CLAUDE.md §7) while the touch target is a WCAG 2.5.5 floor on a product
+ * used one-handed at an event. The overlay reaches into the card's own `p-3`, so nothing moves.
  */
 export default function SaveButton({
   eventId,
@@ -26,7 +36,17 @@ export default function SaveButton({
 }) {
   const [state, setState] = useState<State>(initiallySaved ? 'saved' : 'idle');
 
-  const saved = state === 'saved' || state === 'exists';
+  /*
+   * `initiallySaved` is also honoured while IDLE, not only at mount.
+   *
+   * The rows are rendered after their fetch resolves, so the mount value is normally already
+   * correct — but a section that fills from a second request (the Spotlight, the curated shelf)
+   * can hand the same event to a button that mounted without the flag. Reading it here rather
+   * than syncing it into state means a late arrival is reflected without an effect that could
+   * clobber a save the user has already started: once the state machine has moved off `idle`,
+   * it owns the answer.
+   */
+  const saved = state === 'saved' || state === 'exists' || (initiallySaved && state === 'idle');
 
   async function save(event: React.MouseEvent) {
     event.preventDefault();
@@ -67,8 +87,8 @@ export default function SaveButton({
         onClick={e => e.stopPropagation()}
         className={
           variant === 'full'
-            ? 'flex-1 text-center bg-[#0071E3] text-white text-label-md font-semibold py-3 rounded-full hover:bg-blue-600 transition-colors'
-            : 'shrink-0 h-9 px-3 rounded-full border border-[#e5e5ea] bg-white text-[11px] font-semibold text-[#0071E3] hover:bg-[#f3f3f5] transition-colors'
+            ? 'flex-1 min-h-11 flex items-center justify-center text-center bg-[#0071E3] text-white text-label-md font-semibold py-3 rounded-full hover:bg-blue-600 transition-colors'
+            : "relative shrink-0 h-9 px-3 rounded-full border border-[#e5e5ea] bg-white text-[11px] font-semibold text-[#0071E3] hover:bg-[#f3f3f5] transition-colors after:absolute after:-inset-1 after:content-['']"
         }
       >
         Sign in to save
@@ -90,7 +110,7 @@ export default function SaveButton({
         type="button"
         onClick={save}
         aria-pressed={saved}
-        className={`flex-1 text-label-md font-semibold py-3 rounded-full transition-colors ${
+        className={`flex-1 min-h-11 text-label-md font-semibold py-3 rounded-full transition-colors ${
           saved
             ? 'bg-[#0071E3]/10 text-[#0071E3]'
             : state === 'error'
@@ -110,7 +130,7 @@ export default function SaveButton({
       title={label}
       aria-label={label}
       aria-pressed={saved}
-      className={`shrink-0 w-9 h-9 rounded-full border flex items-center justify-center transition-colors active:scale-90 ${
+      className={`relative shrink-0 w-9 h-9 rounded-full border flex items-center justify-center transition-colors active:scale-90 after:absolute after:-inset-1 after:content-[''] ${
         saved
           ? 'border-[#0071E3]/25 bg-[#0071E3]/10 text-[#0071E3]'
           : state === 'error'

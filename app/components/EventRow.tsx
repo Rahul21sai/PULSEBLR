@@ -142,7 +142,11 @@ export default function EventRow({
                     {event.title}
                   </Link>
                 </h3>
-                <SaveButton eventId={event._id} />
+                {/* `event.tracked` comes from `GET /api/events` for a signed-in caller, so a row
+                    the user already saved opens with a FILLED bookmark. Before this the prop
+                    existed and nothing passed it, and the only way to learn you had saved
+                    something was to save it again and collect a 409. */}
+                <SaveButton eventId={event._id} initiallySaved={event.tracked} />
               </div>
 
               <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px] tracking-[0] text-[#6E6E73] min-w-0">

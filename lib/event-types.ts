@@ -46,6 +46,14 @@ export interface FeedEvent {
   recruiterMentioned?: boolean;
   seenInSources?: string[];
   createdAt?: string;
+  /**
+   * Has the SIGNED-IN caller already saved this to their tracker?
+   *
+   * Set by `GET /api/events` per request, never stored. Absent for an anonymous caller and for
+   * any row the caller has not tracked, so `undefined` and `false` mean the same thing to a
+   * reader — which is what lets `SaveButton` take it as a plain optional boolean.
+   */
+  tracked?: boolean;
 }
 
 export interface Pagination {
@@ -123,6 +131,68 @@ export const TECH_CATEGORY_NAMES = [
  * the user adds their own event and it seems to vanish.
  *
  * This file has no mongoose and no LLM imports, so a route may import it freely.
+ * ─────────────────────────────────────────────────────────────────────────────────────────────
+ *
+ * ── `Conference` AND `Workshop` ARE DELIBERATELY NOT HERE. MEASURED, NOT ASSUMED. ────────────
+ *
+ * The argument FOR adding them is sound as far as it goes: `Conference`, `Workshop` and `Meetup`
+ * describe the KIND of gathering, not the topic, so an event tagged only `{Conference}` is
+ * excluded from the default tech-only feed even when it is unambiguously a tech conference. That
+ * is real recall loss, and `Hackathon` above is precedent for fixing it by widening this set.
+ *
+ * `Hackathon` is precedent for exactly one thing, though, and it is the thing that does not
+ * generalise: the WORD is technical. There is no such thing as a non-software hackathon. There
+ * are a great many non-software conferences, and this corpus is full of them. Measured against
+ * live Atlas on 2026-09-10, upcoming events carrying `Conference` with NO existing member of this
+ * set — i.e. exactly the rows a blanket add would flip into the tech feed — 20 rows, and 17 of
+ * them are not tech events at all:
+ *
+ *     Kudremukh New Year Trek          ← "summit". A mountain one.
+ *     Kudremukha Trek
+ *     Tadiandamol Coorg Trek
+ *     Property Expo at Pritech Park
+ *     Dubai Real Estate Expo in Bangalore
+ *     Garment Technology Expo (GTE) 2026
+ *     Apparel Sourcing Week 2026
+ *     Global Food Pro 2027 – International Food Processing Expo
+ *     Global Hospitality Education Expo 2026
+ *     World Healthcare Expo & Summit 2026
+ *     Annual Trauma Summit
+ *     Manotsava | National Mental Health Festival
+ *     Bangalore HR Summit 2026
+ *     Bengaluru 2026 Venture Capital World Summit
+ *     Bangalore's Big Business, Tech & Entrepreneur Professional Networking Event
+ *     How Non-Techies Can Launch Successful Tech Startups
+ *     RACEx360 Emerging Technology Conference 2026
+ *     ─ genuinely tech, and the whole gain: ─
+ *     MCP Community Connect - Bengaluru · Grace Hopper Celebration India 2027 · ELCIA Tech Summit
+ *
+ * 17 false positives to buy 3 true ones. The trek is the case worth remembering, because it shows
+ * the mechanism rather than just the ratio: `lib/llm/tagger.ts`'s `Conference` pattern lists
+ * `summit`, and a trek goes to one. This is the `\bpm\b` → "6 PM" mistake with a different word.
+ *
+ * `Workshop` is worse, and it is barred by a decision already documented rather than by a new
+ * measurement. Its pattern is `workshop|bootcamp|training|masterclass|certification|course|…`,
+ * and CLAUDE.md §3 records that `isTechEvent` excludes course-selling sessions EVEN WHEN FREE —
+ * the word "paid" in an earlier version of that rule is precisely what let "Free DevOps Demo Class
+ * in Electronic City" and "Java Training with Placement" into the tech feed. Adding `Workshop`
+ * re-opens that by definition. The 60 upcoming `Workshop`-without-a-tech-topic rows are meditation
+ * challenges, Garba workshops, Law of Attraction sessions and nine copies of "Scrum Master product
+ * owner Unique scrum master interview questions".
+ *
+ * `Meetup` is not even arguable: 323 upcoming rows, mostly Toastmasters, board games and treks.
+ *
+ * SO WHERE DOES THE RECALL LOSS GET FIXED? At the tagger, not here. A tech conference that carries
+ * no tech topic is a TAGGING defect — `droidCon India | Android Development Conference 2026`,
+ * `UbuCon India 2026`, `The Fifth Elephant Winter Edition 2026` and `TechSparks 2026` are all
+ * stored `[Meetup]`, so widening this set would not rescue any of them either. The tool for it is
+ * `scripts/retag-category.ts --match=<title regex>`, which CLAUDE.md §3 documents as the only
+ * thing that reaches an agreed-upon wrong tag. A category array that reads `[Conference]` simply
+ * does not contain the information needed to tell "Annual Trauma Summit" from "MCP Community
+ * Connect" — both are `Conference` and nothing else — and no rule over this set can invent it.
+ *
+ * `tests/tech-flag.test.ts` pins both halves. If you add `Conference` anyway, that suite fails on
+ * purpose so the change is deliberate; re-measure first with the query in its header.
  * ─────────────────────────────────────────────────────────────────────────────────────────────
  */
 export const TECH_FLAG_CATEGORIES: ReadonlySet<string> = new Set<string>([
