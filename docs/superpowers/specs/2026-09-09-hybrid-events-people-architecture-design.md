@@ -194,8 +194,15 @@ and show 9.
 | Merge impossible | one row per human, `met N×` interrogable |
 
 **Tags** stay written on `Contact` (so the offline capture sheet and `canonicaliseTags` are
-untouched) and are **unioned onto `Person`** at resolve time, plus anything added directly on the
-person.
+untouched) and are **RECOMPUTED onto `Person`** — never unioned.
+
+> A union would repeat a mistake this repo has already made and reversed. CLAUDE.md: *"`Event.companies`
+> is RECOMPUTED at ingest, not unioned — and that had to change… True at the moment of writing; union
+> is forever."* Union here means removing a tag from a Contact leaves it on the Person permanently,
+> with no way to clear it from the UI — the same shape as a bad category that re-scraping can never
+> remove. So `recomputePerson()` sets `tags` to `canonicaliseTags(contactTags ∪ personOwnTags)` from
+> scratch, where `personOwnTags` are tags added directly on the person and stored separately so a
+> recompute cannot erase them.
 
 **Federated search.** `/api/search?q=` fans out to `buildEventFilter` and `buildPersonFilter` and
 returns two labelled groups.
@@ -280,6 +287,60 @@ search collection · who's-going sourced from our own users (renders empty below
 public-Luma version is separate) · a native app.
 
 ---
+
+## Lifecycle and consistency — gaps found in review, and how they close
+
+The first draft of this spec described creation and read paths and silently assumed nothing is ever
+deleted. Every item below was found by checking the design against the actual code, and each would
+have shipped as a bug.
+
+**1. Contact delete orphans its Interactions.** `app/api/contacts/[id]/route.ts:62` is a bare
+`Contact.findOneAndDelete({_id, userId})` — no cascade. After the spine, that leaves a `met`
+Interaction pointing at a deleted capture and stale `Person` counters. The delete must, in one place:
+remove Interactions with that `contactId`, then `recomputePerson(personId)`, then **delete the Person
+if it has no Contacts left** (an empty Person is a ghost row that shows up in `/people` with no
+history).
+
+**2. Folder delete cascades to Contacts but not past them.**
+`app/api/folders/[id]/route.ts:130` does `Contact.deleteMany({userId, folderId})`. Same treatment
+needed: collect the affected `personId`s *before* deleting, then clean Interactions and recompute
+each. Collect first — after the `deleteMany` there is no way to find out who was affected.
+
+**3. The CSV export silently diverges the moment `/people` cuts over.**
+`app/api/contacts/export/route.ts:46` builds its filter with `buildContactFilter`, and its own comment
+at `:15` claims it "uses the same `buildContactFilter()` as the People list, so what downloads is
+exactly what was on screen". Once `/people` filters `Person`, that sentence becomes false and the
+download is a different set — worse than the existing defect where it ignores `repeatOnly`. The export
+must move to `buildPersonFilter` **in the same commit as the cutover**, and export one row per person
+with the encounter count, not one row per capture.
+
+**4. `resolvePerson` has a create race.** Two devices draining the outbox at once, both resolving the
+same new key, both find nothing and both insert. `contactKeys` is an array so it cannot carry a unique
+index. Two acceptable answers, in order of preference:
+
+- **Atomic upsert** — `findOneAndUpdate({userId, contactKeys: key}, {$setOnInsert: {contactKeys: [key], …}}, {upsert: true})`. Verify the insert semantics before relying on this: an equality filter on an array field can insert the value as a **scalar** rather than a one-element array, which would corrupt the shape. Assert it in a test.
+- **Accept and self-heal** — a duplicate Person is exactly a merge suggestion, which is a designed feature rather than corruption. Acceptable at current scale; `diag-people-spine.ts` asserts no key appears on two Persons so the drift stays visible.
+
+**5. `kind: 'met'` must require `contactId`.** The partial unique index is on
+`{userId, contactId}` filtered to `kind: 'met'`. If a `met` row were ever written without a
+`contactId`, every such row would collide on null and only the first would save. Enforce `contactId`
+as required whenever `kind === 'met'` in the schema, not by convention.
+
+**6. Append-only is a convention until something enforces it.** There must be no PATCH or PUT route
+for `Interaction`, and no `updatedAt` on the schema — a timeline you can edit is not evidence. Editing
+a note means appending a new `note` interaction, and the person page renders the latest while keeping
+the history.
+
+**7. Follow-ups are per-encounter, which reads oddly on a person.** `nextActionAt` is
+`min(followUpAt)` across a Person's Contacts, so someone met three times can carry three follow-up
+dates while the UI shows one. Decision: the person page writes follow-ups through the **most recent**
+Contact, so there is one obvious place they land, and `nextActionAt` stays the soonest outstanding one.
+Revisit only if it proves confusing in use — moving `followUpAt` onto `Person` is a later, easy change
+and premature now.
+
+**8. Merge must recompute, not concatenate.** After repointing rows, run `recomputePerson` on the
+survivor rather than adding the two sets of counters together — otherwise `eventCount` double-counts
+any event both Persons attended, which is precisely the distinct-events trap above.
 
 ## This is two implementation plans, not one
 
