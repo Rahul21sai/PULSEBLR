@@ -50,8 +50,9 @@ describe('isIndexableEvent', () => {
     ['public', true, 'explicitly public'],
     ['private', false, 'owner-only'],
     ['pending', false, 'awaiting review — visible to owner and admin, indexable by nobody'],
-  ])('visibility %s → indexable %s (%s)', (visibility, expected, _why) => {
-    expect(isIndexableEvent({ ...PUBLIC_EVENT, visibility: visibility as never })).toBe(expected);
+  ])('visibility %s → indexable %s (%s)', (visibility, expected, why) => {
+    // The reason rides into the assertion message, so a failure says WHY this row exists.
+    expect(isIndexableEvent({ ...PUBLIC_EVENT, visibility: visibility as never }), why).toBe(expected);
   });
 });
 
