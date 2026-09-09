@@ -14,6 +14,23 @@
 //     its own health, and can only ever contribute zero events on failure. One
 //     dead feed can never take down a run — that was the failure mode where a
 //     single NVIDIA timeout or a 404 zeroed out the whole day.
+//
+//  3. NOTHING IS DROPPED SILENTLY, AND NOTHING IS FETCHED POINTLESSLY. Two ledgers
+//     added 2026-09-10, both because this pipeline has now been bitten three times
+//     by the same class of bug — the source cap, the enrichment budget, and the
+//     Bevy "202 results" that was an index total including history and got filed as
+//     a supply bug:
+//
+//       · A GATE LEDGER (`createGateLedger`). Every row a gate throws away is
+//         charged to the source that produced it, with a reason and a few example
+//         titles, and the source's health row records what SURVIVED rather than what
+//         the adapter returned. "Devfolio: 0 events" and "Devfolio: 12 rows, all
+//         Chennai" are opposite problems that used to print identically.
+//       · A BACK-OFF SCHEDULE (`sourceSchedule`). 148 of 430 enabled sources had 15+
+//         consecutive empty scrapes and were re-fetched every night for nothing.
+//         They now move to weekly, then monthly. The skip is logged and reported,
+//         because a limit you cannot see in the logs is a coverage bug that presents
+//         as a supply problem.
 
 import connectDB from '../mongodb';
 import Source from '../models/Source';
@@ -80,7 +97,58 @@ export interface PipelineOptions {
    * a delete on.
    */
   onlySources?: string[];
+  /**
+   * Scrape every discovered source tonight regardless of its back-off cadence (see
+   * `sourceSchedule`). Off by default, which is the whole point of the back-off.
+   *
+   * It exists because a cadence you cannot escape is the same class of defect as a cap you
+   * cannot see: after fixing an adapter or a parser you need the quiet sources re-probed NOW,
+   * not in three weeks. `onlySources` is the surgical version of the same need; this is the
+   * sweep.
+   */
+  ignoreBackoff?: boolean;
 }
+
+/**
+ * Why the gate stage threw a row away.
+ *
+ * Four buckets, because those are the four questions a "this source returned 0 events" report
+ * cannot answer today and each implies a different fix:
+ *
+ *   `city`                    — off-city (stage 5c). The source works; it is national.
+ *   `date-window`             — outside the plausible window (stage 5b): an evergreen advert
+ *                               dated 2015→2030, or a listing 600 days out.
+ *   `missing-required-field`  — no title, no URL, or an unparseable start instant. A PARSER bug,
+ *                               and the one bucket that means "go read the adapter".
+ *   `duplicate`              — collapsed against another copy in the same run (stage 6). Normal
+ *                               and expected; Luma's city feed and a host calendar overlap by
+ *                               design.
+ */
+export type GateReason = 'city' | 'date-window' | 'missing-required-field' | 'duplicate';
+
+export const GATE_REASONS: readonly GateReason[] = [
+  'city',
+  'date-window',
+  'missing-required-field',
+  'duplicate',
+];
+
+/** Counts plus a few titles. Deliberately not a full log — see `GATE_EXAMPLES_PER_REASON`. */
+export interface GateTally {
+  count: number;
+  examples: string[];
+}
+
+export type GateBreakdown = Partial<Record<GateReason, GateTally>>;
+
+/**
+ * How many example titles to keep per source per reason.
+ *
+ * Three. A count alone cannot be argued with ("12 rejected on city" — which city? whose bug?),
+ * and a full log of every rejected row on every source is how a report gets ignored — the exact
+ * failure mode the off-city stage's own 12-line cap already guards against.
+ */
+const GATE_EXAMPLES_PER_REASON = 3;
 
 export interface SourceReport {
   sourceId: string;
@@ -89,6 +157,20 @@ export interface SourceReport {
   errors: number;
   durationMs: number;
   firstError?: string;
+  /**
+   * What the gate stage removed from THIS source's contribution, by reason. Absent when the
+   * source lost nothing.
+   */
+  rejected?: GateBreakdown;
+}
+
+/** One source the back-off schedule chose not to fetch tonight. */
+export interface SkippedSource {
+  kind: string;
+  handle: string;
+  cadence: ScrapeCadence;
+  consecutiveEmptyScrapes: number;
+  ageDays: number | null;
 }
 
 export interface PipelineResult {
@@ -99,10 +181,108 @@ export interface PipelineResult {
   sources: SourceReport[];
   discovered: { lumaCalendars: number; meetupGroups: number };
   enrichment: { lumaDescriptions: number; meetupEvents: number };
+  /** Rows the gate stage removed, summed across every source. */
+  gates: GateBreakdown;
+  /** Sources not fetched tonight because they are on a weekly/monthly cadence. */
+  backoff: { skipped: number; weekly: number; monthly: number; sources: SkippedSource[] };
   pruned: number;
   errors: string[];
   durationMs: number;
   timestamp: Date;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// Back-off scheduling
+//
+// Discovery compounds and never shrinks, so the set of sources that produce NOTHING compounds
+// too. Measured 2026-09-10 against live Atlas: 430 enabled Source rows, 200 with 5 or more
+// CONSECUTIVE empty scrapes and 148 with 15 or more — 97 Meetup groups and 51 Luma calendars at
+// the 5 mark. Every one of them was fetched every single night for zero events. That is ~148
+// wasted upstream requests a night, on a run that makes ~700, and it is not a rate-limit
+// problem: it is budget spent proving something already proved 25 times.
+//
+// The field this reads (`consecutiveEmptyScrapes`) was already stored and already maintained by
+// `updateSource`; nothing here adds bookkeeping. What was missing was anybody consulting it.
+//
+// WHY A CADENCE AND NOT A CULL. A quiet Luma calendar is not a dead one — a company community
+// posts in bursts, and `loadDiscovered`'s own docblock records what happened the last time
+// sources were dropped rather than deprioritised: `microsoft-reactor-bengaluru` and
+// `lfdt-bengaluru` looked like a supply gap for weeks. Weekly and monthly still find the burst,
+// one cycle late, at 1/7th and 1/30th of the cost. Deleting a source is `cleanup-sources.ts`'s
+// job and requires a human.
+//
+// DAILY IS UNCONDITIONALLY DUE, and that is deliberate rather than sloppy. A cadence expressed
+// as "at least N days since the last fetch" would make a same-day re-run a no-op — so a run
+// started to verify a fix would silently scrape nothing and look like the fix failed. Only the
+// backed-off cadences consult the clock.
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+
+export type ScrapeCadence = 'daily' | 'weekly' | 'monthly';
+
+/** Consecutive empty scrapes at which a source drops to weekly, then to monthly. */
+export const BACKOFF_WEEKLY_AFTER = 5;
+export const BACKOFF_MONTHLY_AFTER = 15;
+
+const CADENCE_DAYS: Record<ScrapeCadence, number> = { daily: 0, weekly: 7, monthly: 30 };
+
+export interface SourceScheduleInput {
+  consecutiveEmptyScrapes?: number | null;
+  lastScrapedAt?: Date | string | null;
+}
+
+export interface SourceScheduleVerdict {
+  cadence: ScrapeCadence;
+  /** Should this source be fetched in the run happening at `now`? */
+  due: boolean;
+  /** Whole days since the last fetch; null when never fetched. */
+  ageDays: number | null;
+  /** Log-ready explanation, so a skip is never silent. */
+  reason: string;
+}
+
+/**
+ * Decide whether a source is due tonight. PURE: no I/O, no database, no ambient clock — `now`
+ * is a parameter so the truth table can be asserted (see `scripts/diag-gate-reasons.ts`).
+ */
+export function sourceSchedule(
+  row: SourceScheduleInput,
+  now: Date = new Date()
+): SourceScheduleVerdict {
+  // A missing, negative or NaN count is treated as zero. `consecutiveEmptyScrapes` has a schema
+  // default of 0, but rows written before it existed have no key at all, and reading `undefined`
+  // as "many" would back off the whole corpus at once.
+  const rawEmpty = Number(row.consecutiveEmptyScrapes ?? 0);
+  const empty = Number.isFinite(rawEmpty) && rawEmpty > 0 ? Math.floor(rawEmpty) : 0;
+
+  const cadence: ScrapeCadence =
+    empty >= BACKOFF_MONTHLY_AFTER ? 'monthly' : empty >= BACKOFF_WEEKLY_AFTER ? 'weekly' : 'daily';
+
+  const lastMs = row.lastScrapedAt ? new Date(row.lastScrapedAt).getTime() : NaN;
+  const ageDays = Number.isFinite(lastMs)
+    ? // Clamp at 0: a lastScrapedAt in the future is clock skew, and letting it go negative
+      // would block a weekly source forever rather than for one cycle.
+      Math.max(0, Math.floor((now.getTime() - lastMs) / (24 * 3600 * 1000)))
+    : null;
+
+  // Never scraped wins over everything. A source that has not had its first look cannot have
+  // earned a back-off, and `loadDiscovered` already orders these first for the same reason.
+  if (ageDays === null) {
+    return { cadence: 'daily', due: true, ageDays: null, reason: 'never scraped' };
+  }
+  if (cadence === 'daily') {
+    return { cadence, due: true, ageDays, reason: `producing (${empty} empty in a row)` };
+  }
+
+  const needed = CADENCE_DAYS[cadence];
+  const due = ageDays >= needed;
+  return {
+    cadence,
+    due,
+    ageDays,
+    reason: due
+      ? `${cadence} and ${ageDays}d since last fetch — due`
+      : `${cadence} after ${empty} empty scrapes, last fetched ${ageDays}d ago (needs ${needed}d)`,
+  };
 }
 
 /**
@@ -149,6 +329,7 @@ export const DEFAULTS: Required<PipelineOptions> = {
   includeCompanyPages: true,
   prune: true,
   onlySources: [],
+  ignoreBackoff: false,
 };
 
 /** URLs the user has switched off in Settings. Fail-open: unknown ⇒ enabled. */
@@ -227,8 +408,26 @@ async function persistDiscovered(discovered: DiscoveredSource[]): Promise<number
  *   2. produced events last time, most productive first
  *   3. quiet, fewest consecutive empty scrapes first
  *   4. long dead — the only sensible thing to drop
+ *
+ * It also applies the BACK-OFF SCHEDULE (`sourceSchedule`), which is a different lever from the
+ * ordering above and they are easy to confuse. Ordering decides who loses a fight for a capped
+ * number of slots. Back-off decides whether a source is worth a slot tonight at all. Both were
+ * needed: ordering alone still fetched 148 permanently-empty sources every night, and back-off
+ * alone would still let a cap drop the alphabetically unlucky.
+ *
+ * Skips are RETURNED, not swallowed, so the caller can log and report them. A limit you cannot
+ * see in the logs is a coverage bug that presents as a supply problem — the same rule `applyCap`
+ * exists to encode.
  */
-async function loadDiscovered(kind: string): Promise<DiscoveredSource[]> {
+interface DiscoveredLoad {
+  due: DiscoveredSource[];
+  skipped: SkippedSource[];
+}
+
+async function loadDiscovered(
+  kind: string,
+  options: { ignoreBackoff?: boolean; now?: Date } = {}
+): Promise<DiscoveredLoad> {
   try {
     await connectDB();
     const rows = await Source.find({ kind, enabled: true })
@@ -249,7 +448,8 @@ async function loadDiscovered(kind: string): Promise<DiscoveredSource[]> {
       return 2; // empty last time
     };
 
-    return (rows as Row[])
+    const now = options.now ?? new Date();
+    const ordered = (rows as Row[])
       .filter(row => row.handle)
       .sort((a, b) => {
         const byRank = rank(a) - rank(b);
@@ -258,10 +458,27 @@ async function loadDiscovered(kind: string): Promise<DiscoveredSource[]> {
         const byYield = (b.lastEventCount ?? 0) - (a.lastEventCount ?? 0);
         if (byYield !== 0) return byYield;
         return (a.consecutiveEmptyScrapes ?? 0) - (b.consecutiveEmptyScrapes ?? 0);
-      })
-      .map(row => ({ kind, handle: row.handle!, label: row.name || row.handle! }));
+      });
+
+    const due: DiscoveredSource[] = [];
+    const skipped: SkippedSource[] = [];
+    for (const row of ordered) {
+      const verdict = sourceSchedule(row, now);
+      if (!options.ignoreBackoff && !verdict.due) {
+        skipped.push({
+          kind,
+          handle: row.handle!,
+          cadence: verdict.cadence,
+          consecutiveEmptyScrapes: row.consecutiveEmptyScrapes ?? 0,
+          ageDays: verdict.ageDays,
+        });
+        continue;
+      }
+      due.push({ kind, handle: row.handle!, label: row.name || row.handle! });
+    }
+    return { due, skipped };
   } catch {
-    return [];
+    return { due: [], skipped: [] };
   }
 }
 
@@ -279,16 +496,165 @@ function applyCap<T>(items: T[], cap: number, label: string, errors: string[]): 
   return items.slice(0, cap);
 }
 
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// Gate attribution
+//
+// THE PROBLEM THIS SOLVES. Devfolio, Unstop and the company sweep routinely report 0 events and
+// the report cannot distinguish "there are none this week" from "the gates ate them all". Those
+// are opposite situations — one is upstream supply, one is our bug — and they render identically
+// as `[none]    0 events`. Same for a Meetup group that returns twelve Chennai listings: today it
+// looks exactly like a group with nothing scheduled.
+//
+// WHY A WeakMap AND NOT A FIELD ON RawEvent. `RawEvent` is the adapter contract, and every field
+// on it is something an adapter is expected to fill. A bookkeeping field there would be a fifth
+// optional property that adapters must ignore, would flow into `normalizeEvents`, and would need
+// stripping before storage. Ownership is not a property of the event; it is a property of THIS
+// RUN. A WeakMap keyed on the object says exactly that and is dropped with the batch.
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+
+/** Which source produced a row: the report bucket, and the Source-row identity for health. */
+interface OwnerRef {
+  sourceId: string;
+  healthKey: string;
+}
+
+/** A Source health write, deferred until after the gates so it can report what survived them. */
+interface PendingHealth {
+  key: string;
+  name: string;
+  type: string;
+  url: string;
+  sourceId: string;
+  /** Rows the adapter returned, before any gate. */
+  scraped: number;
+  firstError?: string;
+}
+
+function createGateLedger(owners: WeakMap<RawEvent, OwnerRef>) {
+  const byHealthKey = new Map<string, GateBreakdown>();
+  const bySourceId = new Map<string, GateBreakdown>();
+  const totals: GateBreakdown = {};
+
+  const bump = (into: GateBreakdown, reason: GateReason, title: string) => {
+    const tally = (into[reason] ??= { count: 0, examples: [] });
+    tally.count++;
+    if (tally.examples.length < GATE_EXAMPLES_PER_REASON) tally.examples.push(title.slice(0, 90));
+  };
+
+  const bucket = (map: Map<string, GateBreakdown>, key: string): GateBreakdown => {
+    let existing = map.get(key);
+    if (!existing) map.set(key, (existing = {}));
+    return existing;
+  };
+
+  return {
+    totals,
+    byHealthKey,
+    bySourceId,
+    charge(event: RawEvent, reason: GateReason): void {
+      const title = event.title || event.sourceUrl || '(untitled)';
+      bump(totals, reason, title);
+      const owner = owners.get(event);
+      // An unowned row is possible in principle (a future stage that synthesises events), so it
+      // is counted in the totals and simply not charged to anybody rather than dropped.
+      if (!owner) return;
+      bump(bucket(bySourceId, owner.sourceId), reason, title);
+      bump(bucket(byHealthKey, owner.healthKey), reason, title);
+    },
+    /**
+     * Rows a source lost that should count AGAINST its health, i.e. everything except
+     * duplicates.
+     *
+     * Duplicates are deliberately excluded. Stage 6 keeps one copy of an overlapping event and
+     * charges the loss to whichever source lost the coin toss — but Luma's city feed and a host
+     * calendar overlapping is the design working, not a source failing. Counting it would drive
+     * a perfectly healthy calendar's `consecutiveEmptyScrapes` up and eventually back it off to
+     * monthly, which is the opposite of what the overlap means.
+     */
+    countableLoss(healthKey: string): number {
+      const breakdown = byHealthKey.get(healthKey);
+      if (!breakdown) return 0;
+      return (
+        (breakdown.city?.count ?? 0) +
+        (breakdown['date-window']?.count ?? 0) +
+        (breakdown['missing-required-field']?.count ?? 0)
+      );
+    },
+  };
+}
+
+type GateLedger = ReturnType<typeof createGateLedger>;
+
+/** One-line summary of what the gates removed, for a health row's `lastError` note. */
+function gateSummary(breakdown: GateBreakdown | undefined, scraped: number): string | undefined {
+  if (!breakdown) return undefined;
+  const parts = GATE_REASONS.filter(reason => breakdown[reason]?.count).map(
+    reason => `${reason} ${breakdown[reason]!.count}`
+  );
+  if (parts.length === 0) return undefined;
+  const example = GATE_REASONS.map(reason => breakdown[reason]?.examples[0]).find(Boolean);
+  return `returned ${scraped} row(s), all removed by the ingest gates: ${parts.join(', ')}${
+    example ? ` — e.g. "${example}"` : ''
+  }`;
+}
+
+interface Collector {
+  events: RawEvent[];
+  reports: SourceReport[];
+  errors: string[];
+  discovered: DiscoveredSource[];
+  /** Which source each row came from, for gate attribution. */
+  owners: WeakMap<RawEvent, OwnerRef>;
+  /** Health writes, flushed after the gates. */
+  health: PendingHealth[];
+}
+
+const healthKeyOf = (name: string, url: string) => `${name}|${url}`;
+
+/**
+ * Take ownership of a batch of rows and queue the source's health write.
+ *
+ * The health write is DEFERRED rather than done here, and that is the point of this function.
+ * `updateSource` used to be called the instant a source finished, so `lastEventCount` recorded
+ * what the adapter returned and nothing recorded what survived — a Meetup group returning twelve
+ * Chennai rows was filed as healthy with 12 events, and the report showed 12 while the corpus
+ * gained 0.
+ *
+ * It cannot simply be called twice, either: `updateSource` computes
+ * `consecutiveEmptyScrapes = eventCount > 0 ? 0 : prev + 1`, so a second call with 0 increments
+ * it AGAIN. That would double-count against `BACKOFF_WEEKLY_AFTER` and back a source off in half
+ * the time the schedule claims. One write, after the gates.
+ */
+function claim(
+  collector: Collector,
+  descriptor: { id: string; label: string; type: string; url: string },
+  events: RawEvent[],
+  firstError?: string
+): void {
+  const healthKey = healthKeyOf(descriptor.label, descriptor.url);
+  for (const event of events) collector.owners.set(event, { sourceId: descriptor.id, healthKey });
+  collector.events.push(...events);
+  collector.health.push({
+    key: healthKey,
+    name: descriptor.label,
+    type: descriptor.type,
+    url: descriptor.url,
+    sourceId: descriptor.id,
+    scraped: events.length,
+    firstError,
+  });
+}
+
 /** Run one source with isolation + health recording. */
 async function runSource(
   descriptor: { id: string; label: string; type: string; url: string },
   run: () => Promise<ScrapeResult>,
-  collector: { events: RawEvent[]; reports: SourceReport[]; errors: string[]; discovered: DiscoveredSource[] }
+  collector: Collector
 ): Promise<void> {
   try {
     const result = await run();
-    collector.events.push(...result.events);
     if (result.discovered?.length) collector.discovered.push(...result.discovered);
+    claim(collector, descriptor, result.events, result.errors[0]);
 
     collector.reports.push({
       sourceId: result.sourceId,
@@ -299,14 +665,6 @@ async function runSource(
       firstError: result.errors[0],
     });
     collector.errors.push(...result.errors.map(e => `${result.label}: ${e}`));
-
-    await updateSource(descriptor.label, descriptor.type, descriptor.url, {
-      eventCount: result.events.length,
-      // Only record an error when the source produced NOTHING. A source that
-      // returned 40 events and logged one bad record is healthy, and flagging it
-      // would train the reader to ignore the health report.
-      error: result.events.length === 0 ? result.errors[0] : undefined,
-    });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     collector.errors.push(`${descriptor.label}: ${message}`);
@@ -318,11 +676,34 @@ async function runSource(
       durationMs: 0,
       firstError: message,
     });
-    await updateSource(descriptor.label, descriptor.type, descriptor.url, {
-      eventCount: 0,
-      error: message,
-    });
+    claim(collector, descriptor, [], message);
   }
+}
+
+/**
+ * Write every source's health in one pass, AFTER the gates.
+ *
+ * `eventCount` is what survived to ingest, not what the adapter returned, and when nothing
+ * survived the `error` note says which gate ate it. That is the whole fix: "0 events" now
+ * distinguishes "upstream had none" (no note) from "12 rows, all Chennai" (a note naming the
+ * city gate and one title).
+ *
+ * Concurrency 8 because `updateSource` is two round trips per row and there are ~400 rows; the
+ * serial version added ~20s to every run.
+ */
+async function flushHealth(collector: Collector, ledger: GateLedger): Promise<void> {
+  await mapPool(collector.health, 8, async pending => {
+    const kept = Math.max(0, pending.scraped - ledger.countableLoss(pending.key));
+    // Only record an error when the source contributed NOTHING. A source that returned 40 events
+    // and logged one bad record is healthy, and flagging it would train the reader to ignore the
+    // health report. A real fetch/parse error still outranks a gate note.
+    const error =
+      kept === 0
+        ? pending.firstError ?? gateSummary(ledger.byHealthKey.get(pending.key), pending.scraped)
+        : undefined;
+    await updateSource(pending.name, pending.type, pending.url, { eventCount: kept, error });
+    return null;
+  });
 }
 
 /**
@@ -374,12 +755,16 @@ export async function runPipeline(options: PipelineOptions = {}): Promise<Pipeli
 
   console.log('Starting scrape pipeline…');
 
-  const collector = {
-    events: [] as RawEvent[],
-    reports: [] as SourceReport[],
-    errors: [] as string[],
-    discovered: [] as DiscoveredSource[],
+  const collector: Collector = {
+    events: [],
+    reports: [],
+    errors: [],
+    discovered: [],
+    owners: new WeakMap<RawEvent, OwnerRef>(),
+    health: [],
   };
+  const ledger = createGateLedger(collector.owners);
+  const backoffSkipped: SkippedSource[] = [];
 
   const disabled = await disabledUrls();
   const isEnabled = (...keys: string[]) => !keys.some(key => disabled.has(key));
@@ -420,17 +805,37 @@ export async function runPipeline(options: PipelineOptions = {}): Promise<Pipeli
     LUMA_SEED_CALENDARS.map(c => ({ kind: 'luma-calendar', handle: c.handle, label: c.label }))
   );
   const newlyDiscovered = await persistDiscovered(collector.discovered);
-  const lumaCalendars = wants('luma-calendars')
-    ? applyCap(await loadDiscovered('luma-calendar'), opts.maxLumaCalendars, 'Luma calendars', collector.errors)
-    : [];
-  const meetupGroupsFromDb = wants('meetup-groups') ? await loadDiscovered('meetup-group') : [];
+  const backoff = { ignoreBackoff: opts.ignoreBackoff, now: timestamp };
+
+  const lumaLoad = wants('luma-calendars')
+    ? await loadDiscovered('luma-calendar', backoff)
+    : { due: [], skipped: [] };
+  const meetupLoad = wants('meetup-groups')
+    ? await loadDiscovered('meetup-group', backoff)
+    : { due: [], skipped: [] };
+  backoffSkipped.push(...lumaLoad.skipped, ...meetupLoad.skipped);
+
+  const lumaCalendars = applyCap(
+    lumaLoad.due,
+    opts.maxLumaCalendars,
+    'Luma calendars',
+    collector.errors
+  );
 
   // Seeds go FIRST: they are hand-verified, so they must never be the ones a cap drops.
-  // loadDiscovered has already ordered the rest by expected yield.
+  // loadDiscovered has already ordered the rest by expected yield AND removed the ones on a
+  // weekly/monthly cadence that are not due tonight.
+  //
+  // SEEDS ARE EXEMPT FROM BACK-OFF, and that is the same exemption the cap already grants them
+  // for the same reason: they are hand-verified, so a quiet one is more likely to be between
+  // bursts than dead. They are merged in as raw slugs here rather than as Source rows, so a seed
+  // that `loadDiscovered` skipped is re-added by this line. ~45 of the 97 quiet Meetup groups are
+  // seeds, so the saving is roughly halved on this source and full on Luma. If that request
+  // budget ever matters, look up each seed's row here — do not remove the exemption blind.
   const meetupSlugs = !wants('meetup-groups')
     ? []
     : applyCap(
-        [...new Set([...SEED_MEETUP_GROUPS, ...meetupGroupsFromDb.map(d => d.handle)])].filter(slug =>
+        [...new Set([...SEED_MEETUP_GROUPS, ...meetupLoad.due.map(d => d.handle)])].filter(slug =>
           isEnabled(slug, `https://www.meetup.com/${slug}/`)
         ),
         opts.maxMeetupGroups,
@@ -441,6 +846,27 @@ export async function runPipeline(options: PipelineOptions = {}): Promise<Pipeli
   console.log(
     `Discovery: ${newlyDiscovered} new source(s); scraping ${lumaCalendars.length} Luma calendars + ${meetupSlugs.length} Meetup groups`
   );
+  if (backoffSkipped.length > 0) {
+    const weekly = backoffSkipped.filter(s => s.cadence === 'weekly').length;
+    const monthly = backoffSkipped.length - weekly;
+    // Named per kind, not just totalled: "148 skipped" is indistinguishable from a broken query,
+    // and a back-off you cannot see in the logs is the coverage bug `applyCap` already warns about.
+    const byKind = new Map<string, number>();
+    for (const s of backoffSkipped) byKind.set(s.kind, (byKind.get(s.kind) ?? 0) + 1);
+    console.log(
+      `Back-off: skipped ${backoffSkipped.length} quiet source(s) — ${weekly} weekly ` +
+        `(≥${BACKOFF_WEEKLY_AFTER} empty scrapes), ${monthly} monthly (≥${BACKOFF_MONTHLY_AFTER}); ` +
+        [...byKind].map(([kind, n]) => `${n} ${kind}`).join(', ')
+    );
+    for (const s of backoffSkipped.slice(0, 8)) {
+      console.log(
+        `  · ${s.kind}/${s.handle}: ${s.cadence}, ${s.consecutiveEmptyScrapes} empty in a row, last fetched ${s.ageDays}d ago`
+      );
+    }
+    if (backoffSkipped.length > 8) console.log(`  · … and ${backoffSkipped.length - 8} more`);
+  } else if (opts.ignoreBackoff) {
+    console.log('Back-off: disabled for this run (ignoreBackoff)');
+  }
 
   // ── 2. Per-host feeds, concurrently ───────────────────────────────────────
   // Health is recorded PER CALENDAR, not only as an aggregate. Without this, every
@@ -448,17 +874,23 @@ export async function runPipeline(options: PipelineOptions = {}): Promise<Pipeli
   // made a healthy scraper look broken and hid which specific calendar had died.
   const calendarResults = await mapPool(lumaCalendars, 6, async cal => {
     const one = await scrapeLumaCalendar(cal.handle, cal.label);
-    await updateSource(cal.label, 'api', `https://luma.com/calendar/${cal.handle}`, {
-      eventCount: one.events.length,
-      error: one.events.length === 0 ? one.errors[0] : undefined,
-    });
+    claim(
+      collector,
+      {
+        id: 'luma-calendars',
+        label: cal.label,
+        type: 'api',
+        url: `https://luma.com/calendar/${cal.handle}`,
+      },
+      one.events,
+      one.errors[0]
+    );
     return one;
   });
   let calendarEvents = 0;
   let calendarErrors = 0;
   for (const result of calendarResults) {
     if (!result) continue;
-    collector.events.push(...result.events);
     calendarEvents += result.events.length;
     calendarErrors += result.errors.length;
   }
@@ -475,10 +907,17 @@ export async function runPipeline(options: PipelineOptions = {}): Promise<Pipeli
     // aggregate row alone cannot tell you WHICH group stopped producing.
     const groupResults = await mapPool(meetupSlugs, 8, async slug => {
       const one = await scrapeMeetupGroup(slug);
-      await updateSource(slug.replace(/-/g, ' '), 'ical', `https://www.meetup.com/${slug}/`, {
-        eventCount: one.events.length,
-        error: one.events.length === 0 ? one.errors[0] : undefined,
-      });
+      claim(
+        collector,
+        {
+          id: 'meetup-groups',
+          label: slug.replace(/-/g, ' '),
+          type: 'ical',
+          url: `https://www.meetup.com/${slug}/`,
+        },
+        one.events,
+        one.errors[0]
+      );
       return one;
     });
 
@@ -486,7 +925,6 @@ export async function runPipeline(options: PipelineOptions = {}): Promise<Pipeli
     let groupErrors = 0;
     for (const one of groupResults) {
       if (!one) continue;
-      collector.events.push(...one.events);
       groupEvents += one.events.length;
       groupErrors += one.errors.length;
       collector.errors.push(...one.errors.map(e => `${one.sourceId}: ${e}`));
@@ -547,11 +985,18 @@ export async function runPipeline(options: PipelineOptions = {}): Promise<Pipeli
         organizer: page.organizer,
         source: 'company',
         geoPolicy: 'require',
-      }).then(async result => {
-        await updateSource(`Company — ${page.organizer}`, 'scrape', page.url, {
-          eventCount: result.events.length,
-          error: result.events.length === 0 ? result.errors[0] : undefined,
-        });
+      }).then(result => {
+        claim(
+          collector,
+          {
+            id: 'company-pages',
+            label: `Company — ${page.organizer}`,
+            type: 'scrape',
+            url: page.url,
+          },
+          result.events,
+          result.errors[0]
+        );
         return result;
       })
     );
@@ -560,7 +1005,6 @@ export async function runPipeline(options: PipelineOptions = {}): Promise<Pipeli
     let workingPages = 0;
     for (const result of results) {
       if (!result) continue;
-      collector.events.push(...result.events);
       companyEvents += result.events.length;
       if (result.events.length > 0) workingPages++;
     }
@@ -595,13 +1039,30 @@ export async function runPipeline(options: PipelineOptions = {}): Promise<Pipeli
   const nowMs = Date.now();
 
   const plausible = collector.events.filter(event => {
-    const start = event.startDateTime.getTime();
-    if (!Number.isFinite(start)) return false;
+    // A missing title or URL, or an unparseable start, is a PARSER defect rather than a listing
+    // that failed a policy — so it is charged to a different bucket. That distinction is the
+    // point of the taxonomy: `missing-required-field` on a source means go read the adapter,
+    // `date-window` means the upstream published an advert.
+    if (!event.title?.trim() || !event.sourceUrl?.trim()) {
+      ledger.charge(event, 'missing-required-field');
+      return false;
+    }
+    const start = event.startDateTime?.getTime?.() ?? NaN;
+    if (!Number.isFinite(start)) {
+      ledger.charge(event, 'missing-required-field');
+      return false;
+    }
 
     // Started too long ago to still be "on", regardless of what its end says.
-    if (start < nowMs - MAX_PAST_START_DAYS * 24 * 3600 * 1000) return false;
+    if (start < nowMs - MAX_PAST_START_DAYS * 24 * 3600 * 1000) {
+      ledger.charge(event, 'date-window');
+      return false;
+    }
     // Implausibly far out — almost always a placeholder or a parsing error.
-    if (start > nowMs + MAX_FUTURE_START_DAYS * 24 * 3600 * 1000) return false;
+    if (start > nowMs + MAX_FUTURE_START_DAYS * 24 * 3600 * 1000) {
+      ledger.charge(event, 'date-window');
+      return false;
+    }
 
     if (event.endDateTime) {
       const durationDays = (event.endDateTime.getTime() - start) / (24 * 3600 * 1000);
@@ -641,6 +1102,7 @@ export async function runPipeline(options: PipelineOptions = {}): Promise<Pipeli
     const verdict = offCityReason(event);
     if (!verdict) return true;
     offCity.push(`${verdict.city} (${verdict.field}): ${event.title}`);
+    ledger.charge(event, 'city');
     return false;
   });
   if (offCity.length > 0) {
@@ -670,10 +1132,32 @@ export async function runPipeline(options: PipelineOptions = {}): Promise<Pipeli
     // Keep whichever copy carries more information.
     const score = (e: RawEvent) =>
       (e.imageUrl ? 2 : 0) + (e.venue ? 1 : 0) + (e.description.length > e.title.length ? 2 : 0);
-    if (score(event) > score(existing)) byKey.set(key, event);
+    if (score(event) > score(existing)) {
+      byKey.set(key, event);
+      ledger.charge(existing, 'duplicate');
+    } else {
+      ledger.charge(event, 'duplicate');
+    }
   }
   const uniqueRaw = [...byKey.values()];
   console.log(`${totalScraped} scraped → ${uniqueRaw.length} unique before tagging`);
+
+  // ── 6b. Record source health, now that every gate has had its say ─────────
+  // AFTER the gates and BEFORE tagging. After, so `lastEventCount` is what survived rather than
+  // what the adapter returned. Before, so a failure in the LLM or ingest stages cannot leave the
+  // run with no health recorded at all — which is what deferring the write past stage 8 would
+  // risk, and it would be strictly worse than the immediate write this replaced.
+  await flushHealth(collector, ledger);
+
+  const gateLoss = GATE_REASONS.reduce((sum, r) => sum + (ledger.totals[r]?.count ?? 0), 0);
+  if (gateLoss > 0) {
+    console.log(
+      `Gates removed ${gateLoss} row(s): ` +
+        GATE_REASONS.filter(r => ledger.totals[r]?.count)
+          .map(r => `${r} ${ledger.totals[r]!.count}`)
+          .join(', ')
+    );
+  }
 
   // ── 7. Normalize + tag ────────────────────────────────────────────────────
   console.log('Normalizing and tagging…');
@@ -704,12 +1188,24 @@ export async function runPipeline(options: PipelineOptions = {}): Promise<Pipeli
     uniqueRaw: uniqueRaw.length,
     totalNormalized: normalized.length,
     ingestion,
-    sources: collector.reports.sort((a, b) => b.events - a.events),
+    sources: collector.reports
+      .map(report => {
+        const rejected = ledger.bySourceId.get(report.sourceId);
+        return rejected ? { ...report, rejected } : report;
+      })
+      .sort((a, b) => b.events - a.events),
     discovered: {
       lumaCalendars: lumaCalendars.length,
       meetupGroups: meetupSlugs.length,
     },
     enrichment: { lumaDescriptions, meetupEvents: meetupEnriched },
+    gates: ledger.totals,
+    backoff: {
+      skipped: backoffSkipped.length,
+      weekly: backoffSkipped.filter(s => s.cadence === 'weekly').length,
+      monthly: backoffSkipped.filter(s => s.cadence === 'monthly').length,
+      sources: backoffSkipped,
+    },
     pruned,
     errors: collector.errors,
     durationMs: Date.now() - startedAt,
@@ -728,10 +1224,31 @@ function printReport(result: PipelineResult): void {
       `  [${mark}] ${String(source.events).padStart(4)} events  ${source.label}` +
         (source.events === 0 && source.firstError ? `\n           ↳ ${source.firstError.slice(0, 120)}` : '')
     );
+    // The line this whole ledger exists for. `[none] 0 events  Devfolio` used to be the end of
+    // the story; it is now followed by whether the gates are the reason.
+    if (source.rejected) {
+      for (const reason of GATE_REASONS) {
+        const tally = source.rejected[reason];
+        if (!tally) continue;
+        console.log(
+          `           ↳ ${reason} rejected ${tally.count}` +
+            (tally.examples.length ? `  e.g. ${tally.examples.map(t => `"${t}"`).join(', ')}` : '')
+        );
+      }
+    }
   }
   const { ingestion } = result;
   console.log('  ' + '─'.repeat(46));
   console.log(`  scraped        ${result.totalScraped}`);
+  for (const reason of GATE_REASONS) {
+    const tally = result.gates[reason];
+    if (tally) console.log(`  gate: ${reason.padEnd(9)}${String(tally.count).padStart(5)} rejected`);
+  }
+  if (result.backoff.skipped > 0) {
+    console.log(
+      `  back-off       ${result.backoff.skipped} source(s) skipped (${result.backoff.weekly} weekly, ${result.backoff.monthly} monthly)`
+    );
+  }
   console.log(`  unique         ${result.uniqueRaw}`);
   console.log(`  inserted       ${ingestion.inserted}`);
   console.log(`  updated        ${ingestion.updated}`);

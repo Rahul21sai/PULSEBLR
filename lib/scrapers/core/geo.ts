@@ -42,35 +42,96 @@ function namesKarnataka(text: string): boolean {
  * Canonical Bengaluru areas with the aliases that appear in real venue strings.
  * Order matters: more specific entries first so "Electronic City Phase 1"
  * resolves to Electronic City rather than falling through.
+ *
+ * ── HOW TO WIDEN THIS SAFELY, AND WHY THE TWO DIRECTIONS ARE NOT SYMMETRIC ──────────────────
+ *
+ * `matchArea` has three callers and only one of them is the area filter:
+ *
+ *   1. `resolveArea()`   — the UI's area facet. A wrong match here mislabels one event's
+ *                          neighbourhood. Recoverable, and visible to anyone who reads the card.
+ *   2. `isBengaluru()`   — "a recognisable Bengaluru neighbourhood is as good as naming the city".
+ *                          A wrong match here ADMITS an off-city event at a `geoPolicy: 'require'`
+ *                          adapter. This is the direction that costs precision.
+ *   3. `hasBengaluruEvidence()` in the off-city gate — where an area match is an unconditional
+ *                          VETO of rejection. A wrong match here SPARES an off-city event.
+ *
+ * So a loose pattern here can never delete an event: (3) only ever keeps more. That is the whole
+ * reason this file's gazetteer may be widened on ordinary corpus evidence while `OTHER_CITIES`
+ * below may not. What a loose pattern CAN do is let another city in through (2), so every token
+ * added must be one that names a Bengaluru locality and nothing else anywhere in India.
+ *
+ * Three tokens were rejected on exactly that test while widening this list on 2026-09-10:
+ *
+ *   `phoenix marketcity`  — there are Phoenix Marketcity malls in Mumbai, Pune and Chennai, so it
+ *                           would have spared a Pune event at the off-city gate. Replaced with
+ *                           `mahadevapura` / `krishnarajapuram` / `devasandra`, which are the
+ *                           Bengaluru localities that actual venue string also carries.
+ *   `city junction`       — Mysuru, Chennai and half of India have one. Narrowed to
+ *                           `bengaluru|bangalore city junction` and `ksr` qualified by the city.
+ *   `lal bagh`            — Lal Bagh Palace is in INDORE. Qualified to require
+ *                           `road|rd|botanical|garden`, which is how the Bengaluru one is written.
+ *
+ * ── WHAT WAS ADDED, AND FROM WHAT ────────────────────────────────────────────────────────────
+ *
+ * Every token below came from a `distinct` over the venue/address/city strings of the 204 upcoming
+ * events stored `area: 'Other'` (2026-09-10, 58 distinct strings). Not from a map, and not from
+ * guessing which localities exist — from the strings sources actually publish, which is why so
+ * many of them are MISSPELLINGS of tokens already in this list. Four patterns were failing purely
+ * on spelling and each cost real rows:
+ *
+ *     `Kormangala`   → `kora?mangala`        5 rows   (Koramangala, one letter short)
+ *     `Kanakpura`    → `kanaka?pura`         8 rows   (Kanakapura Road, one letter short)
+ *     `Penya`        → `\bpenya\b`           8 rows   (Peenya, one letter short)
+ *     `Church St`    → `church\s*st\b`      10 rows   (the pattern demanded the word "street")
+ *     `Manayata` / `Nagavara` → both spellings (Hebbal already had `manyata` / `nagawara`)
+ *
+ * `scripts/diag-gate-reasons.ts` re-measures this: it replays `resolveArea` over the stored corpus
+ * and names the rows on both sides. Run it after touching this list — a rising resolved count is
+ * not evidence on its own, because the failure mode of a widened gazetteer is putting events in
+ * the WRONG area, which no aggregate reveals.
  */
 const AREAS: Array<{ area: string; patterns: RegExp }> = [
-  { area: 'Koramangala', patterns: /koramangala|\bkora\b|forum mall/i },
+  { area: 'Koramangala', patterns: /kora?mangala|\bkora\b|forum mall|national games village|\bngv\s*park\b/i },
   { area: 'Indiranagar', patterns: /indiranagar|indira nagar|\b100\s*ft\s*road\b/i },
-  { area: 'Whitefield', patterns: /whitefield|itpl|kadugodi|hoodi|brookefield|varthur/i },
+  // KR Puram / Mahadevapura / Devasandra sit on the Whitefield corridor and are how the venue
+  // strings for the Mahadevapura mall complex are actually written. `phoenix marketcity` is NOT
+  // here — see the header: that brand exists in three other Indian cities.
+  { area: 'Whitefield', patterns: /whitefield|itpl|kadugodi|hoodi|brookefield|varthur|mahadevapura|krishnarajapuram|\bkr\s*puram\b|devasandra/i },
   { area: 'HSR Layout', patterns: /\bhsr\b|hsr layout|agara/i },
-  { area: 'Electronic City', patterns: /electronic(s)?\s*city|\bec\s*phase|hosur road|neeladri/i },
-  { area: 'MG Road', patterns: /\bm\.?g\.?\s*road\b|brigade road|church street|trinity|cubbon|shivajinagar|vittal mallya/i },
-  { area: 'Marathahalli', patterns: /marathahalli|kundalahalli|\baecs\b|thubarahalli/i },
+  // Chandapura / Anekal / Attibele / Bommasandra / Huskur are the Hosur Road tail past EC, which
+  // is already represented here by `hosur road`. Bommasandra is a different place from
+  // Bommanahalli below and neither pattern can match the other.
+  { area: 'Electronic City', patterns: /electronic(s)?\s*city|\bec\s*phase|hosur road|neeladri|bommasandra|chandapura|anekal|attibele|huskur/i },
+  { area: 'MG Road', patterns: /\bm\.?g\.?\s*road\b|brigade road|church\s*st(?:reet)?\b|st\.?\s*mark'?s?\s*road|residency\s*(?:road|rd)\b|lavelle\s*(?:road|rd)\b|trinity|cubbon|shivajinagar|vittal mallya/i },
+  { area: 'Marathahalli', patterns: /marathahalli|kundalahalli|\baecs\b|thubarahalli|chinnappanahalli|garudachar/i },
   { area: 'Jayanagar', patterns: /jayanagar|jaya nagar|south end circle/i },
-  { area: 'BTM Layout', patterns: /\bbtm\b|btm layout|tavarekere/i },
+  { area: 'BTM Layout', patterns: /\bbtm\b|btm layout|tavarekere|silk\s*board/i },
   { area: 'Bannerghatta Road', patterns: /bannerghatta|arekere|hulimavu|gottigere/i },
-  { area: 'Sarjapur Road', patterns: /sarjapur|bellandur|haralur|kaikondrahalli|kasavanahalli/i },
+  { area: 'Sarjapur Road', patterns: /sarjapur|bellandur|haralur|kaikondrahalli|kasavanahalli|dommasandra|carmelaram/i },
   { area: 'Outer Ring Road', patterns: /outer ring road|\borr\b|devarabisanahalli|kadubeesanahalli|ecospace|embassy tech|prestige tech/i },
-  { area: 'Hebbal', patterns: /hebbal|manyata|manyata tech|nagawara|thanisandra/i },
-  { area: 'Yelahanka', patterns: /yelahanka|jakkur|kogilu|attur/i },
+  { area: 'Hebbal', patterns: /hebbal|man[ay]{1,2}ata|nagawara|nagavara|thanisandra|hegde\s*nagar|bhartiya\s*city/i },
+  { area: 'Yelahanka', patterns: /yelahanka|jakkur|kogilu|attur|vidyaranyapura|sahakar\s*a?nagar/i },
   { area: 'JP Nagar', patterns: /\bjp\s*nagar\b|j\.?p\.?\s*nagar|puttenahalli/i },
-  { area: 'Domlur', patterns: /domlur|old airport road|\bhal\b\s*(2nd|second)?|embassy golf/i },
-  { area: 'Rajajinagar', patterns: /rajajinagar|rajaji nagar|malleshwaram|malleswaram|yeshwanthpur|yeshwantpur/i },
-  { area: 'Basavanagudi', patterns: /basavanagudi|gandhi bazaar|\bvv\s*puram\b|chamarajpet/i },
+  // EGL is Embassy Golf Links, already here under its long name. Jeevan Bima Nagar and NAL Colony
+  // are the Old Airport Road pocket, which this entry already owns.
+  { area: 'Domlur', patterns: /domlur|old airport road|\bhal\b\s*(2nd|second)?|embassy golf|\begl\b|jeevan\s*bima\s*nagar|\bnal\s*colony\b/i },
+  { area: 'Rajajinagar', patterns: /rajajinagar|rajaji nagar|malleshwaram|malleswaram|yeshwanthpur|yeshwantpur|mathikere/i },
+  // `lal bagh` requires a road/garden word: Lal Bagh Palace is in Indore.
+  { area: 'Basavanagudi', patterns: /basavanagudi|gandhi bazaar|\bvv\s*puram\b|chamarajpet|lalbagh|lal\s*bagh\s*(?:road|rd\b|botanical|garden)/i },
   { area: 'Banashankari', patterns: /banashankari|\bbsk\b|padmanabhanagar|kathriguppe/i },
-  { area: 'Kalyan Nagar', patterns: /kalyan\s*nagar|kammanahalli|\bcv\s*raman\s*nagar\b|banaswadi|\bhrbr\b/i },
+  { area: 'Kalyan Nagar', patterns: /kalyan\s*nagar|kammanahalli|kamnahalli|kothanur|hennur|\bcv\s*raman\s*nagar\b|banaswadi|\bhrbr\b/i },
   { area: 'Rajarajeshwari Nagar', patterns: /rajarajeshwari|\brr\s*nagar\b|kengeri|uttarahalli/i },
-  { area: 'Peenya', patterns: /peenya|jalahalli|nagasandra|dasarahalli/i },
+  // The Tumkur Road industrial corridor, which this entry already reaches as far as Dasarahalli.
+  // BIEC (Bangalore International Exhibition Centre) is out at Madavara on the same road and is a
+  // high-volume venue — five of the strings in the 'Other' bucket are its variant spellings.
+  // `tumkur road` follows the precedent of `hosur road` above and `mysore road` under RR Nagar: a
+  // road named after where it leads is still a road HERE.
+  { area: 'Peenya', patterns: /p[e]?enya|jalahalli|nagasandra|dasarahalli|tumkur\s*(?:road|rd)\b|nelamangala|madavara|madanayakanahalli|totadaguddadahalli|\bbiec\b|(?:bangalore|bengaluru)\s*international\s*exhibition/i },
   { area: 'Bommanahalli', patterns: /bommanahalli|singasandra|begur|kudlu/i },
-  { area: 'Kanakapura Road', patterns: /kanakapura|konanakunte|thalaghattapura|vajarahalli/i },
+  { area: 'Kanakapura Road', patterns: /kanaka?pura|konanakunte|thalaghattapura|vajarahalli|thataguni/i },
   { area: 'Devanahalli', patterns: /devanahalli|\bkia\b|kempegowda international|airport road north/i },
   { area: 'Ulsoor', patterns: /ulsoor|halasuru|richmond town|langford|frazer town|\bcooke town\b/i },
-  { area: 'Bengaluru Central', patterns: /majestic|k\.?r\.?\s*market|city market|chickpet|gandhinagar|seshadripuram|race course/i },
+  { area: 'Bengaluru Central', patterns: /majestic|k\.?r\.?\s*market|city market|chickpet|gandhinagar|seshadripuram|race course|(?:bengaluru|bangalore)\s*city\s*(?:junction|railway)|\bksr\s*(?:bengaluru|bangalore|city)|kempegowda\s*bus/i },
 ];
 
 /** Canonical list, exported so the Event schema enum and UI filters stay in sync. */
