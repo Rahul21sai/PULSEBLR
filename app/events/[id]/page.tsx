@@ -1,13 +1,30 @@
-'use client';
-
 import Link from 'next/link';
+import { notFound } from 'next/navigation';
+import { cache } from 'react';
+import type { Metadata } from 'next';
+import mongoose from 'mongoose';
 
-import { useEffect, useState, use } from 'react';
+import connectDB from '@/lib/mongodb';
+import Event from '@/lib/models/Event';
+import { getCurrentUserId } from '@/lib/auth-helpers';
+import { canViewEvent } from '@/lib/events/visibility';
+import { visibilityClause } from '@/lib/events/query';
+import { toFeedEvent, toFeedEvents } from '@/lib/events/serialize';
+import {
+  buildEventJsonLd,
+  eventSeoDescription,
+  isIndexableEvent,
+  serializeJsonLd,
+  type SeoEvent,
+} from '@/lib/events/seo';
+import { absoluteUrl, canonicalOrigin } from '@/lib/canonical-origin';
+import { topicForDimension } from '@/lib/events/topics';
+import { FeedEvent } from '@/lib/event-types';
+
 import { DesktopNav, MobileBottomNav } from '../../components/NavBar';
 import EventCover from '../../components/EventCover';
 import EventPills from '../../components/EventPills';
-import SaveButton from '../../components/SaveButton';
-import { FeedEvent } from '@/lib/event-types';
+import EventActions from './EventDetailClient';
 import {
   timeIST,
   fullDateIST,
@@ -21,95 +38,185 @@ import {
   stripMarkdown,
 } from '@/lib/format';
 
-export default function EventDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = use(params);
-  const [event, setEvent] = useState<FeedEvent | null>(null);
-  const [related, setRelated] = useState<FeedEvent[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [notFound, setNotFound] = useState(false);
-  const [copied, setCopied] = useState(false);
+/**
+ * The event page. A SERVER COMPONENT, and the conversion from a client one is the entire point.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────────────────────
+ * WHY IT MOVED. This page was `'use client'` and fetched `/api/events/[id]` in a `useEffect`. Two
+ * consequences, and the second is the expensive one:
+ *
+ *   · `generateMetadata` is supported ONLY in Server Components (Next's own metadata guide says so
+ *     outright), so the page could not emit a title, description, canonical, OG card or JSON-LD.
+ *   · The crawlers that produce a link preview — WhatsApp, LinkedIn, Slack, Twitter — and the ones
+ *     that index a page run NO JavaScript. So sharing an event produced a bare URL with no preview,
+ *     and Google saw an empty shell. The events surface is the acquisition half of this product and
+ *     it was invisible to every acquisition channel.
+ *
+ * THE ACCESS CHECK IS THE SAME ONE `GET /api/events/[id]` MAKES, and it must stay that way: an
+ * ObjectId is not a secret (it embeds a timestamp and a counter, so neighbours are enumerable), so
+ * `canViewEvent` decides, and a refusal is ALWAYS 404 and never 403 — a 403 confirms the row exists.
+ * `notFound()` is that 404.
+ *
+ * JSON-LD IS GATED ON THE SAME PREDICATE AS `robots`. `visibility: 'private'` and `'pending'` events
+ * are reachable at this URL by their owner. Publishing structured data for one would put another
+ * user's private event into a search index — strictly worse than an in-app disclosure, because an
+ * index cannot be retracted. `lib/events/seo.ts` owns both decisions (`buildEventJsonLd` returns
+ * null, `isIndexableEvent` drives `robots`) so they cannot drift apart here.
+ *
+ * THERE IS DELIBERATELY NO `loading.tsx` IN THIS SEGMENT, AND ADDING ONE BREAKS THE 404. Measured
+ * against a dev server, same build, with and without the file:
+ *
+ *   | request                          | with loading.tsx | without |
+ *   | -------------------------------- | ---------------- | ------- |
+ *   | `/events/000000000000000000000000` | **200**        | 404     |
+ *   | somebody else's private event      | **200**        | 404     |
+ *
+ * A segment-level loading boundary flushes the shell before this component runs, so the status is
+ * already committed by the time `notFound()` is reached and every refusal becomes a SOFT 404 — a 200
+ * whose body says "we couldn't find that event". That is a page Google may index, on a corpus that
+ * PRUNES events a week after they end, so stale shared links are the normal case rather than an edge
+ * one. The skeleton the client version showed is not recoverable here: the access check IS the slow
+ * part, so there is nothing that can be rendered before it resolves. `not-found.tsx` keeps the
+ * friendly panel; the status keeps the semantics.
+ * ─────────────────────────────────────────────────────────────────────────────────────────────
+ */
 
-  useEffect(() => {
-    let active = true;
-    (async () => {
-      try {
-        const res = await fetch(`/api/events/${id}`);
-        if (res.status === 404) {
-          if (active) setNotFound(true);
-          return;
-        }
-        if (!res.ok) throw new Error('Failed to load');
-        const data = await res.json();
-        if (!active) return;
-        setEvent(data.event);
-        setRelated(data.related || []);
-      } catch {
-        if (active) setNotFound(true);
-      } finally {
-        if (active) setLoading(false);
-      }
-    })();
-    return () => {
-      active = false;
-    };
-  }, [id]);
+interface LoadedEvent {
+  event: FeedEvent;
+  /** Kept beside the client shape because `FeedEvent` has no `visibility` — SEO needs it. */
+  visibility: string | null;
+  related: FeedEvent[];
+}
 
-  async function share() {
-    const url = window.location.href;
-    const title = event?.title || 'Event on PulseBLR';
-    // Prefer the native share sheet on mobile; fall back to the clipboard, which is
-    // the only thing that works reliably on desktop browsers.
-    if (navigator.share) {
-      try {
-        await navigator.share({ title, url });
-        return;
-      } catch {
-        // Sheet dismissed — fall through to copy.
-      }
-    }
-    try {
-      await navigator.clipboard.writeText(url);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      /* clipboard blocked — nothing useful to do */
-    }
+/**
+ * Read the event once per request, for `generateMetadata` AND the page.
+ *
+ * `cache()` from React memoises within a single render pass, which is exactly what Next's metadata
+ * guide prescribes for this — without it the document, the access check and the related query all
+ * run twice on every page view.
+ */
+const loadEvent = cache(async (id: string): Promise<LoadedEvent | null> => {
+  if (!mongoose.Types.ObjectId.isValid(id)) return null;
+
+  await connectDB();
+  const doc = await Event.findById(id).lean();
+  if (!doc) return null;
+
+  const viewerId = await getCurrentUserId();
+  if (!canViewEvent(doc, viewerId)) return null;
+
+  /*
+   * "Similar events", same query as the API route.
+   *
+   * THE VISIBILITY CLAUSE HERE IS NOT BELT-AND-BRACES. Without it, other users' private events
+   * appear as suggestions at the bottom of every public event page — a leak needing no id guessing
+   * at all, just a visit to any event.
+   */
+  const related = await Event.find({
+    _id: { $ne: doc._id },
+    startDateTime: { $gte: new Date() },
+    category: { $in: doc.category?.length ? doc.category : ['Networking/Meetup'] },
+    ...visibilityClause(viewerId),
+  })
+    .select('title startDateTime venue area format imageUrl category isFree price organizer')
+    .sort({ startDateTime: 1 })
+    .limit(6)
+    .lean();
+
+  return {
+    event: toFeedEvent(doc),
+    visibility: doc.visibility ?? null,
+    related: toFeedEvents(related),
+  };
+});
+
+/** The narrow shape `lib/events/seo.ts` reads, assembled from what the loader returned. */
+function seoInput(loaded: LoadedEvent): SeoEvent {
+  return { ...loaded.event, visibility: loaded.visibility };
+}
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}): Promise<Metadata> {
+  const { id } = await params;
+  const loaded = await loadEvent(id);
+
+  /*
+   * A refused or missing event gets NOTHING but a noindex title.
+   *
+   * `loadEvent` has already applied `canViewEvent`, so this branch also covers "somebody else's
+   * private event": naming it here would leak through the `<title>` and `og:title` the very thing
+   * the 404 below exists to withhold.
+   */
+  if (!loaded) {
+    return { title: 'Event not found · PulseBLR', robots: { index: false, follow: false } };
   }
 
-  if (loading) {
-    return (
-      <Shell>
-        <div className="max-w-[880px] mx-auto px-4 md:px-8 pt-6">
-          <div className="skeleton aspect-[2/1] rounded-[18px] mb-6" />
-          <div className="skeleton h-8 w-3/4 rounded mb-3" />
-          <div className="skeleton h-4 w-1/2 rounded mb-8" />
-          <div className="skeleton h-32 rounded-[18px]" />
-        </div>
-      </Shell>
-    );
-  }
+  const seo = seoInput(loaded);
+  const canonical = absoluteUrl(`/events/${loaded.event._id}`);
+  const description = eventSeoDescription(seo);
+  const indexable = isIndexableEvent(seo);
 
-  if (notFound || !event) {
-    return (
-      <Shell>
-        <div className="max-w-[600px] mx-auto px-4 pt-20 text-center">
-          <span aria-hidden="true" className="material-symbols-outlined text-[48px] text-[#d5d5da] block mb-3">
-            search_off
-          </span>
-          <h1 className="text-[22px] font-bold text-[#1D1D1F]">We couldn’t find that event</h1>
-          <p className="text-[14px] text-[#6E6E73] mt-2">
-            It may have been removed by the organiser, or the link is out of date.
-          </p>
-          <Link
-            href="/"
-            className="inline-block mt-6 px-6 py-2.5 rounded-full bg-[#1D1D1F] text-white text-label-md font-semibold hover:bg-black transition-colors"
-          >
-            Browse all events
-          </Link>
-        </div>
-      </Shell>
-    );
-  }
+  return {
+    /*
+     * `metadataBase` is set per page rather than in the root layout, and it is required: without
+     * it Next resolves the generated OG image against a guessed origin (localhost in development,
+     * `VERCEL_URL` otherwise) and a preview card then points at a host that is not ours.
+     * `canonicalOrigin()` is `NEXTAUTH_URL`, the one pinned origin this app already trusts —
+     * deliberately NOT the request's `Host` header, which is attacker-controlled because
+     * `auth.ts` sets `trustHost: true`.
+     *
+     * IN DEVELOPMENT THE `og:image` URL WILL SHOW THE DEV PORT, NOT THIS ORIGIN, AND THAT IS NOT A
+     * BUG TO FIX. Next overrides `metadataBase` for file-convention social images specifically:
+     * `getSocialImageMetadataBaseFallback` (node_modules/next/dist/lib/metadata/resolvers/
+     * resolve-url.js) returns `http://localhost:$PORT` unconditionally when
+     * `NODE_ENV === 'development'`, and only in production does it fall through to
+     * `metadataBase || VERCEL_PROJECT_PRODUCTION_URL`. Observed on a dev server: `og:url` and the
+     * canonical read `:3000` from here while `og:image` read `:3105`. Production uses this value.
+     */
+    metadataBase: new URL(canonicalOrigin()),
+    title: `${loaded.event.title} · PulseBLR`,
+    description,
+    alternates: { canonical },
+    openGraph: {
+      title: loaded.event.title,
+      description,
+      url: canonical,
+      siteName: 'PulseBLR',
+      type: 'website',
+      locale: 'en_IN',
+      /*
+       * No `images` key on purpose. Next resolves the `opengraph-image.tsx` file convention in this
+       * segment and merges it in; setting `images` here would OVERRIDE the generated card. The card
+       * has to be generated rather than pointing at the scraped cover — the click-through crawl
+       * measured 39 covers refusing cross-origin embedding (`ERR_BLOCKED_BY_ORB`,
+       * `NotSameSite`) from the Snowflake, ClickHouse and Meetup CDNs, and an OG image that fails
+       * to load fails SILENTLY in whatever app is rendering the preview.
+       */
+    },
+    twitter: {
+      card: 'summary_large_image',
+      title: loaded.event.title,
+      description,
+    },
+    // The security property, stated once and derived from one predicate. Any event carrying a
+    // `visibility` value is owner-visible and must never be indexed.
+    robots: indexable ? undefined : { index: false, follow: false },
+  };
+}
+
+export default async function EventDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const loaded = await loadEvent(id);
+
+  // ALWAYS 404, NEVER 403 — see the header. This covers a bad id, a deleted event, and somebody
+  // else's private one, with an identical response for all three.
+  if (!loaded) notFound();
+
+  const { event, related } = loaded;
+  const jsonLd = buildEventJsonLd(seoInput(loaded), absoluteUrl(`/events/${event._id}`));
 
   const accent = categoryAccent(event.category?.[0]);
   const live = isHappeningNow(event.startDateTime, event.endDateTime);
@@ -120,6 +227,21 @@ export default function EventDetailPage({ params }: { params: Promise<{ id: stri
 
   return (
     <Shell>
+      {/*
+       * Structured data. `serializeJsonLd` is the ONLY sanctioned serialiser: `JSON.stringify` does
+       * not escape `<` (Next's JSON-LD guide says so), and every string in this object — title,
+       * description, organizer, venue — is SCRAPED from a third-party page, so a title carrying
+       * `</script><script>…` would be stored XSS on our own domain.
+       *
+       * `jsonLd` is null for a non-public event, and the block is then not rendered at all.
+       */}
+      {jsonLd && (
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: serializeJsonLd(jsonLd) }}
+        />
+      )}
+
       <div className="max-w-[1100px] mx-auto px-4 md:px-8 pt-4 md:pt-6">
         <Link
           href="/"
@@ -151,21 +273,40 @@ export default function EventDetailPage({ params }: { params: Promise<{ id: stri
             {/* Category as a dot plus a label, not a filled block. Saturated chips
                 stacked directly above the title made the taxonomy the loudest thing on
                 the page; the colour still identifies the category, at a tenth of the
-                visual weight. */}
+                visual weight.
+
+                A category links to its topic page only when one is PUBLISHED —
+                `topicForDimension` is a lookup in that set, not a slugify, because only 16 of the
+                22 categories have a page and a hand-rolled slug would link the rest to a 404. */}
             <div className="mb-3.5 flex flex-wrap items-center gap-x-3 gap-y-1.5">
-              {(event.category || []).map(category => (
-                <span
-                  key={category}
-                  className="inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-[#3a3a3c]"
-                >
+              {(event.category || []).map(category => {
+                const topic = topicForDimension('category', category);
+                const dot = (
                   <span
                     aria-hidden="true"
                     className="h-[7px] w-[7px] rounded-full"
                     style={{ background: categoryAccent(category) }}
                   />
-                  {category}
-                </span>
-              ))}
+                );
+                return topic ? (
+                  <Link
+                    key={category}
+                    href={`/topics/${topic.slug}`}
+                    className="inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-[#3a3a3c] hover:text-[#0071E3] transition-colors"
+                  >
+                    {dot}
+                    {category}
+                  </Link>
+                ) : (
+                  <span
+                    key={category}
+                    className="inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-[#3a3a3c]"
+                  >
+                    {dot}
+                    {category}
+                  </span>
+                );
+              })}
             </div>
 
             <h1
@@ -372,43 +513,8 @@ export default function EventDetailPage({ params }: { params: Promise<{ id: stri
                     </div>
                   )}
 
-                  <div className="flex flex-col gap-2 pt-1">
-                    <a
-                      href={event.applyLink || event.sourceUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="w-full text-center bg-[#1D1D1F] text-white text-label-md font-semibold py-3 rounded-full hover:bg-black transition-colors active:scale-[0.98]"
-                    >
-                      {event.soldOut ? `View on ${event.source}` : 'Register'}
-                    </a>
-                    <div className="flex gap-2">
-                      <SaveButton eventId={event._id} variant="full" />
-                      <a
-                        href={`/api/events/${event._id}/ics`}
-                        title="Add to calendar"
-                        aria-label="Add to calendar"
-                        className="w-11 h-11 rounded-full bg-[#f3f3f5] flex items-center justify-center text-[#1D1D1F] hover:bg-[#e8e8ea] transition-colors shrink-0"
-                      >
-                        <span aria-hidden="true" className="material-symbols-outlined text-[18px]">event_available</span>
-                      </a>
-                      <button
-                        type="button"
-                        onClick={share}
-                        title={copied ? 'Link copied' : 'Share'}
-                        aria-label="Share event"
-                        className="w-11 h-11 rounded-full bg-[#f3f3f5] flex items-center justify-center text-[#1D1D1F] hover:bg-[#e8e8ea] transition-colors shrink-0"
-                      >
-                        <span aria-hidden="true" className="material-symbols-outlined text-[18px]">
-                          {copied ? 'check' : 'ios_share'}
-                        </span>
-                      </button>
-                    </div>
-                    {copied && (
-                      <p className="text-[12px] text-center text-[#34C759] font-semibold">
-                        Link copied
-                      </p>
-                    )}
-                  </div>
+                  {/* The only interactive block on the page — see EventDetailClient.tsx. */}
+                  <EventActions event={event} />
                 </div>
               </div>
 
@@ -453,6 +559,8 @@ function Shell({ children }: { children: React.ReactNode }) {
  * be restated here from the same fields rather than guessed at. Showing the reasoning
  * matters more than showing the number: a bare 83/100 is a black box, while "in person,
  * 60 going, food" is something a person can agree or disagree with.
+ *
+ * Hooks-free, so it renders on the server with the rest of the page.
  */
 function WorthGoing({ event }: { event: FeedEvent }) {
   const score = event.connectionScore ?? 0;
