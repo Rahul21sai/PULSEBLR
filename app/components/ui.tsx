@@ -139,12 +139,34 @@ function buttonClass(tone: ButtonTone, size: keyof typeof SIZES, full?: boolean)
   ].join(' ');
 }
 
+/**
+ * A PASSED `className` USED TO BE SILENTLY DISCARDED, and the mechanism is worth stating because it
+ * reads as correct.
+ *
+ * `className` is part of `ButtonHTMLAttributes`, so it was captured by `...rest` — and `{...rest}`
+ * spread AFTER `className={buttonClass(...)}`, so it did not fail to append, it REPLACED the whole
+ * thing. `<Button className="mt-2">` rendered a completely unstyled button: no height, no radius, no
+ * tone. Worse than a no-op, and invisible in review because the prop is accepted by the type.
+ *
+ * No caller passed one, so this was latent rather than live. It surfaced from the other direction:
+ * `SIZES.sm` is 32px and `SIZES.md` is 40px, both under the 44px tap-target floor (WCAG 2.5.5), and
+ * there was no way for a caller to attach the `TAP_44` overlay to fix it.
+ *
+ * THE OVERLAY IS DELIBERATELY NOT APPLIED TO EVERY BUTTON HERE. It is tempting — one line, every
+ * button compliant — and it would introduce a worse bug than the one it fixes. A 44px overlay on a
+ * 32px control overhangs 6px per side, so two adjacent controls contest the same band and whichever
+ * is later in the DOM wins it: a tap aimed at one button fires the other. That was measured in this
+ * repo, not theorised — two icon buttons at `gap-1.5` hit-tested at 38x44 and 44x44. The gap must be
+ * at least `44 - height`, which is per-layout arithmetic no shared primitive can do for its callers.
+ * So the floor is opt-in via `TAP_44`, and composing it is now possible.
+ */
 export function Button({
   children,
   tone = 'primary',
   size = 'md',
   full,
   icon,
+  className,
   ...rest
 }: {
   children: ReactNode;
@@ -154,13 +176,18 @@ export function Button({
   icon?: string;
 } & React.ButtonHTMLAttributes<HTMLButtonElement>) {
   return (
-    <button type="button" className={buttonClass(tone, size, full)} {...rest}>
+    <button
+      type="button"
+      className={[buttonClass(tone, size, full), className].filter(Boolean).join(' ')}
+      {...rest}
+    >
       {icon && <span aria-hidden="true" className="material-symbols-outlined text-[17px]">{icon}</span>}
       {children}
     </button>
   );
 }
 
+/** Same className merge as `Button`, and for the same reason — see its comment. */
 export function ButtonLink({
   children,
   href,
@@ -169,6 +196,7 @@ export function ButtonLink({
   full,
   icon,
   external,
+  className,
 }: {
   children: ReactNode;
   href: string;
@@ -177,8 +205,9 @@ export function ButtonLink({
   full?: boolean;
   icon?: string;
   external?: boolean;
+  className?: string;
 }) {
-  const cls = buttonClass(tone, size, full);
+  const cls = [buttonClass(tone, size, full), className].filter(Boolean).join(' ');
   if (external) {
     return (
       <a href={href} target="_blank" rel="noopener noreferrer" className={cls}>

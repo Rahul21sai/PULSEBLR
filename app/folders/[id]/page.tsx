@@ -6,11 +6,26 @@ import { use, useCallback, useEffect, useMemo, useState } from 'react';
 import AppShell from '../../components/AppShell';
 import Sheet from '../../components/Sheet';
 import QrCode from '../../components/QrCode';
-import ContactFields, { useTagVocabulary, type ContactDraft } from '../../components/scan/ContactFields';
+import ContactFields, {
+  TAP_44,
+  TAP_44_SQUARE,
+  canonicaliseTagInput,
+  canonicaliseTagList,
+  useTagVocabulary,
+  type ContactDraft,
+} from '../../components/scan/ContactFields';
 import FolderSettingsSheet from './FolderSettingsSheet';
 import { Banner, Button, ButtonLink, Card, EmptyState, PageHeader } from '../../components/ui';
 import { dayHeading, fullDateIST, relativeTime, timeIST } from '@/lib/format';
-import { newClientId, pendingContacts, startAutoDrain, subscribe } from '@/lib/scan/outbox';
+import {
+  moveQueuedContact,
+  newClientId,
+  pendingContacts,
+  startAutoDrain,
+  subscribe,
+  updateQueuedContact,
+} from '@/lib/scan/outbox';
+import { dayOffsetIST, followUpInstantForDay, todayDayIST } from '@/lib/scan/follow-up';
 import type { ContactDTO, FolderDTO } from '@/lib/contacts/types';
 
 /**
@@ -18,6 +33,26 @@ import type { ContactDTO, FolderDTO } from '@/lib/contacts/types';
  *
  * A real `<table>` on a wide screen because that is what the data is, and stacked cards on a
  * phone because a 16-column table on 390px is unreadable. Same rows, same order, one source.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────────────────────────
+ * SELECTION IS AN EXPLICIT MODE, following `app/people/page.tsx` rather than inventing a second
+ * idiom — two selection patterns drifting is exactly what makes two pages stop feeling like one app.
+ * "Select" flips the rows from "open the editor" to "pick me", reveals the bulk bar, withdraws the
+ * competing tap targets, and Escape or Cancel leaves. No `pointer-events` juggling.
+ *
+ * THIS TABLE HAS ONE PROBLEM `/people` DOES NOT: HALF ITS ROWS MAY HAVE NO SERVER DOCUMENT. A queued
+ * capture's row id is `pending:<clientId>`, which cannot be PATCHed — the old edit path hit
+ * `/api/contacts/pending:<clientId>`, got nothing, and rolled back against an array that never held
+ * the row: a silent no-op behind "Could not save that change". So a bulk action here writes to BOTH
+ * stores — `/api/contacts/bulk` for the synced rows, `updateQueuedContact` / `moveQueuedContact` for
+ * the queued ones — and the bar says how many of each it is about to touch. Excluding them would
+ * have been allowed; skipping them silently is the failure this whole feature keeps almost making.
+ *
+ * THE SELECTION IS RESOLVED AGAINST `rows`, NOT COUNTED FROM THE `Set`. This page runs the
+ * auto-drain, so a queued row can sync mid-selection and its id changes from `pending:<clientId>` to
+ * a real ObjectId underneath the user. Reading `selected.size` would then report a person who is no
+ * longer addressable by the id that was stored.
+ * ─────────────────────────────────────────────────────────────────────────────────────────────────
  */
 export default function FolderPage({ params }: { params: Promise<{ id: string }> }) {
   // A client component cannot be `async`, so params is unwrapped with React's `use()` —
@@ -35,8 +70,21 @@ export default function FolderPage({ params }: { params: Promise<{ id: string }>
   const [addingManually, setAddingManually] = useState(false);
   const [showQr, setShowQr] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  // The other folders, for the move picker in the edit sheet.
+  // The other folders, for the move picker in the edit sheet and in the bulk bar.
   const [otherFolders, setOtherFolders] = useState<FolderDTO[]>([]);
+
+  /**
+   * SELECTION MODE. Off by default: the common intent here is to correct one person, and a table whose
+   * rows are permanently checkboxes makes that the awkward case. Holds ROW ids, which for a queued
+   * capture is `pending:<clientId>` — see the file header.
+   */
+  const [selecting, setSelecting] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkTagText, setBulkTagText] = useState('');
+  /** Pre-filled with tomorrow, so the common batch answer is two taps rather than a date entry. */
+  const [bulkDay, setBulkDay] = useState(() => dayOffsetIST(1));
+  const [working, setWorking] = useState(false);
+  const tagVocabulary = useTagVocabulary();
 
   const load = useCallback(async () => {
     try {
@@ -160,6 +208,195 @@ export default function FolderPage({ params }: { params: Promise<{ id: string }>
     [rows]
   );
 
+  /**
+   * The selection, resolved against the rows on screen right now — see the file header for why this
+   * is not `selected.size`. Split by store, because the two halves are written by different code.
+   */
+  const chosen = useMemo(() => rows.filter(c => selected.has(c._id)), [rows, selected]);
+  const chosenQueued = useMemo(() => chosen.filter(c => c.pending), [chosen]);
+  const chosenSynced = useMemo(() => chosen.filter(c => !c.pending), [chosen]);
+
+  /**
+   * Escape leaves selection mode.
+   *
+   * Bound at the document, because the rows do not contain focus. A mode with no keyboard exit is a
+   * trap for anybody not using a mouse, and every other dismissible surface here answers Escape.
+   */
+  useEffect(() => {
+    if (!selecting) return;
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key !== 'Escape') return;
+      setSelecting(false);
+      setSelected(new Set());
+    }
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [selecting]);
+
+  function leaveSelection() {
+    setSelecting(false);
+    setSelected(new Set());
+    setBulkTagText('');
+  }
+
+  function toggleRow(id: string) {
+    setSelected(current => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function flash(message: string) {
+    setNotice(message);
+    setTimeout(() => setNotice(null), 6000);
+  }
+
+  function complain(message: string) {
+    setError(message);
+    setTimeout(() => setError(null), 6000);
+  }
+
+  /**
+   * Apply one change to every selected row, ACROSS BOTH STORES.
+   *
+   * The server half is a single request — forty PATCHes can fail halfway with no way for the user to
+   * tell which half landed, and each would run a full person recompute behind it. The device half is
+   * a loop by necessity: IndexedDB has no batch write here, and each queued record is rewritten in
+   * place. A failure in the loop is counted, not thrown, because the records that were rewritten
+   * really were rewritten.
+   *
+   * `request` carries the action and its fields; `applyLocally` is the same change expressed against
+   * a queued record. Both are passed in so the two halves of one action are written next to each
+   * other and cannot drift into meaning different things.
+   */
+  async function runBulk(
+    request: Record<string, unknown>,
+    applyLocally: (contact: ContactDTO) => Promise<void>,
+    describe: (count: number) => string
+  ) {
+    if (!chosen.length || working) return;
+    setWorking(true);
+    setError(null);
+
+    let changed = 0;
+    let unchanged = 0;
+
+    try {
+      if (chosenSynced.length) {
+        const res = await fetch('/api/contacts/bulk', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...request, contactIds: chosenSynced.map(c => c._id) }),
+        });
+        const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+        if (!res.ok) {
+          // The route names the field it refused; showing that beats a generic apology.
+          complain(
+            typeof data.error === 'string' ? data.error : `Could not apply that (${res.status}).`
+          );
+          return;
+        }
+        changed += Number(data.changed ?? 0);
+        // `matched` can legitimately be lower than `requested` — a row deleted in another tab is not
+        // in the scoped filter any more. Reporting the gap beats silently changing fewer people.
+        unchanged +=
+          Number(data.failed ?? 0) +
+          Math.max(0, Number(data.requested ?? 0) - Number(data.matched ?? 0));
+      }
+
+      for (const contact of chosenQueued) {
+        try {
+          await applyLocally(contact);
+          changed += 1;
+        } catch {
+          unchanged += 1;
+        }
+      }
+
+      leaveSelection();
+      await Promise.all([load(), refreshPending()]);
+      flash(
+        describe(changed) +
+          (unchanged ? ` ${unchanged} could not be changed.` : '') +
+          (chosenQueued.length
+            ? ` ${chosenQueued.length} of them ${
+                chosenQueued.length === 1 ? 'is' : 'are'
+              } still only on this device — that change is saved here and uploads with them.`
+            : '')
+      );
+    } catch {
+      complain('Could not reach the server, so nothing on it was changed.');
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  function bulkTag(mode: 'add' | 'remove') {
+    // Canonicalised through the SAME mirror the tag field uses, so a tag applied in bulk lands in the
+    // identical facet bucket — including for a queued row, which never passes through the server.
+    const tag = canonicaliseTagInput(bulkTagText);
+    if (!tag) return;
+    void runBulk(
+      { action: 'tag', [mode]: [tag] },
+      async contact => {
+        const current = contact.tags ?? [];
+        await updateQueuedContact(contact.clientId, {
+          tags:
+            mode === 'add'
+              ? canonicaliseTagList([...current, tag])
+              : canonicaliseTagList(current.filter(t => t !== tag)),
+        });
+      },
+      count =>
+        `${mode === 'add' ? 'Tagged' : 'Untagged'} ${count} ${
+          count === 1 ? 'person' : 'people'
+        } “${tag}”.`
+    );
+  }
+
+  function bulkFollowUp(day: string | null) {
+    /**
+     * The IST conversion is `lib/scan/follow-up.ts`'s, on BOTH sides. The server re-derives it from
+     * the day for the synced rows — a client cannot be trusted to have got it right — and this call
+     * is what the queued rows get, since nothing else will run for them.
+     */
+    const instant = day ? followUpInstantForDay(day) : null;
+    if (day && !instant) {
+      complain('Pick today or a day after it.');
+      return;
+    }
+    void runBulk(
+      { action: 'followUp', day },
+      async contact =>
+        updateQueuedContact(contact.clientId, {
+          followUpAt: instant,
+          // A new reminder on somebody already ticked off would never surface: the derivation skips
+          // any capture marked done. Clearing leaves the flag alone — "I already replied" stays true.
+          ...(instant ? { followedUp: false } : {}),
+        }),
+      count =>
+        instant
+          ? `Reminder set for ${count} ${count === 1 ? 'person' : 'people'} on ${fullDateIST(
+              instant
+            )}.`
+          : `Cleared the reminder for ${count} ${count === 1 ? 'person' : 'people'}.`
+    );
+  }
+
+  function bulkMove(folderId: string) {
+    const destination = otherFolders.find(f => f._id === folderId);
+    void runBulk(
+      { action: 'move', folderId },
+      async contact => moveQueuedContact(contact.clientId, folderId),
+      count =>
+        `Moved ${count} ${count === 1 ? 'person' : 'people'} to ${
+          destination?.name ?? 'another folder'
+        }.`
+    );
+  }
+
   async function saveContact(contact: ContactDTO, draft: ContactDraft) {
     /**
      * A PENDING capture is edited in IndexedDB, not through the API.
@@ -171,7 +408,6 @@ export default function FolderPage({ params }: { params: Promise<{ id: string }>
      * name mistyped offline stayed wrong until it synced.
      */
     if (contact.pending) {
-      const { updateQueuedContact } = await import('@/lib/scan/outbox');
       await updateQueuedContact(contact.clientId, draft);
       setEditing(null);
       // `subscribe` fires from the outbox write, so the pending rows refresh themselves.
@@ -316,6 +552,29 @@ export default function FolderPage({ params }: { params: Promise<{ id: string }>
           }
           action={
             <div className="flex flex-wrap items-center gap-2">
+              {/*
+                THE MODE SWITCH, offered only when there is something to select — a Select button over
+                an empty folder is a control that cannot do anything, and the empty state already says
+                what to do instead.
+
+                A raw button rather than `<Button>` for one reason: `ui.tsx` hardcodes its own
+                `className` and spreads `...rest` after it, so a passed class REPLACES the styling
+                rather than adding to it — there is no way to attach the 44px overlay from outside.
+                The painted size and tones match its neighbours exactly.
+              */}
+              {rows.length > 0 && (
+                <button
+                  type="button"
+                  aria-pressed={selecting}
+                  onClick={() => (selecting ? leaveSelection() : setSelecting(true))}
+                  className={`${TAP_44} inline-flex h-10 items-center justify-center gap-1.5 rounded-full bg-white px-5 text-[13.5px] font-semibold tracking-[-0.006em] text-[#1D1D1F] shadow-[inset_0_0_0_1px_var(--hairline-strong)] pressable hover:bg-[#F7F7F9]`}
+                >
+                  <span aria-hidden="true" className="material-symbols-outlined text-[17px]">
+                    {selecting ? 'close' : 'checklist'}
+                  </span>
+                  {selecting ? 'Done selecting' : 'Select'}
+                </button>
+              )}
               <ButtonLink href={`/scan?folder=${id}`} tone="primary" icon="qr_code_scanner">
                 Scan
               </ButtonLink>
@@ -348,7 +607,9 @@ export default function FolderPage({ params }: { params: Promise<{ id: string }>
           </div>
         )}
 
-        {due.length > 0 && (
+        {/* Withdrawn while selecting: its Message and Done buttons are competing targets, and this
+            mode has one meaning per tap. */}
+        {due.length > 0 && !selecting && (
           <div className="mb-4">
             <Card padding="tight">
               <div className="mb-2 flex items-center justify-between">
@@ -393,8 +654,30 @@ export default function FolderPage({ params }: { params: Promise<{ id: string }>
           </div>
         )}
 
+        {/* ── Bulk bar — only in selection mode, and only with a selection ─ */}
+        {selecting && chosen.length > 0 && (
+          /* Sticky under the mobile header, so it stays reachable while scrolling forty rows. */
+          <div className="sticky top-16 z-20 mb-4">
+            <BulkBar
+              total={chosen.length}
+              queued={chosenQueued.length}
+              working={working}
+              tagText={bulkTagText}
+              onTagText={setBulkTagText}
+              onTag={bulkTag}
+              tagVocabulary={tagVocabulary}
+              day={bulkDay}
+              onDay={setBulkDay}
+              onFollowUp={bulkFollowUp}
+              folders={otherFolders}
+              onMove={bulkMove}
+              onCancel={leaveSelection}
+            />
+          </div>
+        )}
+
         {/* ── Export row ─────────────────────────────────────────────────── */}
-        {rows.length > 0 && (
+        {rows.length > 0 && !selecting && (
           <div className="mb-4 flex flex-wrap items-center gap-2">
             <ButtonLink
               href={`/api/folders/${id}/export?format=csv`}
@@ -439,8 +722,27 @@ export default function FolderPage({ params }: { params: Promise<{ id: string }>
           />
         ) : (
           <>
-            <ContactTable rows={rows} onEdit={setEditing} />
-            <ContactCards rows={rows} onEdit={setEditing} />
+            {selecting && (
+              <p className="mb-2 text-[12.5px] text-[#6E6E73]">
+                <strong className="tnum text-[#1D1D1F]">{chosen.length}</strong> of{' '}
+                <span className="tnum">{rows.length}</span> selected — tap a row to pick it, Escape to
+                stop.
+              </p>
+            )}
+            <ContactTable
+              rows={rows}
+              onEdit={setEditing}
+              selecting={selecting}
+              selected={selected}
+              onToggle={toggleRow}
+            />
+            <ContactCards
+              rows={rows}
+              onEdit={setEditing}
+              selecting={selecting}
+              selected={selected}
+              onToggle={toggleRow}
+            />
           </>
         )}
 
@@ -455,12 +757,14 @@ export default function FolderPage({ params }: { params: Promise<{ id: string }>
           onDelete={() => deleteContact(editing)}
           otherFolders={otherFolders}
           onMove={folderId => moveContact(editing, folderId)}
+          tagVocabulary={tagVocabulary}
         />
       )}
 
       {addingManually && folder && (
         <ManualAddSheet
           folderId={id}
+          tagVocabulary={tagVocabulary}
           onClose={() => setAddingManually(false)}
           onAdded={async () => {
             setAddingManually(false);
@@ -502,69 +806,126 @@ export default function FolderPage({ params }: { params: Promise<{ id: string }>
 function ContactTable({
   rows,
   onEdit,
+  selecting,
+  selected,
+  onToggle,
 }: {
   rows: ContactDTO[];
   onEdit: (contact: ContactDTO) => void;
+  selecting: boolean;
+  selected: Set<string>;
+  onToggle: (id: string) => void;
 }) {
+  /**
+   * The Links and Edit columns are DROPPED while selecting, header and all, rather than left in place
+   * and ignored. They are the competing tap targets — a stray tap on a LinkedIn icon during a
+   * forty-row selection navigates the browser away and loses the whole selection — and hiding the
+   * cells while keeping the headers would advertise columns with nothing in them.
+   */
+  const headers = selecting
+    ? ['', 'Name', 'Company', 'How you met', 'Scanned']
+    : ['Name', 'Company', 'How you met', 'Links', 'Scanned', ''];
+
   return (
     <div className="hidden overflow-hidden rounded-[18px] bg-white card-shadow md:block">
       <div className="overflow-x-auto">
         <table className="w-full border-collapse text-left">
           <thead>
             <tr className="border-b border-[color:var(--hairline)]">
-              {['Name', 'Company', 'How you met', 'Links', 'Scanned', ''].map(header => (
-                <th key={header} className="t-label px-4 py-3 text-[#8E8E93]">
+              {headers.map((header, i) => (
+                <th key={`${header}:${i}`} className="t-label px-4 py-3 text-[#8E8E93]">
                   {header}
                 </th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {rows.map(contact => (
-              <tr
-                key={contact._id}
-                className="border-b border-[color:var(--hairline)] last:border-0 hover:bg-[#FAFAFC]"
-              >
-                <td className="px-4 py-3 align-top">
-                  <div className="flex items-start gap-2">
-                    <div className="min-w-0">
-                      <p className="text-[13.5px] font-semibold text-[#1D1D1F]">{contact.name}</p>
-                      {(contact.role || contact.headline) && (
-                        <p className="text-[12px] text-[#6E6E73]">
-                          {contact.role || contact.headline}
-                        </p>
+            {rows.map(contact => {
+              const isSelected = selected.has(contact._id);
+              return (
+                <tr
+                  key={contact._id}
+                  className={`border-b border-[color:var(--hairline)] last:border-0 ${
+                    isSelected ? 'bg-[#EBF4FE]' : 'hover:bg-[#FAFAFC]'
+                  }`}
+                >
+                  {selecting && (
+                    <td className="w-11 px-4 py-3 align-top">
+                      {/*
+                        `aria-pressed` on a checkbox-shaped button, not a hidden `<input>` — the same
+                        choice `/people` makes, and for the same reason: a real checkbox would be a
+                        second focus stop saying what this one already says. 20px painted, 44px hit
+                        area; a table cell has nothing adjacent for the overlay to steal.
+                      */}
+                      <button
+                        type="button"
+                        aria-pressed={isSelected}
+                        aria-label={`Select ${contact.name}`}
+                        onClick={() => onToggle(contact._id)}
+                        className={`${TAP_44_SQUARE} grid h-5 w-5 place-items-center rounded-[6px] ${
+                          isSelected
+                            ? 'bg-[#0071E3] text-white'
+                            : 'bg-white shadow-[inset_0_0_0_1.5px_var(--hairline-strong)]'
+                        }`}
+                      >
+                        {isSelected && (
+                          <span
+                            aria-hidden="true"
+                            className="material-symbols-outlined text-[15px] leading-none"
+                          >
+                            check
+                          </span>
+                        )}
+                      </button>
+                    </td>
+                  )}
+                  <td className="px-4 py-3 align-top">
+                    <div className="flex items-start gap-2">
+                      <div className="min-w-0">
+                        <p className="text-[13.5px] font-semibold text-[#1D1D1F]">{contact.name}</p>
+                        {(contact.role || contact.headline) && (
+                          <p className="text-[12px] text-[#6E6E73]">
+                            {contact.role || contact.headline}
+                          </p>
+                        )}
+                      </div>
+                      {contact.pending && (
+                        <PendingDot blocked={contact.blocked} reason={contact.blockedReason} />
                       )}
                     </div>
-                    {contact.pending && <PendingDot blocked={contact.blocked} reason={contact.blockedReason} />}
-                  </div>
-                </td>
-                <td className="px-4 py-3 align-top">
-                  <span className="text-[13px] text-[#1D1D1F]">{contact.company || '—'}</span>
-                  {contact.isTargetCompany && <TargetBadge />}
-                </td>
-                <td className="max-w-[280px] px-4 py-3 align-top">
-                  <p className="line-clamp-2 text-[12.5px] leading-relaxed text-[#6E6E73]">
-                    {contact.note || '—'}
-                  </p>
-                </td>
-                <td className="px-4 py-3 align-top">
-                  <ContactLinks contact={contact} />
-                </td>
-                <td className="whitespace-nowrap px-4 py-3 align-top text-[12px] text-[#8E8E93]">
-                  {/* IST, via lib/format.ts. */}
-                  {timeIST(contact.scannedAt)}
-                </td>
-                <td className="px-4 py-3 align-top text-right">
-                  <button
-                    type="button"
-                    onClick={() => onEdit(contact)}
-                    className="rounded-full px-3 py-1.5 text-[12.5px] font-semibold text-[#0071E3] hover:bg-[#EBF4FE]"
-                  >
-                    Edit
-                  </button>
-                </td>
-              </tr>
-            ))}
+                  </td>
+                  <td className="px-4 py-3 align-top">
+                    <span className="text-[13px] text-[#1D1D1F]">{contact.company || '—'}</span>
+                    {contact.isTargetCompany && <TargetBadge />}
+                  </td>
+                  <td className="max-w-[280px] px-4 py-3 align-top">
+                    <p className="line-clamp-2 text-[12.5px] leading-relaxed text-[#6E6E73]">
+                      {contact.note || '—'}
+                    </p>
+                  </td>
+                  {!selecting && (
+                    <td className="px-4 py-3 align-top">
+                      <ContactLinks contact={contact} />
+                    </td>
+                  )}
+                  <td className="whitespace-nowrap px-4 py-3 align-top text-[12px] text-[#8E8E93]">
+                    {/* IST, via lib/format.ts. */}
+                    {timeIST(contact.scannedAt)}
+                  </td>
+                  {!selecting && (
+                    <td className="px-4 py-3 align-top text-right">
+                      <button
+                        type="button"
+                        onClick={() => onEdit(contact)}
+                        className={`${TAP_44} rounded-full px-3 py-1.5 text-[12.5px] font-semibold text-[#0071E3] hover:bg-[#EBF4FE]`}
+                      >
+                        Edit
+                      </button>
+                    </td>
+                  )}
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -577,46 +938,104 @@ function ContactTable({
 function ContactCards({
   rows,
   onEdit,
+  selecting,
+  selected,
+  onToggle,
 }: {
   rows: ContactDTO[];
   onEdit: (contact: ContactDTO) => void;
+  selecting: boolean;
+  selected: Set<string>;
+  onToggle: (id: string) => void;
 }) {
   return (
     <div className="flex flex-col gap-2 md:hidden">
-      {rows.map(contact => (
-        <div key={contact._id} className="rounded-[18px] bg-white p-4 card-shadow">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <p className="flex items-center gap-2 text-[15px] font-semibold text-[#1D1D1F]">
-                <span className="truncate">{contact.name}</span>
-                {contact.pending && <PendingDot blocked={contact.blocked} reason={contact.blockedReason} />}
-              </p>
-              <p className="mt-0.5 text-[12.5px] text-[#6E6E73]">
-                {[contact.role || contact.headline, contact.company].filter(Boolean).join(' · ') ||
-                  'No details yet'}
-              </p>
-              {contact.isTargetCompany && <TargetBadge />}
+      {rows.map(contact => {
+        const isSelected = selected.has(contact._id);
+
+        // Extracted so both wrappers render the IDENTICAL summary. Two copies drift, and the one that
+        // drifts is always the mode you look at less often.
+        const summary = (
+          <>
+            <p className="flex items-center gap-2 text-[15px] font-semibold text-[#1D1D1F]">
+              <span className="truncate">{contact.name}</span>
+              {contact.pending && (
+                <PendingDot blocked={contact.blocked} reason={contact.blockedReason} />
+              )}
+            </p>
+            <p className="mt-0.5 text-[12.5px] text-[#6E6E73]">
+              {[contact.role || contact.headline, contact.company].filter(Boolean).join(' · ') ||
+                'No details yet'}
+            </p>
+            {contact.isTargetCompany && <TargetBadge />}
+          </>
+        );
+
+        return (
+          <div
+            key={contact._id}
+            className={`rounded-[18px] bg-white p-4 card-shadow ${
+              isSelected ? 'shadow-[inset_0_0_0_2px_var(--blue)]' : ''
+            }`}
+          >
+            <div className="flex items-start justify-between gap-3">
+              {selecting ? (
+                /*
+                  THE WHOLE SUMMARY IS THE TARGET on a phone — a 20px checkbox is not something you
+                  hit forty times in a row while standing up. The card is already well past 44px tall,
+                  so no overlay is needed here.
+                */
+                <button
+                  type="button"
+                  aria-pressed={isSelected}
+                  onClick={() => onToggle(contact._id)}
+                  className="flex min-w-0 flex-1 items-start gap-3 rounded-lg text-left outline-none [touch-action:manipulation] focus-visible:shadow-[0_0_0_2px_var(--blue)]"
+                >
+                  <span
+                    aria-hidden="true"
+                    className={`mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-[6px] ${
+                      isSelected
+                        ? 'bg-[#0071E3] text-white'
+                        : 'bg-white shadow-[inset_0_0_0_1.5px_var(--hairline-strong)]'
+                    }`}
+                  >
+                    {isSelected && (
+                      <span className="material-symbols-outlined text-[15px] leading-none">
+                        check
+                      </span>
+                    )}
+                  </span>
+                  <span className="min-w-0 flex-1">{summary}</span>
+                </button>
+              ) : (
+                <>
+                  <div className="min-w-0">{summary}</div>
+                  <button
+                    type="button"
+                    onClick={() => onEdit(contact)}
+                    aria-label={`Edit ${contact.name}`}
+                    className={`${TAP_44_SQUARE} grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[#F5F5F7] text-[#6E6E73]`}
+                  >
+                    <span aria-hidden="true" className="material-symbols-outlined text-[18px]">
+                      edit
+                    </span>
+                  </button>
+                </>
+              )}
             </div>
-            <button
-              type="button"
-              onClick={() => onEdit(contact)}
-              aria-label={`Edit ${contact.name}`}
-              className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[#F5F5F7] text-[#6E6E73]"
-            >
-              <span aria-hidden="true" className="material-symbols-outlined text-[18px]">edit</span>
-            </button>
-          </div>
 
-          {contact.note && (
-            <p className="mt-2.5 text-[13px] leading-relaxed text-[#3a3a3c]">{contact.note}</p>
-          )}
+            {contact.note && (
+              <p className="mt-2.5 text-[13px] leading-relaxed text-[#3a3a3c]">{contact.note}</p>
+            )}
 
-          <div className="mt-3 flex items-center justify-between gap-2">
-            <ContactLinks contact={contact} />
-            <span className="text-[11.5px] text-[#8E8E93]">{timeIST(contact.scannedAt)}</span>
+            <div className="mt-3 flex items-center justify-between gap-2">
+              {/* Links withdrawn while selecting, for the reason the table drops the column. */}
+              {selecting ? <span /> : <ContactLinks contact={contact} />}
+              <span className="text-[11.5px] text-[#8E8E93]">{timeIST(contact.scannedAt)}</span>
+            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -636,7 +1055,15 @@ function ContactLinks({ contact }: { contact: ContactDTO }) {
   if (!links.length) return <span className="text-[12.5px] text-[#8E8E93]">—</span>;
 
   return (
-    <span className="flex items-center gap-1.5">
+    /*
+      `gap-3` (12px), not `gap-1.5`, and this one was caught by measuring rather than by reasoning.
+      A 44px overlay on a 32px icon overhangs 6px on EACH side, so at a 6px gap two neighbours' overlays
+      meet in the same 6px band and the later one in the DOM wins it. Hit-tested: the FIRST of two
+      adjacent icons got 38×44 while the second got the full 44×44 — the earlier icon silently gave up
+      its right-hand 6px. Two overhangs need `2 × 6 = 12px` between them, not 6. The painted 32px circles
+      and their spacing-to-size relationship are otherwise unchanged.
+    */
+    <span className="flex items-center gap-3">
       {links.map(link => (
         <a
           key={link.label}
@@ -645,7 +1072,7 @@ function ContactLinks({ contact }: { contact: ContactDTO }) {
           rel="noopener noreferrer"
           aria-label={link.label}
           title={link.label}
-          className="grid h-8 w-8 place-items-center rounded-full bg-[#F5F5F7] text-[#3a3a3c] hover:bg-[#EBF4FE] hover:text-[#0071E3]"
+          className={`${TAP_44_SQUARE} grid h-8 w-8 place-items-center rounded-full bg-[#F5F5F7] text-[#3a3a3c] hover:bg-[#EBF4FE] hover:text-[#0071E3]`}
         >
           <span aria-hidden="true" className="material-symbols-outlined text-[17px]">{link.icon}</span>
         </a>
@@ -693,6 +1120,182 @@ function TargetBadge() {
   );
 }
 
+/* ────────────────────────────── bulk bar ────────────────────────────── */
+
+/**
+ * What you can do to a selection: tag it, give it a follow-up date, or move it.
+ *
+ * THREE LABELLED ROWS RATHER THAN A TOOLBAR OF ICONS. Each row is one thought and says what it is
+ * about; an icon strip would need a legend and would still be ambiguous about which of the three
+ * "apply" buttons belongs to which input.
+ *
+ * NO BULK DELETE. Deliberate: it is the one irreversible thing here, and the folder-delete sheet is
+ * the precedent for how much ceremony that needs. `Delete` in the per-person editor already covers it.
+ *
+ * The follow-up row offers a DATE rather than the sheet's four presets. The presets exist because at a
+ * conference one tap is everything; a bulk edit happens afterwards, sitting down, where the answer is
+ * a specific day — and the field is pre-filled with tomorrow so the common case is still two taps.
+ */
+function BulkBar({
+  total,
+  queued,
+  working,
+  tagText,
+  onTagText,
+  onTag,
+  tagVocabulary,
+  day,
+  onDay,
+  onFollowUp,
+  folders,
+  onMove,
+  onCancel,
+}: {
+  total: number;
+  queued: number;
+  working: boolean;
+  tagText: string;
+  onTagText: (value: string) => void;
+  onTag: (mode: 'add' | 'remove') => void;
+  tagVocabulary: string[];
+  day: string;
+  onDay: (value: string) => void;
+  onFollowUp: (day: string | null) => void;
+  folders: FolderDTO[];
+  onMove: (folderId: string) => void;
+  onCancel: () => void;
+}) {
+  const ACTION =
+    'inline-flex h-11 items-center justify-center rounded-full px-4 text-[13px] font-semibold pressable disabled:opacity-45 disabled:pointer-events-none';
+  const PRIMARY = `${ACTION} bg-[#1D1D1F] text-white hover:bg-black`;
+  const QUIET = `${ACTION} bg-white text-[#1D1D1F] shadow-[inset_0_0_0_1px_var(--hairline-strong)] hover:bg-[#F7F7F9]`;
+  const INPUT =
+    'h-11 min-w-[150px] flex-1 rounded-full bg-[#F7F7F9] px-4 text-[13.5px] text-[#1D1D1F] outline-none focus:shadow-[inset_0_0_0_2px_var(--blue)]';
+  const LABEL = 't-label w-[68px] shrink-0 pt-3 text-[#8E8E93]';
+
+  return (
+    <Card padding="tight">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-[13px] font-semibold text-[#1D1D1F]">
+          <span className="tnum">{total}</span> selected
+          {queued > 0 && (
+            /*
+              SAID OUT LOUD, because it changes where the write goes. A queued capture has no server
+              document, so its change is written to this device and travels with the upload. Silently
+              skipping these is the documented failure mode of this whole area.
+            */
+            <span className="ml-2 font-normal text-[#6E6E73]">
+              · <span className="tnum">{queued}</span> only on this device
+            </span>
+          )}
+        </p>
+        <button type="button" onClick={onCancel} disabled={working} className={QUIET}>
+          Cancel
+        </button>
+      </div>
+
+      <div className="mt-3 flex flex-col gap-2 border-t border-[color:var(--hairline)] pt-3">
+        {/* ── Tag ── */}
+        <div className="flex flex-wrap items-center gap-2">
+          <span className={LABEL}>Tag</span>
+          <input
+            value={tagText}
+            onChange={e => onTagText(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Enter') onTag('add');
+            }}
+            list="folder-bulk-tag-vocabulary"
+            maxLength={40}
+            placeholder="Tag them all…"
+            aria-label="Tag for the selected people"
+            className={INPUT}
+          />
+          {/* Native datalist rather than a bespoke popover: it is one field of type-ahead, and the
+              browser's own affordance beats a hand-rolled one. */}
+          <datalist id="folder-bulk-tag-vocabulary">
+            {tagVocabulary.map(t => (
+              <option key={t} value={t} />
+            ))}
+          </datalist>
+          <button
+            type="button"
+            onClick={() => onTag('add')}
+            disabled={working || !tagText.trim()}
+            className={PRIMARY}
+          >
+            {working ? 'Working…' : 'Apply'}
+          </button>
+          {/* Remove sits beside Apply because it is the same gesture with the same input, and a tag
+              applied by mistake to forty people needs an equally cheap undo. */}
+          <button
+            type="button"
+            onClick={() => onTag('remove')}
+            disabled={working || !tagText.trim()}
+            className={QUIET}
+          >
+            Remove
+          </button>
+        </div>
+
+        {/* ── Follow up ── */}
+        <div className="flex flex-wrap items-center gap-2">
+          <span className={LABEL}>Remind</span>
+          <input
+            type="date"
+            value={day}
+            /* Today IN IST, not the browser's today. Only a hint — the module refuses a past day too. */
+            min={todayDayIST()}
+            onChange={e => onDay(e.target.value)}
+            aria-label="Follow-up date for the selected people"
+            className={INPUT}
+          />
+          <button
+            type="button"
+            onClick={() => onFollowUp(day)}
+            disabled={working || !day}
+            className={PRIMARY}
+          >
+            Set
+          </button>
+          <button
+            type="button"
+            onClick={() => onFollowUp(null)}
+            disabled={working}
+            className={QUIET}
+          >
+            Clear
+          </button>
+        </div>
+
+        {/* ── Move ── */}
+        {folders.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2">
+            <span className={LABEL}>Move</span>
+            <select
+              value=""
+              disabled={working}
+              aria-label="Move the selected people to another folder"
+              onChange={e => {
+                if (e.target.value) onMove(e.target.value);
+              }}
+              className={INPUT}
+            >
+              <option value="">Choose a folder…</option>
+              {folders.map(f => (
+                <option key={f._id} value={f._id}>
+                  {f.name}
+                  {f.archivedAt ? ' (archived)' : ''}
+                </option>
+              ))}
+            </select>
+            <span className="text-[12px] text-[#8E8E93]">Moves them straight away.</span>
+          </div>
+        )}
+      </div>
+    </Card>
+  );
+}
+
 /* ────────────────────────────── sheets ────────────────────────────── */
 
 function draftFrom(contact: ContactDTO): ContactDraft {
@@ -720,6 +1323,7 @@ function EditContactSheet({
   onDelete,
   otherFolders,
   onMove,
+  tagVocabulary,
 }: {
   contact: ContactDTO;
   onClose: () => void;
@@ -727,11 +1331,17 @@ function EditContactSheet({
   onDelete: () => void;
   otherFolders: FolderDTO[];
   onMove: (folderId: string) => void;
+  /**
+   * Passed in, not fetched here — which is what the hook's own docblock asks for: "Per PAGE and not
+   * per sheet", because this component is mounted and unmounted per person and a request per capture
+   * is the wrong thing to spend on the saturated network this feature exists to survive. It was being
+   * called here AND in the manual-add sheet; the page now holds the one copy, for the bulk bar too.
+   */
+  tagVocabulary: string[];
 }) {
   const [draft, setDraft] = useState<ContactDraft>(() => draftFrom(contact));
   const [showAll, setShowAll] = useState(true);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const tagVocabulary = useTagVocabulary();
 
   return (
     <Sheet
@@ -848,14 +1458,16 @@ function ManualAddSheet({
   folderId,
   onClose,
   onAdded,
+  tagVocabulary,
 }: {
   folderId: string;
   onClose: () => void;
   onAdded: () => void;
+  /** From the page, for the reason stated on `EditContactSheet`'s copy of this prop. */
+  tagVocabulary: string[];
 }) {
   const [draft, setDraft] = useState<ContactDraft>({ name: '' });
   const [showAll, setShowAll] = useState(false);
-  const tagVocabulary = useTagVocabulary();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 

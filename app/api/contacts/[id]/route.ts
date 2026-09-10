@@ -34,6 +34,32 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     const contact = await updateOwnedContact(gate.userId, id, body);
     if (!contact) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
+    /*
+     * RECOMPUTE THE PERSON. This route was the odd one out, and the asymmetry was doing damage.
+     *
+     * `DELETE` below already calls `onContactDeleted`, and the bulk path recomputes too — so editing
+     * one contact was the ONLY write that left its Person behind. `Person.tags` is derived as
+     * `canonicaliseTags(captureTags ∪ ownTags)` and `nextActionAt` as the soonest outstanding
+     * follow-up across captures, so a tag added here never reached the `/people` facet rail and a
+     * follow-up date set here never moved the person's "next action". The row looked saved, the
+     * contact WAS saved, and the surface built to find people by tag simply did not know.
+     *
+     * Non-fatal and after the fact, matching the delete path: the write the user asked for has
+     * committed, so a failure here is a consistency problem to log and repair with `recomputePerson`
+     * — not a reason to tell them their edit failed when it did not.
+     *
+     * Lazily imported so this route does not pull the whole people service (and every model it
+     * registers) into its module graph for a request that may not touch a Person at all.
+     */
+    if (contact.personId) {
+      try {
+        const { recomputePerson } = await import('@/lib/people/service');
+        await recomputePerson(gate.userId, contact.personId);
+      } catch (err) {
+        console.error('Contact updated but the person spine was not recomputed:', err);
+      }
+    }
+
     return NextResponse.json({ contact: contactToDTO(contact.toObject()) });
   } catch (error) {
     /*

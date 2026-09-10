@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 import AppShell from '../components/AppShell';
 import Sheet from '../components/Sheet';
+import { TAP_44 } from '../components/scan/ContactFields';
 import { Button, ButtonLink, Card, EmptyState, PageHeader, Banner } from '../components/ui';
 import { dayHeading } from '@/lib/format';
 import {
@@ -31,7 +32,24 @@ import type { FolderDTO } from '@/lib/contacts/types';
  * The entry point for the whole scan feature, and the reason a folder is created by hand
  * rather than derived from the tracker: you make it on the morning of the event, and the
  * event itself is often not in the scraped corpus at all.
+ *
+ * A NOTE ON THE SMALL BUTTONS HERE. Sync, Retry and Discard are painted at 32px on purpose - they are
+ * secondary to the banner text they sit inside - but a 32px target fails the 44px floor (WCAG 2.5.5),
+ * and Discard is destructive. They are written as raw buttons rather than `<Button size="sm">` for a
+ * mechanical reason: `ui.tsx` hardcodes its own `className` and spreads `...rest` AFTER it, so a class
+ * passed from outside REPLACES the styling instead of adding to it, and there is no way to attach the
+ * `::after` overlay that grows the hit area. The painted look and tones are identical.
  */
+/**
+ * `<Button tone="quiet" size="sm">`'s exact painted appearance, with a 44px hit area on top. See the
+ * file header for why this is not the shared component.
+ */
+const SMALL_QUIET =
+  TAP_44 +
+  ' inline-flex h-8 items-center justify-center gap-1 rounded-full bg-white px-3.5 text-[12.5px]' +
+  ' font-semibold tracking-[-0.006em] text-[#1D1D1F] shadow-[inset_0_0_0_1px_var(--hairline-strong)]' +
+  ' pressable hover:bg-[#F7F7F9] disabled:pointer-events-none disabled:opacity-45';
+
 export default function FoldersPage() {
   const [folders, setFolders] = useState<FolderDTO[]>([]);
   const [loading, setLoading] = useState(true);
@@ -240,9 +258,9 @@ export default function FoldersPage() {
                     not synced yet. They are saved on this device and will upload on their own.
                   </span>
                 )}
-                <Button size="sm" tone="quiet" onClick={syncNow} disabled={syncing}>
+                <button type="button" onClick={syncNow} disabled={syncing} className={SMALL_QUIET}>
                   {syncing ? 'Syncing…' : 'Sync now'}
-                </Button>
+                </button>
               </span>
             </Banner>
           </div>
@@ -278,9 +296,9 @@ export default function FoldersPage() {
                   {stuck.length === 1 ? 'its' : 'their'} own.
                 </span>
                 {pending.waiting === 0 && (
-                  <Button size="sm" tone="quiet" onClick={syncNow} disabled={syncing}>
+                  <button type="button" onClick={syncNow} disabled={syncing} className={SMALL_QUIET}>
                     {syncing ? 'Retrying…' : 'Try again'}
-                  </Button>
+                  </button>
                 )}
               </span>
             </Banner>
@@ -311,41 +329,53 @@ export default function FoldersPage() {
                       directly, rewriting the queued record locally (there is nothing on the
                       server to PATCH).
                     */}
+                    {/* `gap-2` (8px) clears the 6px each way a 44px overlay overhangs a 32px
+                        button, so a wrapped row cannot steal the row above's taps. */}
                     <div className="flex shrink-0 flex-wrap items-center gap-2">
                       {item.kind === 'contact' && folders.length > 0 && (
-                        <select
-                          aria-label={`Move ${item.label} to another folder`}
-                          defaultValue=""
-                          onChange={e => {
-                            if (e.target.value) void moveTo(item, e.target.value);
-                          }}
-                          className="h-8 rounded-full bg-[#F7F7F9] px-3 text-[12px] font-semibold text-[#1D1D1F] outline-none focus:shadow-[inset_0_0_0_2px_var(--blue)]"
-                        >
-                          <option value="">Move to…</option>
-                          {folders.map(f => (
-                            <option key={f._id} value={f._id}>
-                              {f.name}
-                            </option>
-                          ))}
-                        </select>
+                        /*
+                          THE ONE CONTROL THAT CANNOT TAKE THE OVERLAY. A `<select>` is a replaced
+                          element, so `select::after` does not render in Chrome or Safari and the
+                          `TAP_44` trick is silently a no-op on it. So the PILL is a 32px wrapper and
+                          the select itself is 44px and transparent on top of it: the painted control
+                          is unchanged, the hit area is a full 44px, and the 6px it overflows each way
+                          costs nothing because the wrapper still sets the layout height.
+                        */
+                        <span className="inline-flex h-8 items-center rounded-full bg-[#F7F7F9]">
+                          <select
+                            aria-label={`Move ${item.label} to another folder`}
+                            defaultValue=""
+                            onChange={e => {
+                              if (e.target.value) void moveTo(item, e.target.value);
+                            }}
+                            className="h-11 rounded-full bg-transparent px-3 text-[12px] font-semibold text-[#1D1D1F] outline-none focus:shadow-[inset_0_0_0_2px_var(--blue)] [touch-action:manipulation]"
+                          >
+                            <option value="">Move to…</option>
+                            {folders.map(f => (
+                              <option key={f._id} value={f._id}>
+                                {f.name}
+                              </option>
+                            ))}
+                          </select>
+                        </span>
                       )}
-                      <Button
-                        size="sm"
-                        tone="quiet"
+                      <button
+                        type="button"
                         onClick={() => void retry(item)}
                         disabled={syncing}
                         aria-label={`Retry ${item.label}`}
+                        className={SMALL_QUIET}
                       >
                         Retry
-                      </Button>
-                      <Button
-                        size="sm"
-                        tone="quiet"
+                      </button>
+                      <button
+                        type="button"
                         onClick={() => void discard(item)}
                         aria-label={`Discard ${item.label}`}
+                        className={SMALL_QUIET}
                       >
                         Discard
-                      </Button>
+                      </button>
                     </div>
                   </div>
                 </Card>

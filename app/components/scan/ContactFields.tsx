@@ -2,6 +2,13 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { fullDateIST } from '@/lib/format';
+import {
+  dayOffsetIST,
+  followUpDayIST,
+  followUpInstantForDay,
+  followUpInstantInDays,
+  todayDayIST,
+} from '@/lib/scan/follow-up';
 
 /**
  * The editable fields for a person, shared by the post-scan capture sheet and the folder
@@ -33,7 +40,12 @@ export interface ContactDraft {
 const FIELD_CLASS =
   'mt-1.5 h-11 w-full rounded-xl bg-[#F7F7F9] px-3.5 text-[15px] text-[#1D1D1F] outline-none focus:shadow-[inset_0_0_0_2px_var(--blue)]';
 
-/** Follow-up offsets, in days. Deliberately few — the point is one tap, not a date picker. */
+/**
+ * Follow-up offsets, in days. Deliberately few — at a conference the point is one tap.
+ *
+ * KEPT, not replaced, now that an exact date is available. The presets are the common case and one
+ * tap beats four; the date picker below is the answer to "3 March", which was previously unsayable.
+ */
 const FOLLOW_UP_CHOICES: Array<{ label: string; days: number | null }> = [
   { label: 'No reminder', days: null },
   { label: 'Tomorrow', days: 1 },
@@ -42,17 +54,35 @@ const FOLLOW_UP_CHOICES: Array<{ label: string; days: number | null }> = [
 ];
 
 /**
- * Noon IST, N days out.
+ * A 44px hit area on a control painted smaller (WCAG 2.5.5), without changing what is drawn.
  *
- * NOT `<input type="date">`'s YYYY-MM-DD, which Mongoose casts to UTC midnight — 5:30 AM IST
- * the same day, so anything that later subtracts hours slides it into the previous day.
+ * The chips here are 32–36px painted and must stay that way — a row of 44px pills is a different
+ * design — so the target is grown with an `::after` overlay centred on the control, the idiom
+ * `app/people/page.tsx` uses.
+ *
+ * THE ROW GAP IS PART OF THE FIX, and the arithmetic has to be done per control rather than assumed.
+ * An overlay on an `h`-px control overhangs `(44 - h) / 2` in each direction, and TWO wrapped rows
+ * each overhang toward each other — so a container's vertical gap must be at least `44 - h`, not half
+ * of it, or the overlays overlap and the one later in the DOM wins. A tap aimed at one chip then
+ * fires a different chip on the row below, which is worse than the small target it replaced. Hence
+ * `gap-y-2` (8px) on the 36px follow-up chips, `gap-y-3` (12px) on the 32px suggestion chips, and
+ * `gap-y-5` (20px) on the applied-tag row, whose remove button is only 20px.
  */
-function followUpIso(days: number): string {
-  const target = new Date(Date.now() + days * 24 * 3600 * 1000);
-  const y = target.getFullYear();
-  const m = String(target.getMonth() + 1).padStart(2, '0');
-  const d = String(target.getDate()).padStart(2, '0');
-  return `${y}-${m}-${d}T12:00:00+05:30`;
+export const TAP_44 =
+  "relative after:absolute after:inset-x-0 after:top-1/2 after:h-11 after:-translate-y-1/2 after:content-[''] [touch-action:manipulation]";
+
+/** The same, for a SQUARE icon button that needs the width grown as well as the height. */
+export const TAP_44_SQUARE =
+  "relative after:absolute after:left-1/2 after:top-1/2 after:h-11 after:w-11 after:-translate-x-1/2 after:-translate-y-1/2 after:content-[''] [touch-action:manipulation]";
+
+/**
+ * The date the module's IST rules say this draft is set to, or `''`.
+ *
+ * `followUpDayIST` reads the **IST** day. The version this replaces compared ISO string prefixes,
+ * which reads the UTC day — so a reminder stored at 21:00 IST matched the day before and no chip lit.
+ */
+function draftDay(draft: ContactDraft): string {
+  return followUpDayIST(draft.followUpAt ?? null);
 }
 
 export default function ContactFields({
@@ -92,11 +122,22 @@ export default function ContactFields({
   const set = <K extends keyof ContactDraft>(key: K, value: ContactDraft[K]) =>
     onChange({ ...draft, [key]: value });
 
-  const activeFollowUp = FOLLOW_UP_CHOICES.find(choice => {
-    if (choice.days === null) return !draft.followUpAt;
-    if (!draft.followUpAt) return false;
-    return draft.followUpAt.startsWith(followUpIso(choice.days).slice(0, 10));
-  });
+  const currentDay = draftDay(draft);
+  const activeFollowUp = FOLLOW_UP_CHOICES.find(choice =>
+    choice.days === null ? !currentDay : dayOffsetIST(choice.days) === currentDay
+  );
+
+  /**
+   * Is the date field showing?
+   *
+   * Open on mount when a date is already set that no preset accounts for — otherwise editing
+   * somebody scheduled for "3 March" would show four chips, none of them lit, and no sign of where
+   * the date the summary line names came from.
+   */
+  const [showDatePicker, setShowDatePicker] = useState(
+    () => Boolean(currentDay) && !activeFollowUp
+  );
+  const pickingDate = showDatePicker || (Boolean(currentDay) && !activeFollowUp);
 
   return (
     <div className="flex flex-col gap-4">
@@ -183,16 +224,22 @@ export default function ContactFields({
 
       <div>
         <span className="t-label text-[#8E8E93]">Follow up</span>
-        <div className="mt-1.5 flex flex-wrap gap-1.5">
+        <div className="mt-1.5 flex flex-wrap gap-x-1.5 gap-y-2">
           {FOLLOW_UP_CHOICES.map(choice => {
-            const active = activeFollowUp?.label === choice.label;
+            const active = !pickingDate && activeFollowUp?.label === choice.label;
             return (
               <button
                 key={choice.label}
                 type="button"
                 aria-pressed={active}
-                onClick={() => set('followUpAt', choice.days === null ? null : followUpIso(choice.days))}
-                className={`h-9 rounded-full px-3.5 text-[12.5px] font-semibold transition-colors ${
+                onClick={() => {
+                  setShowDatePicker(false);
+                  set(
+                    'followUpAt',
+                    choice.days === null ? null : followUpInstantInDays(choice.days)
+                  );
+                }}
+                className={`${TAP_44} h-9 rounded-full px-3.5 text-[12.5px] font-semibold transition-colors ${
                   active
                     ? 'bg-[#1D1D1F] text-white'
                     : 'bg-white text-[#1D1D1F] shadow-[inset_0_0_0_1px_var(--hairline)] hover:bg-[#F7F7F9]'
@@ -202,11 +249,70 @@ export default function ContactFields({
               </button>
             );
           })}
+          {/*
+            THE FIFTH ANSWER, not a mode switch dressed as one. The other four are answers
+            ("Tomorrow"), so this one is phrased as an answer too — a "Pick a date…" button reads as
+            leaving the question rather than answering it.
+          */}
+          <button
+            type="button"
+            aria-pressed={pickingDate}
+            aria-expanded={pickingDate}
+            onClick={() => setShowDatePicker(open => !open)}
+            className={`${TAP_44} h-9 rounded-full px-3.5 text-[12.5px] font-semibold transition-colors ${
+              pickingDate
+                ? 'bg-[#1D1D1F] text-white'
+                : 'bg-white text-[#1D1D1F] shadow-[inset_0_0_0_1px_var(--hairline)] hover:bg-[#F7F7F9]'
+            }`}
+          >
+            Another day
+          </button>
         </div>
-        {draft.followUpAt && (
+
+        {pickingDate && (
+          <label className="mt-2 block">
+            <span className="sr-only">Follow-up date</span>
+            <input
+              type="date"
+              value={currentDay}
+              /**
+               * `min` is TODAY IN IST, not the browser's today. It is also only a hint — the field
+               * can still be typed into, and Safari ignores it for keyboard entry — so
+               * `followUpInstantForDay` refuses a past day as well and the message below says so.
+               */
+              min={todayDayIST()}
+              onChange={e => {
+                const day = e.target.value;
+                if (!day) {
+                  set('followUpAt', null);
+                  return;
+                }
+                /**
+                 * The IST conversion is the module's, not this component's. A `new Date(day)` here
+                 * would be UTC midnight — 05:30 IST — which is the bug this whole picker was blocked
+                 * on. `null` back means the day has passed; the draft is left untouched so the field
+                 * shows what was typed and the line below explains it, rather than silently
+                 * reverting under the user's cursor.
+                 */
+                const instant = followUpInstantForDay(day);
+                if (instant) set('followUpAt', instant);
+              }}
+              className={FIELD_CLASS}
+            />
+          </label>
+        )}
+
+        {draft.followUpAt ? (
           <p className="mt-1.5 text-[12px] text-[#6E6E73]">
+            {/* IST, via lib/format.ts — never the ambient locale. */}
             Reminder on {fullDateIST(draft.followUpAt)}
           </p>
+        ) : (
+          pickingDate && (
+            <p className="mt-1.5 text-[12px] text-[#8E8E93]">
+              Pick today or a day after it.
+            </p>
+          )
         )}
       </div>
 
@@ -214,7 +320,7 @@ export default function ContactFields({
         <button
           type="button"
           onClick={onToggleShowAll}
-          className="self-start text-[13px] font-semibold text-[#0071E3] hover:underline"
+          className={`${TAP_44} self-start text-[13px] font-semibold text-[#0071E3] hover:underline`}
         >
           More fields
         </button>
@@ -321,9 +427,34 @@ export default function ContactFields({
 const MAX_TAG_LEN = 40;
 const MAX_TAGS = 20;
 
-function canonicalise(raw: string): string {
+/**
+ * The client-side half of the mirror, EXPORTED rather than copied.
+ *
+ * `lib/contacts/service.ts` imports mongoose, so the real `canonicaliseTags()` cannot be reached
+ * from the browser — hence the mirror above. What must not happen is a SECOND mirror: the folder
+ * table's bulk tag bar has to canonicalise too, because a tag applied to a queued capture is written
+ * straight to IndexedDB with no server in the loop, and a tag typed offline has to land in the same
+ * facet bucket as one typed online. One mirror, two callers.
+ */
+export function canonicaliseTagInput(raw: string): string {
   return raw.trim().replace(/\s+/g, ' ').toLowerCase().slice(0, MAX_TAG_LEN);
 }
+
+/** A whole list, deduped and capped — the list-level half of the same mirror. */
+export function canonicaliseTagList(input: readonly string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of input) {
+    const tag = canonicaliseTagInput(raw);
+    if (!tag || seen.has(tag)) continue;
+    seen.add(tag);
+    out.push(tag);
+    if (out.length >= MAX_TAGS) break;
+  }
+  return out;
+}
+
+const canonicalise = canonicaliseTagInput;
 
 function TagField({
   value,
@@ -367,7 +498,15 @@ function TagField({
       </p>
 
       {value.length > 0 && (
-        <div className="mt-2 flex flex-wrap gap-1.5">
+        /*
+          `gap-y-5` (20px), not `gap-1.5`, and the number is measured rather than chosen. The remove
+          buttons are 20px painted, so a 44px overlay overhangs each chip by about 9px top and bottom;
+          two wrapped rows each overhang toward the other, so anything under 18px leaves a band where
+          the later row wins and a tap aimed at one chip removes a DIFFERENT tag — strictly worse than
+          the small target it replaced. Most contacts carry two or three tags and never wrap, so this
+          costs nothing in practice. The chips themselves are unchanged.
+        */
+        <div className="mt-2 flex flex-wrap gap-x-1.5 gap-y-5">
           {value.map(tag => (
             <span
               key={tag}
@@ -378,7 +517,7 @@ function TagField({
                 type="button"
                 onClick={() => onChange(value.filter(t => t !== tag))}
                 aria-label={`Remove tag ${tag}`}
-                className="grid h-5 w-5 place-items-center rounded-full hover:bg-[#D6E7FB]"
+                className={`${TAP_44_SQUARE} grid h-5 w-5 place-items-center rounded-full hover:bg-[#D6E7FB]`}
               >
                 <span aria-hidden="true" className="material-symbols-outlined text-[14px]">
                   close
@@ -410,12 +549,13 @@ function TagField({
       />
 
       {(matches.length > 0 || canCreate) && value.length < MAX_TAGS && (
-        <div className="mt-1.5 flex flex-wrap gap-1.5">
+        /* 32px chips → 6px of overhang each way, so two wrapped rows need 12px between them. */
+        <div className="mt-1.5 flex flex-wrap gap-x-1.5 gap-y-3">
           {canCreate && (
             <button
               type="button"
               onClick={() => add(entry)}
-              className="inline-flex h-8 items-center gap-1 rounded-full bg-[#1D1D1F] px-3 text-[12px] font-semibold text-white"
+              className={`${TAP_44} inline-flex h-8 items-center gap-1 rounded-full bg-[#1D1D1F] px-3 text-[12px] font-semibold text-white`}
             >
               <span aria-hidden="true" className="material-symbols-outlined text-[14px]">add</span>
               Create &ldquo;{typed}&rdquo;
@@ -426,7 +566,7 @@ function TagField({
               key={s}
               type="button"
               onClick={() => add(s)}
-              className="h-8 rounded-full bg-white px-3 text-[12px] font-semibold text-[#1D1D1F] shadow-[inset_0_0_0_1px_var(--hairline)] hover:bg-[#F7F7F9]"
+              className={`${TAP_44} h-8 rounded-full bg-white px-3 text-[12px] font-semibold text-[#1D1D1F] shadow-[inset_0_0_0_1px_var(--hairline)] hover:bg-[#F7F7F9]`}
             >
               {s}
             </button>
