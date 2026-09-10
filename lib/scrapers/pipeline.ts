@@ -45,9 +45,14 @@ import {
 } from './adapters/luma';
 import {
   scrapeMeetupCity,
-  scrapeMeetupGroup,
+  scrapeMeetupGroupsSweep,
   enrichMeetupEvents,
+  MEETUP_ICS_CAP,
+  MEETUP_PAGE_CAP,
   SEED_MEETUP_GROUPS,
+  type MeetupGroupOutcome,
+  type MeetupSweepSummary,
+  type PageRenderer,
 } from './adapters/meetup';
 import { scrapeEventbrite } from './adapters/eventbrite';
 import { scrapeBevy } from './adapters/bevy';
@@ -74,6 +79,41 @@ export interface PipelineOptions {
   maxLumaCalendars?: number;
   /** Cap on Meetup groups scraped per run. */
   maxMeetupGroups?: number;
+  /**
+   * Follow up a Meetup group whose ICS feed came back at `MEETUP_ICS_CAP` with a read of its
+   * `/events/` page, which carries up to 30.
+   *
+   * ON BY DEFAULT, because leaving it off is the bug: measured 2026-09-07, 74 of 261 groups sat
+   * on that ceiling and ~550 upcoming events were invisible. It costs one extra plain HTTP
+   * request for roughly 28% of groups (~74 of ~700 in a run) and needs no browser — see the
+   * `scrapeMeetupGroupsSweep` block comment for why the audit's "this needs Playwright" was
+   * wrong.
+   *
+   * When it is off, the run still COUNTS the truncated groups and says so in the report, so
+   * turning it off cannot quietly return the corpus to a silent ceiling.
+   */
+  meetupSecondPass?: boolean;
+  /**
+   * Cap on second passes per run. Sized above the known truncated set with headroom, and it logs
+   * when it bites — same rule as `maxMeetupGroups`.
+   */
+  maxMeetupSecondPass?: number;
+  /**
+   * Allow a HEADLESS BROWSER as the fallback when a group's `/events/` page yields nothing to a
+   * plain fetch.
+   *
+   * OFF BY DEFAULT AND MUST STAY OFF ANYWHERE SERVERLESS. `app/api/scrape/route.ts` imports this
+   * module, so this file is traced into a Vercel function — which cannot run Chromium. The flag
+   * is honoured only by `scripts/scrape.ts` (`--render`), which runs on a GitHub runner where a
+   * browser is available. `core/render.ts` is reached by a dynamic `import()` guarded on this
+   * flag, and its own Playwright import is deliberately untraceable, so a bundler cannot pull a
+   * ~470 MB dependency into a serverless build on the strength of a flag nobody set.
+   *
+   * It is expected to be UNUSED: the plain-fetch path currently answers for every group measured.
+   * It exists so the day Meetup stops server-rendering its data island degrades the source
+   * instead of killing it.
+   */
+  renderCappedGroups?: boolean;
   /** Include the slower Eventbrite crawl. */
   includeEventbrite?: boolean;
   /** Include the company-page sweep via the universal adapter. */
@@ -183,6 +223,8 @@ export interface PipelineResult {
   enrichment: { lumaDescriptions: number; meetupEvents: number };
   /** Rows the gate stage removed, summed across every source. */
   gates: GateBreakdown;
+  /** What the Meetup ICS ceiling cost this run, and what the second pass recovered. */
+  meetupTruncation: MeetupTruncationReport;
   /** Sources not fetched tonight because they are on a weekly/monthly cadence. */
   backoff: { skipped: number; weekly: number; monthly: number; sources: SkippedSource[] };
   pruned: number;
@@ -325,6 +367,12 @@ export const DEFAULTS: Required<PipelineOptions> = {
   // never scraping Microsoft Reactor or OWASP Bangalore again.
   maxLumaCalendars: 120,
   maxMeetupGroups: 260,
+  meetupSecondPass: true,
+  // 74 groups were on the cap when this was measured, out of 261 known. 160 leaves room for the
+  // truncated share to grow with discovery without the cap silently biting — and if it does bite,
+  // `scrapeMeetupGroupsSweep` logs it and the report counts it.
+  maxMeetupSecondPass: 160,
+  renderCappedGroups: false,
   includeEventbrite: true,
   includeCompanyPages: true,
   prune: true,
@@ -494,6 +542,182 @@ function applyCap<T>(items: T[], cap: number, label: string, errors: string[]): 
   console.log(`  ! ${message}`);
   errors.push(message);
   return items.slice(0, cap);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// Meetup ICS truncation — the detection guard
+//
+// The finding this exists for: `/<group>/events/ical/` caps at ten events, 74 of 261 groups were
+// sitting on that ceiling, and NOTHING SAID SO. A group silently truncated at ten is
+// indistinguishable in the report, in the feed and in its Source health from a group with ten
+// events. That is the same class of defect as the source cap and the enrichment budget — the
+// third time this pipeline has been bitten by a limit it could not see — so the rule from
+// `applyCap` applies here too: a limit you cannot see in the logs is a coverage bug that presents
+// as a supply problem.
+//
+// WHY THIS IS NOT WRITTEN TO THE `Source` ROW. It is tempting, and `updateSource`'s `error` field
+// is right there — but `flushHealth` deliberately records an error ONLY when a source contributed
+// nothing, because flagging a healthy source is how a health report gets trained away. A group
+// with 17 events is healthy. And a second `updateSource` call for the same row would
+// double-increment `consecutiveEmptyScrapes` (see `claim`). What DOES land in the Source row is
+// the fix itself: `lastEventCount` now exceeds ten, so the wall that made this finding visible in
+// the first place becomes self-diagnosing — re-run `scripts/diag-meetup-cap.ts` and a group stuck
+// at exactly ten is now genuinely at ten.
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+
+export interface MeetupTruncationReport {
+  /** Groups whose ICS came back at or above the cap. */
+  suspected: number;
+  /** Second passes performed. */
+  secondPassRan: number;
+  /** Suspected groups skipped because `maxMeetupSecondPass` bit. */
+  capped: number;
+  /** Events recovered that the ICS feed could not report. */
+  gained: number;
+  /** Rows dropped by the adapter's venue-country guard. */
+  offCountry: number;
+  /** Groups with more events than even the page's 30-row ceiling shows. */
+  stillTruncated: number;
+  /** Second passes that returned nothing — the signal the upstream shape changed. */
+  empty: number;
+  /** Whether the second pass ran at all this run. */
+  enabled: boolean;
+}
+
+const EMPTY_TRUNCATION: MeetupTruncationReport = {
+  suspected: 0,
+  secondPassRan: 0,
+  capped: 0,
+  gained: 0,
+  offCountry: 0,
+  stillTruncated: 0,
+  empty: 0,
+  enabled: false,
+};
+
+/** What the optional headless-browser fallback offers the run, or a no-op if it is switched off. */
+interface RendererHandle {
+  /** Undefined when rendering is off — the adapter then simply never has a fallback. */
+  render?: PageRenderer;
+  /** Safe concurrency for the page pass. A browser page costs ~100 MB; an HTTP request does not. */
+  pageConcurrency: number;
+  close: () => Promise<void>;
+  describe: () => string | undefined;
+}
+
+const NO_RENDERER: RendererHandle = {
+  pageConcurrency: 5,
+  close: async () => {},
+  describe: () => undefined,
+};
+
+/**
+ * Load `core/render.ts` — and Playwright with it — ONLY when the run asked for it.
+ *
+ * A DYNAMIC import, guarded on the flag, because `app/api/scrape/route.ts` imports this module
+ * and is bundled for a Vercel function. A static import here would put a browser dependency into
+ * a serverless build that can never use one. `core/render.ts` additionally hides its own
+ * Playwright specifier from the bundler; both halves are needed, since a bundler traces dynamic
+ * imports too.
+ *
+ * Failing to load is NOT an error: rendering is a fallback for a path that currently answers
+ * without it, so the run continues with no renderer rather than dying over an optional
+ * dependency.
+ */
+async function loadRenderer(enabled: boolean): Promise<RendererHandle> {
+  if (!enabled) return NO_RENDERER;
+  try {
+    const mod = await import('./core/render');
+    console.log('Meetup second pass: headless-browser fallback ENABLED');
+    return {
+      render: (url: string) => mod.renderHtml(url),
+      // Drops from 5 to 2 for the whole page pass. Deliberately pessimistic: rendering is a
+      // per-group fallback, so in the worst case every in-flight group renders at once, and
+      // sizing for the average would OOM a small runner exactly when the upstream broke.
+      pageConcurrency: mod.RENDER_CONCURRENCY,
+      close: () => mod.closeRenderer(),
+      describe: () => {
+        const stats = mod.renderStats();
+        if (stats.launchError) return `browser unavailable: ${stats.launchError}`;
+        if (stats.requested === 0) return 'browser fallback not needed';
+        return `browser rendered ${stats.rendered}/${stats.requested} page(s) in ${(
+          stats.totalMs / 1000
+        ).toFixed(1)}s`;
+      },
+    };
+  } catch (error) {
+    console.warn(
+      `  ! renderCappedGroups was set but core/render.ts could not load — continuing without a browser: ${
+        error instanceof Error ? error.message : String(error)
+      }`
+    );
+    return NO_RENDERER;
+  }
+}
+
+/** Log the truncation picture, and push ONE aggregate error when the fix is switched off. */
+function reportTruncation(
+  summary: MeetupSweepSummary,
+  outcomes: MeetupGroupOutcome[],
+  opts: Required<PipelineOptions>,
+  errors: string[]
+): MeetupTruncationReport {
+  const report: MeetupTruncationReport = {
+    suspected: summary.truncated,
+    secondPassRan: summary.secondPassRan,
+    capped: summary.capped,
+    gained: summary.gained,
+    offCountry: summary.offCountry,
+    stillTruncated: summary.stillTruncated,
+    empty: summary.empty,
+    enabled: opts.meetupSecondPass,
+  };
+  if (report.suspected === 0) return report;
+
+  if (!opts.meetupSecondPass) {
+    // The one case that goes into `errors`, and therefore into the run report and the digest's
+    // unhealthy-sources section. Running with the second pass off is a deliberate choice; running
+    // with it off and not knowing what it costs is the bug this whole change exists to close.
+    const message =
+      `Meetup ICS truncation: ${report.suspected} group(s) returned exactly ${MEETUP_ICS_CAP} events and the ` +
+      `second pass is DISABLED (meetupSecondPass=false) — their remaining events were not scraped`;
+    console.log(`  ! ${message}`);
+    errors.push(message);
+    return report;
+  }
+
+  console.log(
+    `Meetup ICS cap: ${report.suspected} group(s) at ${MEETUP_ICS_CAP}; second pass ran on ` +
+      `${report.secondPassRan}, recovered ${report.gained} event(s)` +
+      (report.capped > 0 ? `, ${report.capped} left capped` : '') +
+      (report.offCountry > 0 ? `, dropped ${report.offCountry} non-India row(s)` : '')
+  );
+  // Named, not just counted — the same rule the off-city gate follows. The biggest gains first,
+  // because "which groups were we missing" is the question this answers.
+  const gainers = outcomes.filter(o => o.gained > 0).sort((a, b) => b.gained - a.gained);
+  for (const one of gainers.slice(0, 10)) {
+    console.log(
+      `  · ${one.slug}: ${one.icsCount} → ${one.events.length} (+${one.gained}` +
+        (one.upstreamTotal !== undefined ? `, upstream says ${one.upstreamTotal}` : '') +
+        `) via ${one.secondPass}`
+    );
+  }
+  if (gainers.length > 10) console.log(`  · … and ${gainers.length - 10} more`);
+
+  if (report.empty > 0) {
+    // The interesting failure: still on the cap, and the page told us nothing. Either the group
+    // really has ten, or Meetup changed the page. `diag-meetup-cap.ts` is how you tell.
+    console.log(
+      `  ! ${report.empty} second pass(es) returned nothing — if this is most of them, Meetup's ` +
+        `/events/ page shape has changed (run scripts/diag-meetup-cap.ts)`
+    );
+  }
+  if (report.stillTruncated > 0) {
+    console.log(
+      `  · ${report.stillTruncated} group(s) have more than the page's ${MEETUP_PAGE_CAP}-row ceiling shows`
+    );
+  }
+  return report;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────
@@ -902,40 +1126,88 @@ export async function runPipeline(options: PipelineOptions = {}): Promise<Pipeli
     durationMs: 0,
   });
 
+  let meetupTruncation: MeetupTruncationReport = { ...EMPTY_TRUNCATION };
   if (meetupSlugs.length > 0) {
-    // Per-group health, for the same reason as the Luma calendars above: the
-    // aggregate row alone cannot tell you WHICH group stopped producing.
-    const groupResults = await mapPool(meetupSlugs, 8, async slug => {
-      const one = await scrapeMeetupGroup(slug);
+    /*
+     * ONE `claim` PER GROUP, AFTER the second pass has had its say. Not one per feed.
+     *
+     * `claim` queues a `PendingHealth`, and `flushHealth` calls `updateSource` once per queued
+     * entry. Two entries for the same Source row would run `consecutiveEmptyScrapes = count > 0
+     * ? 0 : prev + 1` twice and back a quiet group off in half the documented time — the trap
+     * `claim`'s own docblock records. So the ICS feed and the page feed are merged inside the
+     * adapter and arrive here as one set of events per group.
+     */
+    const renderer = await loadRenderer(opts.renderCappedGroups);
+    /*
+     * Isolated like every other source (design note 2): the sweep is not supposed to be able to
+     * throw — every group runs inside `scrapeMeetupGroup`'s own try/catch and `mapPool` nulls a
+     * throwing slot rather than rejecting — but "not supposed to" is not the same as "cannot", and
+     * this stage is 75% of the feed. An empty sweep costs the run one source; an escaped throw
+     * costs the run everything after it, including the pruner's grace and every other adapter.
+     */
+    let sweep: Awaited<ReturnType<typeof scrapeMeetupGroupsSweep>> = {
+      outcomes: [],
+      summary: {
+        groups: meetupSlugs.length,
+        truncated: 0,
+        secondPassRan: 0,
+        capped: 0,
+        gained: 0,
+        offCountry: 0,
+        stillTruncated: 0,
+        empty: 0,
+        durationMs: 0,
+      },
+    };
+    try {
+      sweep = await scrapeMeetupGroupsSweep(meetupSlugs, {
+        secondPass: opts.meetupSecondPass,
+        maxSecondPass: opts.maxMeetupSecondPass,
+        render: renderer.render,
+        pageConcurrency: renderer.pageConcurrency,
+        now: timestamp,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      collector.errors.push(`Meetup groups: ${message}`);
+      console.warn(`  ! Meetup group sweep failed entirely: ${message}`);
+    } finally {
+      // MUST run. An open Chromium holds the Node event loop, so a script that forgets this
+      // exits only when the GitHub runner's 45-minute timeout kills it — a green scrape that
+      // reports as a failure.
+      await renderer.close();
+      const note = renderer.describe();
+      if (note) console.log(`Meetup second pass: ${note}`);
+    }
+
+    for (const outcome of sweep.outcomes) {
       claim(
         collector,
         {
           id: 'meetup-groups',
-          label: slug.replace(/-/g, ' '),
+          label: outcome.slug.replace(/-/g, ' '),
           type: 'ical',
-          url: `https://www.meetup.com/${slug}/`,
+          url: `https://www.meetup.com/${outcome.slug}/`,
         },
-        one.events,
-        one.errors[0]
+        outcome.events,
+        outcome.errors[0]
       );
-      return one;
-    });
-
-    let groupEvents = 0;
-    let groupErrors = 0;
-    for (const one of groupResults) {
-      if (!one) continue;
-      groupEvents += one.events.length;
-      groupErrors += one.errors.length;
-      collector.errors.push(...one.errors.map(e => `${one.sourceId}: ${e}`));
+      collector.errors.push(
+        ...outcome.errors.map(e => `meetup-group:${outcome.slug}: ${e}`)
+      );
     }
+
+    const groupEvents = sweep.outcomes.reduce((sum, o) => sum + o.events.length, 0);
+    const groupErrors = sweep.outcomes.reduce((sum, o) => sum + o.errors.length, 0);
     collector.reports.push({
       sourceId: 'meetup-groups',
       label: `Meetup — ${meetupSlugs.length} groups`,
       events: groupEvents,
       errors: groupErrors,
-      durationMs: 0,
+      durationMs: sweep.summary.durationMs,
     });
+
+    meetupTruncation = reportTruncation(sweep.summary, sweep.outcomes, opts, collector.errors);
   }
 
   // ── 3. Remaining platforms ────────────────────────────────────────────────
@@ -1200,6 +1472,7 @@ export async function runPipeline(options: PipelineOptions = {}): Promise<Pipeli
     },
     enrichment: { lumaDescriptions, meetupEvents: meetupEnriched },
     gates: ledger.totals,
+    meetupTruncation,
     backoff: {
       skipped: backoffSkipped.length,
       weekly: backoffSkipped.filter(s => s.cadence === 'weekly').length,
@@ -1247,6 +1520,20 @@ function printReport(result: PipelineResult): void {
   if (result.backoff.skipped > 0) {
     console.log(
       `  back-off       ${result.backoff.skipped} source(s) skipped (${result.backoff.weekly} weekly, ${result.backoff.monthly} monthly)`
+    );
+  }
+  // Printed whenever any group is on the ICS ceiling, INCLUDING when the second pass recovered
+  // nothing. A zero here is the number that matters: it means either every capped group really
+  // has ten events, or the recovery path has quietly stopped working.
+  const truncation = result.meetupTruncation;
+  if (truncation.suspected > 0) {
+    console.log(
+      `  meetup cap     ${truncation.suspected} group(s) at ${MEETUP_ICS_CAP}` +
+        (truncation.enabled
+          ? ` → +${truncation.gained} recovered from ${truncation.secondPassRan} page pass(es)` +
+            (truncation.capped > 0 ? `, ${truncation.capped} capped` : '') +
+            (truncation.empty > 0 ? `, ${truncation.empty} empty` : '')
+          : ' (SECOND PASS DISABLED — those events were not scraped)')
     );
   }
   console.log(`  unique         ${result.uniqueRaw}`);

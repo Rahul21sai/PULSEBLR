@@ -29,6 +29,35 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # ── The headless-browser FALLBACK for Meetup's 10-event ICS cap ──────────────────────────
+      #
+      # Meetup's per-group ICS feed returns at most 10 upcoming events. 74 of 261 stored groups
+      # were sitting on that ceiling, hiding roughly 550 events. The fix is a second pass over the
+      # group's `/events/` page, and that page needs NO browser: the events are server-rendered
+      # into `__NEXT_DATA__` and a plain fetch reads them in ~1 s. That second pass is on by
+      # default and costs nothing here.
+      #
+      # `--render` below arms a browser FALLBACK for the day Meetup stops server-rendering that
+      # data island — the difference between a degraded source and a dead one. It is armed HERE
+      # and nowhere else because a GitHub runner can carry a browser and the app's other caller of
+      # the pipeline (`POST /api/scrape`) is a Vercel function, which cannot. See
+      # docs/superpowers/specs/2026-09-09-system-architecture.md §2.
+      #
+      # Chromium is CACHED, because downloading ~170 MB nightly for a path that currently never
+      # fires is not a cost worth paying, and `continue-on-error` because it is a fallback: a
+      # failed browser install must degrade the run, not fail it. `lib/scrapers/core/render.ts`
+      # remembers a launch failure once and returns no events rather than throwing.
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('package-lock.json') }}
+          restore-keys: ${{ runner.os }}-playwright-
+
+      - name: Install Chromium for the render fallback
+        continue-on-error: true
+        run: npx playwright install chromium
+
       # Fail fast with a CLEAR message if the DB secret is missing. Without this,
       # the scraper falls back to mongodb://localhost:27017 (no server in CI) and
       # dies with a confusing ~30s connection timeout deep in the run.
@@ -55,7 +84,9 @@ jobs:
           ICA_BASE_URL: ${{ secrets.ICA_BASE_URL }}
           ICA_MODEL: ${{ secrets.ICA_MODEL }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-        run: npm run scrape
+        # `--render` arms the browser fallback described above. The Meetup second pass itself is on
+        # by default and does not depend on it.
+        run: npm run scrape -- --render
       
       - name: Upload scraper logs
         if: always()
