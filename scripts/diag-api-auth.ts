@@ -236,6 +236,28 @@ const MUST_BE_PUBLIC_404: Case[] = [
     expect: 400,
     why: 'the acting verb must also refuse a forged signature rather than trusting the query',
   },
+  /*
+   * The DIGEST opt-out is a second, separate unsubscribe and needs its own assertions — turning off
+   * event reminders and turning off the weekly digest are different decisions, and a reader who
+   * wanted one silenced must not lose the other. Same public-by-necessity argument as above: it is
+   * opened from a mail client, possibly months later, by somebody who may have signed out.
+   *
+   * The POST case matters more than it looks. RFC 8058 one-click unsubscribe means the MAIL PROVIDER
+   * posts this itself, with no human and no session, so a signature check is the only thing standing
+   * between a forged link and somebody being silently unsubscribed.
+   */
+  {
+    method: 'GET',
+    path: '/api/digest/unsubscribe?u=diag&t=0&s=not-a-signature',
+    expect: 400,
+    why: 'the digest opt-out is opened from a mail client with no session; GET only confirms',
+  },
+  {
+    method: 'POST',
+    path: '/api/digest/unsubscribe?u=diag&t=0&s=not-a-signature',
+    expect: 400,
+    why: 'RFC 8058 one-click POSTs this itself, so a forged signature must refuse on its own terms',
+  },
 ];
 
 /**

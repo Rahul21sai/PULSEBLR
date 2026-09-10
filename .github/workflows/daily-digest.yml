@@ -1,35 +1,79 @@
 name: Daily Digest Email
 
+# Sends the digest to the people whose STORED CADENCE says today.
+#
+# THE CRON RUNS EVERY MORNING AND THAT IS CORRECT EVEN THOUGH THE DEFAULT CADENCE IS WEEKLY.
+# `digestDecision()` in lib/notifications/digest-schedule.ts decides who is due: a weekly subscriber
+# is due only on Monday in IST, a daily one every day, and `off` never. Putting the cadence in the
+# schedule instead would need two workflows and would turn "who is due" into a scheduling question
+# rather than a preference one — and a user switching from weekly to daily would then have to wait for
+# a deploy.
+#
+# It runs like the other three crons — directly on the runner via `tsx`, NOT by calling an API route.
+# Same reasoning as daily-scrape.yml and daily-reminders.yml: no shared secret to leak, and no
+# serverless timeout to fight.
+#
+# SAFE TO RE-RUN AND SAFE TO OVERLAP. `scripts/send-digest.ts` is idempotent — every digest already
+# mailed carries a DigestLog row keyed { userId, kind, periodKey }, and the unique index means even two
+# simultaneous runs cannot both send. So a manual `workflow_dispatch` next to the schedule is harmless,
+# which is what makes it usable for a real test.
+
 on:
-  # Run daily at 8 AM IST (2:30 AM UTC)
+  # 8 AM IST (02:30 UTC). An hour AFTER daily-reminders.yml, deliberately: a reminder is about
+  # something the reader already saved and is time-critical, so it should not arrive underneath a
+  # digest in the inbox.
   schedule:
     - cron: '30 2 * * *'
-  
-  # Allow manual trigger
+
   workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Decide and report only — write nothing, send nothing'
+        type: boolean
+        default: true
+      only_email:
+        description: 'Restrict the run to one address (optional)'
+        type: string
+        required: false
+
+# One digest run at a time. Two concurrent runs cannot double-send (the unique index prevents it), but
+# they would race for the per-IST-day cap and make the logs hard to read.
+concurrency:
+  group: daily-digest
+  cancel-in-progress: false
 
 jobs:
   send-digest:
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
-      
+
       - name: Install dependencies
         run: npm ci
-      
-      - name: Send daily digest
+
+      - name: Send the digest
         env:
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
-          USER_EMAIL: ${{ secrets.USER_EMAIL }}
-        run: npm run send-digest
-
-# Made with Bob
+          # Signs the unsubscribe link. Without it the script refuses to send anything at all — an
+          # email nobody can get off is worse than no email.
+          NEXTAUTH_SECRET: ${{ secrets.NEXTAUTH_SECRET }}
+          # Every link in the email, including the unsubscribe one, is built from this. A missing
+          # value means localhost URLs in somebody's inbox.
+          NEXTAUTH_URL: ${{ secrets.NEXTAUTH_URL }}
+          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+          # USER_EMAIL IS DELIBERATELY ABSENT. The old sender mailed that one hardcoded address every
+          # morning regardless of anybody's preference; recipients now come from the User collection
+          # and their own stored cadence. Use the `only_email` input above to restrict a run.
+        run: >-
+          npx tsx scripts/send-digest.ts
+          ${{ (github.event_name == 'workflow_dispatch' && inputs.dry_run) && '--dry' || '' }}
+          ${{ inputs.only_email && format('--only={0}', inputs.only_email) || '' }}

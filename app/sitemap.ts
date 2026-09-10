@@ -67,6 +67,14 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
      */
     { url: absoluteUrl('/mcp'), lastModified: now, changeFrequency: 'monthly', priority: 0.5 },
     /*
+     * `/digest` — this week's public digest. Submitted for three reasons: it is public and carries
+     * no user data (it goes through `buildEventFilter(params, null)`, the anonymous viewer), it
+     * genuinely changes weekly, and every digest email links to it, so a crawler will reach it
+     * regardless of whether it is listed. Higher priority than `/mcp` because it is a reader's page
+     * rather than a builder's.
+     */
+    { url: absoluteUrl('/digest'), lastModified: now, changeFrequency: 'weekly', priority: 0.8 },
+    /*
      * `/companies` is deliberately absent. The route is public and stays public — event pages link
      * to it — but it was removed from the nav at the owner's direction because 44 of 375 companies
      * have any events, so a visitor meets a mostly-empty directory. Submitting it would advertise

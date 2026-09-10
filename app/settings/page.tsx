@@ -243,21 +243,40 @@ export default function SettingsPage() {
 
           {/* ── Digest ──────────────────────────────────────────────────── */}
           <section className="bg-white rounded-2xl card-shadow p-5">
-            <h2 className="text-[16px] font-bold text-[#1D1D1F]">Daily digest</h2>
+            <h2 className="text-[16px] font-bold text-[#1D1D1F]">Email digest</h2>
             <p className="text-[13px] text-[#6E6E73] mt-1">
-              A summary of new events, deadlines and follow-ups goes out at 8 AM IST via a
-              scheduled GitHub Action.
+              A short list of events worth your time, sent Monday mornings at 8 AM IST. You can
+              switch it to daily or turn it off.
             </p>
             {/*
-              Honest about where this is configured. An earlier version offered an email
-              field that only wrote to localStorage, so changing it appeared to work while
-              the digest kept using the server's USER_EMAIL.
+              THIS SECTION USED TO BE FACTUALLY WRONG, AND THAT IS WHY IT NOW LINKS RATHER THAN
+              DESCRIBES.
+
+              It told the reader "Recipient is set by the USER_EMAIL environment variable". That
+              stopped being true when the digest gained a per-user cadence: recipients now come from
+              the `User` collection and each account's own stored `digestFrequency`, and `USER_EMAIL`
+              is no longer read by anything — a grep finds it only in comments recording its removal.
+              An earlier version of this block had an email field that only wrote to localStorage, so
+              changing it appeared to work while the digest ignored it. Both failures are the same
+              one: a settings screen describing a mechanism instead of driving it.
+
+              The cadence control itself lives in the onboarding flow, which doubles as its editor,
+              so this links there. A second copy of the radio group here is how the two would drift.
             */}
             <div className="mt-3 bg-[#f9f9fb] rounded-xl p-4 text-[12.5px] text-[#3a3a3c] space-y-1.5">
               <p>
-                Recipient is set by the <code className="font-mono text-[11.5px]">USER_EMAIL</code>{' '}
-                environment variable, and sending needs{' '}
-                <code className="font-mono text-[11.5px]">RESEND_API_KEY</code>.
+                Choose weekly, daily or off in{' '}
+                <Link
+                  href="/onboarding?from=settings"
+                  className="font-semibold text-[#0071E3] hover:underline"
+                >
+                  your feed preferences
+                </Link>
+                . Every digest carries its own unsubscribe link, and this week&apos;s is public at{' '}
+                <Link href="/digest" className="font-semibold text-[#0071E3] hover:underline">
+                  /digest
+                </Link>
+                .
               </p>
               {session?.user ? (
                 <p className="text-[#86868B]">

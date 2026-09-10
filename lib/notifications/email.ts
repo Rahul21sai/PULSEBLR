@@ -1,5 +1,19 @@
 import { Resend } from 'resend';
-import { generateDailyDigest, formatDigestAsText, formatDigestAsHTML } from './digest';
+
+/*
+ * `./digest` IS IMPORTED LAZILY, INSIDE `sendDailyDigestEmail`. It used to be a static import and
+ * that has to change, because `digest.ts` now imports `sendDigestEmail` from this file — so a static
+ * import here closes a cycle (`digest → email → digest`).
+ *
+ * The cycle would in fact work: nothing is read at module scope on either side, function
+ * declarations hoist, and by the time any of it is called both modules are fully evaluated. It is
+ * still not worth leaving, for two reasons. A cycle that is safe only because of what the top level
+ * happens not to do today breaks the first time somebody adds a module-scope `const` derived from
+ * the other side, and the failure is an `undefined` function inside a 2:30 AM cron job. And the edge
+ * being removed is the wrong direction anyway: this is the TRANSPORT layer, and it had no business
+ * knowing how to generate digest content. `sendNotificationEmail` and `sendReminderEmail` below both
+ * take their content as parameters, which is the shape all of this should have had.
+ */
 
 // Lazily construct the Resend client. The constructor throws "Missing API key"
 // when RESEND_API_KEY is unset — instantiating at module load would crash the
@@ -36,6 +50,8 @@ export async function sendDailyDigestEmail(config: EmailConfig): Promise<boolean
 
   try {
     console.log('📧 Generating daily digest...');
+    // Lazy on purpose — see the note at the top of this file.
+    const { generateDailyDigest, formatDigestAsText, formatDigestAsHTML } = await import('./digest');
     const digest = await generateDailyDigest(config.userId);
 
     // Check if there's anything to send. A source-health problem alone is worth
@@ -155,6 +171,48 @@ export async function sendReminderEmail(input: {
   html: string;
   text: string;
   /** Absolute, and must resolve with no session. See `buildUnsubscribeUrl`. */
+  unsubscribeUrl: string;
+  from?: string;
+}): Promise<ReminderSendResult> {
+  return sendListEmail(input);
+}
+
+/**
+ * Send one digest email.
+ *
+ * A NAME, NOT A NEW MECHANISM. It delegates to `sendListEmail` exactly as `sendReminderEmail` does,
+ * because the two mailings need identical treatment at this layer (RFC 8058 headers, a message id to
+ * record, and "not configured" told apart from "refused") and differ only in what generated the
+ * body. A second copy of the Resend call would be a second place for the unsubscribe headers to be
+ * forgotten, and a digest without them is the one that draws spam complaints — it is the recurring
+ * mailing, sent to people who did not ask for it individually.
+ *
+ * The URL it is handed is scope-separated from the reminder one: see `buildDigestUnsubscribeUrl` in
+ * `lib/notifications/digest-schedule.ts` for why one link must not turn off the other mailing.
+ */
+export async function sendDigestEmail(input: {
+  to: string;
+  subject: string;
+  html: string;
+  text: string;
+  /** Absolute, and must resolve with no session. See `buildDigestUnsubscribeUrl`. */
+  unsubscribeUrl: string;
+  from?: string;
+}): Promise<ReminderSendResult> {
+  return sendListEmail(input);
+}
+
+/**
+ * The shared send for any mailing a reader must be able to escape from.
+ *
+ * TWO UNSUBSCRIBE MECHANISMS, both required, and they are not redundant — the long argument is on
+ * `sendReminderEmail` above and applies verbatim to every caller of this function.
+ */
+async function sendListEmail(input: {
+  to: string;
+  subject: string;
+  html: string;
+  text: string;
   unsubscribeUrl: string;
   from?: string;
 }): Promise<ReminderSendResult> {

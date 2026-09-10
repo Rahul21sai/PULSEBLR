@@ -12,8 +12,20 @@ import { requireAdmin, requireUser } from '@/lib/api-auth';
  * It also used to send to a hardcoded `process.env.USER_EMAIL` regardless of who
  * asked. It now sends to the requesting admin's own address and builds the personal
  * half of the digest from their own tracker data, so the endpoint is correct in a
- * multi-user deployment. The scheduled cron still uses USER_EMAIL via
- * `npm run send-digest`; it does not call this route.
+ * multi-user deployment.
+ *
+ * THE LAST SENTENCE OF THIS COMMENT USED TO SAY the scheduled cron "still uses USER_EMAIL". It does
+ * not, and has not since the digest gained a per-user cadence: `scripts/send-digest.ts` now walks the
+ * `User` collection and honours each account's stored `digestFrequency`, and `USER_EMAIL` is read by
+ * nothing. It is still true that the cron does not call this route — this one exists so an admin can
+ * PREVIEW their own digest, which is why it stays `requireAdmin()` and why it is the remaining caller
+ * of the fuller `generateDailyDigest`.
+ *
+ * That last point is load-bearing rather than incidental. `generateDailyDigest` includes
+ * `getUnhealthySources()`, which names every failing source and quotes its `lastError` — fine for the
+ * operator previewing their own, a disclosure of scraper internals the moment the audience is "every
+ * consenting user". The scheduled mailing therefore uses a narrower formatter. Do not "unify" the two
+ * back into one.
  */
 export async function POST() {
   const gate = await requireAdmin();
