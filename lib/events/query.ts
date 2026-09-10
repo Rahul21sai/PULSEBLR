@@ -5,6 +5,11 @@
 // differently between "the list" and "the counts next to the filters" is a bug
 // users notice immediately.
 
+// `relevance` is pure — no mongoose, no models — so importing it here does not change what this
+// module drags into a client bundle. See its header for why the personalised score is a separate
+// object from `connectionScore` rather than a replacement for it.
+import { relevanceRankExpr, type RelevanceContext } from './relevance';
+
 /**
  * Mongo filters here are assembled dynamically from user input, so a plain
  * record is the honest type. Mongoose 9's strict `FilterQuery<IEvent>` rejects
@@ -51,6 +56,15 @@ export interface EventQueryParams {
    * every facet chip, and no other caller wants it.
    */
   spanning?: boolean;
+  /**
+   * Include events an admin soft-deleted. OFF by default, and deliberately NOT parseable from a
+   * querystring -- `parseEventParams` does not read it, so no caller can add `?includeDeleted=true`
+   * and page through removed rows.
+   *
+   * Only the control room sets it, because only the control room has a reason to see removed rows
+   * (to list them, and to undo). Every public caller leaves it alone.
+   */
+  includeDeleted?: boolean;
 }
 
 /** Parse the querystring into a normalized parameter object. */
@@ -209,6 +223,37 @@ export function visibilityClause(viewerId: string | null): EventFilter {
   return { $or: arms };
 }
 
+/**
+ * "Not deleted", as a filter fragment. One definition, so the predicate cannot drift.
+ *
+ * `null` rather than `$exists`: in MongoDB `{ deletedAt: null }` matches a null field AND an absent
+ * one, which is both halves of what is needed -- ~1500 documents have no such key, and a restore
+ * writing an explicit null must not leave a row invisible. See `lib/models/Event.ts`.
+ */
+export function notDeletedClause(): EventFilter {
+  return { deletedAt: null };
+}
+
+/**
+ * The full scope of "an event this viewer may see": visible to them AND not deleted.
+ *
+ * -------------------------------------------------------------------------------------------
+ * THIS EXISTS BECAUSE `buildEventFilter` IS NOT THE ONLY READER, and the exceptions are easy to
+ * miss. Two "similar events" queries -- one in `GET /api/events/[id]`, one in the `/events/[id]`
+ * page -- hand-roll their own filter and spread `visibilityClause(viewerId)` into it. They are
+ * correct about visibility and were structurally incapable of learning about any arm added to
+ * `buildEventFilter` afterwards. Soft delete is exactly such an arm: without this, an event an
+ * admin had just removed would keep appearing as a suggestion at the foot of every related page.
+ *
+ * So a hand-rolled event query spreads THIS, not `visibilityClause`. Reach for `visibilityClause`
+ * alone only when you specifically want deleted rows too -- which in practice means the control
+ * room, and that uses `includeDeleted` instead.
+ * -------------------------------------------------------------------------------------------
+ */
+export function publicEventScope(viewerId: string | null): EventFilter {
+  return { ...visibilityClause(viewerId), ...notDeletedClause() };
+}
+
 export function buildEventFilter(
   params: EventQueryParams,
   /** The signed-in user, or `null` for an anonymous visitor. Required — see `visibilityClause`. */
@@ -229,6 +274,10 @@ export function buildEventFilter(
   // `spotlightAt` exactly, so the query can use it, and it cannot be satisfied by a stray
   // explicit null left behind by some future write path.
   if (params.spotlight) filter.spotlightAt = { $type: 'date' };
+  // Soft-deleted rows leave every listing, count and facet unless a caller explicitly asks for
+  // them. A plain top-level key rather than a push into `and`: it is a single equality with no
+  // `$or` to collide with, unlike the visibility clause.
+  if (!params.includeDeleted) Object.assign(filter, notDeletedClause());
 
   const now = new Date();
   const lowerBound = params.from ?? (params.includePast ? undefined : now);
@@ -329,12 +378,29 @@ export function buildEventFilter(
   return filter;
 }
 
-export type SortKey = 'soonest' | 'newest' | 'popular' | 'relevance' | 'connections';
+export type SortKey = 'soonest' | 'newest' | 'popular' | 'relevance' | 'connections' | 'foryou';
 
 export function buildSort(sort: SortKey, hasTextSearch: boolean): Record<string, 1 | -1 | { $meta: 'textScore' }> {
   switch (sort) {
     case 'newest':
       return { createdAt: -1 };
+    case 'foryou':
+      /**
+       * THE PERSONALISED RANK IS NOT COMPUTABLE HERE, AND THIS FALLBACK IS THE POINT.
+       *
+       * `foryou` sorts on `relevanceRank`, a field that exists only inside the pipeline
+       * `buildForYouPipeline` builds — it is per-user and per-request and is never stored. A
+       * `find()` caller therefore cannot honour it, and there are two legitimate ways to reach
+       * here: an anonymous visitor whose URL says `sort=foryou`, and a signed-in user who has
+       * expressed no preference the ranking can act on.
+       *
+       * So it degrades to the CORPUS-WIDE ranking, which is the closest true answer and is
+       * exactly what "For you" reduces to when there is nothing personal to add. It deliberately
+       * does NOT fall through to the `default` case: sorting on a field that does not exist is a
+       * silent no-op that returns natural insertion order, which would look like the ranking had
+       * simply stopped working. Falling back to a real ranking fails visibly-correct instead.
+       */
+      return { connectionScore: -1, startDateTime: 1 };
     case 'connections':
       // The product's core question: where will I actually meet useful people?
       // Ties break by soonest so the list still reads as a schedule.
@@ -349,4 +415,85 @@ export function buildSort(sort: SortKey, hasTextSearch: boolean): Record<string,
     default:
       return { startDateTime: 1 };
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// The personalised feed ("For you")
+//
+// WHY IT IS AN AGGREGATION AND NOT A POST-SORT. The feed is paginated 30 rows at a time. Scoring
+// a page in JavaScript reorders 30 events that a DIFFERENT sort already chose, which is not a
+// ranking — it is shuffling the wrong thirty. The personalised score has to be computed in the
+// database, over the whole matched set, before the skip and the limit.
+//
+// WHY IT LIVES IN THIS FILE. Same reason everything else here does: the list, the counts and the
+// facets must narrow the corpus identically. `buildForYouPipeline` therefore takes the SAME
+// `buildEventFilter` output as the `find()` path, so `For you` and `Everything` can differ in
+// ORDER and in nothing else. That is the property the two-view guarantee rests on — if this
+// assembled its own `$match`, a "recommender that never hides events" would be one refactor away
+// from hiding them.
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * The fields the feed list returns, as ONE definition shared by both paths.
+ *
+ * It was a `.select(...)` string literal inside `GET /api/events`. That was fine while there was a
+ * single query; with a `find()` path and an aggregation path answering the same request, a literal
+ * in the route means the personalised feed and the default feed can come to return different
+ * fields — and the symptom would be a card rendering fine in one tab and missing its cover, its
+ * price or its meter in the other, with nothing to suggest why.
+ *
+ * `description` is deliberately ABSENT, unchanged from the original: it runs to 6 KB per event and
+ * the feed renders a two-line excerpt, so sending it would multiply the payload for nothing. The
+ * detail endpoint returns everything.
+ */
+export const FEED_FIELDS = [
+  'title', 'source', 'sourceUrl', 'slug', 'organizer', 'hostAvatarUrl', 'category', 'tags',
+  'format', 'hasFood', 'isFree', 'price', 'priceMax', 'currency', 'soldOut', 'venue', 'area',
+  'city', 'lat', 'lng', 'onlineLink', 'imageUrl', 'startDateTime', 'endDateTime', 'applyLink',
+  'registrationDeadline', 'attendeeCount', 'capacity', 'isTechEvent', 'companies',
+  'connectionScore', 'isTargetCompany', 'recruiterMentioned', 'seenInSources', 'spotlightAt',
+  'createdAt',
+] as const;
+
+/** `FEED_FIELDS` as a space-separated string, for `Query.select()`. */
+export const FEED_SELECT = FEED_FIELDS.join(' ');
+
+/** `FEED_FIELDS` as an aggregation `$project` inclusion document. `_id` is included implicitly. */
+export function feedProjection(): Record<string, 1> {
+  return Object.fromEntries(FEED_FIELDS.map(field => [field, 1])) as Record<string, 1>;
+}
+
+/**
+ * The aggregation that ranks the feed by `connectionScore × relevanceScore`.
+ *
+ * `filter` MUST be the output of `buildEventFilter` — it is placed unmodified as the first stage,
+ * which is also what lets a `$text` search work here (Mongo permits `$text` only in a pipeline's
+ * first `$match`).
+ *
+ * IT RE-RANKS AND ONLY RE-RANKS. There is no `$match` of its own, no threshold on the computed
+ * score and nothing dropped: the row set is identical to what `Everything` returns for the same
+ * filters, and `Event.countDocuments(filter)` is still the right total for it. If a future change
+ * wants to hide low-relevance events, that is a product decision that has to be visible in the UI,
+ * not a stage added quietly here.
+ *
+ * `relevanceRank` is projected AWAY at the end. It is a per-request number with no meaning outside
+ * this sort, and shipping it would invite a client to treat it as a stored property of the event —
+ * which is precisely the confusion between `connectionScore` (stored, shared, backfilled) and
+ * relevance (derived, per-user, never written) that `lib/events/relevance.ts` exists to keep apart.
+ */
+export function buildForYouPipeline(
+  filter: EventFilter,
+  context: RelevanceContext,
+  page: { skip: number; limit: number }
+): Array<Record<string, unknown>> {
+  return [
+    { $match: filter },
+    { $addFields: { relevanceRank: relevanceRankExpr(context) } },
+    // Ties break by soonest, exactly as `buildSort('connections')` does, so the list still reads
+    // as a schedule once the ranking has had its say.
+    { $sort: { relevanceRank: -1, startDateTime: 1 } },
+    { $skip: page.skip },
+    { $limit: page.limit },
+    { $project: feedProjection() },
+  ];
 }

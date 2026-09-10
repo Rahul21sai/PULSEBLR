@@ -167,6 +167,40 @@ export default function SettingsPage() {
             </div>
           </section>
 
+          {/* ── Your feed ───────────────────────────────────────────────────
+              A LINK TO `/onboarding`, NOT A SECOND COPY OF THE CONTROLS.
+
+              The three cards are already a screen with sixteen topic chips, twenty-eight area chips,
+              a format group, seven day chips and the two email preferences. Rebuilding that here
+              would be the `/people` filter rail mistake exactly — two implementations of one control
+              set, drifting apart, and the reason the two pages stopped feeling like one app.
+              `?from=settings` changes the copy and returns here on save.
+
+              It is offered to signed-out visitors too, as a description rather than a control: it
+              names something the product does, and the sign-in prompt is directly above. */}
+          {session?.user && (
+            <section className="bg-white rounded-2xl card-shadow p-5">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <h2 className="text-[16px] font-bold text-[#1D1D1F]">Your feed</h2>
+                  <p className="mt-0.5 text-[13px] leading-relaxed text-[#6E6E73]">
+                    Topics, the areas you can reach, which evenings work, and how often we email you.
+                    The <span className="font-semibold text-[#1D1D1F]">For you</span> tab on the feed
+                    ranks by these — it never hides anything, and{' '}
+                    <span className="font-semibold text-[#1D1D1F]">Everything</span> is always one tap
+                    away.
+                  </p>
+                </div>
+                <Link
+                  href="/onboarding?from=settings"
+                  className="pressable inline-flex h-10 shrink-0 items-center rounded-full bg-[#1D1D1F] px-5 text-[13px] font-semibold text-white hover:bg-black"
+                >
+                  Edit preferences
+                </Link>
+              </div>
+            </section>
+          )}
+
           {/* ── My card ─────────────────────────────────────────────────── */}
           {session?.user && <MyCardSection />}
 

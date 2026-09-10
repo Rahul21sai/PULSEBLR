@@ -2,12 +2,14 @@
 import Link from 'next/link';
 
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
+import { useSession } from 'next-auth/react';
 import { DesktopNav, MobileBottomNav } from './components/NavBar';
 import EventRow from './components/EventRow';
 import EventGridCard from './components/EventGridCard';
 import FilterRail, { FilterState, EMPTY_FILTERS, countActive } from './components/FilterRail';
 import { FeedEvent, Facets, Pagination } from '@/lib/event-types';
 import { MIN_SEARCH_CHARS } from '@/lib/events/query';
+import { preferenceSummary, type UserPreferences } from '@/lib/events/relevance';
 import { dayKeyIST, dayHeading, fullDateIST, isHappeningNow, NOW_GROUP_KEY } from '@/lib/format';
 
 /**
@@ -43,6 +45,45 @@ const SORTS = [
 ] as const;
 
 type ViewMode = 'rail' | 'grid';
+
+/**
+ * The two feeds, and the reason there are exactly two.
+ *
+ * ── A RECOMMENDER THAT SILENTLY HIDES EVENTS IS WORSE THAN NO RECOMMENDER. ───────────────────
+ * A personalised ranking is a claim about the reader, and it is sometimes wrong. When it is, the
+ * reader has to be able to see that — otherwise "there is nothing on this week" and "we decided
+ * not to show you" are the same screen, and nothing on it tells them which. So the switch is a
+ * visible pair of tabs, and it lives in the URL.
+ *
+ * `Everything` IS TODAY'S FEED, byte for byte. It sends the same params to the same endpoint with
+ * the same default sort; the only difference is the tab that is drawn as active. That is what makes
+ * the pair honest rather than decorative: whatever the personalised half does, there is a control
+ * on screen that undoes all of it, and the thing it returns to is not a degraded fallback.
+ *
+ * `For you` re-ranks and NOTHING else. It sends `sort=foryou`, which
+ * `lib/events/query.ts#buildForYouPipeline` answers with the same `buildEventFilter` output and an
+ * `$addFields`/`$sort` — no extra `$match`, no threshold. Both tabs therefore report the same
+ * total, which is the arithmetic form of the same promise.
+ */
+const FEED_TABS = [
+  { id: 'for-you', label: 'For you' },
+  { id: 'everything', label: 'Everything' },
+] as const;
+
+type FeedMode = (typeof FEED_TABS)[number]['id'];
+
+/**
+ * `Everything` IS THE DEFAULT, not `For you`.
+ *
+ * Most visitors are signed out or have never answered the three cards, and for them the two tabs
+ * return the identical list — so opening on `For you` would advertise personalisation that had not
+ * happened. Landing on `Everything` and being INVITED to personalise is the honest order, and
+ * onboarding pushes `/?feed=for-you` itself once there is something to show.
+ */
+const DEFAULT_FEED: FeedMode = 'everything';
+
+/** What `GET /api/me/preferences` returns. `personalised` is computed server-side — see the route. */
+type PreferencesDTO = UserPreferences & { onboarded: boolean; personalised: boolean };
 
 /**
  * How many events the spotlight promotes. Two, because they sit side by side at 16:9 on desktop
@@ -126,6 +167,41 @@ export default function Home() {
    * should I go", and only the second one is what this product is for.
    */
   const [sort, setSort] = useState<string>('connections');
+  /**
+   * Which of the two feeds is showing. See `FEED_TABS`.
+   *
+   * SEPARATE STATE FROM `sort`, not a value of it, and the distinction is load-bearing. A sort is
+   * "in what order, among these events"; the feed is "by what standard". Folding `foryou` into the
+   * `sort` select would have made the personalisation a dropdown option a reader has to go looking
+   * for, and would have let the two be inconsistent — "For you, sorted by soonest" is a view that
+   * ranks by nothing personal while a tab claims otherwise.
+   */
+  const [feed, setFeed] = useState<FeedMode>(DEFAULT_FEED);
+  /**
+   * The signed-in user's stored preferences, or `null` while unknown / signed out.
+   *
+   * STAMPED WITH THE USER ID IT WAS FETCHED FOR, and read back through `activePreferences` below,
+   * which only hands it over when that id still matches the live session. Two reasons, and the
+   * second is the real one:
+   *
+   *   · Clearing it on sign-out would mean a `setPreferences(null)` in an effect body, which
+   *     React's compiler rules (correctly) reject — the same constraint that makes the URL reader
+   *     and the feed loader in this file defer by a tick.
+   *   · Sign out, sign in as a different Google account, and there is a window between the session
+   *     settling and this fetch landing. Without the stamp, the PREVIOUS account's summary renders
+   *     in the readout during it. Small, but it is the same class of cross-account bleed that made
+   *     `sw.js` v3 necessary, and it costs one field to make structurally impossible.
+   *
+   * Only ever used to decide what to DRAW — which tab explanation to show, whether to offer the
+   * onboarding prompt, and what to print in the readout. The ranking itself is computed server-side
+   * from the same row, so a stale copy here can make the caption briefly wrong but can never make
+   * the list wrong.
+   */
+  const [preferences, setPreferences] = useState<{ userId: string; value: PreferencesDTO } | null>(
+    null
+  );
+  /** Locally dismissed onboarding prompt, so the banner goes away before the PUT lands. */
+  const [promptDismissed, setPromptDismissed] = useState(false);
   // Tech-only is the DEFAULT view, not an option you have to find. This app exists
   // to surface Bengaluru SOFTWARE and HARDWARE events worth attending for the
   // connections; the other ~70% of the corpus (concerts, treks, book clubs) is
@@ -193,6 +269,15 @@ export default function Home() {
       if (s && SORTS.some(o => o.id === s)) setSort(s);
       const v = p.get('view');
       if (v === 'grid' || v === 'rail') setView(v);
+      /*
+       * The active feed comes out of the URL like everything else, so a personalised view is
+       * shareable and survives a reload. Note what a SHARED `?feed=for-you` link does for the
+       * recipient: the server sees no preferences for them and `buildSort('foryou')` degrades to the
+       * corpus-wide ranking, so they get a sensible feed with the tab explaining that it is not
+       * theirs yet — rather than somebody else's taste applied to them silently.
+       */
+      const f = p.get('feed');
+      if (f !== null && FEED_TABS.some(t => t.id === f)) setFeed(f as FeedMode);
 
       const company = p.get('company');
       const category = p.get('category');
@@ -306,6 +391,7 @@ export default function Home() {
     // dropped for the non-default. Exactly inverted.
     if (sort !== 'connections') p.set('sort', sort);
     if (view !== 'rail') p.set('view', view);
+    if (feed !== DEFAULT_FEED) p.set('feed', feed);
     if (filters.categories.length) p.set('category', filters.categories.join(','));
     if (filters.areas.length) p.set('area', filters.areas.join(','));
     if (filters.companies.length) p.set('company', filters.companies.join(','));
@@ -322,7 +408,77 @@ export default function Home() {
     if (next !== window.location.pathname + window.location.search) {
       window.history.replaceState(null, '', next);
     }
-  }, [query, when, sort, view, filters]);
+  }, [query, when, sort, view, feed, filters]);
+
+  /**
+   * The signed-in user's preferences, for DRAWING only.
+   *
+   * Fetched separately from the feed rather than folded into `/api/events`, because the two have
+   * different lifetimes: the feed re-fetches on every filter change and this changes when the user
+   * edits it, which is roughly never. `status` is the dependency, so it runs once the session
+   * settles and again on sign-in or sign-out.
+   *
+   * A FAILURE HERE IS SILENT ON PURPOSE. It decides a caption, a banner and a readout — the
+   * ranking is computed server-side from the same stored row, so an unreadable copy here degrades
+   * the explanation and never the list. Blanking the feed over it would be absurd.
+   */
+  const { data: session, status } = useSession();
+  const sessionUserId = session?.user?.id ?? null;
+  useEffect(() => {
+    if (!sessionUserId) return;
+    let live = true;
+    (async () => {
+      try {
+        const res = await fetch('/api/me/preferences');
+        if (!res.ok) return;
+        const data = await res.json();
+        if (live && data.preferences) {
+          setPreferences({ userId: sessionUserId, value: data.preferences as PreferencesDTO });
+        }
+      } catch {
+        // See above: an enhancement, not content.
+      }
+    })();
+    return () => {
+      live = false;
+    };
+  }, [sessionUserId]);
+
+  /**
+   * The preferences that belong to the CURRENT session, or null.
+   *
+   * Derived rather than stored, so signing out needs no write and a mid-flight account switch cannot
+   * show one person's summary to another. Everything below reads this, never `preferences`.
+   */
+  const activePreferences =
+    preferences && sessionUserId && preferences.userId === sessionUserId ? preferences.value : null;
+
+  /**
+   * Dismiss the onboarding invitation.
+   *
+   * Sends the SAME empty-body PUT the onboarding flow's Skip button sends, which stamps
+   * `onboardedAt` server-side without touching a single preference. Reusing the skip rather than
+   * adding a "dismiss" endpoint means there is one definition of "this user has been asked" — and
+   * the alternative, a purely local dismissal, would bring the banner back on every visit until the
+   * user gave in, which is nagging dressed as a choice.
+   *
+   * Optimistic: the banner goes immediately and the request is not awaited for the UI. A failure
+   * leaves `onboardedAt` unset, so the invitation returns next visit — the correct degradation,
+   * since it means the server never recorded the answer.
+   */
+  const dismissPrompt = useCallback(async () => {
+    setPromptDismissed(true);
+    try {
+      await fetch('/api/me/preferences', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{}',
+      });
+      setPreferences(prev => (prev ? { ...prev, value: { ...prev.value, onboarded: true } } : prev));
+    } catch {
+      // Nothing to report: the banner is already gone for this visit.
+    }
+  }, []);
 
   /**
    * One character is not a query. The API ignores a term this short — before
@@ -331,6 +487,18 @@ export default function Home() {
    */
   const needsMoreChars =
     searchInput.trim().length > 0 && searchInput.trim().length < MIN_SEARCH_CHARS;
+
+  /**
+   * The sort the API is actually asked for — ONE derivation, used by every request, by the day
+   * grouping and by the readout.
+   *
+   * `For you` overrides the select rather than coexisting with it. Without a single source for this,
+   * the sort the list was fetched with and the sort the page believes it is showing can differ, and
+   * that is not a cosmetic bug: `chronological` below decides whether the rail may group by day, and
+   * grouping by day under a ranked sort re-sorts the page chronologically and throws the ranking
+   * away. That exact defect shipped once — a connectionScore-100 event rendered third.
+   */
+  const effectiveSort = feed === 'for-you' ? 'foryou' : sort;
 
   const buildParams = useCallback(
     (page: number) => {
@@ -351,12 +519,12 @@ export default function Home() {
        * unreachable. See the note above `FilterState` in FilterRail.tsx.
        */
       params.set('techOnly', 'true');
-      params.set('sort', sort);
+      params.set('sort', effectiveSort);
       params.set('page', String(page));
       params.set('limit', '30');
       return params;
     },
-    [query, when, filters, sort]
+    [query, when, filters, effectiveSort]
   );
 
   /**
@@ -414,7 +582,7 @@ export default function Home() {
        * through the same filter builder as everything else, so a pin still respects `techOnly`
        * and the upcoming window: an event pinned in August cannot resurface in October.
        */
-      const wantsSpotlight = !query && countActive(filters) <= 1 && sort !== 'soonest';
+      const wantsSpotlight = !query && countActive(filters) <= 1 && effectiveSort !== 'soonest';
       const pinnedParams = buildParams(1);
       pinnedParams.set('spotlight', 'true');
       pinnedParams.set('limit', String(SPOTLIGHT_COUNT));
@@ -506,7 +674,7 @@ export default function Home() {
     // three, so `load` would change anyway. Naming them is not redundant: `wantsSpotlight` reads
     // them DIRECTLY now, and depending on that only transitively means the day someone narrows
     // `buildParams`'s own deps, this callback goes stale with no warning. The lint rule was right.
-  }, [buildParams, query, filters, sort]);
+  }, [buildParams, query, filters, effectiveSort]);
 
   // Deferred by a tick rather than called synchronously. Two reasons: React's
   // compiler rules (correctly) reject a synchronous setState inside an effect, and
@@ -587,6 +755,29 @@ export default function Home() {
   const total = pagination?.total ?? 0;
 
   /**
+   * Is the personalised tab actually personalised for THIS reader?
+   *
+   * `personalised` is computed by the server (`hasRankingPreferences`) rather than re-derived here,
+   * because the rule is not obvious — all seven evenings says exactly what no evenings says, and the
+   * two notification preferences say nothing about the feed at all. Two implementations of that
+   * would drift, and the symptom would be a tab promising a ranking the server cannot produce.
+   */
+  const personalised = Boolean(activePreferences?.personalised);
+  /**
+   * Offer the three cards to a signed-in user who has never been asked.
+   *
+   * A BANNER, NOT AN INTERSTITIAL. An interstitial after first sign-in would block the thing the
+   * user actually came for, and this app's entire value on a first visit is the feed itself. It is
+   * also gated on a settled `activePreferences` so it cannot flash before the session and the fetch
+   * land.
+   */
+  const showFeedSetupPrompt =
+    status === 'authenticated' &&
+    activePreferences !== null &&
+    !activePreferences.onboarded &&
+    !promptDismissed;
+
+  /**
    * Is the current sort CHRONOLOGICAL? Only `soonest` is.
    *
    * This decides whether the rail may group by IST day, and getting it wrong silently discards
@@ -607,7 +798,7 @@ export default function Home() {
    * `newest` and `popular` have the same problem, and `relevance` too when there is a query:
    * all of them answer "in what ORDER", and a day grouping overrides the answer.
    */
-  const chronological = sort === 'soonest';
+  const chronological = effectiveSort === 'soonest';
 
   /**
    * Split the ranked list into what is ON NOW and what is coming.
@@ -874,6 +1065,27 @@ export default function Home() {
                 an invisible ring. `focus-within` rather than `has-[:focus-visible]` so it also
                 fires on the keyboard path in browsers that do not match `:focus-visible` on a
                 select. */}
+            {/*
+              IN `For you` THE SORT SELECT IS REPLACED BY A READOUT, NOT DISABLED AND NOT HIDDEN.
+              ─────────────────────────────────────────────────────────────────────────────────────
+              The personalised feed IS a ranking, so a second ranking control beside it would be
+              two answers to one question: "For you, sorted by soonest" ranks by nothing personal
+              while the tab claims otherwise. A disabled `<select>` would be worse — a dead control
+              that says the feature is broken rather than that it does not apply.
+
+              So the slot keeps its size and states what the order is instead. Nothing is lost: the
+              `Everything` tab is one tap away with the full sort list, and the time-window chips
+              beside this (Today / Tomorrow / This weekend) still answer "what is on tonight", which
+              is the only question `soonest` was ever really for.
+            */}
+            {feed === 'for-you' ? (
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center gap-1.5 text-[12.5px] font-semibold text-[#1D1D1F] sm:h-auto sm:w-auto">
+                <span aria-hidden="true" className="material-symbols-outlined text-[19px] text-[#0071E3]">
+                  auto_awesome
+                </span>
+                <span className="hidden sm:inline">Ranked for you</span>
+              </span>
+            ) : (
             <label
               htmlFor="event-sort"
               className="relative flex h-11 w-11 shrink-0 items-center justify-center gap-1.5 rounded-full text-[12.5px] text-[#8E8E93] focus-within:ring-2 focus-within:ring-[#0071E3] sm:h-auto sm:w-auto sm:justify-start sm:rounded-none sm:focus-within:ring-0"
@@ -897,6 +1109,7 @@ export default function Home() {
                 ))}
               </select>
             </label>
+            )}
           </div>
         </div>
       </div>
@@ -965,6 +1178,128 @@ export default function Home() {
           </div>
         </div>
 
+        {/* ── The two feeds ──────────────────────────────────────────────────
+            Placed here, between the hero and everything the ranking touches, because its scope IS
+            everything below it — the Spotlight's fallback, the curated shelf's ordering and the
+            list. Not in the command bar above: that bar is a fixed `--commandbar-h` with
+            `overflow-hidden` and two full rows, so a third row would be clipped, and a clipped
+            control measures as a hit area without being one.
+
+            Both tabs are shown to everybody, including signed-out visitors. Hiding `For you` from
+            them would make a shared `?feed=for-you` link land on a page with no explanation for why
+            it is not personalised — the tab plus one line of copy is a better answer than a missing
+            control. */}
+        <div className="max-w-[1240px] mx-auto px-4 md:px-8 pb-6">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2.5">
+            <div
+              role="group"
+              aria-label="Choose how the feed is ranked"
+              className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-white p-1 shadow-[inset_0_0_0_1px_var(--hairline-strong)]"
+            >
+              {FEED_TABS.map(tab => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  aria-pressed={feed === tab.id}
+                  onClick={() => setFeed(tab.id)}
+                  /* 36px painted inside a 44px row (`p-1` on the container plus this height), so the
+                     WCAG 2.5.5 floor is met without an `::after` overlay — unlike the chips in the
+                     command bar, nothing clips here. */
+                  className={`pressable relative h-9 rounded-full px-4 text-[13px] font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0071E3] [touch-action:manipulation] ${
+                    feed === tab.id
+                      ? 'bg-[#1D1D1F] text-white'
+                      : 'text-[#6E6E73] hover:bg-[#F0F0F2] hover:text-[#1D1D1F]'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+
+            {/* WHAT THE PERSONALISED TAB IS ACTUALLY DOING, in one line.
+                Four states, and the two "not yet" ones both say that the ORDINARY ranking is what
+                is showing. Without that sentence a reader on `For you` with no preferences would
+                believe they were looking at a tailored list, which is the quiet dishonesty the whole
+                two-tab arrangement exists to avoid. Nothing is drawn while the session or the fetch
+                is still settling, so no state flashes the wrong claim. */}
+            {feed === 'for-you' && (
+              <p className="min-w-0 text-[12.5px] leading-relaxed text-[#6E6E73]">
+                {status === 'unauthenticated' ? (
+                  <>
+                    Showing the usual ranking —{' '}
+                    <Link
+                      href="/login?callbackUrl=%2Fonboarding"
+                      className="font-semibold text-[#0071E3] hover:underline"
+                    >
+                      sign in
+                    </Link>{' '}
+                    to rank it around your topics, areas and evenings.
+                  </>
+                ) : activePreferences === null ? null : personalised ? (
+                  <>
+                    Ranked by who you’ll meet <span className="text-[#a1a1a6]">×</span> what fits you
+                    {preferenceSummary(activePreferences) && (
+                      <>
+                        {' · '}
+                        <span className="font-semibold text-[#1D1D1F]">
+                          {preferenceSummary(activePreferences)}
+                        </span>
+                      </>
+                    )}
+                    {' · '}
+                    <Link
+                      href="/onboarding?from=settings"
+                      className="font-semibold text-[#0071E3] hover:underline"
+                    >
+                      Edit
+                    </Link>
+                  </>
+                ) : (
+                  <>
+                    Showing the usual ranking —{' '}
+                    <Link href="/onboarding" className="font-semibold text-[#0071E3] hover:underline">
+                      tell us what you’re into
+                    </Link>{' '}
+                    and this becomes yours.
+                  </>
+                )}
+              </p>
+            )}
+          </div>
+
+          {/* THE INVITATION, for a signed-in user who has never been asked.
+              Deliberately not an interstitial after first sign-in: that would block the feed, which
+              is the entire reason they are here. Dismissing it records the answer server-side (see
+              `dismissPrompt`) so it is asked once, not every visit. */}
+          {showFeedSetupPrompt && (
+            <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-[14px] bg-white px-4 py-3 shadow-[inset_0_0_0_1px_var(--hairline)]">
+              <span aria-hidden="true" className="material-symbols-outlined text-[20px] text-[#0071E3]">
+                tune
+              </span>
+              <p className="min-w-0 flex-1 text-[13px] leading-relaxed text-[#3a3a3c]">
+                <span className="font-semibold text-[#1D1D1F]">Make this feed yours.</span> Three
+                questions — what you’re into, which areas you can reach, and which evenings work.
+                Nothing gets hidden either way.
+              </p>
+              <div className="flex shrink-0 items-center gap-2">
+                <Link
+                  href="/onboarding"
+                  className="pressable inline-flex h-9 items-center rounded-full bg-[#1D1D1F] px-4 text-[12.5px] font-semibold text-white hover:bg-black"
+                >
+                  Set it up
+                </Link>
+                <button
+                  type="button"
+                  onClick={dismissPrompt}
+                  className="h-9 rounded-full px-3 text-[12.5px] font-semibold text-[#8E8E93] hover:text-[#1D1D1F]"
+                >
+                  Not now
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
         {/* ── Spotlight ──────────────────────────────────────────────────────
             Full width, above the filters, so two covers get room to be seen. It uses the SAME
             `EventGridCard` as grid view rather than a bespoke feature card: the cover image is
@@ -985,8 +1320,16 @@ export default function Home() {
                 {/* Says which of the two modes produced this. Not decoration: "hand-picked" and
                     "top of the ranking" are different claims, and a reader who cannot tell which
                     one they are looking at has no way to judge it. */}
+                {/* THREE modes now, not two. The unpinned fallback is the top of whichever ranking
+                    is active, so on `For you` it is the personalised one — and saying "Best for
+                    connections" there would name a ranking that is not the one that chose these two
+                    events. The caption's whole job is to let a reader judge the claim. */}
                 <span className="shrink-0 text-[11.5px] text-[#8E8E93]">
-                  {pinnedEvents.length > 0 ? 'Hand-picked' : 'Best for connections right now'}
+                  {pinnedEvents.length > 0
+                    ? 'Hand-picked'
+                    : feed === 'for-you' && personalised
+                      ? 'Best for you right now'
+                      : 'Best for connections right now'}
                 </span>
               </div>
             </div>
@@ -1139,8 +1482,16 @@ export default function Home() {
                     ) : (
                       'upcoming'
                     )}
-                    {sort === 'connections' && ' · ranked by who you’ll meet there'}
-                    {sort === 'soonest' && !query && ' · soonest first'}
+                    {/* Reads `effectiveSort`, not `sort`. In `For you` the select is not what
+                        decides the order, so switching on `sort` here would print "ranked by who
+                        you'll meet there" beside a list that was ranked by something else — a
+                        readout that is confidently wrong is worse than no readout. */}
+                    {effectiveSort === 'foryou' &&
+                      (personalised
+                        ? ' · ranked for you'
+                        : ' · ranked by who you’ll meet there')}
+                    {effectiveSort === 'connections' && ' · ranked by who you’ll meet there'}
+                    {effectiveSort === 'soonest' && !query && ' · soonest first'}
                   </>
                 )}
               </p>

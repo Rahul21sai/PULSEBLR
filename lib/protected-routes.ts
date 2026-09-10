@@ -50,6 +50,14 @@ export const PROTECTED_PATHS = [
   '/people',
   '/scan',
   '/card',
+  /**
+   * The preference cards. Signed-in only because every save is `PUT /api/me/preferences`, which is
+   * `requireUser()` — an anonymous visitor would fill in three screens and get a 401 on the last
+   * button, which is the "dead end that 403s on submit" shape `/add-event` used to have.
+   *
+   * Safe against the prefix trap above: no public route begins with `/onboarding`.
+   */
+  '/onboarding',
 ] as const;
 
 /** Does this path require a signed-in user? */
