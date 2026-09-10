@@ -1742,7 +1742,15 @@ audit log, so the partial index on `deletedAt` is currently unqueried and says s
 
 Six more streams. Commits carry the measurements; this section is the map plus the traps.
 
-> **EVERY LLM TIER IS DOWN, AND THE KEYWORD FLOOR IS PRODUCTION. Measured 2026-09-10.**
+> **RESOLVED 2026-09-10 (later the same day) — ICA IS BACK, AND A SECOND BUG WAS HIDING BEHIND IT.**
+> The base URL had moved off the beta host: `api.nextgen-beta.ica.ibm.com` -> `api.servicesessentials.ibm.com/v1/chat-models`. A new key alone did not fix it and reported
+> `{"error":"Unknown icaKey"}` — the key and the base URL have to come from the SAME environment,
+> so check the host before concluding a key is bad. `claude-sonnet-5` is in the 22-model list and
+> `check-llm.ts` reports `Tagging: 2/2 via LLM`. NVIDIA is still dead at the account level and
+> Anthropic is still unset, so ICA is currently the ONLY working tier and there is no second net.
+> Read the block below as the outage record.
+
+> **EVERY LLM TIER WAS DOWN, AND THE KEYWORD FLOOR WAS PRODUCTION. Measured 2026-09-10.**
 >
 > | tier | status |
 > | --- | --- |

@@ -399,6 +399,70 @@ function disabledProviders(): string[] {
 /** NVIDIA NIM model measured as fast and reliable for this classification task. */
 const NVIDIA_FAST_MODEL = 'meta/llama-3.1-8b-instruct';
 
+/**
+ * A THROTTLE, WHICH IBM ICA DELIVERS AS AN HTTP 400 RATHER THAN A 429.
+ *
+ * ── WHY THIS EXISTS ────────────────────────────────────────────────────────────────────────
+ *
+ * Measured 2026-09-10, immediately after a working ICA key was restored. `check-llm.ts` reported
+ * `Tagging: 2/2 via LLM` because it sends two tiny requests. `diag-retag-preview.ts` then sent one
+ * batch and got:
+ *
+ *   400 {"detail":"litellm.RateLimitError: BedrockException - {\"message\":\"Too many requests,
+ *        please wait before trying again...\"}. Received Model Group=claude-sonnet-5
+ *        Available Model Group Fallbacks=None"}
+ *
+ * and reported `Tagging: 0/13 via LLM, 13 via keywords`. The 400 branch below retries only when the
+ * body mentions `temperature`; everything else THREW. So a transient throttle was handled as a
+ * permanent failure: no backoff, no retry, the model chain skipped, straight down to the next
+ * provider and then to keywords.
+ *
+ * THE CONSEQUENCE WAS WORSE THAN A SLOW RUN. `pipeline.ts` calls `tagEvents()` exactly once with
+ * the whole corpus, so the first throttled batch tripped the strike counter and every later batch
+ * fell to keywords too — a full scrape would have quietly produced a keyword-tagged corpus while a
+ * frontier model sat idle and correctly configured. It also silently invalidated the one
+ * measurement CLAUDE.md requires before a bulk retag: `diag-retag-preview.ts` compared the keyword
+ * floor against itself and reported FIXED 0, which reads as "the model is not good enough".
+ *
+ * ── WHY IT IS A BODY MATCH, WHICH IS NORMALLY THE WRONG INSTRUMENT ─────────────────────────
+ *
+ * A 400 means "your request was bad" and a throttle is not that, so the status code alone cannot
+ * distinguish this from a genuinely malformed request — and treating ALL 400s as retryable would
+ * turn a real schema error into four slow retries and a misleading log. The gateway is wrapping a
+ * Bedrock 429 and losing the status on the way, so the body is the only place the truth survives.
+ * Kept deliberately narrow, and a real 429 is matched on status as it should be.
+ */
+function rateLimitedFrom(status: number, body: string): boolean {
+  if (status === 429) return true;
+  if (status !== 400) return false;
+  return /rate.?limit|too many requests|throttl|quota exceeded/i.test(body);
+}
+
+/**
+ * How long to wait before retrying a throttled request.
+ *
+ * `Retry-After` wins when the gateway sends one (seconds, or an HTTP date). Otherwise exponential
+ * backoff with FULL JITTER — the batch loop is sequential, so without jitter a run that gets
+ * throttled once tends to retry in lockstep with whatever else shares the account quota.
+ *
+ * Capped at 20s per wait: `pipeline.ts` tags the whole corpus in one call, so a generous ceiling
+ * multiplied by hundreds of batches is the difference between a slow scrape and one that outlives
+ * its GitHub Actions runner.
+ */
+function retryAfterMs(header: string | null, attempt: number): number {
+  if (header) {
+    const seconds = Number(header);
+    if (Number.isFinite(seconds) && seconds > 0) return Math.min(seconds * 1000, 20_000);
+    const at = Date.parse(header);
+    if (!Number.isNaN(at)) return Math.min(Math.max(at - Date.now(), 0), 20_000);
+  }
+  const base = Math.min(1000 * 2 ** attempt, 20_000);
+  return Math.round(base * (0.5 + Math.random() * 0.5));
+}
+
+/** Attempts per model for a throttle specifically, over and above the model chain. */
+const RATE_LIMIT_ATTEMPTS = 4;
+
 async function callOpenAICompatible(userPrompt: string, opts: ProviderConfig): Promise<string> {
   const { apiKey, baseUrl, provider, timeoutMs = 45000, fallbackModel, credentialEnv } = opts;
   const url = `${baseUrl.replace(/\/+$/, '')}/chat/completions`;
@@ -462,9 +526,45 @@ async function callOpenAICompatible(userPrompt: string, opts: ProviderConfig): P
           MODELS_REQUIRING_TEMP_1.add(model);
           console.warn(`[${provider}] ${model} rejected temperature=0.2 — retrying at 1`);
           response = await call(1);
+        } else if (rateLimitedFrom(400, errText)) {
+          // Fall through to the throttle loop below rather than throwing. Re-issue the
+          // request first so that loop has a live response to inspect.
+          response = await call(MODELS_REQUIRING_TEMP_1.has(model) ? 1 : 0.2);
         } else {
           throw new Error(`${provider} error 400: ${errText.slice(0, 300)}`);
         }
+      }
+
+      /*
+       * THE THROTTLE LOOP. A rate limit is transient, so it retries the SAME model — the model is
+       * not what is wrong, and moving to the fallback would spend a second request proving that.
+       *
+       * It reads the body to decide, which means the body is consumed; on the last attempt that
+       * text is carried into the error so the log still names the real cause instead of a bare
+       * status. Bounded by RATE_LIMIT_ATTEMPTS so a persistently throttled account degrades to the
+       * keyword floor — which is intact and documented — rather than stalling a scrape that has
+       * hundreds of batches left to run.
+       */
+      for (let attempt = 0; attempt < RATE_LIMIT_ATTEMPTS; attempt++) {
+        if (response.ok) break;
+        const body = await response.text();
+        if (!rateLimitedFrom(response.status, body)) {
+          // Not a throttle: hand it to the status handling below with the body intact.
+          response = new Response(body, { status: response.status, headers: response.headers });
+          break;
+        }
+        if (attempt === RATE_LIMIT_ATTEMPTS - 1) {
+          throw new Error(
+            `${provider} rate-limited after ${RATE_LIMIT_ATTEMPTS} attempts: ${body.slice(0, 200)}`
+          );
+        }
+        const wait = retryAfterMs(response.headers.get('retry-after'), attempt);
+        console.warn(
+          `[${provider}] ${model} rate-limited (HTTP ${response.status}) — waiting ${wait}ms, ` +
+            `attempt ${attempt + 2}/${RATE_LIMIT_ATTEMPTS}`
+        );
+        await new Promise(resolve => setTimeout(resolve, wait));
+        response = await call(MODELS_REQUIRING_TEMP_1.has(model) ? 1 : 0.2);
       }
 
       if (response.status === 404) {
