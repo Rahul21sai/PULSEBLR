@@ -315,6 +315,7 @@ export type EventAudience = (typeof AUDIENCE_NAMES)[number];
 export const PERK_NAMES = [
   'breakfast',
   'lunch',
+  'dinner',
   'snacks',
   'swag',
   'certificate',
@@ -336,8 +337,29 @@ export type EventPerk = (typeof PERK_NAMES)[number];
 export const FOOD_PERKS: ReadonlySet<string> = new Set<string>([
   'breakfast',
   'lunch',
+  'dinner',
   'snacks',
 ]);
+
+/*
+ * `dinner` WAS MISSING FROM THE VOCABULARY ABOVE, AND IT IS THE COMMONEST CATERING
+ * SHAPE HERE. The spec's list came from a competitor's card and omitted it; measured
+ * against this corpus, **34 upcoming rows name dinner, a meal, a buffet or a thali**
+ * and could be given no food perk at all. An evening meetup with dinner is the
+ * ordinary Bengaluru case.
+ *
+ * The tagger stream found this and correctly refused the workaround: mapping dinner
+ * onto `snacks` to make the facet fill up. A perk list is a FACTUAL CLAIM about what
+ * is served, and a chip that lies to look complete is worse than a chip that is
+ * absent. It pinned the consequence as a deliberately-inverted test — `hasFood: 'yes'`
+ * with `perks: []` — rather than papering over it. Adding the bucket is the fix; this
+ * is it.
+ *
+ * Note `FOOD_RE` in `lib/llm/tagger.ts` is still BROADER than this set (it also
+ * matches `meal|buffet|catering`), which is why `hasFood` upgrades measured 0 rows:
+ * stored `hasFood` already said 'yes' wherever perks would now imply it. The two are
+ * allowed to differ — `hasFood` is a yes/no about food, `perks` is an itemised claim.
+ */
 
 /**
  * `hasFood` implied by a perk list, or `null` when the perks say nothing about

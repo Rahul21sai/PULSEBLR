@@ -15,6 +15,7 @@ import { tagEvents, TaggingInput, TaggingResult } from '../llm/tagger';
 import { isTargetCompanyEvent, hasRecruiterMention } from '../helpers/phase6';
 import { resolveCompanies } from '../companies/resolve';
 import { connectionScore } from '../events/connection-score';
+import { hasFoodFromPerks } from '../event-types';
 
 export interface NormalizedEvent {
   title: string;
@@ -29,6 +30,11 @@ export interface NormalizedEvent {
   tags: string[];
   format: 'online' | 'offline' | 'hybrid';
   hasFood: 'yes' | 'no' | 'unknown';
+  /** Controlled vocabularies; see `lib/event-types.ts`. Empty array = unknown. */
+  audience: string[];
+  perks: string[];
+  /** `undefined` means NO EVIDENCE, not "ordinary" — `EVENT_TIERS` has no unknown member. */
+  tier?: string;
   isFree: boolean;
   price?: number;
   priceMax?: number;
@@ -110,6 +116,8 @@ function resolveFormat(raw: RawEvent, tagged: TaggingResult): 'online' | 'offlin
 
 /** Build the tagger input for one raw event. */
 function toTaggingInput(raw: RawEvent): TaggingInput {
+  // Resolved once: `resolvePricing` is pure but not free, and it is read twice below.
+  const pricing = resolvePricing(raw);
   return {
     title: raw.title,
     description: raw.description,
@@ -119,6 +127,29 @@ function toTaggingInput(raw: RawEvent): TaggingInput {
       // Internal marker tags (kw:*, __cancelled) are plumbing, not signal.
       t => !t.startsWith('kw:') && !t.startsWith('__')
     ),
+    /*
+     * THE `tier` SIGNALS, WHICH THIS FUNCTION USED NOT TO PASS.
+     *
+     * `tier` is derived from venue class, host company, attendee count, the
+     * `Conference` category and price, and only the first of those was reaching the
+     * tagger — so an ingest-time verdict was strictly weaker than the backfill's,
+     * which reads whole stored documents. Passing these closes most of that gap, and
+     * every field stays optional on `TaggingInput` so a caller with less evidence
+     * still works.
+     *
+     * `categories` IS DELIBERATELY NOT PASSED, and an earlier version of this comment
+     * had it wrong. That field means categories in THIS APP'S taxonomy, which is the
+     * tagger's own output and does not exist yet at this point in the pipeline —
+     * `raw.rawCategory` holds the SOURCE's free-text labels, which are already folded
+     * into `hints` above where the category matcher can use them. Passing them as
+     * `categories` would have fed source strings to a rule that tests for the exact
+     * value `Conference`. The tagger computes its own and feeds them to
+     * `deriveCardMetadata` internally, so `tier`'s conference signal still works.
+     */
+    organizer: raw.organizer,
+    attendeeCount: raw.attendeeCount,
+    isFree: pricing.isFree,
+    price: pricing.price,
   };
 }
 
@@ -169,7 +200,19 @@ function assemble(raw: RawEvent, tagged: TaggingResult): NormalizedEvent {
     category: tagged.categories,
     tags,
     format,
-    hasFood: raw.rawHasFood === 'yes' ? 'yes' : tagged.hasFood,
+    /*
+     * UPGRADE-ONLY, and via the shared helper rather than a local rule.
+     *
+     * `hasFoodFromPerks` returns `'yes'` or `null`, where null means the perks are
+     * SILENT about food — not that there is none. So it may only ever promote, never
+     * contradict what the adapter or the tagger already said. Two shipped things read
+     * `hasFood` (the feed filter and `connectionScore`'s bonus), which is why it
+     * survives alongside `perks` instead of being replaced by it.
+     */
+    hasFood:
+      raw.rawHasFood === 'yes'
+        ? 'yes'
+        : (hasFoodFromPerks(tagged.perks) ?? tagged.hasFood),
     isFree: pricing.isFree,
     price: pricing.price,
     priceMax: pricing.priceMax,
@@ -195,6 +238,20 @@ function assemble(raw: RawEvent, tagged: TaggingResult): NormalizedEvent {
     lastSeenAt: new Date(),
     seenInSources: [raw.source],
     isTechEvent: tagged.isTechEvent,
+    /*
+     * CARD METADATA AT INGEST. Without these three lines the backfill script was the
+     * ONLY writer, so every scrape produced rows with no audience, perks or tier and
+     * the facets would drift empty again between manual runs.
+     *
+     * `tier` may legitimately be `undefined` — `EVENT_TIERS` has no `unknown` member,
+     * so absence is the only way to say "nothing here tells me", and defaulting the
+     * silent case to `community` would assert that a District comedy show is a
+     * community engineering gathering. Mongoose omits an undefined path, which is
+     * exactly the storage shape wanted.
+     */
+    audience: tagged.audience,
+    perks: tagged.perks,
+    tier: tagged.tier,
     companies,
     // Derived last, because it depends on the resolved format/companies/food above.
     connectionScore: connectionScore({

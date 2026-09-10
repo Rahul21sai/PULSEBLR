@@ -1,5 +1,14 @@
 import { EVENT_CATEGORIES } from '../models/Event';
-import { TECH_FLAG_CATEGORIES } from '../event-types';
+import {
+  TECH_FLAG_CATEGORIES,
+  AUDIENCE_NAMES,
+  PERK_NAMES,
+  EVENT_TIERS,
+  hasFoodFromPerks,
+  type EventAudience,
+  type EventPerk,
+  type EventTier,
+} from '../event-types';
 
 export interface TaggingResult {
   categories: string[];
@@ -8,6 +17,21 @@ export interface TaggingResult {
   /** True for a software/data/hardware/product-engineering event. */
   isTechEvent: boolean;
   confidence: number;
+  /** Who the event is for. Controlled vocabulary; see `AUDIENCE_NAMES`. Empty = unknown. */
+  audience: string[];
+  /** What you get in the room. Controlled vocabulary; see `PERK_NAMES`. Empty = unknown. */
+  perks: string[];
+  /**
+   * Browse label; see `EVENT_TIERS`. **`undefined` MEANS "NO EVIDENCE", NOT "ORDINARY".**
+   *
+   * `EVENT_TIERS` has no `unknown` member, so absence is the only way to say
+   * "nothing here tells me". Defaulting the silent case to `community` would put
+   * ~90% of the corpus in one bucket and make the label a synonym for "a row
+   * exists" — and it would assert, of a comedy show scraped from District, that it
+   * is a community engineering gathering. A facet that cannot be wrong cannot be
+   * useful either.
+   */
+  tier?: EventTier;
 }
 
 export interface TaggingInput {
@@ -17,11 +41,40 @@ export interface TaggingInput {
   onlineLink?: string;
   /** Adapter-supplied hints (Devfolio themes, Bevy event types, Meetup keywords). */
   hints?: string[];
+  /*
+   * ── FIELDS BELOW ARE FOR `tier` AND ARE ALL OPTIONAL ────────────────────────────
+   *
+   * `tier` is specified (spec §2.3) as coming from venue class, host company,
+   * attendee count, the `Conference` category and price — and only the first of
+   * those was already on this input. They are optional rather than required
+   * because `lib/scrapers/normalizer.ts#toTaggingInput` does not pass them today,
+   * so at INGEST `tier` is derived from title/description/venue alone while
+   * `scripts/backfill-card-metadata.ts`, which reads whole stored documents, has
+   * the full set. `deriveCardMetadata()` therefore has to work with any subset,
+   * and a run of the backfill is what sharpens an ingest-time verdict.
+   */
+  organizer?: string;
+  attendeeCount?: number;
+  isFree?: boolean;
+  price?: number;
+  /**
+   * Categories, when already known. Only `deriveCardMetadata()` reads this — the
+   * keyword floor computes its own first and feeds them in, and the backfill
+   * passes the stored ones. `Conference` is the single category `tier` consults.
+   */
+  categories?: string[];
 }
 
 const VALID_CATEGORIES = new Set<string>(EVENT_CATEGORIES);
 const VALID_FORMATS: TaggingResult['format'][] = ['online', 'offline', 'hybrid'];
 const VALID_FOOD: TaggingResult['hasFood'][] = ['yes', 'no', 'unknown'];
+const VALID_AUDIENCE = new Set<string>(AUDIENCE_NAMES);
+const VALID_PERKS = new Set<string>(PERK_NAMES);
+const VALID_TIERS = new Set<string>(EVENT_TIERS);
+
+/** Caps on the two arrays, so one over-eager response cannot fill a card with chips. */
+const MAX_AUDIENCE = 3;
+const MAX_PERKS = 4;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // BATCHING
@@ -102,6 +155,35 @@ Two of those categories are read as tech topics and are easy to reach for wrongl
 
 "confidence": 0.0-1.0
 
+The next three keys are OPTIONAL. OMITTING A KEY IS THE CORRECT ANSWER whenever the
+event copy does not say. An omitted key is filled in from keywords afterwards and
+costs nothing; a guessed one is a filter chip that hides the event from the very
+people it is for. Never invent one to look complete.
+
+"audience": up to 3 values chosen ONLY from:
+  students, juniors, senior-engineers, founders, leaders, product, data, security,
+  sre, researchers
+  Who the event is FOR, not what it is about. A Kubernetes talk is not automatically
+  "sre" — it is "sre" when it addresses operators, on-call or reliability work.
+
+"perks": up to 4 values chosen ONLY from:
+  breakfast, lunch, snacks, swag, certificate, recording, drinks
+  ONLY what the copy actually promises attendees. "No recording will be shared" is
+  not the recording perk, and "AWS Certification Prep" is not the certificate perk —
+  that is the subject, not something you are given.
+
+"tier": "flagship" | "community" | "advert" | "unknown"
+  flagship = a large named event: a real conference or corporate summit, a hotel or
+    convention-centre venue, hundreds of attendees.
+  community = an ordinary practitioner gathering: a meetup, a user group, a hack
+    night, a chapter event.
+  advert = not really an event. A coaching-institute demo class, a "new batch
+    starting" announcement, a certification course being sold, a placement-guarantee
+    or job-guarantee pitch, an enrolment enquiry session. BEING FREE DOES NOT MAKE IT
+    AN EVENT — a free demo class is still a sales session.
+  unknown = you cannot tell. Use it freely; it is not a failure.
+  This is a BROWSE LABEL, never a quality ranking.
+
 "event": the number from the "Event N:" heading this object classifies.
   REQUIRED. Copy it exactly. It is how each classification is matched back to its
   event, so an object without it, or with the wrong number, is discarded.
@@ -139,6 +221,15 @@ function buildBatchPrompt(inputs: TaggingInput[]): string {
       }
       if (input.venue) parts.push(`Venue: ${sanitizeForJson(input.venue)}`);
       if (input.onlineLink) parts.push('Has online link: yes');
+      // Evidence for `tier`, and only sent when an adapter actually observed it —
+      // an absent line is honest, a "Host: unknown" line is a token spent on nothing.
+      if (input.organizer) parts.push(`Host: ${sanitizeForJson(input.organizer)}`);
+      if (typeof input.attendeeCount === 'number' && input.attendeeCount > 0) {
+        parts.push(`Attendees so far: ${input.attendeeCount}`);
+      }
+      if (input.isFree === false && typeof input.price === 'number' && input.price > 0) {
+        parts.push(`Ticket price: INR ${Math.round(input.price)}`);
+      }
       if (input.hints?.length) parts.push(`Hints: ${sanitizeForJson(input.hints.slice(0, 8).join(', '))}`);
       return parts.join('\n');
     })
@@ -341,6 +432,21 @@ async function callOpenAICompatible(userPrompt: string, opts: ProviderConfig): P
           // indistinguishable from a malformed one at the parse layer, and was the
           // suspected cause of near-total fallback to keyword tagging.
           // Scaled for the largest batch a provider may receive (~200 tokens/event).
+          //
+          // RE-CHECKED when audience/perks/tier were added to the response shape,
+          // because that is exactly the "more output competes for the same budget"
+          // failure this number exists to absorb. The object went from roughly
+          //   {"categories":[..],"format":..,"hasFood":..,"isTechEvent":..,
+          //    "confidence":..,"event":1}                       ~110 chars, ~35 tok
+          // to that plus
+          //   "audience":["senior-engineers","data"],"perks":["snacks","swag"],
+          //   "tier":"community"                                 ~80 chars, ~25 tok
+          // — call it 60 tokens per event. At the largest batch (15, for ICA and
+          // Anthropic) that is ~900, so 4000 is still ~4x headroom and the 200/event
+          // figure above is still the conservative one. Left UNCHANGED deliberately:
+          // 4000 is a value these gateways are known to accept, and raising a
+          // max_tokens past a model's own completion cap is itself a 400. If a
+          // provider ever batches larger than ~60 events, recompute here first.
           max_tokens: 4000,
           temperature,
         }),
@@ -483,7 +589,41 @@ function parseBatchResponse(text: string, expected: number): unknown[] | null {
   return salvaged.length > 0 ? salvaged : null;
 }
 
-/** Coerce one model object into a schema-valid TaggingResult. */
+/**
+ * Pull a controlled-vocabulary array out of a model object.
+ *
+ * Returns `null` — not `[]` — when the key is absent or contained nothing valid, so
+ * the caller can tell "the model said nothing" from "the model said none". Only the
+ * first may fall back to the keyword floor; the second is an answer.
+ */
+function coerceVocabulary(
+  value: unknown,
+  valid: ReadonlySet<string>,
+  cap: number
+): string[] | null {
+  if (!Array.isArray(value)) return null;
+  const kept = value.filter(
+    (v): v is string => typeof v === 'string' && valid.has(v.trim().toLowerCase())
+  );
+  if (kept.length === 0) return null;
+  return [...new Set(kept.map(v => v.trim().toLowerCase()))].slice(0, cap);
+}
+
+/**
+ * Coerce one model object into a schema-valid TaggingResult.
+ *
+ * ── THE NEW FIELDS MAY NOT INVALIDATE THE OLD ONES ─────────────────────────────
+ * `audience`, `perks` and `tier` are read INDEPENDENTLY and each falls back on its
+ * own. A model that ignores all three, or emits garbage in them, still has its
+ * categories, format, food flag and tech flag applied exactly as before — the
+ * object is never rejected for the sake of the additions. That property is the only
+ * structural defence available against the documented risk that extra output
+ * degrades the fields that already work (CLAUDE.md §3: batch-of-8 produced 8 LLM
+ * tags out of 840). It does NOT defend against the other half of that risk — a
+ * model returning FEWER OBJECTS because each is longer — which nothing in the code
+ * can prevent and only a live measurement can detect. See the header of
+ * `scripts/diag-card-metadata.ts` for why that measurement is currently impossible.
+ */
 function coerce(raw: unknown, fallback: TaggingResult): TaggingResult {
   if (!raw || typeof raw !== 'object') return fallback;
   const obj = raw as Record<string, unknown>;
@@ -496,9 +636,27 @@ function coerce(raw: unknown, fallback: TaggingResult): TaggingResult {
     ? (obj.format as TaggingResult['format'])
     : fallback.format;
 
-  const hasFood = VALID_FOOD.includes(obj.hasFood as TaggingResult['hasFood'])
+  const perks = coerceVocabulary(obj.perks, VALID_PERKS, MAX_PERKS) ?? fallback.perks;
+  const audience = coerceVocabulary(obj.audience, VALID_AUDIENCE, MAX_AUDIENCE) ?? fallback.audience;
+
+  const rawTier = typeof obj.tier === 'string' ? obj.tier.trim().toLowerCase() : '';
+  // "unknown" is a value the prompt explicitly invites, and it is not in EVENT_TIERS.
+  // It lands here as an invalid string and correctly leaves the keyword verdict alone.
+  const tier = VALID_TIERS.has(rawTier) ? (rawTier as EventTier) : fallback.tier;
+
+  const statedFood = VALID_FOOD.includes(obj.hasFood as TaggingResult['hasFood'])
     ? (obj.hasFood as TaggingResult['hasFood'])
     : fallback.hasFood;
+  /*
+   * `hasFood` is UPGRADE-ONLY from perks, and `hasFoodFromPerks()` is the only
+   * definition of which perks count. It returns 'yes' or null, and null means the
+   * perks are SILENT rather than negative — so it may fill an 'unknown' and must
+   * never overwrite a stated 'yes' or 'no'. A model that lists lunch while saying
+   * hasFood 'no' has contradicted itself; the explicit field wins, because the one
+   * thing worse than a missing perk chip is a food filter that disagrees with the
+   * copy on the card.
+   */
+  const hasFood = statedFood === 'unknown' ? (hasFoodFromPerks(perks) ?? 'unknown') : statedFood;
 
   return {
     categories: categories.length > 0 ? [...new Set(categories)].slice(0, 3) : fallback.categories,
@@ -506,6 +664,9 @@ function coerce(raw: unknown, fallback: TaggingResult): TaggingResult {
     hasFood,
     isTechEvent: typeof obj.isTechEvent === 'boolean' ? obj.isTechEvent : fallback.isTechEvent,
     confidence: typeof obj.confidence === 'number' ? obj.confidence : 0.8,
+    audience,
+    perks,
+    tier,
   };
 }
 
@@ -802,6 +963,441 @@ const TECH_CATEGORIES = TECH_FLAG_CATEGORIES;
 const FOOD_RE =
   /\b(food|snacks?|refreshments?|lunch|dinner|breakfast|pizza|beverages?|drinks?|meal|catering|high tea|buffet)\b/i;
 
+// ─────────────────────────────────────────────────────────────────────────────
+// CARD METADATA — audience, perks, tier (keyword floor)
+//
+// These have a keyword floor for the same reason categories do: an event is never
+// dropped for want of a classification. A field only the LLM can set does not
+// degrade when providers are down, it DISAPPEARS — and it disappears silently,
+// because an empty facet looks like an honest absence of data.
+//
+// That is not hypothetical here. Measured 2026-09-10 in this checkout: IBM ICA
+// returns 401 (expired developer key), NVIDIA's configured
+// meta/llama-3.1-8b-instruct returns 410 (end of life 2026-08-26) and all 80 models
+// its /models endpoint lists return 404 "not found for account", and
+// ANTHROPIC_API_KEY is unset. Every tier of the cascade is down, so THIS FLOOR IS
+// CURRENTLY THE WHOLE TAGGER, including for the daily cron.
+//
+// ── HOW THESE PATTERNS WERE BUILT, WHICH IS THE PART TO PRESERVE ──────────────
+// A widened regex fails by SILENTLY OVER-MATCHING, and no aggregate count reveals
+// it — the corpus lesson is a bare `\bpm\b` matching the "PM" in "6 PM" and tagging
+// a fifth of the corpus Product/Design. So the rule applied throughout below is:
+// a word that has a common non-technical sense in Bengaluru event copy is only
+// matched INSIDE A PHRASE that fixes its sense, or not at all. The words deliberately
+// left out are named at each entry, because the next person's instinct will be to
+// add exactly those.
+//
+// `tests/card-metadata.test.ts` pins the refusals alongside the matches, and its
+// negative half is the important half.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Which text a pattern is allowed to read.
+ *
+ * ── THIS IS `resolve.ts`'s `strength` IDEA, APPLIED TO AUDIENCE ────────────────────
+ * `lib/companies/resolve.ts` matches a `distinctive` company name anywhere including
+ * descriptions, but an `ambiguous` one ONLY against the organiser field, because a
+ * bare mention of "Intel" in a description means nothing while "Intel" as the host
+ * means Intel is hosting. Narrowing the FIELD is how that file defuses an ambiguous
+ * token without deleting it.
+ *
+ * The same tool is needed here, and measurement is what showed it. `founders` was the
+ * most common audience in the corpus at 178 of 1149 upcoming rows (15.5%) — more than
+ * students and senior engineers combined — because a description saying "our founder
+ * will open the evening" is not an event for founders. The rows it produced included
+ * `Roots & Shoots: A morning of Stories by Grandparents`, `The Friends Who Shaped You`
+ * and `The Space Between: Women in Midlife`, all from a mental-health festival whose
+ * blurb names its founder. That is the same class of leak as `Docker` being attributed
+ * to a SriVidya meditation meetup, from the same direction.
+ *
+ * So a bare `founder` is read from the TITLE only, where naming the audience is what
+ * a title is for; the phrase forms ("for founders", "first-time founders") stay
+ * readable anywhere because the phrase itself fixes the sense.
+ */
+type PatternScope = 'text' | 'title';
+
+/**
+ * Who the event is for. Exported so a diagnostic measures THE pattern rather than a
+ * copy of it — `diag-scorecard.ts` kept a copy of the category patterns and it
+ * drifted within one session, reporting the tagger's correct refusal as a miss.
+ *
+ * A name may appear MORE THAN ONCE, with different scopes; the derivation dedupes.
+ */
+export const AUDIENCE_KEYWORDS: Array<[EventAudience, RegExp, PatternScope?]> = [
+  // `campus`, `college`, `fresher` are the India-specific forms that actually appear.
+  ['students', /\b(students?|studentsonly|college|campus|university|undergrad(?:uate)?s?|freshers?|final[- ]?year|sophomores?|school kids?)\b/i],
+  /*
+   * `fundamentals` and `basics` are deliberately OUT: "Fundamentals of Yoga",
+   * "Basics of Vedic Astrology". They describe depth, not an audience, and they are
+   * everywhere in the non-tech 74% of this corpus.
+   *
+   * `101` is matched only after a word of THREE OR MORE LETTERS that is not a currency
+   * token — `\b(?!inr\b|usd\b|eur\b|rupees?\b)[a-z]{3,}\s+101\b` — which is how the
+   * real title form reads: "Kubernetes 101", "Docker 101".
+   *
+   * Both halves of that guard were put there by a failing test, not by foresight. A
+   * bare `\b101\b` matches a ticket price of `₹101`, an auspicious amount that is
+   * common in Indian pricing: `₹` is a non-word character, so `\b` holds in front of
+   * the digits and the price reads as a beginner event. And the first attempt,
+   * `[a-z]\s+101\b`, still matched `Rs 101` and `at 101` — a two-letter word is enough
+   * to satisfy `[a-z]`, so the guard let through exactly the case it was written for.
+   *
+   * The ORDINAL words are excluded for the same reason, and measurement is what found
+   * them: 4 upcoming rows rely on the `101` branch alone, and one of them is
+   * `LIT-MIC: Bengaluru Open Mic | Poetry, Stories, Comedy — Edition 101`, where 101
+   * is a count of editions, not a difficulty. `edition|episode|volume|part|chapter|
+   * room|batch|session|week|day|no` are therefore refused in front of it. The other 3
+   * are genuine ("Brand Marketing 101", "Founder 101").
+   *
+   * If the branch ever costs more than it earns, delete it; the phrase forms beside it
+   * carry this audience on their own. `scripts/diag-card-metadata.ts` prints every row
+   * that depends on it, precisely so that stays a decision rather than a hope.
+   */
+  ['juniors', /(?:\b(beginners?|beginner[- ]friendly|newcomers?|no prior experience|no experience (?:needed|required)|entry[- ]level|getting started|first[- ]time contributors?|intro to|introduction to)\b|\b(?!inr\b|usd\b|eur\b|rupees?\b|edition|episode|volume|part|chapter|room|batch|session|week|day|no\b)[a-z]{3,}\s+101\b)/i],
+  /*
+   * NEVER a bare `senior` — "senior citizen" yoga, walks and health camps are a real
+   * category of Bengaluru event, and they are not for senior engineers.
+   * NEVER a bare `architect` either: building architects hold expos here, and
+   * `Arts/Culture` is full of "architecture walks". Both words are matched only when
+   * a qualifier fixes the sense.
+   * `advanced` is OUT entirely for the same reason ("advanced yoga", "advanced Garba")
+   * and no phrase form of it was frequent enough in the corpus to be worth the risk.
+   */
+  ['senior-engineers', /\b(senior\s+(?:engineers?|developers?|devs?|software|backend|back[- ]end|frontend|front[- ]end|full[- ]?stack|data|platform|sres?|architects?|technical)|staff engineers?|principal engineers?|tech(?:nical)? leads?|(?:software|solutions?|cloud|data|systems?|security|enterprise)\s+architects?|deep dives?|internals|under the hood)\b/i],
+  // Phrase forms — the phrase fixes the sense, so these may read the description.
+  ['founders', /\b(co[- ]?founders?|solopreneurs?|bootstrapp(?:ed|ing)|first[- ]time founders?|early[- ]stage founders?|startup founders?|for founders|founders? only|founder[- ]led|indie hackers?)\b/i],
+  // Bare forms — TITLE ONLY. See the `PatternScope` note above for the 178-row
+  // measurement that forced this, and the grandparents' storytelling event it produced.
+  ['founders', /\b(founders?|entrepreneurs?)\b/i, 'title'],
+  /*
+   * `director` is matched only in an engineering/product form: "creative director",
+   * "film director" and "managing director" are Arts and Business copy.
+   *
+   * BARE `leadership` AND `executives` WERE REMOVED AFTER MEASURING THEM. An earlier
+   * version kept them on the reasoning that "an HR Leadership Summit really is for
+   * leaders", which is true and was still the wrong call: of 69 rows carrying
+   * `leaders`, the single largest block was one recurring Toastmasters event —
+   * `In Person - PUBLIC SPEAKING/LEADERSHIP WORKSHOP` — and CLAUDE.md already names
+   * Toastmasters as the bulk of what the `Meetup` category catches wrongly. A public-
+   * speaking practice club is not an audience of engineering leaders. The qualified
+   * forms are kept, so "Engineering Leadership Meetup" still lands.
+   */
+  ['leaders', /\b(cto|ciso|cio|cxo|cpo|c[- ]suite|vps? of engineering|vp eng(?:ineering)?|engineering managers?|eng(?:ineering)? leaders?|heads? of (?:engineering|product|data|platform|design)|(?:engineering|technology|technical|product) directors?|directors? of (?:engineering|product|technology)|(?:engineering|tech(?:nical)?|product|data) leadership|leadership team)\b/i],
+  /*
+   * NO BARE `\bpm\b` AND NO BARE `\bui\b`. This is the exact pattern the corpus's
+   * most expensive regex mistake was made in: `pm` matched the time in "6 PM".
+   * `roadmap` is also out — "roadmap to becoming a data scientist" is a course advert.
+   */
+  ['product', /\b(product managers?|product management|product owners?|producttank|\bux\b|ui\/ux|user research|design systems?|product design(?:ers?)?|discovery workshops?)\b/i],
+  /*
+   * NEVER a bare `data`. The `Data/Analytics` CATEGORY pattern above does match it,
+   * and that is defensible for a topic tag; as an AUDIENCE it would fire on "data
+   * centre", "your data is safe" and "data privacy policy". Job titles only.
+   */
+  ['data', /\b(data engineers?|data scientists?|data analysts?|analytics engineers?|\bdbas?\b|data platform|business intelligence|\bbi\s+(?:analysts?|developers?|engineers?)|ml engineers?|machine learning engineers?)\b/i],
+  /*
+   * NEVER a bare `security`: "security guard", "job security", "social security",
+   * "food security". Role and practice forms only.
+   */
+  ['security', /\b(security engineers?|security researchers?|security analysts?|appsec|infosec|pentesters?|penetration testers?|red team|blue team|purple team|soc analysts?|threat hunt(?:er|ers|ing)|bug bount(?:y|ies)|ethical hack(?:er|ers|ing)|\bciso\b)\b/i],
+  ['sre', /\b(sres?|site reliability|devops engineers?|platform engineers?|on[- ]call|incident (?:response|management)|observability|reliability engineers?|infrastructure engineers?|chaos engineering)\b/i],
+  /*
+   * `researchers?` rather than `research`: "user research" is a PRODUCT signal and
+   * "market research" is Business. The `-er` requirement separates them at no cost.
+   */
+  ['researchers', /\b(researchers?|research scientists?|\bphd\b|post[- ]?docs?|paper reading|arxiv|academia|academics?|dissertations?|research labs?)\b/i],
+];
+
+/**
+ * What you actually get in the room.
+ *
+ * ── `dinner` HAS NO BUCKET, AND THAT IS A GAP IN `PERK_NAMES`, NOT AN OMISSION HERE ──
+ * `PERK_NAMES` is breakfast/lunch/snacks/swag/certificate/recording/drinks, and
+ * `FOOD_PERKS` — the only definition of which perks constitute food — is
+ * breakfast/lunch/snacks. An evening meetup that promises dinner, which is the most
+ * common catering shape in this corpus, can therefore express nothing here. Mapping
+ * it onto `snacks` was considered and rejected: a perk list is a factual claim about
+ * what is served, and calling dinner a snack makes the chip on the card wrong in
+ * order to make a facet look full.
+ *
+ * Consequence to expect, and it is visible on a card: such an event gets
+ * `perks: []` while `hasFood` is still 'yes', because `FOOD_RE` above does match
+ * `dinner`. The two are not in conflict — `hasFood` is the older, broader field and
+ * `hasFoodFromPerks()` may only ever UPGRADE it — but the food facet under-reports
+ * until `dinner` is added to `PERK_NAMES`. `scripts/diag-card-metadata.ts` counts the
+ * affected rows so the decision can be made on a number.
+ */
+export const PERK_KEYWORDS: Array<[EventPerk, RegExp, PatternScope?]> = [
+  ['breakfast', /\b(breakfast)\b/i],
+  ['lunch', /\b(lunch(?:es)?|lunch break)\b/i],
+  /*
+   * `dinner` WAS THE MISSING BUCKET, and an evening meetup with dinner is the ordinary
+   * Bengaluru shape -- 34 upcoming rows named a dinner, meal, buffet or thali and could be
+   * given no food perk at all. It was added to `PERK_NAMES` and this table had no way to
+   * produce it, which `tests/card-metadata.test.ts` caught as an unreachable chip: a
+   * vocabulary value no keyword can derive is the "facet that can only render empty"
+   * problem moved inside the vocabulary.
+   *
+   * ONLY THE WORDS THAT NAME THE EVENING MEAL ARE HERE. `meal`, `buffet` and `catering`
+   * stay out even though `FOOD_RE` matches them for `hasFood`, and the distinction is the
+   * point: those say food WITHOUT saying which meal, so filing them under `dinner` would
+   * make the chip a false factual claim about a lunchtime buffet. `hasFood` is a yes/no
+   * about food and is allowed to be broader; `perks` is an itemised claim and is not.
+   *
+   * `dinner` is safe bare -- unlike the `coffee`/`tea` over-match that put "Flow State Work
+   * - Beat procrastination" under `drinks` -- because the word has no non-food sense in this
+   * corpus, and "Founders Dinner" is a real dinner.
+   */
+  ['dinner', /\b(dinners?|supper|thali)\b/i],
+  // `pizza` and `samosa` are the two foods this corpus names by name.
+  ['snacks', /\b(snacks?|refreshments?|high tea|finger foods?|light bites|pizzas?|samosas?|munchies|evening tea|tea and biscuits)\b/i],
+  // `tees` is OUT: "committees" contains it. `merch` is safe inside \b…\b because
+  // "merchant" has no boundary after "merch".
+  ['swag', /\b(swags?|goodie bags?|goodies|t[- ]?shirts?|stickers?|merch|merchandise|freebies)\b/i],
+  /*
+   * A CERTIFICATE IS SOMETHING YOU ARE GIVEN, NOT A SUBJECT. Bare `certification`
+   * and `certified` are deliberately absent: "AWS Certification Prep", "Get Google
+   * AI Certified … Cohort" and "Azure Certification Bootcamp" name the exam as the
+   * topic, and this corpus is full of them — matching those would make `certificate`
+   * the most common perk in the database while describing almost nothing given away.
+   * Worse, it is the coaching-advert vocabulary, so the perk would correlate with the
+   * rows `tier: 'advert'` exists to isolate. A giving-context is required.
+   */
+  ['certificate', /\b(certificates? of (?:participation|completion|attendance)|participation certificates?|certificates? (?:will be |are )?(?:provided|awarded|issued|given|included)|(?:provided|awarded|issued) certificates?)\b/i],
+  /*
+   * Likewise a POSITIVE context. "Recording is not permitted", "no recording of this
+   * session" and "photography and recording prohibited" all contain the word, and a
+   * bare match would promise a replay the event forbids.
+   */
+  ['recording', /\b(recordings? (?:will be |are |is |be )?(?:shared|provided|available|sent|posted)|(?:sessions?|talks?|it) will be recorded|recorded and (?:shared|posted|uploaded)|\breplays?\b|on[- ]demand (?:access|replay|recordings?))\b/i],
+  /*
+   * Beverages generally, not alcohol specifically.
+   *
+   * BARE `coffee`, `tea` AND `chai` WERE HERE AND WERE REMOVED AFTER MEASURING. With
+   * them, `drinks` was the commonest perk in the corpus at 96 of 1149 rows, and the
+   * matched-substring column showed why: `Flow State Work - Beat procrastination` (four
+   * copies) matched on `coffee` appearing in the body copy as a subject, not a promise.
+   * Those three words name the topic of an event as often as its catering here, and
+   * "coffee chat" is an event FORMAT rather than something you are given.
+   *
+   * `drinks` itself stays bare, because "drinks after" and "drinks at 7" is exactly how
+   * this perk is written. The coffee forms are kept where a provision context makes the
+   * promise explicit. `high tea` is food and is claimed by `snacks` above.
+   */
+  ['drinks', /\b(drinks?|beers?|beverages?|cocktails?|mocktails?|happy hour|free (?:coffee|tea|chai)|(?:coffee|chai|tea) (?:and|&) (?:snacks|refreshments|biscuits|cookies)|(?:coffee|chai|tea) will be (?:provided|served|available)|unlimited (?:coffee|chai|tea))\b/i],
+];
+
+/**
+ * Not really an event: the coaching-institute funnel.
+ *
+ * EVERY ENTRY IS A PHRASE, never a bare word, and that is not stylistic. `course`,
+ * `training` and `demo` all appear innocently in real event copy — "a crash course in
+ * Rust internals", "Demo Night" — and a bare-word list is how you mislabel a fifth of
+ * the corpus. `demo` is only matched as `demo class` / `demo session` / `demo lecture`
+ * / `demo at <somewhere>`, because "Demo Night", "Demos" and "Demo Day" are among the
+ * BEST events for connections, which is the same distinction
+ * `lib/events/connection-score.ts` makes with a lookahead.
+ *
+ * ── WHY THIS IS NOT `FUNNEL_PATTERN` FROM `connection-score.ts` ─────────────────
+ * They answer different questions and must be allowed to disagree. `FUNNEL_PATTERN`
+ * asks "will I leave with contacts", so it penalises `webinar` and `bootcamp` — a
+ * legitimate community webinar scores low and deserves to, but it is an event and is
+ * NOT an advert. `tier` is a browse label the operator uses to isolate junk, so
+ * calling a real webinar 'advert' would be a false accusation about the organiser,
+ * not merely a low rank. This pattern is therefore strictly narrower.
+ *
+ * `scripts/diag-coaching-leak.ts` holds a third, independent list for the same
+ * quarry. The overlap between it and this pattern is reported by
+ * `scripts/diag-card-metadata.ts` rather than assumed, so a divergence shows up as a
+ * number instead of as a silent gap.
+ */
+/*
+ * ── THE `demo at <institute>` BRANCH SITS OUTSIDE THE SHARED TRAILING `\b` ─────────
+ * Everything else here ends on a word character, so one `\b(?:…)\b` wrapper serves
+ * them all. `demo at eMexo` does not: the branch has to consume the first letter of
+ * the institute's name to be worth anything, and a trailing `\b` after that letter
+ * then fails against the SECOND letter. Written inside the wrapper it silently matched
+ * nothing, and the row it exists for — `Free Gen AI & Agentic AI Demo at eMexo
+ * Technologies`, one of the two adverts CLAUDE.md records at the top of the feed —
+ * came back with no tier at all. Caught by a test, not by reading.
+ *
+ * `(?!the\b|our\b|\d)` keeps the innocent forms out: "live demo at the office",
+ * "demo at our campus", "demo at 5pm". What is left is the shape a coaching centre
+ * actually writes, which is "Demo at <its own name>".
+ */
+export const ADVERT_PATTERN =
+  /(?:\b(?:(?:free|paid)\s+(?:demo|trial)\s+(?:class|session|lecture|lesson)|demo\s+(?:class|lecture|lesson)|(?:training|coaching)\s+(?:institute|cent(?:re|er)|academy|classes)|placement\s+(?:assistance|guarantee|support|training)|100%\s+(?:placement|job)|job\s+guarantee|(?:certification|certificate)\s+(?:course|program|programme|training|classes)|batch\s+(?:starting|starts|start|commenc)|new\s+batch|enroll?\s+now|admissions?\s+open|limited\s+seats?\s+(?:available|left)|live\s+project\s+training|(?:get|become)\s+\w+\s+certified|crash\s+course|(?:online|offline)\s+training\s+(?:institute|cent(?:re|er))|interview\s+questions?\s+(?:and|&)\s+answers?)\b|\bdemos?\s+at\s+(?!the\b|our\b|\d)[a-z])/i;
+
+/**
+ * A large, named, once-a-year event — by NAME, not by the word "summit".
+ *
+ * `summit` IS DELIBERATELY ABSENT, and it is the single most instructive omission in
+ * this file. `lib/event-types.ts` records the measurement: the `Conference` category
+ * pattern lists `summit`, and the rows it caught were `Kudremukh New Year Trek`,
+ * `Kudremukha Trek` and `Tadiandamol Coorg Trek` — a trek goes to a summit. Alongside
+ * them, `Property Expo`, `Dubai Real Estate Expo`, `Garment Technology Expo`,
+ * `World Healthcare Expo & Summit` and `Bangalore HR Summit`. 17 of 20 such rows were
+ * not tech events at all. So `summit`, `expo`, `convention` and `congress` are all out
+ * of this pattern; a flagship is recognised by a brand name, a venue class, an
+ * attendee count, or a Conference category plus one of those — never by a noun that
+ * mountains also have.
+ */
+export const FLAGSHIP_TITLE_PATTERN =
+  /\b(devfest|kubecon|droidcon|pycon|pyconf|jsconf|rubyconf|gophercon|rootconf|indiafoss|fossasia|fosdem|nullcon|defcon|def con|re:invent|google i\/o|io connect|great indian developer summit|\bgids\b|open source india|the fifth elephant|techsparks|grace hopper|cypher \d{4}|nvidia gtc|\bgtc\b|microsoft ignite|red hat summit|kubernetes community days|\bkcd\b)\b/i;
+
+/**
+ * Venue classes that mean money was spent on the room.
+ *
+ * ── LUXURY HOTELS WERE IN THIS LIST AND WERE REMOVED AFTER MEASURING IT ────────────
+ * The first version named properties: JW Marriott, Sheraton Grand, Taj, The Leela,
+ * Lalit Ashok, Chancery Pavilion, Le Meridien, Conrad, Grand Hyatt. A test in
+ * `tests/card-metadata.test.ts` even asserted that a generic "Hotel Sai Palace" is not
+ * a flagship venue — which passed, and missed the point completely, because the
+ * problem was the NAMED hotels rather than the word "hotel". Run against the corpus,
+ * two of the 18 flagship rows were:
+ *
+ *     Bangalore's Big Business, Tech & Entrepreneur Professional Networking Event
+ *                                                        venue: JW Marriott Hotel
+ *     Apparel Sourcing Week 2026                         venue: Sheraton Grand
+ *
+ * The first is a row `lib/event-types.ts` lists by name among the 17 false positives a
+ * blanket `Conference` rule would admit. A business mixer books a five-star ballroom
+ * precisely because that is what such mixers do; the hotel is evidence of a budget,
+ * not of a flagship engineering event.
+ *
+ * What is left is PURPOSE-BUILT convention and exhibition space, which is booked for a
+ * different reason and at a different scale. That kept LASER WORLD OF PHOTONICS (BIEC),
+ * Open Source India (NIMHANS Convention Centre) and Grace Hopper Celebration India
+ * (Karnataka Trade Promotion Organisation) and dropped both mixers.
+ */
+export const FLAGSHIP_VENUE_PATTERN =
+  /\b(convention cent(?:re|er)|exhibition cent(?:re|er)|convention hall|\bbiec\b|bangalore international exhibition|palace grounds|tripura vasini|\bktpo\b|karnataka trade promotion|nimhans convention|jio world|bangalore international cent(?:re|er)|world trade cent(?:re|er)|exhibition grounds?)\b/i;
+
+/**
+ * Positive evidence of a peer gathering — required before `community` is asserted.
+ *
+ * `community` is not the default for "no evidence"; see `TaggingResult.tier`.
+ */
+const COMMUNITY_TITLE_PATTERN =
+  /\b(meetups?|meet ?ups?|user groups?|community (?:meet|day|event|call|night)|chapter (?:meet|event|launch)|hack ?nights?|hackathons?|hack days?|show ?and ?tell|lightning talks?|unconference|open house|study (?:group|jam)|book club|coffee chat|tech talks?|dev ?fest|birds of a feather)\b/i;
+
+/** Categories whose presence alone makes "an ordinary practitioner gathering" fair. */
+const COMMUNITY_CATEGORIES = new Set(['Meetup', 'Hackathon', 'Open Source']);
+
+/**
+ * The attendee count that counts as ONE piece of flagship evidence.
+ *
+ * ── MEASURED, AND AN EARLIER "MEASURED" COMMENT HERE WAS WRONG ─────────────────────
+ * This comment previously cited 1246 upcoming events, 84 with a count, median 26, p90
+ * 178, max 1101. Those figures were written before the query was run and none of them
+ * is right. The real distribution, `scripts/diag-card-metadata.ts` on 2026-09-10 over
+ * 1149 upcoming events:
+ *
+ *     rows carrying an attendeeCount at all   45 of 1149   (3.9%)
+ *     median 50 · p75 123 · p90 216 · p99 394 · max 445
+ *
+ * 120 therefore still sits at roughly the top quartile of the rows that have a count
+ * at all, which is what it is for.
+ *
+ * ── THERE IS NO "BIG ENOUGH ON ITS OWN" THRESHOLD ANY MORE ─────────────────────────
+ * There was one, at 400, on the reasoning that a genuinely huge event needs no second
+ * signal. Against the corpus it selected exactly one row — `UNFOLD Walk: Agara
+ * Edition`, 445 attendees — which is a walk round a lake. A 100% false-positive rate on
+ * a sample of one is not evidence of anything, but the rule cost more than the single
+ * true positive it might one day catch, and the ceiling of this corpus (445) sits below
+ * where such a rule would need to be to be safe. So a marquee NAME is now the only
+ * single-signal route to flagship, and everything else takes two.
+ *
+ * Re-measure before restoring it. A threshold picked against a different corpus is a
+ * guess wearing a constant's clothes.
+ */
+const FLAGSHIP_ATTENDEES_MODERATE = 120;
+
+/** A ticket this expensive is a corporate conference, not a community evening. */
+const FLAGSHIP_PRICE = 5000;
+
+export interface CardMetadata {
+  audience: string[];
+  perks: string[];
+  tier?: EventTier;
+}
+
+/**
+ * Derive `audience`, `perks` and `tier` from a document's own fields.
+ *
+ * ONE DEFINITION, used by the keyword floor below, by `scripts/backfill-card-metadata.ts`
+ * and by `scripts/diag-card-metadata.ts`. The backfill passes richer input (organiser,
+ * attendee count, price, stored categories) than the ingest path currently can, so the
+ * same function gives a sharper verdict there — see the note on `TaggingInput`.
+ */
+export function deriveCardMetadata(input: TaggingInput): CardMetadata {
+  const title = input.title || '';
+  const text = `${title} ${input.description || ''} ${(input.hints || []).join(' ')}`;
+  const categories = input.categories || [];
+
+  const audience = new Set<string>();
+  for (const [name, pattern, scope] of AUDIENCE_KEYWORDS) {
+    // A `title` scope is the narrowed-field defence, not an optimisation. See PatternScope.
+    if (pattern.test(scope === 'title' ? title : text)) audience.add(name);
+  }
+
+  const perks = new Set<string>();
+  for (const [name, pattern, scope] of PERK_KEYWORDS) {
+    if (pattern.test(scope === 'title' ? title : text)) perks.add(name);
+  }
+
+  return {
+    // Ordered most-specific-first in the tables above, so a slice keeps the best signals.
+    audience: [...audience].slice(0, MAX_AUDIENCE),
+    perks: [...perks].slice(0, MAX_PERKS),
+    tier: deriveTier({ ...input, categories }),
+  };
+}
+
+/**
+ * `flagship` | `community` | `advert`, or `undefined` when nothing says.
+ *
+ * Precedence is `advert` → `flagship` → `community`, and `advert` FIRST is the load-
+ * bearing order. A coaching centre's "Certification Course at our Whitefield academy"
+ * can easily also carry a Conference category and a hotel venue; deciding flagship
+ * first would promote exactly the rows this label exists to isolate.
+ *
+ * The advert test reads the TITLE AND DESCRIPTION, unlike `offCityReason()` which
+ * deliberately never reads a description — the asymmetry is about consequence.
+ * Mis-reading a description there DELETES a row; here it mislabels a browse chip that
+ * an operator can see and correct in `/admin`.
+ */
+function deriveTier(input: TaggingInput): EventTier | undefined {
+  const title = input.title || '';
+  const text = `${title} ${input.description || ''}`;
+  const categories = input.categories || [];
+  const going = input.attendeeCount ?? 0;
+
+  if (ADVERT_PATTERN.test(text)) return 'advert';
+
+  const marqueeName = FLAGSHIP_TITLE_PATTERN.test(title);
+  const bigVenue = FLAGSHIP_VENUE_PATTERN.test(`${input.venue || ''} ${input.organizer || ''}`);
+  const isConference = categories.includes('Conference');
+  const pricey = input.isFree === false && (input.price ?? 0) >= FLAGSHIP_PRICE;
+
+  // A marquee name is the ONLY single-signal route: IndiaFOSS is IndiaFOSS at any RSVP
+  // count, and the name is checked against a hand list rather than a noun a mountain
+  // also has. See FLAGSHIP_ATTENDEES_MODERATE for the count-alone rule that was removed.
+  if (marqueeName) return 'flagship';
+  // Everything else takes two signals, so that neither a top-quartile RSVP count nor a
+  // Conference tag alone — the tag a trek earns from the word "summit" — is enough.
+  const supporting = [isConference, bigVenue, pricey, going >= FLAGSHIP_ATTENDEES_MODERATE].filter(
+    Boolean
+  ).length;
+  if (supporting >= 2) return 'flagship';
+
+  if (COMMUNITY_TITLE_PATTERN.test(title) || categories.some(c => COMMUNITY_CATEGORIES.has(c))) {
+    return 'community';
+  }
+
+  return undefined;
+}
+
 /**
  * The keyword pattern for one category, or undefined if it has none.
  *
@@ -832,12 +1428,32 @@ export function keywordTagging(input: TaggingInput): TaggingResult {
     format = 'online';
   }
 
+  // Categories are computed above, so `tier` sees them here even though the caller
+  // did not supply any — which is how a keyword-only run still gets the Conference
+  // and Meetup signals `deriveTier` reads.
+  const card = deriveCardMetadata({ ...input, categories: chosen });
+
+  /*
+   * `hasFood` upgrade-only, through `hasFoodFromPerks()` — the ONE definition of
+   * which perks count as food. `FOOD_RE` is broader than `FOOD_PERKS` (it matches
+   * `dinner`, `meal`, `buffet`, `catering`, none of which has a perk bucket), so it
+   * is asked first and the perk derivation can only ever fill an 'unknown' it left.
+   * Never the other way round: a perk list that is silent about food is not evidence
+   * that there is none.
+   */
+  const foodFromText: TaggingResult['hasFood'] = FOOD_RE.test(text) ? 'yes' : 'unknown';
+  const hasFood =
+    foodFromText === 'unknown' ? (hasFoodFromPerks(card.perks) ?? 'unknown') : foodFromText;
+
   return {
     categories: chosen,
     format,
-    hasFood: FOOD_RE.test(text) ? 'yes' : 'unknown',
+    hasFood,
     isTechEvent: chosen.some(c => TECH_CATEGORIES.has(c)),
     confidence: 0.6,
+    audience: card.audience,
+    perks: card.perks,
+    tier: card.tier,
   };
 }
 
