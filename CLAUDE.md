@@ -1732,6 +1732,124 @@ interactions, `diag-people-spine.ts` all 9 checks passing, and the backfill idem
 
 **Not built, deliberately:** follow-up message drafting (Phase 3 item 3 — the retention stream left it
 rather than add a second unexercised path); the 36 Meetup groups still capped by the page's own 30-row
-ceiling (needs GraphQL cursor pagination); `scripts/diag-landing-pages.ts`; the events-surface spec's
-`audience`/`perks`/`tier` shelves; and a "recently deleted" admin listing — undo is reached through the
+ceiling (needs GraphQL cursor pagination); `scripts/diag-landing-pages.ts`; and a "recently deleted" admin listing — undo is reached through the
 audit log, so the partial index on `deletedAt` is currently unqueried and says so in its own comment.
+
+
+---
+
+### 15. What landed 2026-09-10, second batch — the events surface
+
+Six more streams. Commits carry the measurements; this section is the map plus the traps.
+
+> **EVERY LLM TIER IS DOWN, AND THE KEYWORD FLOOR IS PRODUCTION. Measured 2026-09-10.**
+>
+> | tier | status |
+> | --- | --- |
+> | IBM ICA | **401** `{"error":"Developer API key has expired"}` |
+> | NVIDIA NIM | **410** `meta/llama-3.1-8b-instruct` — **end of life 2026-08-26** |
+> | NVIDIA NIM | **404** on every candidate, *including models `GET /models` lists* — "Not found for account", so this is **account access**, not a stale model name |
+> | Anthropic | `ANTHROPIC_API_KEY` unset |
+>
+> `check-llm.ts` reports `Tagging: 0/2 via LLM`. **699 events created since the EOL are 100%
+> keyword-tagged**; 762 of 1616 corpus-wide carry the `tagConfidence: 0.6` fingerprint.
+>
+> **The floor did its job: 0 of those 699 have zero categories.** Nothing was dropped — which is
+> exactly what §3's "an event is never dropped for want of a classification" promises, now
+> demonstrated under real total provider failure rather than argued. The cost is coarser tags and
+> `isTechEvent` derived from categories rather than judged.
+>
+> Three separate credentials need attention, and `NVIDIA_MODEL` alone will not fix it — no model on
+> that account answers. `check-nvidia-models.ts` exists to choose one from evidence once access is
+> restored. Note the **ICA key expiring affects other projects that depend on it**, not only this one.
+
+| Stream | Where | The one thing to know |
+| --- | --- | --- |
+| Card metadata | `lib/llm/tagger.ts` | `audience`/`perks`/`tier` derived in the **existing** batch-of-5 call. Five patterns were wrong and **measurement caught every one**. |
+| Shelves + week strip | `app/page.tsx`, `app/components/shelves/**` | Two of the three specified shelves **had no data** and were refused. |
+| Event page + speakers | `lib/events/score-reason.ts`, `speaker-match.ts` | The reason is **measured** from the scorer, not restated. Speakers can never create a `Person`. |
+| Weekly digest | `lib/notifications/digest-schedule.ts` | `digestFrequency` was stored and unread. A fan-out from **one** address to N. |
+| Area resolution | `lib/scrapers/core/geo.ts` | Three tokens were assigning the **wrong** area. 52.1% → 63.7%, ceiling 77%. |
+| Folder bulk + date | `lib/scan/follow-up.ts` | A follow-up instant is **noon IST**, not midnight. |
+
+> **"ENDS SOON" AND "FREE THIS WEEK" DO NOT EXIST, AND BOTH REFUSALS ARE MEASURED.** The plan
+> specified them and was wrong twice, having correctly rejected `attendeeCount` at 3% coverage in the
+> same table.
+> · **`registrationDeadline` is a date on 0 of 1616 documents.** The 14 carrying the key hold explicit
+>   nulls, all `source: 'manual'`. Only `devfolio.ts` and `unstop.ts` ever write it and neither has an
+>   upcoming row. **Consequence: the digest's "registration deadlines" section is dormant** — it
+>   guards on `length > 0` so it renders nothing, which is correct. Do not debug it as a bug.
+> · **`isFree` is `{ type: Boolean, default: true }`**, so the spec's "84% coverage" is coverage of a
+>   field whose DEFAULT IS THE VALUE BEING FILTERED ON. 247 of 279 upcoming tech events. A label that
+>   excludes 11% is as uninformative as one that includes 3%.
+>
+> "Hosted by a company you follow" is real (12 upcoming tech events) but **impersonal**: all users
+> carry the identical 14-name factory seed, 10 of those 14 have zero upcoming events, and the actual
+> supply head (MongoDB, PyData Bangalore, Bitshala, Snowflake) is not in the default list. Its caption
+> therefore NAMES the matched companies rather than claiming personalisation.
+
+> **THE MOBILE SCROLL BUDGET WAS ALREADY BLOWN BEFORE THIS BATCH.** First ranked feed row at 390x844:
+> signed out **1541 → 2259**, signed in 1792 → 2682 — and only **150/322px is the new sections**. The
+> rest is Spotlight 436→482, Curated 412→441, and a 460px `Happening now` that did not exist at
+> baseline. Deleting both new sections still leaves 1541. **Getting under ~1500 means cutting Spotlight
+> or Curated**, which §7 records as un-hideable on mobile *because they subtract from "Coming up"*.
+> That is an owner's decision, not a stream's.
+
+> **A VOCABULARY VALUE WITH NO KEYWORD PATTERN IS AN UNREACHABLE CHIP.** `dinner` was missing from
+> `PERK_NAMES` (34 upcoming rows name a dinner, meal, buffet or thali), and adding it without a tagger
+> pattern made it a value nothing could produce — the "facet that can only render empty" problem moved
+> inside the vocabulary. `tests/card-metadata.test.ts` catches it. The pattern is `dinners?|supper|thali`
+> and nothing more: **`meal`, `buffet` and `catering` stay out** because they say food without saying
+> WHICH meal, and `hasFood` stays deliberately broader. A perk list is a factual claim; a chip that lies
+> to fill a facet is worse than an absent one.
+
+> **THE SCORE REASON IS MEASURED FROM THE SCORER, NEVER RESTATED — and the bug that proves it had
+> already shipped.** `/events/[id]`'s existing `WorthGoing` panel had COPIED the funnel regex, and the
+> copy had fallen behind `FUNNEL_PATTERN` (no `demo class`, `trial class`, `placement`, `\d+% off`), so
+> the page confidently explained a heavily-penalised coaching advert **without mentioning the penalty**.
+> `score-reason.ts` calls `connectionScore` twice per term and differences, so changing a weight
+> reorders the clauses with no edit there. A **marginal** delta would have failed silently: the score
+> clamps, so every term reads 0 on a 100-point event. Weights are measured against a fixed anchor
+> instead. Also removed: `EventRow`'s tooltip printed `score 93/100`, against §7's explicit rule.
+
+> **NEVER AUTO-CREATE A `Person` FROM A SPEAKER.** `speaker-match.ts` imports exactly one thing — a
+> type — so no mongoose, no model, and creating a row is not expressible in it. Matching requires two
+> name tokens on both sides, EQUAL token multisets (no fuzzy distance, no initial expansion), and a
+> disagreeing company is a veto; ambiguity declines. **The irreducible false positive is two real
+> people sharing a name and an employer**, so the copy grades: corroborated reads "Met at IndiaFOSS",
+> name-only reads "Same name as someone you met at" — an observation, not a claim about the reader's
+> memory. No pronoun: `Person` has no gender field, and guessing from a name is wrong often and wrong
+> in a way that stings.
+
+> **A 44px OVERLAY ON A SMALLER CONTROL OVERHANGS `(44 - h) / 2` PER SIDE, SO NEIGHBOURS CONTEST THE
+> BAND.** Hit-tested, not computed: two 32px icons at `gap-1.5` measured **38x44** and 44x44 — a tap
+> aimed at one fired the other, worse than the small target it replaced. Two overhangs need `44 - h`
+> between them, not half. That is why `ui.tsx`'s `Button` does **not** blanket-apply the overlay even
+> though `sm` (32px) and `md` (40px) are both under the floor: the required gap is per-layout
+> arithmetic no shared primitive can do for its callers.
+
+> **`ui.tsx`'s `Button` SILENTLY DISCARDED A PASSED `className`.** It is part of
+> `ButtonHTMLAttributes`, so `...rest` captured it and the spread ran *after*
+> `className={buttonClass(...)}` — it did not fail to append, it **replaced the lot**, rendering a
+> completely unstyled button. Latent (no caller passed one) and invisible in review because the type
+> accepts it. Both `Button` and `ButtonLink` now merge.
+
+> **`PATCH /api/contacts/[id]` DID NOT RECOMPUTE THE `Person`** — the only contact write that did not,
+> since `DELETE` cleans up and the bulk path recomputes. So a tag added by editing one contact never
+> reached the `/people` facet rail, and a follow-up set there never moved that person's next action.
+> The contact saved; the surface built to find people by tag simply did not know.
+
+> **A COMPLETED STREAM'S "NOT BUILT" LIST CAN BE STALE, AND SO CAN A BRIEF.** Recorded twice now: the
+> control room reported `GET /api/sources` as unguarded when `requireAdmin()` guards all four handlers,
+> and a brief told a stream to build a shelf on a field with **zero** rows in the same breath as
+> telling it to skip one at 3%. Verify against the code and a query, never against the plan.
+
+**Verified as a whole:** `tsc --noEmit` exit 0 run bare, `npm run lint` 0 errors, **1387 tests across
+43 suites**, production build clean with 87 static pages, `npm audit` 0 vulnerabilities. Backfills
+applied: area (126 rows), card metadata (715 rows), `connectionScore` (150 rows of drift, now 0).
+
+**Not built, deliberately:** MCP v2 (needs per-user OAuth); company-microsite LLM extraction;
+follow-up message drafting; "Near you" (plausible at 63.7% but needs an existing section cut to fit the
+scroll budget); the 36 Meetup groups still capped by the page's own 30-row ceiling. **`agenda` and
+`speakers` markup is UNVERIFIED** — 0 stored events carry either field, so only the absent path is
+reachable without a database write.
