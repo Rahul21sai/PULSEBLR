@@ -42,6 +42,16 @@ export interface FeedEvent {
   isTechEvent?: boolean;
   /** ISO string when an admin pinned this to the home page Spotlight. Absent = not pinned. */
   spotlightAt?: string | null;
+  /** Controlled vocabulary; see `AUDIENCE_NAMES`. */
+  audience?: string[];
+  /** Controlled vocabulary; see `PERK_NAMES`. `hasFood` is derivable from this. */
+  perks?: string[];
+  /** Browse label, never a ranking; see `EVENT_TIERS`. */
+  tier?: string;
+  /** Sparse. Render nothing when absent rather than an empty shell. */
+  agenda?: AgendaItem[];
+  /** Sparse. Matched against Persons for DISPLAY ONLY -- never to create one. */
+  speakers?: EventSpeaker[];
   isTargetCompany?: boolean;
   recruiterMentioned?: boolean;
   seenInSources?: string[];
@@ -265,3 +275,127 @@ export const EVENT_CATEGORIES = [
 ] as const;
 
 export type EventCategory = (typeof EVENT_CATEGORIES)[number];
+
+// -----------------------------------------------------------------------------
+// Card metadata: audience, perks, tier
+//
+// These live here, beside the category taxonomy, for the reason that comment
+// gives: the filter rail needs them and importing from lib/models/Event.ts would
+// pull mongoose into the browser bundle. The model re-exports them, so there is
+// still exactly one definition of each.
+//
+// ALL THREE ARE CONTROLLED VOCABULARIES, NOT FREE TEXT. `Event.tags` is the
+// cautionary tale: 32 of 1212 upcoming events carry any tag, 8 of 334 tech ones,
+// six distinct values in the whole corpus -- harvested free text cannot back a
+// facet. These are derived by the tagger from a fixed list, so every value is a
+// bucket something else can count.
+// -----------------------------------------------------------------------------
+
+/**
+ * Who the event is FOR. Answers "is this for someone like me" better than any
+ * topic tag does -- which is why a competitor's blurred cards still create
+ * desire from nothing but "Founders · Leaders & execs".
+ */
+export const AUDIENCE_NAMES = [
+  'students',
+  'juniors',
+  'senior-engineers',
+  'founders',
+  'leaders',
+  'product',
+  'data',
+  'security',
+  'sre',
+  'researchers',
+] as const;
+
+export type EventAudience = (typeof AUDIENCE_NAMES)[number];
+
+/** What you actually get in the room. */
+export const PERK_NAMES = [
+  'breakfast',
+  'lunch',
+  'snacks',
+  'swag',
+  'certificate',
+  'recording',
+  'drinks',
+] as const;
+
+export type EventPerk = (typeof PERK_NAMES)[number];
+
+/**
+ * The perks that constitute food, and the ONLY definition of that.
+ *
+ * `hasFood` predates `perks` and TWO shipped things read it: the `hasFood`
+ * filter in `buildEventFilter`, and `connectionScore`'s `hasFood === 'yes'`
+ * bonus. So `perks` may not replace it -- both stay, and `hasFood` becomes
+ * derivable from `perks` through `hasFoodFromPerks()` below. Replacing it
+ * outright would silently move every event's score and break a live filter.
+ */
+export const FOOD_PERKS: ReadonlySet<string> = new Set<string>([
+  'breakfast',
+  'lunch',
+  'snacks',
+]);
+
+/**
+ * `hasFood` implied by a perk list, or `null` when the perks say nothing about
+ * food.
+ *
+ * RETURNS `null` RATHER THAN `'unknown'`, and the distinction is the whole
+ * point. An empty perk list is not evidence that there is no food -- it is the
+ * normal state for the ~1500 documents that predate this field and for every
+ * source that does not mention catering. A caller must be able to tell "perks
+ * say no food" from "perks say nothing", because only the first should overwrite
+ * a value an adapter already set.
+ */
+export function hasFoodFromPerks(
+  perks: readonly string[] | undefined | null
+): 'yes' | null {
+  if (!perks || perks.length === 0) return null;
+  return perks.some(p => FOOD_PERKS.has(p)) ? 'yes' : null;
+}
+
+/**
+ * A browse label, NOT a second ranking.
+ *
+ * `connectionScore` remains the only ordering signal. If `tier` also ordered
+ * things the two would disagree on the same page, and the user would be looking
+ * at two rankings pretending to be one.
+ *
+ * Freely recomputable, unlike `spotlightAt` -- which is EDITORIAL, chosen by a
+ * human, and which nothing may recompute or clear. Do not overload that field to
+ * mean "flagship"; they answer different questions and only one of them has a
+ * person behind it.
+ *
+ * Useful side effect: `advert` gives the operator console a real handle on the
+ * coaching-centre junk that `connectionScore` buries but does not exclude.
+ */
+export const EVENT_TIERS = ['flagship', 'community', 'advert'] as const;
+
+export type EventTier = (typeof EVENT_TIERS)[number];
+
+/** One row of a timed agenda. Sparse: render nothing when absent. */
+export interface AgendaItem {
+  /** ISO string over JSON, like every other date on `FeedEvent`. */
+  startsAt?: string;
+  title: string;
+  speakerName?: string;
+  speakerCompany?: string;
+}
+
+/**
+ * A named speaker.
+ *
+ * NEVER AUTO-CREATE A `Person` FROM ONE OF THESE. A speaker is not your contact.
+ * The event page matches a speaker against existing Persons by name and company
+ * FOR DISPLAY ONLY ("you met her at IndiaFOSS, Jul"). Creating rows would fill
+ * /people with people you have never met and corrupt every `eventCount`.
+ */
+export interface EventSpeaker {
+  name: string;
+  title?: string;
+  company?: string;
+  linkedin?: string;
+}

@@ -42,11 +42,22 @@ export {
   GATHERING_CATEGORY_NAMES,
   OTHER_CATEGORY_NAMES,
   CATEGORY_GROUPS,
+  AUDIENCE_NAMES,
+  PERK_NAMES,
+  EVENT_TIERS,
+  FOOD_PERKS,
+  hasFoodFromPerks,
 } from '../event-types';
-export type { EventCategory } from '../event-types';
+export type { EventCategory, EventAudience, EventPerk, EventTier } from '../event-types';
+export type { AgendaItem, EventSpeaker } from '../event-types';
 
-// Imported (not just re-exported) because the schema enum below needs the value.
-import { EVENT_CATEGORIES as CATEGORY_VALUES } from '../event-types';
+// Imported (not just re-exported) because the schema enums below need the values.
+import {
+  EVENT_CATEGORIES as CATEGORY_VALUES,
+  AUDIENCE_NAMES,
+  PERK_NAMES,
+  EVENT_TIERS,
+} from '../event-types';
 
 /**
  * Retired category → current category.
@@ -158,6 +169,21 @@ export interface IEvent extends Document {
    * which is why re-scraping is already safe), and no backfill may clear it.
    */
   spotlightAt?: Date;
+  /** Who the event is for. Controlled vocabulary -- see `AUDIENCE_NAMES`. */
+  audience?: string[];
+  /** What you get in the room. Controlled vocabulary -- see `PERK_NAMES`. */
+  perks?: string[];
+  /** Browse label, NOT a ranking. See `EVENT_TIERS`. */
+  tier?: string;
+  /** Timed agenda. Sparse. */
+  agenda?: Array<{
+    startsAt?: Date;
+    title: string;
+    speakerName?: string;
+    speakerCompany?: string;
+  }>;
+  /** Named speakers. Sparse. NEVER used to create a `Person`. */
+  speakers?: Array<{ name: string; title?: string; company?: string; linkedin?: string }>;
   /**
    * When an admin removed this event from the corpus. Absent = present in the corpus. See the
    * schema field below for why this is a date and why nothing reads it with `$exists`.
@@ -239,6 +265,73 @@ const EventSchema = new Schema<IEvent>(
     // every one of the ~1500 documents, and the query filters on `$type: 'date'` — which is also
     // the shape that avoids the compound-sparse trap documented in CLAUDE.md §9.
     spotlightAt: { type: Date },
+
+    /*
+     * CARD METADATA -- `audience`, `perks`, `tier`.
+     *
+     * All three are DERIVED and freely recomputable, which is what separates them
+     * from `spotlightAt` directly above: a human chose that one, so nothing may
+     * rewrite it. These are the tagger's output, so a backfill may.
+     *
+     * Enum-constrained on purpose. The whole reason these exist rather than more
+     * `tags` is that a harvested free-text field cannot back a facet -- measured,
+     * six distinct tag values across the entire corpus. An enum makes every value
+     * a bucket, and makes a typo a validation error rather than a chip nobody
+     * clicks.
+     *
+     * `default: []` (not absent) for the two arrays, matching `companies` and
+     * `seenInSources`. NO `sparse` INDEX on either: they default to `[]`, which
+     * indexes as the missing-key sentinel, so `sparse` would omit most rows and be
+     * useless for the listing they exist to serve -- the same trap that capped
+     * every user at one folder. And `audience`, `perks` and `companies` can never
+     * share one index: MongoDB refuses two array fields in a single key and does
+     * so at WRITE time, on the first document carrying both.
+     */
+    audience: { type: [String], default: [], enum: AUDIENCE_NAMES as unknown as string[] },
+    perks: { type: [String], default: [], enum: PERK_NAMES as unknown as string[] },
+    tier: { type: String, enum: EVENT_TIERS as unknown as string[] },
+
+    /*
+     * DEPTH -- `agenda` and `speakers`. Both SPARSE by nature: they come from
+     * richer Luma descriptions, organiser submissions and the company-microsite
+     * LLM path, not from any platform API. Absent is the normal case, so every
+     * reader renders nothing rather than an empty shell.
+     *
+     * `_id: false` on both subdocuments. Nothing addresses an agenda row or a
+     * speaker individually -- they are replaced wholesale by whatever last
+     * described the event -- so per-row ids would be bytes that mean nothing.
+     * Note the contrast with `Contact`, where the ABSENCE of a stable id is
+     * exactly what made `markFollowUpComplete()` silently no-op on the second
+     * person with a given name. The difference is that these are not people.
+     */
+    agenda: {
+      type: [
+        new mongoose.Schema(
+          {
+            startsAt: { type: Date },
+            title: { type: String, required: true, trim: true },
+            speakerName: { type: String, trim: true },
+            speakerCompany: { type: String, trim: true },
+          },
+          { _id: false }
+        ),
+      ],
+      default: undefined,
+    },
+    speakers: {
+      type: [
+        new mongoose.Schema(
+          {
+            name: { type: String, required: true, trim: true },
+            title: { type: String, trim: true },
+            company: { type: String, trim: true },
+            linkedin: { type: String, trim: true },
+          },
+          { _id: false }
+        ),
+      ],
+      default: undefined,
+    },
 
     /**
      * SOFT DELETE. When an admin removed this event. ABSENT means it is in the corpus.
