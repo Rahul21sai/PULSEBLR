@@ -112,4 +112,81 @@ export async function sendNotificationEmail(
   }
 }
 
+/**
+ * The outcome of one reminder send.
+ *
+ * A BOOLEAN IS NOT ENOUGH HERE, unlike the two senders above, and that is why this is a separate
+ * function rather than a call to `sendNotificationEmail`. The reminder sender has to write the
+ * provider's message id into `ReminderLog` — it is the only handle on a delivered message — and
+ * it has to tell "Resend refused this" apart from "Resend is not configured", because those two
+ * mean opposite things to the caller: one is a failure to record against a claimed row, the other
+ * means no row should ever have been claimed.
+ */
+export interface ReminderSendResult {
+  ok: boolean;
+  /** Resend's message id, on success. */
+  id?: string;
+  /** Set on failure. Safe to store; never shown to a user. */
+  error?: string;
+  /** True when RESEND_API_KEY is unset — nothing was attempted and nothing failed. */
+  notConfigured?: boolean;
+}
+
+/**
+ * Send one reminder email.
+ *
+ * TWO UNSUBSCRIBE MECHANISMS, both required, and they are not redundant:
+ *
+ *   · `List-Unsubscribe` + `List-Unsubscribe-Post` (RFC 8058) put the native "Unsubscribe"
+ *     control in Gmail's and Apple Mail's own chrome. That is the one a reader annoyed enough to
+ *     complain actually reaches for, and mailbox providers weigh its presence when deciding
+ *     whether this domain is sending wanted mail. `One-Click` means the provider POSTs the URL
+ *     itself, with no page load — which is why the route below accepts POST and reads its
+ *     parameters from the QUERY STRING rather than the body.
+ *   · the visible link in the footer, for every client that has neither.
+ *
+ * The brief's requirement is "an unsubscribe link in every email, working without a login", so
+ * the visible link is the non-negotiable half; the headers are what make it work the way a
+ * reader expects.
+ */
+export async function sendReminderEmail(input: {
+  to: string;
+  subject: string;
+  html: string;
+  text: string;
+  /** Absolute, and must resolve with no session. See `buildUnsubscribeUrl`. */
+  unsubscribeUrl: string;
+  from?: string;
+}): Promise<ReminderSendResult> {
+  if (!process.env.RESEND_API_KEY) {
+    // Not an error. The caller checks this BEFORE claiming any ReminderLog row, so an
+    // unconfigured environment must never look like a failed send.
+    return { ok: false, notConfigured: true, error: 'RESEND_API_KEY is not set' };
+  }
+
+  try {
+    const { data, error } = await getResend().emails.send({
+      from: input.from || process.env.EMAIL_FROM || 'PulseBLR <onboarding@resend.dev>',
+      to: input.to,
+      subject: input.subject,
+      html: input.html,
+      text: input.text,
+      headers: {
+        'List-Unsubscribe': `<${input.unsubscribeUrl}>`,
+        'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+      },
+    });
+
+    if (error) {
+      return { ok: false, error: String(error.message ?? error).slice(0, 500) };
+    }
+    return { ok: true, id: data?.id };
+  } catch (error) {
+    return {
+      ok: false,
+      error: (error instanceof Error ? error.message : String(error)).slice(0, 500),
+    };
+  }
+}
+
 // Made with Bob

@@ -41,6 +41,49 @@ export default function ScanPage() {
   );
 }
 
+/**
+ * The three ways to record somebody.
+ *
+ * WHY THERE ARE THREE, AND WHY THE MIDDLE ONE MATTERS MOST. Everything above assumes a QR code
+ * exists. At a Bengaluru meetup most people will not produce a LinkedIn QR — they have not enabled
+ * it, they cannot find it, their phone is at 4%, or they simply hand you a business card. Until
+ * this existed the whole scan → people → export loop had a hole at its entrance: the app could
+ * remember only the minority of people who arrived machine-readable.
+ *
+ * `photo` is deliberately a STUB and says so on screen. It needs a vision model, and a vision model
+ * will misread names — so shipping it without the manual-edit fallback that `type` provides would
+ * quietly fill the contact list with wrong names, which is the one failure this feature cannot
+ * absorb (a wrong name is a wrong `contactKey`, and `deriveContactKey` falls back to `nm:<name>`
+ * exactly when there is no LinkedIn slug to key on).
+ */
+type CaptureMode = 'qr' | 'type' | 'photo';
+
+/**
+ * What the capture sheet is currently holding.
+ *
+ * ONE UNION RATHER THAN A SECOND `manualOpen` BOOLEAN. Two independent pieces of state describing
+ * one sheet is how a screen ends up able to be in both states at once — and the two branches
+ * genuinely differ in what they store: a QR capture has a `rawPayload` to keep verbatim and a
+ * `capturedVia` derived from the payload FORMAT, while a typed one has neither and is `'manual'`.
+ * Making that a discriminated union means the save path cannot forget which it is holding.
+ */
+type Capture =
+  | { via: 'qr'; parsed: ParsedScan }
+  | { via: 'manual' };
+
+/**
+ * The switcher, in the order the plan specifies: `[ Scan QR ] [ Type it ] [ Card photo ]`.
+ *
+ * QR stays FIRST and stays the default even though it is the less common case, because it is the
+ * only one that is instant and cannot be mistyped. "Type it" sits in the middle where a thumb
+ * lands, since it is the one reached for when the fast path fails.
+ */
+const MODES: ReadonlyArray<{ id: CaptureMode; label: string; icon: string }> = [
+  { id: 'qr', label: 'Scan QR', icon: 'qr_code_scanner' },
+  { id: 'type', label: 'Type it', icon: 'keyboard' },
+  { id: 'photo', label: 'Card photo', icon: 'photo_camera' },
+];
+
 function ScanScreen() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -49,7 +92,8 @@ function ScanScreen() {
   const [folders, setFolders] = useState<FolderDTO[]>([]);
   const [folderId, setFolderId] = useState<string | null>(folderParam);
   const [choosingFolder, setChoosingFolder] = useState(false);
-  const [captured, setCaptured] = useState<ParsedScan | null>(null);
+  const [mode, setMode] = useState<CaptureMode>('qr');
+  const [capture, setCapture] = useState<Capture | null>(null);
   const [draft, setDraft] = useState<ContactDraft>({ name: '' });
   const [showAllFields, setShowAllFields] = useState(false);
   const [recent, setRecent] = useState<string[]>([]);
@@ -139,7 +183,7 @@ function ScanScreen() {
     (raw: string) => {
       // Ignore a repeat of whatever we are already looking at: the loop runs at 10 fps and the
       // same code stays in frame while you read the card.
-      if (captured) return;
+      if (capture) return;
 
       /**
        * And ignore the code we just saved, for as long as it is plausibly still in frame.
@@ -166,7 +210,7 @@ function ScanScreen() {
         return;
       }
 
-      setCaptured(parsed);
+      setCapture({ via: 'qr', parsed });
       // A new person, so any verdict about the last one is stale.
       setSheetError(null);
       setShowAllFields(!parsed.person.linkedinSlug);
@@ -186,29 +230,61 @@ function ScanScreen() {
         followUpAt: null,
       });
     },
-    [captured]
+    [capture]
   );
+
+  /**
+   * Open an empty capture sheet for a typed entry.
+   *
+   * `showAllFields` starts CLOSED even though nothing is prefilled, which looks backwards and is
+   * not. The extra fields are LinkedIn, headline, X, GitHub, email and website — none of which you
+   * get by talking to somebody for thirty seconds. What you actually get is a name, where they
+   * work, and one sentence about why they matter, and those are the four fields already visible.
+   * Showing eleven inputs instead would make the fast path look slow. "More fields" is one tap away.
+   */
+  const startTyping = useCallback(() => {
+    setCapture({ via: 'manual' });
+    setSheetError(null);
+    setShowAllFields(false);
+    setDraft({ name: '', followUpAt: null });
+  }, []);
 
   /* ── Save ───────────────────────────────────────────────────────────── */
   const save = useCallback(
     async (thenScanNext: boolean) => {
-      if (!captured || !folderId) return;
+      if (!capture || !folderId) return;
       if (!draft.name.trim()) {
         // In the sheet, not in a toast: the sheet is still open, so a toast is behind its backdrop,
-        // and the message is about a field the user is looking at.
-        setSheetError('Add a name first — the code does not carry one.');
+        // and the message is about a field the user is looking at. The wording differs by mode
+        // because the reason differs — a QR genuinely did not carry a name, whereas a typed entry
+        // is simply not finished.
+        setSheetError(
+          capture.via === 'qr'
+            ? 'Add a name first — the code does not carry one.'
+            : 'Add a name first. Anything else can wait.'
+        );
         return;
       }
 
       setSheetError(null);
       setSaving(true);
+      /**
+       * ONE RECORD SHAPE FOR BOTH MODES, and the two differences are exactly the two the union
+       * encodes: a typed entry is `capturedVia: 'manual'` and carries NO `rawPayload`.
+       *
+       * `rawPayload` is omitted rather than set to `''`. The field's contract (see
+       * `lib/scan/types.ts` and `parseScanPayload`) is "the literal decoded string, kept verbatim
+       * so a format we do not understand today can be re-parsed tomorrow". An empty string would
+       * assert that a code was scanned and decoded to nothing, which is a different and false
+       * claim; absent correctly says no code was involved.
+       */
       const record = {
         ...draft,
         name: draft.name.trim(),
         clientId: newClientId(),
         folderId,
-        capturedVia: capturedViaFor(captured.kind),
-        rawPayload: captured.raw,
+        capturedVia: capture.via === 'qr' ? capturedViaFor(capture.parsed.kind) : ('manual' as const),
+        ...(capture.via === 'qr' ? { rawPayload: capture.parsed.raw } : {}),
         scannedAt: new Date().toISOString(),
       };
       // `nameIsGuess` is a UI concern only and is not part of the stored record.
@@ -257,19 +333,36 @@ function ScanScreen() {
         return;
       }
 
-      // Remember what was saved so the loop does not immediately re-offer the same code.
-      lastSavedRef.current = { raw: captured.raw, at: Date.now() };
+      // Remember what was saved so the loop does not immediately re-offer the same code. Only
+      // meaningful for a QR capture — there is no code in frame to re-detect after a typed entry,
+      // and stamping the ref with an empty payload would suppress a genuine scan of a blank-ish
+      // code for ten seconds.
+      if (capture.via === 'qr') {
+        lastSavedRef.current = { raw: capture.parsed.raw, at: Date.now() };
+      }
 
       setRecent(current => [record.name, ...current].slice(0, 3));
       // A problem needs longer on screen than a success does — you are standing in front of
       // the person you just scanned, and 2.5 seconds is not enough to read and act on it.
       setTimeout(() => setToast(null), blocked ? 6000 : 2500);
-      setCaptured(null);
+      setCapture(null);
       setDraft({ name: '' });
 
-      if (!thenScanNext) router.push(`/folders/${folderId}`);
+      /**
+       * "Save & add next" in TYPED mode reopens an empty sheet immediately.
+       *
+       * In QR mode closing the sheet is the right move because the viewfinder behind it is the next
+       * step. In typed mode there is nothing behind it — closing to a panel with an "Add someone"
+       * button would cost a tap per person for no reason, and a queue of people waiting to be
+       * recorded is exactly when taps matter.
+       */
+      if (thenScanNext) {
+        if (capture.via === 'manual') startTyping();
+      } else {
+        router.push(`/folders/${folderId}`);
+      }
     },
-    [captured, draft, folderId, router]
+    [capture, draft, folderId, router, startTyping]
   );
 
   async function syncNow() {
@@ -337,16 +430,14 @@ function ScanScreen() {
         </Link>
       </div>
 
-      {/* ── Viewfinder ──────────────────────────────────────────────────── */}
+      {/* ── The capture surface: viewfinder, typed panel, or the photo stub ── */}
       <div className="relative min-h-0 flex-1">
-        {folderId ? (
-          <QrScanner onDetect={onDetect} paused={Boolean(captured)} />
-        ) : (
+        {!folderId ? (
           <div className="grid h-full place-items-center px-6 text-center">
             <div>
               <p className="text-[15px] font-semibold text-white">Pick a folder first</p>
               <p className="mt-1.5 text-[13px] leading-relaxed text-white/70">
-                Everything you scan lands in it, so it is worth naming after the event.
+                Everyone you record lands in it, so it is worth naming after the event.
               </p>
               <div className="mt-5 flex items-center justify-center gap-2">
                 <Button tone="secondary" onClick={() => setChoosingFolder(true)}>
@@ -358,10 +449,73 @@ function ScanScreen() {
               </div>
             </div>
           </div>
+        ) : mode === 'qr' ? (
+          <QrScanner onDetect={onDetect} paused={Boolean(capture)} />
+        ) : mode === 'type' ? (
+          /**
+           * The typed panel. Its whole job is one big target.
+           *
+           * Placed low on purpose — `justify-end` with generous bottom padding — because this
+           * screen is used one-handed while standing, and the bottom third is the only part of a
+           * phone a thumb reaches without regripping. A centred button looks tidier in a
+           * screenshot and is worse in a corridor.
+           */
+          <div className="flex h-full flex-col justify-end px-6 pb-8 text-center">
+            <p className="text-[17px] font-semibold text-white">No QR? Just type it.</p>
+            <p className="mx-auto mt-2 max-w-[300px] text-[13px] leading-relaxed text-white/70">
+              A name is enough to start. Everything else — company, one line about why they matter,
+              a reminder — can go in now or later.
+            </p>
+            <div className="mt-6">
+              <Button tone="primary" full onClick={startTyping}>
+                Add someone
+              </Button>
+            </div>
+            <p className="mt-3 text-[12px] text-white/55">
+              Works with no signal. It uploads itself when you are back on.
+            </p>
+          </div>
+        ) : (
+          /**
+           * The card-photo stub.
+           *
+           * SAYS IT IS NOT BUILT, rather than offering a file picker that leads nowhere. A control
+           * that appears to work and then does nothing is worse than an absent one at an event —
+           * the user believes the person is recorded and moves on, and the loss is silent and
+           * unrecoverable. The honest panel costs one screen and routes to the mode that works.
+           *
+           * What it is waiting on, so the next person does not have to re-derive it: OCR needs a
+           * vision model, and a misread name becomes a wrong `nm:` contact key (see
+           * `deriveContactKey`) that no later scan reconciles. So it is only worth shipping behind
+           * the same editable review step the typed form already is — which is precisely why that
+           * one had to come first.
+           */
+          <div className="flex h-full flex-col justify-end px-6 pb-8 text-center">
+            <span
+              aria-hidden="true"
+              className="material-symbols-outlined mx-auto text-[34px] text-white/40"
+            >
+              photo_camera
+            </span>
+            <p className="mt-2 text-[17px] font-semibold text-white">Card photo is not built yet</p>
+            <p className="mx-auto mt-2 max-w-[320px] text-[13px] leading-relaxed text-white/70">
+              Reading a business card needs a vision model, and it will get names wrong. Rather than
+              quietly file somebody under a misspelling, this stays switched off until it can hand
+              you the same editable form to correct first.
+            </p>
+            <div className="mt-6">
+              <Button tone="secondary" full onClick={() => { setMode('type'); startTyping(); }}>
+                Type it instead
+              </Button>
+            </div>
+            <p className="mt-3 text-[12px] text-white/55">
+              Keep the card. Ten seconds of typing beats a wrong name.
+            </p>
+          </div>
         )}
 
         {/* Recent captures, so it visibly works even when the sheet is closed. */}
-        {recent.length > 0 && !captured && (
+        {recent.length > 0 && !capture && (
           <div className="pointer-events-none absolute inset-x-0 bottom-20 flex flex-col items-center gap-1.5 px-4">
             {recent.map((name, index) => (
               <span
@@ -374,6 +528,86 @@ function ScanScreen() {
             ))}
           </div>
         )}
+
+        {/* ── Pending uploads ───────────────────────────────────────────────
+            INSIDE this container rather than positioned against the screen, so it floats over the
+            capture surface and cannot collide with the mode switcher below it. It used to be
+            `absolute bottom-0` on the root, which the switcher now occupies. */}
+        {pending.total > 0 && !capture && (
+          <div className="absolute inset-x-0 bottom-0 z-20 p-3">
+            <button
+              type="button"
+              onClick={syncNow}
+              className={`mx-auto flex min-h-11 items-center gap-2 rounded-full px-4 py-2 text-[12px] font-semibold [touch-action:manipulation] ${
+                pending.blocked > 0 ? 'bg-[#FFF1F0]/95 text-[#C7362D]' : 'bg-white/95 text-[#1D1D1F]'
+              }`}
+            >
+              <span aria-hidden="true" className="material-symbols-outlined text-[16px]">
+                {pending.blocked > 0 ? 'error' : 'cloud_upload'}
+              </span>
+              {/* Two counts, because they mean opposite things: one is patience, one is a problem. */}
+              {pending.blocked > 0 ? (
+                <>
+                  <span className="tnum">{pending.blocked}</span> cannot upload
+                  {pending.waiting > 0 && (
+                    <>
+                      {' · '}
+                      <span className="tnum">{pending.waiting}</span> waiting
+                    </>
+                  )}
+                  {' — tap to retry'}
+                </>
+              ) : (
+                <>
+                  <span className="tnum">{pending.waiting}</span> waiting to upload — tap to retry
+                </>
+              )}
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* ── Mode switcher ────────────────────────────────────────────────────
+          A REAL FLEX CHILD, not an absolutely-positioned bar. Everything else on this screen floats
+          over the camera, and adding one more absolute element at the bottom is how the sync chip
+          and the switcher would have ended up on top of each other on a short viewport. As a flex
+          row it cannot overlap anything by construction, and it owns the home-indicator inset.
+
+          44px minimum per button (`h-11`), which is the WCAG 2.5.5 floor this work holds to and
+          which several controls elsewhere in the app currently miss. */}
+      <div
+        role="tablist"
+        aria-label="How to record somebody"
+        className="relative z-10 flex shrink-0 items-center gap-1 px-3 pt-2"
+        style={{ paddingBottom: 'max(10px, env(safe-area-inset-bottom))' }}
+      >
+        {MODES.map(option => {
+          const active = option.id === mode;
+          return (
+            <button
+              key={option.id}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              onClick={() => {
+                setMode(option.id);
+                // Entering typed mode opens the sheet straight away: the user tapped "Type it"
+                // because they have somebody in front of them, so making them tap "Add someone"
+                // as well is a tap that answers a question they already answered. Dismissing the
+                // sheet leaves the panel behind, so there is no reopen loop.
+                if (option.id === 'type' && folderId) startTyping();
+              }}
+              className={`flex h-11 flex-1 items-center justify-center gap-1.5 rounded-full text-[12.5px] font-semibold [touch-action:manipulation] ${
+                active ? 'bg-white text-[#1D1D1F]' : 'bg-white/15 text-white'
+              }`}
+            >
+              <span aria-hidden="true" className="material-symbols-outlined text-[17px]">
+                {option.icon}
+              </span>
+              {option.label}
+            </button>
+          );
+        })}
       </div>
 
       {/* ── Toast + pending ───────────────────────────────────────────────
@@ -393,55 +627,24 @@ function ScanScreen() {
         </div>
       )}
 
-      {pending.total > 0 && !captured && (
-        <div className="absolute inset-x-0 bottom-0 z-20 p-3" style={{ paddingBottom: 'max(12px, env(safe-area-inset-bottom))' }}>
-          <button
-            type="button"
-            onClick={syncNow}
-            className={`mx-auto flex items-center gap-2 rounded-full px-4 py-2 text-[12px] font-semibold ${
-              pending.blocked > 0 ? 'bg-[#FFF1F0]/95 text-[#C7362D]' : 'bg-white/95 text-[#1D1D1F]'
-            }`}
-          >
-            <span aria-hidden="true" className="material-symbols-outlined text-[16px]">
-              {pending.blocked > 0 ? 'error' : 'cloud_upload'}
-            </span>
-            {/* Two counts, because they mean opposite things: one is patience, one is a problem. */}
-            {pending.blocked > 0 ? (
-              <>
-                <span className="tnum">{pending.blocked}</span> cannot upload
-                {pending.waiting > 0 && (
-                  <>
-                    {' · '}
-                    <span className="tnum">{pending.waiting}</span> waiting
-                  </>
-                )}
-                {' — tap to retry'}
-              </>
-            ) : (
-              <>
-                <span className="tnum">{pending.waiting}</span> waiting to upload — tap to retry
-              </>
-            )}
-          </button>
-        </div>
-      )}
-
       {/* ── The capture card ────────────────────────────────────────────── */}
-      {captured && (
+      {capture && (
         <Sheet
           open
           onClose={() => {
-            setCaptured(null);
+            setCapture(null);
             setDraft({ name: '' });
             setSheetError(null);
           }}
-          title={draft.name.trim() || 'Who was that?'}
+          // A typed entry has no "that" to refer to — nothing was scanned — so the empty-state
+          // title asks the question the form is actually asking.
+          title={draft.name.trim() || (capture.via === 'qr' ? 'Who was that?' : 'Who did you meet?')}
           subtitle={folder ? `Into ${folder.name}` : undefined}
           labelledBy="capture-title"
           footer={
             <div className="flex items-center gap-2">
               <Button tone="primary" full onClick={() => save(true)} disabled={saving}>
-                {saving ? 'Saving…' : 'Save & scan next'}
+                {saving ? 'Saving…' : capture.via === 'qr' ? 'Save & scan next' : 'Save & add next'}
               </Button>
               <Button tone="quiet" onClick={() => save(false)} disabled={saving}>
                 Save & close
@@ -468,16 +671,16 @@ function ScanScreen() {
            * browser when not. A `linkedin://` scheme is never used — those forms are all from
            * 2013-2015 and unverifiable.
            */}
-          {captured.actionUrl && (
+          {capture.via === 'qr' && capture.parsed.actionUrl && (
             <div className="mb-4">
               <ButtonLink
-                href={captured.actionUrl}
+                href={capture.parsed.actionUrl}
                 external
                 tone="secondary"
                 full
                 icon="open_in_new"
               >
-                {captured.actionLabel ?? 'Open profile'}
+                {capture.parsed.actionLabel ?? 'Open profile'}
               </ButtonLink>
               <p className="mt-1.5 text-center text-[12px] text-[#8E8E93]">
                 Opens LinkedIn. Come back here — this is already saved when you tap Save.
@@ -485,9 +688,9 @@ function ScanScreen() {
             </div>
           )}
 
-          {captured.reason && (
+          {capture.via === 'qr' && capture.parsed.reason && (
             <div className="mb-4">
-              <Banner tone="warn">{captured.reason}</Banner>
+              <Banner tone="warn">{capture.parsed.reason}</Banner>
             </div>
           )}
 
@@ -497,6 +700,9 @@ function ScanScreen() {
             onChange={setDraft}
             showAll={showAllFields}
             onToggleShowAll={() => setShowAllFields(true)}
+            // Only for a typed entry. See the prop's own note: after a scan the card is prefilled
+            // and the keyboard would cover the fields being checked.
+            autoFocusName={capture.via === 'manual'}
           />
         </Sheet>
       )}
@@ -505,7 +711,9 @@ function ScanScreen() {
       <Sheet
         open={choosingFolder}
         onClose={() => setChoosingFolder(false)}
-        title="Scan into"
+        // "Scan into" was accurate when scanning was the only way in. Two of the three modes do not
+        // scan anything.
+        title="Record people into"
         labelledBy="folder-picker-title"
         footer={
           <ButtonLink href="/folders" tone="quiet" full icon="create_new_folder">

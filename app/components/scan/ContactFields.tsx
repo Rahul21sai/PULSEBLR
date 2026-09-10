@@ -61,12 +61,25 @@ export default function ContactFields({
   showAll = false,
   onToggleShowAll,
   tagSuggestions = [],
+  autoFocusName = false,
 }: {
   draft: ContactDraft;
   onChange: (next: ContactDraft) => void;
   /** Reveal the rarely-needed fields. Collapsed by default so capture stays fast. */
   showAll?: boolean;
   onToggleShowAll?: () => void;
+  /**
+   * Put the cursor in the name field on mount. OFF by default, and the default is the considered
+   * one — the note at the top of this file records why: after a QR scan the card is prefilled and
+   * mostly correct, so raising the keyboard would cover the very fields the user is checking.
+   *
+   * The TYPED capture mode is the one case where it is right, and it inverts the argument rather
+   * than ignoring it: the user tapped "Type it" precisely because there is nothing to check, they
+   * are standing in front of somebody, and the first thing they need is a cursor in the name box.
+   * Making it a prop keeps that a decision the CALLER states, so neither surface inherits the
+   * other's behaviour by accident.
+   */
+  autoFocusName?: boolean;
   /**
    * The user's existing tag vocabulary, for type-ahead.
    *
@@ -94,6 +107,7 @@ export default function ContactFields({
           onChange={e => onChange({ ...draft, name: e.target.value, nameIsGuess: false })}
           placeholder="Their name"
           autoComplete="off"
+          autoFocus={autoFocusName}
           className={FIELD_CLASS}
         />
         {/**

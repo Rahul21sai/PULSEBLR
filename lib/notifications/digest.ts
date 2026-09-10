@@ -12,6 +12,7 @@ import { getPendingFollowUps, type PendingFollowUp } from '../helpers/phase6';
 // UTC at 8 AM IST (02:30 UTC), so `toLocaleDateString()` on the ambient locale reports the
 // PREVIOUS day. lib/format.ts is pinned to Asia/Kolkata.
 import { dayLabelIST, fullDateIST } from '../format';
+import { escapeHtml } from './html';
 
 /** A tracker entry with its event populated, as the digest queries it. */
 interface DigestTrackerEntry {
@@ -395,16 +396,12 @@ export function formatDigestAsHTML(digest: DigestData): string {
 
 /**
  * Minimal HTML escaping for values interpolated into the digest email.
- * Source names and error strings come from external feeds, so escape them to
- * avoid injecting stray markup into the rendered email.
+ *
+ * MOVED to `./html` and re-exported here so every existing importer keeps working. It had to
+ * move because `reminder-policy.ts` needs it and must stay free of mongoose — this file is
+ * not (it imports `connectDB`, `TrackerEntry` and the phase6 helpers), so importing the
+ * escaper from here would drag the entire model graph into a pure-function test.
  */
-export function escapeHtml(input: string): string {
-  return input
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
+export { escapeHtml } from './html';
 
 // Made with Bob

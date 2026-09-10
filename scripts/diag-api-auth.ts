@@ -24,6 +24,14 @@ interface Case {
   path: string;
   body?: unknown;
   why: string;
+  /**
+   * For a public endpoint that refuses on its OWN terms, the code it should refuse with.
+   * Defaults to 404. `/api/reminders/unsubscribe` answers 400 instead, and correctly so: the
+   * token is a signature over a user id rather than a lookup key, so a broken link is a
+   * malformed request, not a missing row. What matters is that it is neither 401/403 (gated by
+   * a session it must not require — the link is opened from an email client) nor 500.
+   */
+  expect?: number;
 }
 
 const MUST_REFUSE: Case[] = [
@@ -176,6 +184,16 @@ const CLIENT_GATED = [
  */
 const MUST_ALLOW: Case[] = [
   { method: 'GET', path: '/api/events?limit=1', why: 'the feed is public' },
+  /*
+   * THE MCP ENDPOINT IS PUBLIC ON PURPOSE, so it belongs in a list rather than in neither.
+   *
+   * That is the lesson the two `GET /api/sources` rows above record: an endpoint nothing here has
+   * an opinion about is not "safe by default", it is unexamined. This one is read-only, serves
+   * only data already on public pages, and every one of its query plans pins `techOnly` and the
+   * anonymous visibility clause — so a 200 here is the intended contract, and the day somebody
+   * adds a session read to `lib/mcp/handlers.ts` this line stops being true.
+   */
+  { method: 'POST', path: '/api/mcp', body: { jsonrpc: '2.0', id: 1, method: 'tools/list' }, why: 'the MCP server is public and read-only by design' },
   { method: 'GET', path: '/api/events/facets', why: 'filter counts are public' },
   { method: 'GET', path: '/api/companies', why: 'the companies directory is public' },
 ];
@@ -195,6 +213,28 @@ const MUST_BE_PUBLIC_404: Case[] = [
     path: '/api/intake/0000000000000000000000',
     body: { name: 'diag' },
     why: 'folder self-registration must accept an anonymous POST, and refuse an unknown token',
+  },
+  /*
+   * UNSUBSCRIBE MUST NOT REQUIRE A SESSION. It is opened from a mail client, on a phone, possibly
+   * months later, by somebody who may well have signed out — a 401 here means the only way to stop
+   * the emails is to sign in, which is the behaviour every anti-spam rule exists to forbid.
+   *
+   * Both verbs are asserted because they do different jobs and only one of them acts: GET renders a
+   * confirmation, POST performs the unsubscribe. That split is deliberate — mail scanners and link
+   * prefetchers follow URLs before a human does, so a one-click GET would unsubscribe people who
+   * merely RECEIVED the email.
+   */
+  {
+    method: 'GET',
+    path: '/api/reminders/unsubscribe?u=diag&t=0&s=not-a-signature',
+    expect: 400,
+    why: 'an unsubscribe link must open without a session, and reject a forged signature',
+  },
+  {
+    method: 'POST',
+    path: '/api/reminders/unsubscribe?u=diag&t=0&s=not-a-signature',
+    expect: 400,
+    why: 'the acting verb must also refuse a forged signature rather than trusting the query',
   },
 ];
 
@@ -294,13 +334,14 @@ async function main() {
     }
   }
 
-  console.log('\nPUBLIC TOKEN ENDPOINTS (must run un-authed and 404 an unknown token)\n');
+  console.log('\nPUBLIC TOKEN ENDPOINTS (must run un-authed and refuse a bad token on their own terms)\n');
   for (const c of MUST_BE_PUBLIC_404) {
     try {
       const { status, detail } = await hit(c);
       // 404 means the handler ran and refused on its own terms. A 401/403 would mean it had been
       // gated by a session it must not require; a 500 would mean it crashed on a stranger.
-      const ok = status === 404;
+      const expected = c.expect ?? 404;
+      const ok = status === expected;
       if (!ok) failures++;
       console.log(`  ${ok ? 'PASS' : 'FAIL'}  ${status}  ${c.method.padEnd(6)} ${c.path.padEnd(42)} ${c.why}`);
       if (!ok) console.log(`         body: ${detail}`);

@@ -1,0 +1,74 @@
+name: Daily Event Reminders
+
+# Emails a user about events THEY saved that are about to happen.
+#
+# WHY THIS IS ITS OWN WORKFLOW rather than a step in daily-digest.yml: the two have different
+# failure meanings and must not share an exit code. The digest is a nice-to-have that skips
+# silently when unconfigured; a reminder that fails is a promise broken to somebody who saved an
+# event, and it exits 1 so the run goes red. Sharing a job would make one of those wrong.
+#
+# It runs like the other two crons — directly on the runner via `tsx`, NOT by calling an API route.
+# Same reasoning as daily-scrape.yml and daily-digest.yml (see vercel.json's notes in CLAUDE.md):
+# no shared secret to leak, and no serverless timeout to fight.
+#
+# SAFE TO RE-RUN AND SAFE TO OVERLAP. `scripts/send-reminders.ts` is idempotent — every event
+# already mailed carries a ReminderLog row, and the unique index means even two simultaneous runs
+# cannot both send. So a manual `workflow_dispatch` next to the schedule is harmless, which is what
+# makes it usable for a real test.
+
+on:
+  # 07:00 IST (01:30 UTC) — an hour before the scrape and the digest, deliberately. A reminder is
+  # about something the user already saved, so it does not need this morning's new events, and
+  # arriving first means it is not buried under the digest in the inbox.
+  schedule:
+    - cron: '30 1 * * *'
+
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Decide and report only — write nothing, send nothing'
+        type: boolean
+        default: true
+      only_email:
+        description: 'Restrict the run to one address (optional)'
+        type: string
+        required: false
+
+# One reminder run at a time. Two concurrent runs cannot double-send (the unique index prevents
+# it), but they would race for the daily cap and make the logs hard to read.
+concurrency:
+  group: daily-reminders
+  cancel-in-progress: false
+
+jobs:
+  send-reminders:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Send event reminders
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          # Signs the unsubscribe link. Without it the script refuses to send anything at all —
+          # an email nobody can get off is worse than no email.
+          NEXTAUTH_SECRET: ${{ secrets.NEXTAUTH_SECRET }}
+          # Every link in the email, including the unsubscribe one, is built from this. A missing
+          # value means localhost URLs in somebody's inbox.
+          NEXTAUTH_URL: ${{ secrets.NEXTAUTH_URL }}
+          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+        run: >-
+          npx tsx scripts/send-reminders.ts
+          ${{ (github.event_name == 'workflow_dispatch' && inputs.dry_run) && '--dry' || '' }}
+          ${{ inputs.only_email && format('--only={0}', inputs.only_email) || '' }}
