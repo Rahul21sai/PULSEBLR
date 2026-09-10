@@ -199,8 +199,19 @@ export default function EditEventModal({
         soldOut: draft.soldOut,
       };
 
-      const res = await fetch(`/api/events/${eventId}`, {
-        method: 'PUT',
+      /*
+       * The AUDITED admin route, not `PUT /api/events/[id]`.
+       *
+       * Both apply the same allowlist — `validateEventUpdate` is imported by each, not mirrored — so
+       * the validation and the field errors below are unchanged. What this one adds is an `AuditLog`
+       * row carrying the before/after of exactly the fields that changed, which is the whole point of
+       * the control room: a hand-corrected title is otherwise indistinguishable from a scraped one,
+       * and there was no way to answer "who changed this, and what did it say before".
+       *
+       * It also means a no-op save writes no log line: the route diffs before recording.
+       */
+      const res = await fetch(`/api/admin/events/${eventId}`, {
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });

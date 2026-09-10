@@ -158,6 +158,11 @@ export interface IEvent extends Document {
    * which is why re-scraping is already safe), and no backfill may clear it.
    */
   spotlightAt?: Date;
+  /**
+   * When an admin removed this event from the corpus. Absent = present in the corpus. See the
+   * schema field below for why this is a date and why nothing reads it with `$exists`.
+   */
+  deletedAt?: Date;
   /** Owner of a hand-entered event. Absent on everything the scraper produced. */
   createdByUserId?: string;
   /** Absent means public, which is what every scraped document is. */
@@ -236,6 +241,32 @@ const EventSchema = new Schema<IEvent>(
     spotlightAt: { type: Date },
 
     /**
+     * SOFT DELETE. When an admin removed this event. ABSENT means it is in the corpus.
+     *
+     * -- WHY SOFT AT ALL ---------------------------------------------------------------------
+     * A hard delete cannot be undone, and a re-scrape only brings an event back if its source
+     * still lists it -- which for the junk-removal case is precisely when it does not. The
+     * control room offers Undo, and Undo has to be real rather than a promise, so the row
+     * survives the delete and `POST /api/admin/audit/undo` `$unset`s this field.
+     *
+     * -- READ IT WITH `null`, NEVER `$exists` ------------------------------------------------
+     * Every read path filters `{ deletedAt: null }`, and in MongoDB that predicate matches a
+     * document whose field is null AND one where the key is absent entirely. Both halves are
+     * needed here and each fails differently:
+     *
+     *   - ABSENT must match, because ~1500 documents predate this field. Getting this backwards
+     *     does not narrow the feed, it EMPTIES it -- the same class of mistake the `visibility`
+     *     clause's `$exists: false` arm exists to prevent, arriving through a different door.
+     *   - NULL must match too, because a future restore path writing `$set: { deletedAt: null }`
+     *     rather than `$unset` would otherwise leave the row permanently invisible while every
+     *     admin screen reported it restored. `spotlightAt` documents the mirror of this trap.
+     *
+     * NO DEFAULT, for the reason `spotlightAt` gives: `default: null` would write an explicit
+     * null onto every document in the corpus to express what absence already says.
+     */
+    deletedAt: { type: Date },
+
+    /**
      * Who typed this event in by hand. ABSENT for everything the scraper produced.
      *
      * A PLAIN STRING — the Google `sub`, or `devlogin:<email>` under the dev provider. Never an
@@ -304,6 +335,25 @@ EventSchema.index({ lastSeenAt: -1 });
 EventSchema.index(
   { spotlightAt: -1, startDateTime: 1 },
   { partialFilterExpression: { spotlightAt: { $type: 'date' } } }
+);
+/**
+ * Deleted rows, most recently removed first.
+ *
+ * NO QUERY USES THIS YET, and that is stated rather than implied. Undo is reached through the audit
+ * log, which selects on `AuditLog` and never on this field, so there is currently no "recently
+ * deleted" listing for it to serve. It is here because `deletedAt` is brand new and deleted rows
+ * only accumulate: any listing of them sorts by exactly this, and adding the index with the field
+ * costs less thought than rediscovering the need later.
+ *
+ * PARTIAL, and the predicate is the point. It indexes only the deleted minority, and deliberately
+ * does NOT try to serve the far more common `{ deletedAt: null }` that every feed query now
+ * carries -- that predicate matches ~100% of the corpus and is worthless as an index lead. The
+ * existing `startDateTime` / `connectionScore` indexes still drive those queries and this one adds
+ * nothing to their cost.
+ */
+EventSchema.index(
+  { deletedAt: -1 },
+  { partialFilterExpression: { deletedAt: { $type: 'date' } } }
 );
 // Free-text search over the fields users actually type into a search box.
 // Weights favour the title so "python" ranks a Python meetup above an event that

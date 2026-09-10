@@ -67,7 +67,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         folder.eventId = undefined;
       } else if (isValidId(body.eventId)) {
         const event = await Event.findById(body.eventId).select(
-          'startDateTime venue area visibility createdByUserId'
+          'startDateTime venue area visibility createdByUserId deletedAt'
         );
         /**
          * A FIFTH ID-ADDRESSABLE PATH, and it needs the same guard as the other four.

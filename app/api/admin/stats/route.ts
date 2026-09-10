@@ -31,6 +31,7 @@ export async function GET() {
       tech,
       addedToday,
       withoutClusterKey,
+      spotlit,
       byCategory,
       bySource,
       sources,
@@ -48,6 +49,10 @@ export async function GET() {
       Event.countDocuments({
         $or: [{ clusterKey: { $exists: false } }, { clusterKey: null }, { clusterKey: '' }],
       }),
+      // `$type: 'date'` and NOT `$exists`. Unpinning sends an explicit null, because `$set` cannot
+      // express `$unset` — under `$exists` that null would be counted as a pin, and the overview
+      // would report a Spotlight the home page is not showing.
+      Event.countDocuments({ startDateTime: { $gte: now }, spotlightAt: { $type: 'date' } }),
       Event.aggregate([
         { $match: { startDateTime: { $gte: now }, isTechEvent: true } },
         { $unwind: '$category' },
@@ -79,6 +84,51 @@ export async function GET() {
     const producing = sources.filter(s => (s.lastEventCount || 0) > 0).length;
     const quiet = sources.filter(s => s.lastScrapedAt && (s.lastEventCount || 0) === 0).length;
     const dead = sources.filter(s => (s.consecutiveEmptyScrapes || 0) >= 6).length;
+    /**
+     * PER-KIND HEALTH — the 423 rows that were invisible unless you queried the database.
+     *
+     * The aggregate buckets above answer "is the scraper working" and hide the thing worth acting on:
+     * the health is wildly uneven BY KIND. Measured on this corpus — 86 Luma calendars of which 65
+     * produce nothing, 261 Meetup groups of which 97 produce nothing — and one of those is a supply
+     * problem while the other is mostly normal (a Meetup group with nothing scheduled this fortnight
+     * is not broken). Averaging them into one "producing" number is what made 138 sources with five
+     * or more consecutive empty scrapes re-fetched every night with nobody noticing.
+     *
+     * `dead` uses the SAME >= 6 threshold as the aggregate above, so the two can never disagree.
+     * `backoffCandidates` uses >= 5, which is where `loadDiscovered()` would start scheduling a
+     * source weekly instead of daily — a different question (what should we stop fetching) from a
+     * different answer (what is broken), so it gets its own number rather than a redefinition.
+     */
+    type KindBucket = {
+      kind: string;
+      total: number;
+      producing: number;
+      quiet: number;
+      never: number;
+      dead: number;
+      backoffCandidates: number;
+      disabled: number;
+      events: number;
+    };
+    const kinds = new Map<string, KindBucket>();
+    for (const s of sources) {
+      const key = s.kind ?? 'built-in';
+      const b =
+        kinds.get(key) ??
+        { kind: key, total: 0, producing: 0, quiet: 0, never: 0, dead: 0, backoffCandidates: 0, disabled: 0, events: 0 };
+      b.total++;
+      b.events += s.lastEventCount || 0;
+      if (s.enabled === false) b.disabled++;
+      if (!s.lastScrapedAt) b.never++;
+      else if ((s.lastEventCount || 0) > 0) b.producing++;
+      else b.quiet++;
+      if ((s.consecutiveEmptyScrapes || 0) >= 6) b.dead++;
+      if ((s.consecutiveEmptyScrapes || 0) >= 5) b.backoffCandidates++;
+      kinds.set(key, b);
+    }
+    const byKind = [...kinds.values()].sort((a, b) => b.total - a.total);
+    const backoffCandidates = sources.filter(s => (s.consecutiveEmptyScrapes || 0) >= 5).length;
+
     const lastScrapedAt = sources
       .map(s => s.lastScrapedAt)
       .filter(Boolean)
@@ -92,6 +142,7 @@ export async function GET() {
         nonTech: upcoming - tech,
         addedToday,
         withoutClusterKey,
+        spotlit,
       },
       categories: byCategory.map(c => ({ name: c._id as string, count: c.n as number })),
       sources: {
@@ -100,6 +151,8 @@ export async function GET() {
         quiet,
         never,
         dead,
+        backoffCandidates,
+        byKind,
         lastScrapedAt,
         bySource: bySource.map(s => ({ name: (s._id as string) || 'unknown', count: s.n as number })),
         rows: sources.map(s => ({

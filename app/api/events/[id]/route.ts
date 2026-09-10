@@ -5,7 +5,7 @@ import mongoose from 'mongoose';
 import { requireAdmin } from '@/lib/api-auth';
 import { getCurrentUserId } from '@/lib/auth-helpers';
 import { canViewEvent } from '@/lib/events/visibility';
-import { visibilityClause } from '@/lib/events/query';
+import { publicEventScope } from '@/lib/events/query';
 import { validateEventUpdate, eventValidationError } from '@/lib/events/admin-validate';
 
 // GET /api/events/[id] - Get a single event
@@ -49,7 +49,9 @@ export async function GET(
       _id: { $ne: event._id },
       startDateTime: { $gte: new Date() },
       category: { $in: event.category?.length ? event.category : ['Networking/Meetup'] },
-      ...visibilityClause(viewerId),
+      // `publicEventScope`, NOT `visibilityClause`: this hand-rolled filter must also exclude
+    // soft-deleted rows, and would not have inherited that from `buildEventFilter`.
+    ...publicEventScope(viewerId),
     })
       .select('title startDateTime venue area format imageUrl category isFree price organizer')
       .sort({ startDateTime: 1 })

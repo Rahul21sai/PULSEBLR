@@ -1,34 +1,44 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import SubmissionsPanel from './SubmissionsPanel';
-import { DesktopNav } from '@/app/components/NavBar';
-import { relativeTime, dayLabelIST, timeIST } from '@/lib/format';
+import EngagementPanel from './EngagementPanel';
+import FeedQualityPanel from './FeedQualityPanel';
+import AuditPanel from './AuditPanel';
+import SourcesPanel, { type SourcesData } from './SourcesPanel';
+import ImpactDialog from './ImpactDialog';
 import EditEventModal from './EditEventModal';
-import { SOURCE_TYPES } from '@/lib/sources/admin-validate';
+import { DesktopNav } from '@/app/components/NavBar';
+import { Banner, Button, Card, EmptyState, Field } from '@/app/components/ui';
+import { BarList, NoRows, Panel, StatCard, StatSkeletons, num } from './AdminUI';
+import { relativeTime, dayLabelIST, timeIST } from '@/lib/format';
 
 /**
- * The operator console: corpus health, the scraper, source management and event
- * administration.
+ * The operator console: corpus health, engagement, feed quality, sources, the scraper, event
+ * administration, submissions, and the change log.
  *
- * Deliberately NOT in /settings. Settings is a user surface (their digest, their
- * account) and any signed-in user can open it; the scraper and source controls used to
- * live there, which meant every user saw machinery they could not use and must not
- * control. Splitting them is the admin/user boundary made visible.
+ * Deliberately NOT in /settings. Settings is a user surface (their digest, their account) and any
+ * signed-in user can open it; the scraper and source controls used to live there, which meant every
+ * user saw machinery they could not use and must not control.
+ *
+ * ── THE PRIMITIVES COME FROM `app/components/ui.tsx` ─────────────────────────────────────────
+ *
+ * This file used to hand-roll its own `Card`, `Stat`, `Banner`, `Empty` and `Field` while `ui.tsx`
+ * exported all five, and they had already drifted: the local `Stat` grew `accent`/`plain` props where
+ * `ui.tsx` has `tone`, and the local `Banner` baked in a `mt-3` so spacing depended on which copy you
+ * imported. Two sets of primitives is precisely why the console did not feel like the same product as
+ * the feed. All five are now imported; `AdminUI.tsx` holds COMPOSITIONS of them (`Panel` = Card +
+ * SectionTitle, `StatCard` = Card + Stat) plus the two data-display components `ui.tsx` has no
+ * opinion about.
+ *
+ * ── WHY THERE ARE EIGHT TABS ────────────────────────────────────────────────────────────────
+ *
+ * Because the control plane it replaces is ~60 scripts. The tabs are grouped by the QUESTION being
+ * asked, not by the collection being read: is it healthy (Overview), is anyone using it (Users), is
+ * the feed good (Feed quality), is supply working (Sources, Scraper), is a specific row wrong
+ * (Events), is somebody waiting on me (Submissions), what did I change (Audit).
  */
-
-interface SourceRow {
-  id: string;
-  kind: string | null;
-  handle: string | null;
-  name: string;
-  url: string | null;
-  enabled: boolean;
-  lastScrapedAt: string | null;
-  lastEventCount: number;
-  consecutiveEmptyScrapes: number;
-}
 
 interface Stats {
   events: {
@@ -38,18 +48,10 @@ interface Stats {
     nonTech: number;
     addedToday: number;
     withoutClusterKey: number;
+    spotlit: number;
   };
   categories: Array<{ name: string; count: number }>;
-  sources: {
-    total: number;
-    producing: number;
-    quiet: number;
-    never: number;
-    dead: number;
-    lastScrapedAt: string | null;
-    bySource: Array<{ name: string; count: number }>;
-    rows: SourceRow[];
-  };
+  sources: SourcesData & { bySource: Array<{ name: string; count: number }> };
   users: { total: number; trackerEntries: number };
   nextUp: Array<{
     id: string;
@@ -63,7 +65,18 @@ interface Stats {
   admin: { email: string };
 }
 
-type Tab = 'overview' | 'scraper' | 'sources' | 'events' | 'submissions';
+type Tab = 'overview' | 'users' | 'quality' | 'sources' | 'scraper' | 'events' | 'submissions' | 'audit';
+
+const TABS: Array<[Tab, string, string]> = [
+  ['overview', 'Overview', 'dashboard'],
+  ['users', 'Users', 'group'],
+  ['quality', 'Feed quality', 'rule'],
+  ['sources', 'Sources', 'rss_feed'],
+  ['scraper', 'Scraper', 'sync'],
+  ['events', 'Events', 'event'],
+  ['submissions', 'Submissions', 'how_to_reg'],
+  ['audit', 'Audit log', 'history'],
+];
 
 export default function AdminDashboard({
   adminEmail,
@@ -79,9 +92,9 @@ export default function AdminDashboard({
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>('overview');
 
-  // Pure fetch, no setState — so both the mount effect and the Refresh button can share
-  // it without either calling setState synchronously inside an effect body (which Next
-  // 16's react-hooks/set-state-in-effect rule correctly rejects).
+  // Pure fetch, no setState — so both the mount effect and the Refresh button can share it without
+  // either calling setState synchronously inside an effect body (which Next 16's
+  // react-hooks/set-state-in-effect rule correctly rejects).
   const load = useCallback(async () => {
     const apply = (next: { stats?: Stats; error?: string }) => {
       if (next.error) setError(next.error);
@@ -92,8 +105,8 @@ export default function AdminDashboard({
     try {
       const res = await fetch('/api/admin/stats');
       if (!res.ok) {
-        // A 403 here means the allowlist changed under us — say so plainly rather than
-        // rendering an empty dashboard that just looks like "no data".
+        // A 403 here means the allowlist changed under us — say so plainly rather than rendering an
+        // empty dashboard that just looks like "no data".
         apply({
           error:
             res.status === 403
@@ -147,13 +160,10 @@ export default function AdminDashboard({
 
       <main className="pt-14 pb-24 md:pb-10">
         <div className="max-w-[1100px] mx-auto px-4 md:px-8 pt-6 space-y-5">
-          {/* ── Title ─────────────────────────────────────────────────── */}
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-[24px] md:text-[30px] font-bold tracking-[-0.025em] text-[#1D1D1F]">
-                  Admin
-                </h1>
+                <h1 className="t-title text-[#1D1D1F]">Admin</h1>
                 <span className="rounded-full bg-[#1D1D1F] px-2.5 py-1 text-[10.5px] font-bold uppercase tracking-wider text-white">
                   Operator
                 </span>
@@ -161,36 +171,36 @@ export default function AdminDashboard({
               <p className="text-[13.5px] text-[#6E6E73] mt-0.5">
                 {adminName} · <span className="font-mono text-[12.5px]">{adminEmail}</span> — every
                 action here is re-checked on the server against{' '}
-                <code className="font-mono text-[12px]">ADMIN_EMAILS</code>.
+                <code className="font-mono text-[12px]">ADMIN_EMAILS</code>, and every change is
+                recorded in the audit log.
               </p>
             </div>
-            {/*
-              The companies directory, which used to be a top-level public tab. It shows companies
-              with nothing scheduled and hosts the registry does not recognise — a coverage-gap view,
-              which is an operator's question rather than a reader's. A LINK, not a tab: it is a
-              separate page, and the tabs above switch panels within this one.
-            */}
-            <Link
-              href="/companies"
-              className="shrink-0 flex items-center gap-1.5 rounded-full border border-[#e5e5ea] bg-white px-4 py-2 text-[12.5px] font-semibold text-[#1D1D1F] hover:bg-[#f3f3f5] transition-colors"
-            >
-              <span aria-hidden="true" className="material-symbols-outlined text-[15px]">domain</span>
-              Companies
-            </Link>
-            <button
-              type="button"
-              onClick={load}
-              className="shrink-0 flex items-center gap-1.5 rounded-full border border-[#e5e5ea] bg-white px-4 py-2 text-[12.5px] font-semibold text-[#1D1D1F] hover:bg-[#f3f3f5] transition-colors"
-            >
-              <span aria-hidden="true" className="material-symbols-outlined text-[15px]">refresh</span>
-              Refresh
-            </button>
+            <div className="flex shrink-0 gap-2">
+              {/*
+                The companies directory, which used to be a top-level public tab. It shows companies
+                with nothing scheduled and hosts the registry does not recognise — a coverage-gap
+                view, which is an operator's question rather than a reader's. A LINK, not a tab: it is
+                a separate page, and the tabs below switch panels within this one.
+              */}
+              <Link
+                href="/companies"
+                className="pressable inline-flex items-center gap-1.5 rounded-full bg-white px-4 py-2 text-[12.5px] font-semibold text-[#1D1D1F] shadow-[inset_0_0_0_1px_var(--hairline-strong)] hover:bg-[#F7F7F9]"
+              >
+                <span aria-hidden="true" className="material-symbols-outlined text-[15px]">
+                  domain
+                </span>
+                Companies
+              </Link>
+              <Button tone="quiet" icon="refresh" onClick={load}>
+                Refresh
+              </Button>
+            </div>
           </div>
 
           {!configured && (
             <Banner tone="warn">
-              <code className="font-mono">ADMIN_EMAILS</code> is not set, so admin endpoints
-              are refusing requests with 503. Set it in your environment to enable them.
+              <code className="font-mono">ADMIN_EMAILS</code> is not set, so admin endpoints are
+              refusing requests with 503. Set it in your environment to enable them.
             </Banner>
           )}
 
@@ -200,51 +210,46 @@ export default function AdminDashboard({
             <Banner tone="warn">
               <strong>{stats.events.withoutClusterKey}</strong> event
               {stats.events.withoutClusterKey === 1 ? '' : 's'} stored without a{' '}
-              <code className="font-mono">clusterKey</code>. These cannot de-duplicate and
-              will show as double cards in the feed. Usually the daily cron running an
-              older default branch — run{' '}
-              <code className="font-mono">scripts/migrate-events.ts</code> then{' '}
+              <code className="font-mono">clusterKey</code>. These cannot de-duplicate and will show
+              as double cards in the feed. Usually the daily cron running an older default branch —
+              run <code className="font-mono">scripts/migrate-events.ts</code> then{' '}
               <code className="font-mono">scripts/cleanup-duplicate-clusters.ts --apply</code>.
             </Banner>
           )}
 
-          {/* ── Tabs ──────────────────────────────────────────────────── */}
           <div className="flex gap-1.5 overflow-x-auto pb-1">
-            {(
-              [
-                ['overview', 'Overview', 'dashboard'],
-                ['scraper', 'Scraper', 'sync'],
-                ['sources', 'Sources', 'rss_feed'],
-                ['events', 'Events', 'event'],
-                ['submissions', 'Submissions', 'how_to_reg'],
-              ] as Array<[Tab, string, string]>
-            ).map(([id, label, icon]) => (
+            {TABS.map(([id, label, icon]) => (
               <button
                 key={id}
                 type="button"
                 onClick={() => setTab(id)}
                 aria-pressed={tab === id}
-                className={`flex shrink-0 items-center gap-1.5 rounded-full px-4 py-2 text-[13px] font-semibold border transition-colors ${
+                className={`pressable flex shrink-0 items-center gap-1.5 rounded-full px-4 h-9 text-[13px] font-semibold transition-colors ${
                   tab === id
-                    ? 'bg-[#1D1D1F] text-white border-[#1D1D1F]'
-                    : 'bg-white text-[#1D1D1F] border-[#e5e5ea] hover:bg-[#f3f3f5]'
+                    ? 'bg-[#1D1D1F] text-white'
+                    : 'bg-white text-[#1D1D1F] shadow-[inset_0_0_0_1px_var(--hairline)] hover:bg-[#F7F7F9]'
                 }`}
               >
-                <span aria-hidden="true" className="material-symbols-outlined text-[16px]">{icon}</span>
+                <span aria-hidden="true" className="material-symbols-outlined text-[16px]">
+                  {icon}
+                </span>
                 {label}
               </button>
             ))}
           </div>
 
           {loading && !stats ? (
-            <SkeletonGrid />
+            <StatSkeletons />
           ) : (
             <>
-              {tab === 'overview' && stats && <Overview stats={stats} />}
+              {tab === 'overview' && stats && <Overview stats={stats} onGo={setTab} />}
+              {tab === 'users' && <EngagementPanel />}
+              {tab === 'quality' && <FeedQualityPanel onChanged={load} />}
+              {tab === 'sources' && stats && <SourcesPanel sources={stats.sources} onChanged={load} />}
               {tab === 'scraper' && <ScraperPanel stats={stats} onDone={load} />}
-              {tab === 'sources' && stats && <SourcesPanel stats={stats} onChanged={load} />}
               {tab === 'events' && <EventsPanel onChanged={load} />}
               {tab === 'submissions' && <SubmissionsPanel />}
+              {tab === 'audit' && <AuditPanel onChanged={load} />}
             </>
           )}
         </div>
@@ -255,7 +260,7 @@ export default function AdminDashboard({
 
 /* ────────────────────────────── Overview ────────────────────────────── */
 
-function Overview({ stats }: { stats: Stats }) {
+function Overview({ stats, onGo }: { stats: Stats; onGo: (tab: Tab) => void }) {
   const techShare = stats.events.upcoming
     ? Math.round((stats.events.tech / stats.events.upcoming) * 100)
     : 0;
@@ -263,55 +268,80 @@ function Overview({ stats }: { stats: Stats }) {
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <Stat label="Upcoming events" value={stats.events.upcoming} sub={`${stats.events.total} all time`} />
-        <Stat label="Tech events" value={stats.events.tech} sub={`${techShare}% of upcoming`} accent />
-        <Stat label="Added in 24h" value={stats.events.addedToday} sub="by the last scrape" />
-        <Stat
+        <StatCard
+          label="Upcoming events"
+          value={num(stats.events.upcoming)}
+          sub={`${num(stats.events.total)} all time`}
+        />
+        <StatCard label="Tech events" value={num(stats.events.tech)} sub={`${techShare}% of upcoming`} tone="accent" />
+        <StatCard label="Added in 24h" value={num(stats.events.addedToday)} sub="by the last scrape" />
+        <StatCard
           label="Sources producing"
-          value={stats.sources.producing}
-          sub={`of ${stats.sources.total} tracked`}
+          value={num(stats.sources.producing)}
+          sub={`of ${num(stats.sources.total)} tracked`}
+          tone={stats.sources.dead > 0 ? 'warn' : undefined}
         />
       </div>
 
+      {/*
+        The overview's job is to route, not to restate. Each of these is a real problem with a tab
+        that can act on it — so the count is a link rather than a number the operator then has to go
+        looking for.
+      */}
+      <div className="grid gap-3 sm:grid-cols-3">
+        {[
+          ['Dead sources', stats.sources.dead, 'sources' as Tab, 'still fetched every run'],
+          ['Spotlight pins', stats.events.spotlit, 'quality' as Tab, 'two render on the home page'],
+          ['Could be backed off', stats.sources.backoffCandidates, 'sources' as Tab, '5+ empty runs'],
+        ].map(([label, count, target, sub]) => (
+          <Card key={String(label)} padding="tight">
+            <button type="button" onClick={() => onGo(target as Tab)} className="w-full text-left">
+              <p className="t-label text-[#8E8E93]">{String(label)}</p>
+              <p className="tnum mt-1 text-[22px] font-bold leading-none text-[#1D1D1F]">
+                {num(Number(count))}
+              </p>
+              <p className="mt-1 text-[12px] text-[#0071E3]">{String(sub)} →</p>
+            </button>
+          </Card>
+        ))}
+      </div>
+
       <div className="grid lg:grid-cols-2 gap-5">
-        <Card title="Tech categories" subtitle="Upcoming, tech only">
+        <Panel title="Tech categories" subtitle="Upcoming, tech only">
           {stats.categories.length === 0 ? (
-            <Empty>No categorised tech events yet.</Empty>
+            <NoRows>No categorised tech events yet.</NoRows>
           ) : (
             <BarList items={stats.categories} />
           )}
-        </Card>
+        </Panel>
 
-        <Card title="Where events come from" subtitle="Upcoming, by adapter">
+        <Panel title="Where events come from" subtitle="Upcoming, by adapter">
           <BarList items={stats.sources.bySource} />
-        </Card>
+        </Panel>
       </div>
 
-      <Card
+      <Panel
         title="Next up"
         subtitle="The soonest tech events a user will see"
         action={
-          <Link
-            href="/?techOnly=true"
-            className="text-[12.5px] font-semibold text-[#0071E3] hover:underline"
-          >
+          <Link href="/" className="text-[12.5px] font-semibold text-[#0071E3] hover:underline">
             Open feed
           </Link>
         }
       >
         {stats.nextUp.length === 0 ? (
-          <Empty>Nothing scheduled. Run the scraper.</Empty>
+          <EmptyState
+            icon="event_busy"
+            title="Nothing scheduled"
+            body="The corpus has no upcoming tech events. Run the scraper, or check whether the sources went quiet."
+          />
         ) : (
           <ul className="divide-y divide-[#f0f0f2]">
             {stats.nextUp.map(e => (
               <li key={e.id} className="flex items-center gap-3 py-2.5">
                 <div className="w-[62px] shrink-0 text-center">
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-[#86868B]">
-                    {dayLabelIST(e.startDateTime)}
-                  </p>
-                  <p className="tnum text-[12.5px] font-bold text-[#1D1D1F]">
-                    {timeIST(e.startDateTime)}
-                  </p>
+                  <p className="t-label text-[#8E8E93]">{dayLabelIST(e.startDateTime)}</p>
+                  <p className="tnum text-[12.5px] font-bold text-[#1D1D1F]">{timeIST(e.startDateTime)}</p>
                 </div>
                 <div className="min-w-0 flex-1">
                   <Link
@@ -329,9 +359,9 @@ function Overview({ stats }: { stats: Stats }) {
                     title="Connection score — how likely you are to leave with useful contacts"
                     className={`tnum shrink-0 rounded-full px-2 py-0.5 text-[11px] font-bold ${
                       e.connectionScore >= 70
-                        ? 'bg-green-50 text-green-800'
+                        ? 'bg-[#EBF7EF] text-[#1D8A44]'
                         : e.connectionScore >= 50
-                          ? 'bg-amber-50 text-amber-800'
+                          ? 'bg-amber-50 text-amber-900'
                           : 'bg-[#f3f3f5] text-[#6E6E73]'
                     }`}
                   >
@@ -342,14 +372,26 @@ function Overview({ stats }: { stats: Stats }) {
             ))}
           </ul>
         )}
-      </Card>
+      </Panel>
 
-      <Card title="Who is using it" subtitle="Regular users only track events; they never see this page">
-        <div className="grid grid-cols-2 gap-3">
-          <Stat label="Signed-up users" value={stats.users.total} plain />
-          <Stat label="Tracked events" value={stats.users.trackerEntries} plain />
-        </div>
-      </Card>
+      <Panel
+        title="Who is using it"
+        subtitle="Headline only — the Users tab has signups over time, weekly actives and day-1 return"
+        action={
+          <button
+            type="button"
+            onClick={() => onGo('users')}
+            className="text-[12.5px] font-semibold text-[#0071E3] hover:underline"
+          >
+            Open Users
+          </button>
+        }
+      >
+        <dl className="grid grid-cols-2 gap-3">
+          <Field label="Signed-up users">{num(stats.users.total)}</Field>
+          <Field label="Tracked events">{num(stats.users.trackerEntries)}</Field>
+        </dl>
+      </Panel>
     </div>
   );
 }
@@ -391,7 +433,10 @@ function ScraperPanel({ stats, onDone }: { stats: Stats | null; onDone: () => vo
       });
       onDone();
     } catch {
-      setResult({ ok: false, text: 'The request failed or timed out. A full run can exceed the request limit — use the CLI for that.' });
+      setResult({
+        ok: false,
+        text: 'The request failed or timed out. A full run can exceed the request limit — use the CLI for that.',
+      });
     } finally {
       setRunning(null);
     }
@@ -399,343 +444,51 @@ function ScraperPanel({ stats, onDone }: { stats: Stats | null; onDone: () => vo
 
   return (
     <div className="space-y-5">
-      <Card title="Run the scraper" subtitle="Only you can trigger this — the endpoint is admin-gated">
+      <Panel title="Run the scraper" subtitle="Only you can trigger this — the endpoint is admin-gated">
         <div className="flex flex-wrap gap-2.5">
-          <button
-            type="button"
-            onClick={() => run('fast')}
-            disabled={running !== null}
-            className="flex items-center gap-1.5 rounded-full bg-[#0071E3] px-5 py-2.5 text-[13px] font-semibold text-white hover:bg-blue-600 disabled:opacity-50 transition-colors"
-          >
-            <span aria-hidden="true" className={`material-symbols-outlined text-[16px] ${running === 'fast' ? 'animate-spin' : ''}`}>
-              bolt
-            </span>
+          <Button tone="secondary" icon="bolt" disabled={running !== null} onClick={() => run('fast')}>
             {running === 'fast' ? 'Running…' : 'Fast scrape'}
-          </button>
-          <button
-            type="button"
-            onClick={() => run('full')}
-            disabled={running !== null}
-            className="flex items-center gap-1.5 rounded-full bg-[#1D1D1F] px-5 py-2.5 text-[13px] font-semibold text-white hover:bg-black disabled:opacity-50 transition-colors"
-          >
-            <span aria-hidden="true" className={`material-symbols-outlined text-[16px] ${running === 'full' ? 'animate-spin' : ''}`}>
-              sync
-            </span>
+          </Button>
+          <Button tone="primary" icon="sync" disabled={running !== null} onClick={() => run('full')}>
             {running === 'full' ? 'Running…' : 'Full scrape'}
-          </button>
+          </Button>
         </div>
 
         <p className="mt-3 text-[12.5px] leading-relaxed text-[#6E6E73]">
-          <strong>Fast</strong> skips Eventbrite and the company-page sweep and shrinks the
-          enrichment budgets — about a minute. <strong>Full</strong> fans out to roughly 700
-          upstream requests with LLM tagging and takes 15–30 minutes, which is longer than a
-          serverless request is allowed to live: run it as{' '}
-          <code className="font-mono">npm run scrape</code> instead, or let the daily
-          8&nbsp;AM&nbsp;IST GitHub Action do it.
+          <strong>Fast</strong> skips Eventbrite and the company-page sweep and shrinks the enrichment
+          budgets — about a minute. <strong>Full</strong> fans out to roughly 700 upstream requests
+          with LLM tagging and takes 15–30 minutes, which is longer than a serverless request is
+          allowed to live: run it as <code className="font-mono">npm run scrape</code> instead, or let
+          the daily 8&nbsp;AM&nbsp;IST GitHub Action do it.
         </p>
 
-        {result && <Banner tone={result.ok ? 'ok' : 'error'}>{result.text}</Banner>}
-      </Card>
+        {result && (
+          <div className="mt-3">
+            <Banner tone={result.ok ? 'ok' : 'error'}>{result.text}</Banner>
+          </div>
+        )}
+      </Panel>
 
-      <Card title="Last activity" subtitle="From per-source health records">
+      <Panel title="Last activity" subtitle="From per-source health records">
         <dl className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          <Field
-            label="Last scrape"
-            value={stats?.sources.lastScrapedAt ? relativeTime(stats.sources.lastScrapedAt) : 'never'}
-          />
-          <Field label="Producing" value={String(stats?.sources.producing ?? '—')} />
-          <Field label="Quiet" value={String(stats?.sources.quiet ?? '—')} />
-          <Field
-            label="Dead (6+ empty)"
-            value={String(stats?.sources.dead ?? '—')}
-            tone={stats && stats.sources.dead > 0 ? 'warn' : undefined}
-          />
+          <Field label="Last scrape">
+            {stats?.sources.lastScrapedAt ? relativeTime(stats.sources.lastScrapedAt) : 'never'}
+          </Field>
+          <Field label="Producing">{num(stats?.sources.producing)}</Field>
+          <Field label="Quiet">{num(stats?.sources.quiet)}</Field>
+          <Field label="Dead (6+ empty)">
+            <span className={stats && stats.sources.dead > 0 ? 'text-[#C7362D]' : undefined}>
+              {num(stats?.sources.dead)}
+            </span>
+          </Field>
         </dl>
         <p className="mt-3 text-[12.5px] text-[#6E6E73]">
           A source counts as dead after six consecutive empty scrapes. Nothing retires them
-          automatically yet, so they are still requested every run.
+          automatically yet, so they are still requested every run — the Sources tab can disable them
+          in bulk, and that is reversible.
         </p>
-      </Card>
+      </Panel>
     </div>
-  );
-}
-
-/* ────────────────────────────── Sources ────────────────────────────── */
-
-/**
- * Register a scrape source by hand — the "C" that was missing from the sources CRUD.
- *
- * Most sources arrive through auto-discovery (Luma calendar ids harvested from the city feed,
- * Meetup group slugs from the keyword fan-out), which is the design and should stay that way. This
- * is for the ones discovery cannot reach: a community that publishes only an .ics, or a Bevy tenant
- * verified by hand with `probe-bevy-tenants.ts`.
- *
- * `kind` + `handle` are offered as an explicit PAIR because together they are the dedup identity
- * (`Source.index({ kind, handle }, { unique: true, sparse: true })`), and the API rejects one
- * without the other. Leaving both blank is fine and normal for a one-off URL.
- */
-function NewSourceForm({ onCreated }: { onCreated: (name: string) => void }) {
-  const [form, setForm] = useState({ name: '', type: 'ical', url: '', kind: '', handle: '' });
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
-
-  async function submit() {
-    setSaving(true);
-    setError(null);
-    setFieldErrors({});
-    try {
-      const res = await fetch('/api/sources', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form),
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => null);
-        if (Array.isArray(data?.fields)) {
-          const next: Record<string, string> = {};
-          for (const f of data.fields as Array<{ field: string; message: string }>) next[f.field] = f.message;
-          setFieldErrors(next);
-        }
-        setError(data?.error || `Could not create (HTTP ${res.status}).`);
-        return;
-      }
-      onCreated(form.name.trim() || 'source');
-      setForm({ name: '', type: 'ical', url: '', kind: '', handle: '' });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not create source.');
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  const input = (key: keyof typeof form, placeholder: string) => (
-    <label className="block">
-      <span className="sr-only">{placeholder}</span>
-      <input
-        value={form[key]}
-        onChange={e => setForm(prev => ({ ...prev, [key]: e.target.value }))}
-        placeholder={placeholder}
-        className={`h-10 w-full rounded-xl border bg-white px-3 text-[13px] text-[#1D1D1F] focus:outline-none ${
-          fieldErrors[key] ? 'border-[#C7362D]' : 'border-[#e5e5ea] focus:border-[#0071E3]'
-        }`}
-      />
-      {fieldErrors[key] && <span className="mt-1 block text-[12px] text-[#C7362D]">{fieldErrors[key]}</span>}
-    </label>
-  );
-
-  return (
-    <div className="mb-3 rounded-2xl border border-[color:var(--hairline)] bg-[#fbfbfd] p-4">
-      <div className="grid gap-3 sm:grid-cols-2">
-        {input('name', 'Name, e.g. Bengaluru Python User Group')}
-        <label className="block">
-          <span className="sr-only">Type</span>
-          <select
-            value={form.type}
-            onChange={e => setForm(prev => ({ ...prev, type: e.target.value }))}
-            className={`h-10 w-full rounded-xl border bg-white px-3 text-[13px] text-[#1D1D1F] focus:outline-none ${
-              fieldErrors.type ? 'border-[#C7362D]' : 'border-[#e5e5ea] focus:border-[#0071E3]'
-            }`}
-          >
-            {SOURCE_TYPES.map(t => (
-              <option key={t} value={t}>{t}</option>
-            ))}
-          </select>
-          {fieldErrors.type && <span className="mt-1 block text-[12px] text-[#C7362D]">{fieldErrors.type}</span>}
-        </label>
-      </div>
-      <div className="mt-3">{input('url', 'Feed URL, https://…')}</div>
-      <div className="mt-3 grid gap-3 sm:grid-cols-2">
-        {input('kind', 'Kind (optional), e.g. meetup')}
-        {input('handle', 'Handle (optional), e.g. blr-python')}
-      </div>
-      <p className="mt-2 text-[11.5px] leading-relaxed text-[#86868B]">
-        Kind and handle are the dedup identity and must be given together, or not at all. The
-        scraper will fetch this URL on its next run, so http(s) only.
-      </p>
-      {error && (
-        <p role="alert" className="mt-2 rounded-xl bg-[#FFF1F0] px-3 py-2 text-[12.5px] text-[#C7362D]">
-          {error}
-        </p>
-      )}
-      <button
-        type="button"
-        onClick={submit}
-        disabled={saving}
-        className="pressable mt-3 h-10 rounded-full bg-[#1D1D1F] px-5 text-[12.5px] font-semibold text-white hover:bg-black disabled:opacity-50"
-      >
-        {saving ? 'Registering…' : 'Register source'}
-      </button>
-    </div>
-  );
-}
-
-function SourcesPanel({ stats, onChanged }: { stats: Stats; onChanged: () => void }) {
-  const [busy, setBusy] = useState<string | null>(null);
-  const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
-  const [adding, setAdding] = useState(false);
-  const [filter, setFilter] = useState('');
-  const [onlyProblems, setOnlyProblems] = useState(false);
-
-  const rows = useMemo(() => {
-    const q = filter.trim().toLowerCase();
-    return stats.sources.rows.filter(r => {
-      if (onlyProblems && r.lastEventCount > 0) return false;
-      if (!q) return true;
-      return `${r.name} ${r.handle ?? ''} ${r.kind ?? ''}`.toLowerCase().includes(q);
-    });
-  }, [stats.sources.rows, filter, onlyProblems]);
-
-  async function toggle(row: SourceRow) {
-    setBusy(row.id);
-    setNote(null);
-    try {
-      const res = await fetch(`/api/sources/${row.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ enabled: !row.enabled }),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      setNote({ ok: true, text: `${row.name} ${row.enabled ? 'disabled' : 'enabled'}.` });
-      onChanged();
-    } catch (err) {
-      setNote({ ok: false, text: `Could not update ${row.name} (${err instanceof Error ? err.message : 'failed'}).` });
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  async function remove(row: SourceRow) {
-    // Deleting a Source destroys discovery state that took multiple scrapes to build and
-    // does not come back on its own, so this asks first.
-    if (
-      !window.confirm(
-        `Delete "${row.name}" permanently?\n\nThis removes persisted discovery state. Disabling it instead keeps the record and stops it being scraped.`
-      )
-    ) {
-      return;
-    }
-    setBusy(row.id);
-    setNote(null);
-    try {
-      const res = await fetch(`/api/sources/${row.id}`, { method: 'DELETE' });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      setNote({ ok: true, text: `${row.name} deleted.` });
-      onChanged();
-    } catch (err) {
-      setNote({ ok: false, text: `Could not delete ${row.name} (${err instanceof Error ? err.message : 'failed'}).` });
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  return (
-    <Card
-      title={`Sources (${stats.sources.total})`}
-      subtitle={`${stats.sources.producing} producing · ${stats.sources.quiet} quiet · ${stats.sources.never} never scraped · ${stats.sources.dead} dead`}
-    >
-      <div className="flex flex-wrap items-center gap-2.5 pb-3">
-        <label className="relative flex-1 min-w-[180px]">
-          <span className="sr-only">Filter sources</span>
-          <span aria-hidden="true" className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-[18px] text-[#a1a1a6]">
-            search
-          </span>
-          <input
-            value={filter}
-            onChange={e => setFilter(e.target.value)}
-            placeholder="Filter by name, handle or kind"
-            className="h-10 w-full rounded-full border border-[#e5e5ea] bg-white pl-10 pr-4 text-[13px] text-[#1D1D1F] focus:border-[#0071E3] focus:outline-none"
-          />
-        </label>
-        <button
-          type="button"
-          onClick={() => setOnlyProblems(v => !v)}
-          aria-pressed={onlyProblems}
-          className={`h-10 shrink-0 rounded-full border px-4 text-[12.5px] font-semibold transition-colors ${
-            onlyProblems
-              ? 'bg-[#1D1D1F] text-white border-[#1D1D1F]'
-              : 'bg-white text-[#1D1D1F] border-[#e5e5ea] hover:bg-[#f3f3f5]'
-          }`}
-        >
-          Only problems
-        </button>
-        <button
-          type="button"
-          onClick={() => setAdding(v => !v)}
-          aria-expanded={adding}
-          className="h-10 shrink-0 rounded-full bg-[#0071E3] px-4 text-[12.5px] font-semibold text-white hover:bg-blue-600"
-        >
-          {adding ? 'Cancel' : 'Add source'}
-        </button>
-      </div>
-
-      {adding && <NewSourceForm onCreated={created => { setAdding(false); setNote({ ok: true, text: `Registered “${created}”.` }); onChanged(); }} />}
-
-      {note && <Banner tone={note.ok ? 'ok' : 'error'}>{note.text}</Banner>}
-
-      {rows.length === 0 ? (
-        <Empty>No sources match.</Empty>
-      ) : (
-        <div className="max-h-[560px] overflow-y-auto">
-          <ul className="divide-y divide-[#f0f0f2]">
-            {rows.map(row => {
-              const dead = row.consecutiveEmptyScrapes >= 6;
-              return (
-                <li key={row.id} className="flex items-center gap-3 py-2.5">
-                  <span
-                    aria-hidden="true"
-                    className={`h-2 w-2 shrink-0 rounded-full ${
-                      !row.enabled
-                        ? 'bg-[#c7c7cc]'
-                        : row.lastEventCount > 0
-                          ? 'bg-[#30D158]'
-                          : dead
-                            ? 'bg-[#FF3B30]'
-                            : 'bg-[#FF9F0A]'
-                    }`}
-                  />
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-[13.5px] font-semibold text-[#1D1D1F]">
-                      {row.name}
-                      {!row.enabled && (
-                        <span className="ml-2 rounded bg-[#f3f3f5] px-1.5 py-0.5 text-[10.5px] font-bold uppercase tracking-wide text-[#86868B]">
-                          off
-                        </span>
-                      )}
-                    </p>
-                    <p className="truncate text-[12px] text-[#6E6E73]">
-                      {row.kind ?? 'aggregate'} ·{' '}
-                      {row.lastScrapedAt ? `scraped ${relativeTime(row.lastScrapedAt)}` : 'never scraped'}
-                      {dead && <span className="text-[#C7362D] font-semibold"> · {row.consecutiveEmptyScrapes} empty runs</span>}
-                    </p>
-                  </div>
-                  <span className="tnum shrink-0 text-[12.5px] font-semibold text-[#1D1D1F]">
-                    {row.lastEventCount}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => toggle(row)}
-                    disabled={busy === row.id}
-                    className="shrink-0 rounded-full border border-[#e5e5ea] bg-white px-3 py-1.5 text-[12px] font-semibold text-[#1D1D1F] hover:bg-[#f3f3f5] disabled:opacity-50"
-                  >
-                    {row.enabled ? 'Disable' : 'Enable'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => remove(row)}
-                    disabled={busy === row.id}
-                    aria-label={`Delete ${row.name}`}
-                    className="shrink-0 rounded-full bg-red-50 px-3 py-1.5 text-[12px] font-semibold text-[#FF3B30] hover:bg-red-100 disabled:opacity-50"
-                  >
-                    Delete
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        </div>
-      )}
-    </Card>
   );
 }
 
@@ -758,16 +511,13 @@ interface AdminEvent {
 /**
  * What the events panel is currently listing.
  *
- * DEFAULTS TO 'tech', which is a change of default rather than a new capability. The panel listed
- * everything, and "everything" is ~1200 rows of which roughly 80% is concerts, treks, comedy and
- * book clubs — so the first screen was Karigar Bazaar, Mahabaleshwar Diaries and TELUGU TASHAN
- * NIGHT FRIDAY, and finding a real tech event to correct meant scrolling past all of it.
+ * DEFAULTS TO 'tech'. The panel listed everything, and "everything" is ~1200 rows of which roughly
+ * 80% is concerts, treks, comedy and book clubs — so the first screen was Karigar Bazaar and TELUGU
+ * TASHAN NIGHT FRIDAY, and finding a real tech event to correct meant scrolling past all of it.
  *
  * 'other' is kept and is not an afterthought: this panel's other stated job is "remove junk", and
- * non-tech IS where the junk lives. Filtering to it is the fastest way to find a mis-tagged
- * concert. 'all' stays available because a mis-tag is invisible from either side alone — an event
- * wrongly flagged tech only shows up under 'tech', and one wrongly flagged non-tech only under
- * 'other'.
+ * non-tech IS where the junk lives. 'all' stays available because a mis-tag is invisible from either
+ * side alone.
  */
 type EventScope = 'tech' | 'other' | 'all';
 
@@ -778,9 +528,9 @@ function EventsPanel({ onChanged }: { onChanged: () => void }) {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
-  const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
-  /** Which event the edit modal is open for. Null = closed. */
+  const [note, setNote] = useState<{ ok: boolean; text: string; auditId?: string | null } | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState<AdminEvent | null>(null);
 
   const search = useCallback(async (term: string, view: EventScope) => {
     setLoading(true);
@@ -788,15 +538,13 @@ function EventsPanel({ onChanged }: { onChanged: () => void }) {
       const params = new URLSearchParams({ limit: '40', sort: 'soonest' });
       if (term.trim()) params.set('q', term.trim());
       /**
-       * `techOnly` is the feed's own parameter, so this panel narrows exactly the way the feed
-       * does rather than by a second definition of "tech". There is no `techOnly=false` inverse —
-       * the flag only ever ADDS `isTechEvent: true` — so 'other' is filtered client-side on the
-       * page that comes back.
+       * `techOnly` is the feed's own parameter, so this panel narrows exactly the way the feed does
+       * rather than by a second definition of "tech". There is no `techOnly=false` inverse — the flag
+       * only ever ADDS `isTechEvent: true` — so 'other' is filtered client-side on the page that
+       * comes back.
        *
        * The honest consequence, stated rather than hidden: 'other' filters ONE PAGE of 40, so its
-       * count is "how many of the 40 fetched are non-tech", not how many exist. Turning it into a
-       * real query would mean a `techOnly=false` arm in `buildEventFilter`, which is a change to
-       * the one function every public read path shares — not worth it for an operator screen.
+       * count is "how many of the 40 fetched are non-tech", not how many exist.
        */
       if (view === 'tech') params.set('techOnly', 'true');
       const res = await fetch(`/api/events?${params}`);
@@ -815,83 +563,20 @@ function EventsPanel({ onChanged }: { onChanged: () => void }) {
     return () => clearTimeout(t);
   }, [q, scope, search]);
 
-  async function remove(e: AdminEvent) {
-    if (!window.confirm(`Delete "${e.title}"?\n\nIt will come back on the next scrape if the source still lists it.`)) {
-      return;
-    }
+  /** Every write goes to the AUDITED admin route, so nothing changes without a log entry. */
+  async function patch(e: AdminEvent, body: Record<string, unknown>, what: string, local: Partial<AdminEvent>) {
     setBusy(e._id);
     setNote(null);
     try {
-      const res = await fetch(`/api/events/${e._id}`, { method: 'DELETE' });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      setEvents(prev => prev.filter(x => x._id !== e._id));
-      setNote({ ok: true, text: `Deleted “${e.title}”.` });
-      onChanged();
-    } catch (err) {
-      setNote({ ok: false, text: `Could not delete (${err instanceof Error ? err.message : 'failed'}).` });
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  /**
-   * Pin or unpin an event to the home page Spotlight.
-   *
-   * Unpinning sends `spotlightAt: null` rather than deleting the key, because the route does a
-   * plain `$set` and cannot express `$unset`. That is fine and deliberate: the feed filters on
-   * `spotlightAt: { $type: 'date' }`, so an explicit null is not a date and does not match. Using
-   * `$exists` there instead would have made this null read as "pinned".
-   *
-   * Only upcoming, and only two get shown — the home page requests `spotlight=true` through the
-   * same filter builder as every other query, so a pin cannot resurrect a finished event. Pinning
-   * a third is allowed here and simply does not display; that is worth knowing before wondering
-   * why nothing changed.
-   */
-  async function toggleSpotlight(e: AdminEvent) {
-    const pinned = Boolean(e.spotlightAt);
-    setBusy(e._id);
-    setNote(null);
-    try {
-      const nextValue = pinned ? null : new Date().toISOString();
-      const res = await fetch(`/api/events/${e._id}`, {
-        method: 'PUT',
+      const res = await fetch(`/api/admin/events/${e._id}`, {
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ spotlightAt: nextValue }),
+        body: JSON.stringify(body),
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      setEvents(prev => prev.map(x => (x._id === e._id ? { ...x, spotlightAt: nextValue } : x)));
-      setNote({
-        ok: true,
-        text: pinned
-          ? `“${e.title}” removed from the Spotlight.`
-          : `“${e.title}” pinned to the Spotlight. It shows on the home page while it is upcoming.`,
-      });
-      onChanged();
-    } catch (err) {
-      setNote({
-        ok: false,
-        text: `Could not update (${err instanceof Error ? err.message : 'failed'}).`,
-      });
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  async function toggleTech(e: AdminEvent) {
-    setBusy(e._id);
-    setNote(null);
-    try {
-      const res = await fetch(`/api/events/${e._id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ isTechEvent: !e.isTechEvent }),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      setEvents(prev => prev.map(x => (x._id === e._id ? { ...x, isTechEvent: !x.isTechEvent } : x)));
-      setNote({
-        ok: true,
-        text: `“${e.title}” ${e.isTechEvent ? 'removed from' : 'marked as'} tech.`,
-      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error((json as { error?: string }).error ?? `HTTP ${res.status}`);
+      setEvents(prev => prev.map(x => (x._id === e._id ? { ...x, ...local } : x)));
+      setNote({ ok: true, text: `${what} — “${e.title}”.`, auditId: (json as { auditId?: string }).auditId });
       onChanged();
     } catch (err) {
       setNote({ ok: false, text: `Could not update (${err instanceof Error ? err.message : 'failed'}).` });
@@ -900,21 +585,59 @@ function EventsPanel({ onChanged }: { onChanged: () => void }) {
     }
   }
 
-  /**
-   * 'other' is applied here, not in the query — `techOnly` has no false arm. See the note in
-   * `search()` for why that boundary was left where it is.
-   */
+  async function destroy(e: AdminEvent, force: boolean) {
+    setConfirming(null);
+    setBusy(e._id);
+    setNote(null);
+    try {
+      const res = await fetch(`/api/admin/events/${e._id}${force ? '?force=true' : ''}`, { method: 'DELETE' });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error((json as { error?: string }).error ?? `HTTP ${res.status}`);
+      setEvents(prev => prev.filter(x => x._id !== e._id));
+      setNote({
+        ok: true,
+        text: `Deleted “${e.title}”. Restorable from the audit log.`,
+        auditId: (json as { auditId?: string }).auditId,
+      });
+      onChanged();
+    } catch (err) {
+      setNote({ ok: false, text: `Could not delete (${err instanceof Error ? err.message : 'failed'}).` });
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function undo(auditId: string) {
+    setBusy(auditId);
+    try {
+      const res = await fetch('/api/admin/audit/undo', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: auditId }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error((json as { error?: string }).error ?? `HTTP ${res.status}`);
+      setNote({ ok: true, text: 'Undone.' });
+      search(q, scope);
+      onChanged();
+    } catch (err) {
+      setNote({ ok: false, text: `Could not undo (${err instanceof Error ? err.message : 'failed'}).` });
+    } finally {
+      setBusy(null);
+    }
+  }
+
   const visible = scope === 'other' ? events.filter(e => !e.isTechEvent) : events;
 
   return (
-    <Card
+    <Panel
       title="Events"
       subtitle={
         scope === 'tech'
           ? `${total} tech event${total === 1 ? '' : 's'} · fix a mis-tagged event or remove junk`
           : scope === 'other'
             ? `${visible.length} non-tech of the ${events.length} fetched · this is where junk lives`
-            : `${total} match${total === 1 ? 'es' : 'es'} · fix a mis-tagged event or remove junk`
+            : `${total} matches · fix a mis-tagged event or remove junk`
       }
       action={
         <Link href="/add-event" className="text-[12.5px] font-semibold text-[#0071E3] hover:underline">
@@ -922,11 +645,6 @@ function EventsPanel({ onChanged }: { onChanged: () => void }) {
         </Link>
       }
     >
-      {/*
-        Tech first, because that is what this app is for and what an operator is almost always
-        looking for. "Non-tech" is not a lesser view — it is the fastest route to the junk this
-        panel exists to remove — and "All" is the only way to see a mis-tag from both sides at once.
-      */}
       <div className="flex flex-wrap gap-1.5 pb-3">
         {(
           [
@@ -940,10 +658,10 @@ function EventsPanel({ onChanged }: { onChanged: () => void }) {
             type="button"
             onClick={() => setScope(id)}
             aria-pressed={scope === id}
-            className={`h-8 rounded-full px-3.5 text-[12.5px] font-semibold border transition-colors ${
+            className={`pressable h-8 rounded-full px-3.5 text-[12.5px] font-semibold transition-colors ${
               scope === id
-                ? 'bg-[#1D1D1F] text-white border-[#1D1D1F]'
-                : 'bg-white text-[#1D1D1F] border-[#e5e5ea] hover:bg-[#f3f3f5]'
+                ? 'bg-[#1D1D1F] text-white'
+                : 'bg-white text-[#1D1D1F] shadow-[inset_0_0_0_1px_var(--hairline)] hover:bg-[#F7F7F9]'
             }`}
           >
             {label}
@@ -953,40 +671,52 @@ function EventsPanel({ onChanged }: { onChanged: () => void }) {
 
       <label className="relative block pb-3">
         <span className="sr-only">Search events</span>
-        <span aria-hidden="true" className="material-symbols-outlined absolute left-3 top-[18px] -translate-y-1/2 text-[18px] text-[#a1a1a6]">
+        <span
+          aria-hidden="true"
+          className="material-symbols-outlined absolute left-3 top-[18px] -translate-y-1/2 text-[18px] text-[#a1a1a6]"
+        >
           search
         </span>
         <input
           value={q}
           onChange={e => setQ(e.target.value)}
           placeholder="Search by title, organiser or venue"
-          className="h-10 w-full rounded-full border border-[#e5e5ea] bg-white pl-10 pr-4 text-[13px] text-[#1D1D1F] focus:border-[#0071E3] focus:outline-none"
+          className="h-10 w-full rounded-full bg-white pl-10 pr-4 text-[13px] text-[#1D1D1F] shadow-[inset_0_0_0_1px_var(--hairline-strong)] focus:outline-none focus:shadow-[inset_0_0_0_2px_#0071E3]"
         />
       </label>
 
-      {note && <Banner tone={note.ok ? 'ok' : 'error'}>{note.text}</Banner>}
+      {note && (
+        <Banner tone={note.ok ? 'ok' : 'error'}>
+          <span className="flex flex-wrap items-center gap-2">
+            {note.text}
+            {note.ok && note.auditId && (
+              <Button size="sm" tone="quiet" disabled={busy === note.auditId} onClick={() => undo(note.auditId!)}>
+                Undo
+              </Button>
+            )}
+          </span>
+        </Banner>
+      )}
 
       {loading ? (
-        <Empty>Loading…</Empty>
+        <NoRows>Loading…</NoRows>
       ) : visible.length === 0 ? (
-        <Empty>
-          {/* Distinguish "your search found nothing" from "this filter found nothing", or a full
-              page of tech events reads as a broken search box. */}
+        <NoRows>
+          {/* Distinguish "your search found nothing" from "this filter found nothing", or a full page
+              of tech events reads as a broken search box. */}
           {q.trim()
             ? `No ${scope === 'tech' ? 'tech ' : scope === 'other' ? 'non-tech ' : ''}events match “${q}”.`
             : scope === 'other'
               ? 'None of the events on this page are non-tech. Search, or switch to All.'
               : 'No events found.'}
-        </Empty>
+        </NoRows>
       ) : (
         <div className="max-h-[560px] overflow-y-auto">
           <ul className="divide-y divide-[#f0f0f2]">
             {visible.map(e => (
               <li key={e._id} className="flex items-center gap-3 py-2.5">
                 <div className="w-[58px] shrink-0 text-center">
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-[#86868B]">
-                    {dayLabelIST(e.startDateTime)}
-                  </p>
+                  <p className="t-label text-[#8E8E93]">{dayLabelIST(e.startDateTime)}</p>
                 </div>
                 <div className="min-w-0 flex-1">
                   <Link
@@ -999,72 +729,77 @@ function EventsPanel({ onChanged }: { onChanged: () => void }) {
                     {[e.source, e.organizer, (e.category || []).join(', ')].filter(Boolean).join(' · ')}
                   </p>
                 </div>
-                {/* Star, not the word "Spotlight": the row already carries a date, a title, a
-                    source line and two other controls, and a third word-button turns it into a
-                    wall of text. `aria-pressed` is what makes an icon toggle legible to a screen
-                    reader — it says the state, which the glyph alone cannot. */}
+                {/* Star, not the word "Spotlight": the row already carries a date, a title, a source
+                    line and three other controls. `aria-pressed` is what makes an icon toggle legible
+                    to a screen reader — it says the state, which the glyph alone cannot. */}
                 <button
                   type="button"
-                  onClick={() => toggleSpotlight(e)}
+                  onClick={() =>
+                    patch(
+                      e,
+                      // An explicit null when unpinning: `$set` cannot express `$unset`, and the home
+                      // page matches `{ $type: 'date' }` so a stored null reads correctly as unpinned.
+                      { spotlightAt: e.spotlightAt ? null : new Date().toISOString() },
+                      e.spotlightAt ? 'Removed from the Spotlight' : 'Pinned to the Spotlight',
+                      { spotlightAt: e.spotlightAt ? null : new Date().toISOString() }
+                    )
+                  }
                   disabled={busy === e._id}
                   aria-pressed={Boolean(e.spotlightAt)}
                   aria-label={
-                    e.spotlightAt
-                      ? `Remove ${e.title} from the Spotlight`
-                      : `Pin ${e.title} to the Spotlight`
+                    e.spotlightAt ? `Remove ${e.title} from the Spotlight` : `Pin ${e.title} to the Spotlight`
                   }
                   title={
                     e.spotlightAt
                       ? 'Pinned to the home page Spotlight — click to remove'
                       : 'Pin to the home page Spotlight (shows the two most recently pinned)'
                   }
-                  className={`shrink-0 rounded-full px-2.5 py-1.5 text-[12px] font-semibold disabled:opacity-50 ${
+                  className={`pressable shrink-0 rounded-full px-2.5 py-1.5 text-[12px] font-semibold disabled:opacity-45 ${
                     e.spotlightAt
                       ? 'bg-[#1D1D1F] text-white hover:bg-black'
-                      : 'border border-[#e5e5ea] bg-white text-[#86868B] hover:bg-[#f3f3f5]'
+                      : 'bg-white text-[#8E8E93] shadow-[inset_0_0_0_1px_var(--hairline-strong)] hover:bg-[#F7F7F9]'
                   }`}
                 >
                   <span aria-hidden="true" className="material-symbols-outlined text-[15px] leading-none align-[-2px]">
                     {e.spotlightAt ? 'star' : 'star_outline'}
                   </span>
                 </button>
-                <button
-                  type="button"
-                  onClick={() => toggleTech(e)}
+                <Button
+                  size="sm"
+                  tone={e.isTechEvent ? 'secondary' : 'quiet'}
                   disabled={busy === e._id}
                   title="Toggle whether this counts as a software/hardware tech event"
-                  className={`shrink-0 rounded-full px-3 py-1.5 text-[12px] font-semibold disabled:opacity-50 ${
-                    e.isTechEvent
-                      ? 'bg-[#0071E3] text-white hover:bg-blue-600'
-                      : 'border border-[#e5e5ea] bg-white text-[#6E6E73] hover:bg-[#f3f3f5]'
-                  }`}
+                  onClick={() =>
+                    patch(
+                      e,
+                      { isTechEvent: !e.isTechEvent },
+                      e.isTechEvent ? 'Removed from tech' : 'Marked as tech',
+                      { isTechEvent: !e.isTechEvent }
+                    )
+                  }
                 >
                   {e.isTechEvent ? 'Tech' : 'Not tech'}
-                </button>
-                {/* An icon, for the same reason the Spotlight control is one: the row already
-                    carries a date, a title, a source line and two word-buttons. `aria-label`
-                    names the event so a screen reader hears which row it belongs to. */}
-                <button
-                  type="button"
-                  onClick={() => setEditingId(e._id)}
+                </Button>
+                <Button
+                  size="sm"
+                  tone="quiet"
                   disabled={busy === e._id}
                   aria-label={`Edit ${e.title}`}
                   title="Edit this event's title, time, venue, categories and cover image"
-                  className="shrink-0 rounded-full border border-[#e5e5ea] bg-white px-2.5 py-1.5 text-[12px] font-semibold text-[#6E6E73] hover:bg-[#f3f3f5] disabled:opacity-50"
+                  icon="edit"
+                  onClick={() => setEditingId(e._id)}
                 >
-                  <span aria-hidden="true" className="material-symbols-outlined text-[15px] leading-none align-[-2px]">
-                    edit
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => remove(e)}
+                  <span className="sr-only">Edit</span>
+                </Button>
+                <Button
+                  size="sm"
+                  tone="danger"
                   disabled={busy === e._id}
                   aria-label={`Delete ${e.title}`}
-                  className="shrink-0 rounded-full bg-red-50 px-3 py-1.5 text-[12px] font-semibold text-[#FF3B30] hover:bg-red-100 disabled:opacity-50"
+                  onClick={() => setConfirming(e)}
                 >
                   Delete
-                </button>
+                </Button>
               </li>
             ))}
           </ul>
@@ -1072,9 +807,8 @@ function EventsPanel({ onChanged }: { onChanged: () => void }) {
       )}
 
       {/* Re-runs the search on save rather than patching the row in place: an edit can change the
-          title, the date or the categories, all of which the row displays and the query orders by,
-          so a local patch could leave a row under the wrong date heading. `onChanged()` also
-          refreshes the corpus stats, since a tech-flag change moves the counts. */}
+          title, the date or the categories, all of which the row displays and the query orders by, so
+          a local patch could leave a row under the wrong date heading. */}
       {editingId && (
         <EditEventModal
           eventId={editingId}
@@ -1082,133 +816,25 @@ function EventsPanel({ onChanged }: { onChanged: () => void }) {
           onSaved={title => {
             setEditingId(null);
             setNote({ ok: true, text: `Saved “${title}”.` });
-            // Re-search in the CURRENT scope. Passing only `q` would silently reset the panel to
-            // whatever `search`'s default was and drop the operator's filter after every save.
+            // Re-search in the CURRENT scope. Passing only `q` would silently reset the panel and drop
+            // the operator's filter after every save.
             search(q, scope);
             onChanged();
           }}
         />
       )}
-    </Card>
-  );
-}
 
-/* ────────────────────────────── Primitives ────────────────────────────── */
-
-function Card({
-  title,
-  subtitle,
-  action,
-  children,
-}: {
-  title: string;
-  subtitle?: string;
-  action?: React.ReactNode;
-  children: React.ReactNode;
-}) {
-  return (
-    <section className="rounded-2xl bg-white card-shadow p-5">
-      <div className="flex flex-wrap items-start justify-between gap-2 pb-3">
-        <div>
-          <h2 className="text-[16px] font-bold text-[#1D1D1F]">{title}</h2>
-          {subtitle && <p className="mt-0.5 text-[13px] text-[#6E6E73]">{subtitle}</p>}
-        </div>
-        {action}
-      </div>
-      {children}
-    </section>
-  );
-}
-
-function Stat({
-  label,
-  value,
-  sub,
-  accent,
-  plain,
-}: {
-  label: string;
-  value: number;
-  sub?: string;
-  accent?: boolean;
-  plain?: boolean;
-}) {
-  return (
-    <div className={plain ? '' : 'rounded-2xl bg-white card-shadow p-4'}>
-      <p className="text-[12px] font-semibold uppercase tracking-wide text-[#86868B]">{label}</p>
-      <p
-        className={`tnum mt-1 text-[26px] font-bold leading-none tracking-[-0.02em] ${
-          accent ? 'text-[#0071E3]' : 'text-[#1D1D1F]'
-        }`}
-      >
-        {value.toLocaleString('en-IN')}
-      </p>
-      {sub && <p className="mt-1 text-[12px] text-[#6E6E73]">{sub}</p>}
-    </div>
-  );
-}
-
-function Field({ label, value, tone }: { label: string; value: string; tone?: 'warn' }) {
-  return (
-    <div>
-      <dt className="text-[12px] font-semibold uppercase tracking-wide text-[#86868B]">{label}</dt>
-      <dd className={`mt-0.5 text-[14px] font-semibold ${tone === 'warn' ? 'text-[#C7362D]' : 'text-[#1D1D1F]'}`}>
-        {value}
-      </dd>
-    </div>
-  );
-}
-
-/** Horizontal bar list. Widths are relative to the largest value, not the total. */
-function BarList({ items }: { items: Array<{ name: string; count: number }> }) {
-  const max = Math.max(1, ...items.map(i => i.count));
-  return (
-    <ul className="space-y-1.5">
-      {items.map(i => (
-        <li key={i.name} className="flex items-center gap-2.5">
-          <span className="w-[132px] shrink-0 truncate text-[12.5px] text-[#3a3a3c]">{i.name}</span>
-          <span className="h-2 flex-1 overflow-hidden rounded-full bg-[#f0f0f2]">
-            <span
-              className="block h-full rounded-full bg-[#0071E3]"
-              style={{ width: `${(i.count / max) * 100}%` }}
-            />
-          </span>
-          <span className="tnum w-9 shrink-0 text-right text-[12px] font-semibold text-[#1D1D1F]">
-            {i.count}
-          </span>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-function Banner({ tone, children }: { tone: 'ok' | 'warn' | 'error'; children: React.ReactNode }) {
-  const cls =
-    tone === 'ok'
-      ? 'bg-green-50 border-green-200 text-green-800'
-      : tone === 'warn'
-        ? 'bg-amber-50 border-amber-200 text-amber-900'
-        : 'bg-red-50 border-red-200 text-red-700';
-  return (
-    <div className={`mt-3 rounded-xl border px-4 py-3 text-[12.5px] leading-relaxed ${cls}`} role="status">
-      {children}
-    </div>
-  );
-}
-
-function Empty({ children }: { children: React.ReactNode }) {
-  return <p className="py-6 text-center text-[13px] text-[#86868B]">{children}</p>;
-}
-
-function SkeletonGrid() {
-  return (
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-      {Array.from({ length: 4 }).map((_, i) => (
-        <div key={i} className="rounded-2xl bg-white card-shadow p-4">
-          <div className="h-3 w-20 rounded bg-[#f0f0f2]" />
-          <div className="mt-2 h-7 w-16 rounded bg-[#f0f0f2]" />
-        </div>
-      ))}
-    </div>
+      {confirming && (
+        <ImpactDialog
+          open
+          type="event"
+          ids={[confirming._id]}
+          title={`Delete “${confirming.title}”?`}
+          actionLabel="Delete event"
+          onCancel={() => setConfirming(null)}
+          onConfirm={force => destroy(confirming, force)}
+        />
+      )}
+    </Panel>
   );
 }

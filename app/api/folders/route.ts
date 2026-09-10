@@ -78,7 +78,7 @@ export async function POST(request: NextRequest) {
      */
     if (typeof body.eventId === 'string' && body.eventId && isValidId(body.eventId)) {
       const event = await Event.findById(body.eventId).select(
-        'title startDateTime venue area visibility createdByUserId'
+        'title startDateTime venue area visibility createdByUserId deletedAt'
       );
       /**
        * `canViewEvent` IS THE WHOLE POINT OF THIS BRANCH, and it was missing here while the PATCH

@@ -8,7 +8,7 @@ import connectDB from '@/lib/mongodb';
 import Event from '@/lib/models/Event';
 import { getCurrentUserId } from '@/lib/auth-helpers';
 import { canViewEvent } from '@/lib/events/visibility';
-import { visibilityClause } from '@/lib/events/query';
+import { publicEventScope } from '@/lib/events/query';
 import { toFeedEvent, toFeedEvents } from '@/lib/events/serialize';
 import {
   buildEventJsonLd,
@@ -116,7 +116,8 @@ const loadEvent = cache(async (id: string): Promise<LoadedEvent | null> => {
     _id: { $ne: doc._id },
     startDateTime: { $gte: new Date() },
     category: { $in: doc.category?.length ? doc.category : ['Networking/Meetup'] },
-    ...visibilityClause(viewerId),
+    // `publicEventScope`, NOT `visibilityClause` -- see the note on that function.
+    ...publicEventScope(viewerId),
   })
     .select('title startDateTime venue area format imageUrl category isFree price organizer')
     .sort({ startDateTime: 1 })
