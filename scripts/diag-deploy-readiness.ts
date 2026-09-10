@@ -140,14 +140,33 @@ check(
   'The daily digest generates but is never emailed. The in-app view still works.',
   'Optional. Leave unset if you do not want email.'
 );
+/*
+ * THIS CHECK TESTS PRESENCE, NOT VALIDITY, AND IT SAID `ok` THROUGH A TOTAL OUTAGE.
+ *
+ * Measured 2026-09-10: ICA answered 401 "Developer API key has expired", NVIDIA answered 410
+ * because the configured model had reached end of life, Anthropic was unset — and this line
+ * printed `ok  at least one LLM provider / configured: ICA_API_KEY, NVIDIA_API_KEY`. Every
+ * event for the previous fortnight had been keyword-tagged and the readiness check read as
+ * reassurance.
+ *
+ * It cannot be fixed by probing: this script's contract is no network and no DB so it is safe
+ * in CI, and that is worth more than this one verdict. What it CAN stop doing is implying a
+ * credential works. So the label says `configured` rather than `working`, the detail names the
+ * tool that actually decides, and the wording no longer claims the tagger is healthy.
+ *
+ * A dead LLM key is precisely the "invisible locally" class this file exists for, so if a
+ * network-permitted variant is ever added, this is the check to move into it.
+ */
 const llm = ['ICA_API_KEY', 'NVIDIA_API_KEY', 'ANTHROPIC_API_KEY'].filter(has);
 check(
   'DEGRADED',
-  'at least one LLM provider',
+  'an LLM provider is CONFIGURED (not verified — run check-llm.ts)',
   llm.length > 0,
   'Tagging falls back to the keyword floor for every event. The pipeline still runs and nothing ' +
     'is dropped, but isTechEvent and categories get noticeably coarser.',
-  llm.length > 0 ? `configured: ${llm.join(', ')}` : 'ICA_API_KEY / NVIDIA_API_KEY / ANTHROPIC_API_KEY'
+  llm.length > 0
+    ? `${llm.join(', ')} set — a key being PRESENT is not a key that WORKS; scripts/check-llm.ts is the only thing that decides`
+    : 'ICA_API_KEY / NVIDIA_API_KEY / ANTHROPIC_API_KEY'
 );
 
 // ── Repo-level readiness, not env ───────────────────────────────────────────
