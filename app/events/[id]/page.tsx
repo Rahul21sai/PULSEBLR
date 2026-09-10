@@ -19,12 +19,20 @@ import {
 } from '@/lib/events/seo';
 import { absoluteUrl, canonicalOrigin } from '@/lib/canonical-origin';
 import { topicForDimension } from '@/lib/events/topics';
+import {
+  connectionVerdict,
+  meterLabel,
+  meterLevel,
+  scoreReasons,
+} from '@/lib/events/score-reason';
+import type { SpeakerMatch } from '@/lib/events/speaker-match';
 import { FeedEvent } from '@/lib/event-types';
 
 import { DesktopNav, MobileBottomNav } from '../../components/NavBar';
 import EventCover from '../../components/EventCover';
 import EventPills from '../../components/EventPills';
 import EventActions from './EventDetailClient';
+import { loadSpeakerMatches } from './load-speaker-matches';
 import {
   timeIST,
   fullDateIST,
@@ -34,6 +42,7 @@ import {
   categoryAccent,
   priceLabel,
   dayLabelIST,
+  shortDateIST,
   isHappeningNow,
   stripMarkdown,
 } from '@/lib/format';
@@ -86,6 +95,12 @@ interface LoadedEvent {
   /** Kept beside the client shape because `FeedEvent` has no `visibility` — SEO needs it. */
   visibility: string | null;
   related: FeedEvent[];
+  /**
+   * Carried out of the loader so the page can do the viewer-scoped speaker lookup WITHOUT a second
+   * `getCurrentUserId()`, and so `generateMetadata` never pays for it — metadata has no speakers in
+   * it, and the lookup is per-viewer, which is the opposite of what a shared preview card wants.
+   */
+  viewerId: string | null;
 }
 
 /**
@@ -128,6 +143,7 @@ const loadEvent = cache(async (id: string): Promise<LoadedEvent | null> => {
     event: toFeedEvent(doc),
     visibility: doc.visibility ?? null,
     related: toFeedEvents(related),
+    viewerId,
   };
 });
 
@@ -219,6 +235,15 @@ export default async function EventDetailPage({ params }: { params: Promise<{ id
   const { event, related } = loaded;
   const jsonLd = buildEventJsonLd(seoInput(loaded), absoluteUrl(`/events/${event._id}`));
 
+  /*
+   * Speakers matched to the VIEWER's own people, index-aligned with `event.speakers`.
+   *
+   * Costs nothing on almost every event: `speakers` is sparse, and the loader returns before its
+   * first query for an anonymous visitor or an event with no bill. `matchSpeakers` never creates a
+   * `Person` — it holds no model at all, which is the point of it being pure.
+   */
+  const speakerMatches = await loadSpeakerMatches(event.speakers, loaded.viewerId);
+
   const accent = categoryAccent(event.category?.[0]);
   const live = isHappeningNow(event.startDateTime, event.endDateTime);
   const duration = durationLabel(event.startDateTime, event.endDateTime);
@@ -255,12 +280,25 @@ export default async function EventDetailPage({ params }: { params: Promise<{ id
         <div className="flex flex-col lg:flex-row gap-8">
           {/* ── Main column ─────────────────────────────────────────────── */}
           <div className="flex-1 min-w-0">
-            <div className="relative rounded-[18px] overflow-hidden mb-6 bg-white card-shadow">
+            {/*
+              A RATIO BOX, not a ratio on the image.
+              `aspect-[2/1]` on the wrapper reserves the full height from the width alone, before a
+              byte of the cover has arrived — so the title, the pills and everything below them are
+              laid out once and never move. Putting the ratio on the `<img>` happens to work today
+              and stops working the moment somebody changes its className, and the failure is a
+              page that jumps under the reader's thumb as each cover lands.
+
+              FULL-BLEED ON A PHONE (`-mx-4`, cancelled at `md`). The cover is the only colourful
+              thing on this page, and 16px of grey gutter either side of it on a 375px screen turned
+              the showpiece into a thumbnail. The radius goes with the gutter, because a bled edge
+              with rounded corners reads as a mistake rather than as a decision.
+            */}
+            <div className="relative -mx-4 md:mx-0 mb-6 aspect-[2/1] max-h-[380px] overflow-hidden bg-white md:rounded-[18px] md:card-shadow">
               <EventCover
                 src={event.imageUrl}
                 title={event.title}
                 category={event.category?.[0]}
-                className="w-full aspect-[2/1] max-h-[380px]"
+                className="w-full h-full"
                 monogramSize="text-6xl"
               />
               {live && (
@@ -336,6 +374,19 @@ export default async function EventDetailPage({ params }: { params: Promise<{ id
                 </div>
               </section>
             )}
+
+            {/*
+              AGENDA AND SPEAKERS RENDER NOTHING WHEN ABSENT, which is the normal case.
+
+              Both fields are sparse by nature — they come from richer Luma copy, organiser
+              submissions and the company-microsite path, never from a platform API — so an empty
+              shell headed "Agenda" would be on almost every page in the corpus, asserting that we
+              know the schedule and that it is blank. That is the calendar's "No events this month"
+              mistake in a different place: the most confident-looking answer standing in for missing
+              data. A section that is not there makes no claim at all.
+            */}
+            <EventAgenda items={event.agenda} />
+            <EventSpeakers speakers={event.speakers} matches={speakerMatches} />
 
             {event.tags && event.tags.length > 0 && (
               <section className="mt-6">
@@ -556,38 +607,28 @@ function Shell({ children }: { children: React.ReactNode }) {
 /**
  * "Is this worth my evening?" — the question the whole product exists to answer.
  *
- * connectionScore is deterministic (lib/events/connection-score.ts), so the factors can
- * be restated here from the same fields rather than guessed at. Showing the reasoning
- * matters more than showing the number: a bare 83/100 is a black box, while "in person,
- * 60 going, food" is something a person can agree or disagree with.
+ * ─────────────────────────────────────────────────────────────────────────────────────────────
+ * THE REASONS ARE MEASURED, NOT RESTATED. This panel used to build its own list, including a
+ * hand-copied `FUNNEL` regex — and that copy had already fallen four entries behind
+ * `FUNNEL_PATTERN`: it knew nothing of `demo class`, `trial class`, `placement` or `\d+% off`, all
+ * of which were added to the real pattern after two coaching-centre adverts reached the top of the
+ * live feed. So the panel confidently explained a heavily-penalised event without mentioning the
+ * penalty. `lib/events/score-reason.ts` derives every clause by calling `connectionScore` twice and
+ * differencing, so the words and the bars cannot disagree again.
+ *
+ * The bars and the verdict come from the same module, for the same reason: `>= 70 ? 3 : >= 50 ? 2`
+ * was written out by hand here AND in `EventRow`, two copies of one threshold.
+ *
+ * STILL NO NUMBER. The score is a ranking signal, not a measurement; printing "83" implies a
+ * precision it does not have.
  *
  * Hooks-free, so it renders on the server with the rest of the page.
+ * ─────────────────────────────────────────────────────────────────────────────────────────────
  */
 function WorthGoing({ event }: { event: FeedEvent }) {
   const score = event.connectionScore ?? 0;
-  const level = score >= 70 ? 3 : score >= 50 ? 2 : 1;
-  const verdict =
-    level === 3 ? 'Strong chance' : level === 2 ? 'Worth a look' : 'Probably not';
-
-  // Mirrors the weights in connection-score.ts. Ordered by how much they move the score.
-  const FUNNEL = /\b(certifi\w*|cohort|bootcamp|training|masterclass|course|webinar|batch \d)\b/i;
-  const reasons: Array<{ good: boolean; text: string }> = [];
-
-  if (event.format === 'offline') reasons.push({ good: true, text: 'In person — you can actually meet people' });
-  else if (event.format === 'hybrid') reasons.push({ good: true, text: 'Hybrid — go in person if you can' });
-  else reasons.push({ good: false, text: 'Online — you will watch, not mingle' });
-
-  if (typeof event.attendeeCount === 'number' && event.attendeeCount > 0) {
-    reasons.push({ good: true, text: `${event.attendeeCount} people going` });
-  }
-  if (event.hasFood === 'yes') reasons.push({ good: true, text: 'Food — people stay and talk' });
-  if (event.companies && event.companies.length > 0) {
-    reasons.push({ good: true, text: `Hosted by ${event.companies.slice(0, 2).join(' & ')}` });
-  }
-  if (FUNNEL.test(event.title)) {
-    reasons.push({ good: false, text: 'Reads like a course — you may be in an audience' });
-  }
-  if (event.isFree) reasons.push({ good: true, text: 'Free — draws practitioners' });
+  const level = meterLevel(score);
+  const reasons = scoreReasons(event);
 
   return (
     <div className="rounded-[18px] bg-white card-shadow p-5">
@@ -603,27 +644,201 @@ function WorthGoing({ event }: { event: FeedEvent }) {
         className="mt-1.5 text-[19px] font-bold tracking-[-0.025em] text-[#1D1D1F]"
         style={{ fontFamily: 'var(--font-display)' }}
       >
-        {verdict}
+        {connectionVerdict(score)}
       </p>
-      <ul className="mt-3 space-y-1.5">
-        {reasons.map(r => (
-          <li key={r.text} className="flex items-start gap-2 text-[12.5px] leading-snug text-[#3a3a3c]">
-            <span
-              aria-hidden="true"
-              className={`material-symbols-outlined mt-[1px] text-[15px] shrink-0 ${
-                r.good ? 'text-[#1D8A44]' : 'text-[#8E8E93]'
-              }`}
+      <span className="sr-only">{meterLabel(score)}</span>
+
+      {reasons.length > 0 ? (
+        <ul className="mt-3 space-y-1.5">
+          {reasons.map(reason => (
+            <li
+              key={reason.signal}
+              className="flex items-start gap-2 text-[12.5px] leading-snug text-[#3a3a3c]"
             >
-              {r.good ? 'check' : 'remove'}
-            </span>
-            {r.text}
-          </li>
-        ))}
-      </ul>
+              <span
+                aria-hidden="true"
+                className={`material-symbols-outlined mt-[1px] text-[15px] shrink-0 ${
+                  reason.good ? 'text-[#1D8A44]' : 'text-[#8E8E93]'
+                }`}
+              >
+                {reason.good ? 'check' : 'remove'}
+              </span>
+              {reason.long}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        /* A listing with no format, no host and no categories genuinely has nothing to argue with.
+           Saying so is better than an empty bullet list under a confident verdict. */
+        <p className="mt-3 text-[12.5px] leading-snug text-[#6E6E73]">
+          This listing carries too little detail to say much either way.
+        </p>
+      )}
+
       <p className="mt-3 text-[11.5px] leading-relaxed text-[#8E8E93]">
         A ranking signal, not a promise. Powers the feed&rsquo;s &ldquo;Best for
         connections&rdquo; sort.
       </p>
     </div>
+  );
+}
+
+/**
+ * The timed agenda, when an organiser published one.
+ *
+ * Built on the feed's own time-rail idiom — clock time in a left gutter, a node, then the content —
+ * rather than as another stack of rounded cards. A schedule is the one thing on this page that IS a
+ * sequence, so the rail is carrying information rather than decorating; and reusing the structure
+ * the feed already teaches means a reader does not have to learn a second way to read a time.
+ *
+ * `startsAt` is optional, so a bill with titles and no times still renders — the gutter is simply
+ * empty. Order is as PUBLISHED, never re-sorted: a partially-timed agenda sorted by time would put
+ * the untimed rows in an order the organiser did not choose.
+ */
+function EventAgenda({ items }: { items?: FeedEvent['agenda'] }) {
+  if (!items?.length) return null;
+
+  return (
+    <section className="mt-8">
+      <h2 className="t-label text-[#8E8E93] mb-2.5">Agenda</h2>
+      <div className="bg-white rounded-[18px] card-shadow p-5 md:p-6">
+        <ol className="flex flex-col">
+          {items.map((item, index) => (
+            <li key={`${item.title}-${index}`} className="flex gap-3 md:gap-4">
+              <span className="w-[46px] shrink-0 pt-[2px] text-right tnum text-[12.5px] font-semibold leading-[1.3] text-[#1D1D1F]">
+                {item.startsAt ? timeIST(item.startsAt) : ''}
+              </span>
+              {/* The connector, drawn on every row but the last, so the column reads as one
+                  sequence rather than as separate lines that happen to be stacked. */}
+              <span aria-hidden="true" className="w-[9px] shrink-0 flex flex-col items-center pt-[6px]">
+                <span className="h-[7px] w-[7px] rounded-full bg-[#c7c7cc] shrink-0" />
+                {index < items.length - 1 && <span className="flex-1 w-px bg-[color:var(--hairline)]" />}
+              </span>
+              <div className={`min-w-0 flex-1 ${index < items.length - 1 ? 'pb-4' : ''}`}>
+                <p className="text-[14.5px] font-semibold leading-[1.35] text-[#1D1D1F]">
+                  {item.title}
+                </p>
+                {(item.speakerName || item.speakerCompany) && (
+                  <p className="text-[12.5px] text-[#6E6E73] mt-0.5">
+                    {[item.speakerName, item.speakerCompany].filter(Boolean).join(' · ')}
+                  </p>
+                )}
+              </div>
+            </li>
+          ))}
+        </ol>
+      </div>
+    </section>
+  );
+}
+
+/**
+ * The speaker bill, and the thing no competitor with no contact layer can print: which of these
+ * people you have already met.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────────────────────
+ * THE MATCH IS A CLAIM ABOUT THE READER'S OWN MEMORY, so the copy is graded to the evidence.
+ * `basis: 'name+company'` had both sides state an employer and agree, and reads as a statement:
+ * "Met at IndiaFOSS". `basis: 'name'` had only an exact full name, so it reads as an observation
+ * the reader can dismiss: "Same name as someone you met at IndiaFOSS". Rendering both identically
+ * would put the weaker inference behind the stronger one's confidence, and the reader cannot check
+ * it — not remembering is the entire reason they are reading the line.
+ *
+ * `matches` is index-aligned with `speakers` and is EMPTY for a signed-out reader, so an anonymous
+ * visitor sees the bill and nothing else. A `Person` is per-user data and this page is public.
+ * ─────────────────────────────────────────────────────────────────────────────────────────────
+ */
+function EventSpeakers({
+  speakers,
+  matches,
+}: {
+  speakers?: FeedEvent['speakers'];
+  matches: (SpeakerMatch | null)[];
+}) {
+  if (!speakers?.length) return null;
+
+  return (
+    <section className="mt-8">
+      <h2 className="t-label text-[#8E8E93] mb-2.5">Speaking</h2>
+      <div className="bg-white rounded-[18px] card-shadow divide-y divide-[color:var(--hairline)]">
+        {speakers.map((speaker, index) => (
+          <div
+            key={`${speaker.name}-${index}`}
+            className="flex flex-col gap-1 p-4 md:px-6 sm:flex-row sm:items-center sm:justify-between sm:gap-4"
+          >
+            <div className="min-w-0">
+              <p className="text-[14.5px] font-semibold leading-[1.3] text-[#1D1D1F]">
+                {speaker.linkedin ? (
+                  <a
+                    href={speaker.linkedin}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="hover:text-[#0071E3] transition-colors"
+                  >
+                    {speaker.name}
+                  </a>
+                ) : (
+                  speaker.name
+                )}
+              </p>
+              {(speaker.title || speaker.company) && (
+                <p className="text-[12.5px] text-[#6E6E73] mt-0.5">
+                  {[speaker.title, speaker.company].filter(Boolean).join(' · ')}
+                </p>
+              )}
+            </div>
+            <MetBefore match={matches[index] ?? null} />
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+/** "Met at IndiaFOSS · 18 Jul", linked to the person. Renders nothing without a match. */
+function MetBefore({ match }: { match: SpeakerMatch | null }) {
+  if (!match) return null;
+
+  const strong = match.basis === 'name+company';
+  const when = match.metAt ? shortDateIST(match.metAt) : null;
+
+  /*
+   * Deliberately no pronoun. The spec's example reads "you met HER at IndiaFOSS", and nothing in
+   * either record says which pronoun to use — `Person` has no gender field and guessing one from a
+   * name would be wrong often and wrong in a way that stings. "Met at" needs none.
+   */
+  const where = match.metAtTitle
+    ? strong
+      ? `Met at ${match.metAtTitle}`
+      : `Same name as someone you met at ${match.metAtTitle}`
+    : strong
+      ? 'Someone you have met'
+      : 'Same name as someone you have met';
+
+  return (
+    <Link
+      href={`/people/${match.personId}`}
+      /* Blue because it is actionable — it opens the person. The one accent in this design system
+         means "you can act on this" and is never decoration. */
+      className={`shrink-0 inline-flex items-center gap-1.5 text-[12.5px] font-semibold transition-colors ${
+        strong ? 'text-[#0071E3] hover:text-[#0061C3]' : 'text-[#6E6E73] hover:text-[#0071E3]'
+      }`}
+      title={
+        strong
+          ? 'Matched on their full name and their company'
+          : 'Matched on their full name alone — no company was stated on either side, so this may be a different person'
+      }
+    >
+      <span aria-hidden="true" className="material-symbols-outlined text-[15px]">
+        {strong ? 'how_to_reg' : 'person_search'}
+      </span>
+      <span>
+        {where}
+        {when && <span className="tnum font-normal text-[#86868B]"> · {when}</span>}
+        {strong && match.eventCount > 1 && (
+          <span className="tnum font-normal text-[#86868B]"> · met {match.eventCount}&times;</span>
+        )}
+      </span>
+    </Link>
   );
 }

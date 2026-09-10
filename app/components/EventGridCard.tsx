@@ -6,6 +6,10 @@ import { timeIST, dayLabelIST, locationLabel, categoryAccent } from '@/lib/forma
 import EventCover from './EventCover';
 import EventPills from './EventPills';
 import SaveButton from './SaveButton';
+// Imported from the rail row rather than copied or given its own file: the meter and the rule about
+// which clauses a CARD may repeat are one decision, and two copies of it would drift the way the two
+// copies of the `>= 70 ? 3` threshold already had.
+import { ConnectionMeter, cardReasonLine } from './EventRow';
 
 /**
  * Image-forward card for grid view.
@@ -67,6 +71,15 @@ export default function EventGridCard({ event }: { event: FeedEvent }) {
           </span>
           <span className="truncate">{locationLabel(event)}</span>
         </p>
+
+        {/* The connection meter was on the rail row and NOT here, so switching to grid view lost the
+            one signal this app has that Luma and Meetup do not — while the sort it powers stayed
+            selected. A view toggle should change the shape of the list, not what it tells you. */}
+        {typeof event.connectionScore === 'number' && (
+          <div className="text-[12.5px] text-[#6E6E73] min-w-0">
+            <ConnectionMeter score={event.connectionScore} reason={cardReasonLine(event)} />
+          </div>
+        )}
 
         <div className="mt-auto pt-2">
           <EventPills event={event} compact />

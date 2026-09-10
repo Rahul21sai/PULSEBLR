@@ -2,6 +2,7 @@
 import Link from 'next/link';
 
 import { FeedEvent } from '@/lib/event-types';
+import { meterLabel, meterLevel, scoreReasonLine } from '@/lib/events/score-reason';
 import {
   timeIST,
   shortDateIST,
@@ -151,7 +152,7 @@ export default function EventRow({
 
               <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px] tracking-[0] text-[#6E6E73] min-w-0">
                 {typeof event.connectionScore === 'number' && (
-                  <ConnectionMeter score={event.connectionScore} />
+                  <ConnectionMeter score={event.connectionScore} reason={cardReasonLine(event)} />
                 )}
                 {event.organizer && (
                   <span className="inline-flex items-center gap-1 min-w-0 max-w-full">
@@ -187,6 +188,32 @@ export default function EventRow({
 }
 
 /**
+ * The clause that goes beside the meter on a CARD, as opposed to the full rationale the detail
+ * page's "Worth going?" panel prints.
+ *
+ * WHAT IT LEAVES OUT IS THE DESIGN. `EventPills`, directly below, already shows a pill for food, for
+ * the attendee count and for the price, and an `Online` pill for an online event — so naming any of
+ * those again spends the row's remaining width saying nothing new. What is left is exactly the part
+ * of the ranking a reader cannot see anywhere else on the row: whether it is in person (which has no
+ * pill, absence being the only cue), what kind of gathering it is, who is behind it, and whether the
+ * title reads like a sales session.
+ *
+ * The format exclusion is CONDITIONAL because the pills are asymmetric — an online event gets a
+ * pill and an in-person one does not, and in-person is the single biggest term in the score. Only
+ * the component knows what else is on screen, which is why `scoreReasonLine` takes the exclusion
+ * rather than guessing.
+ *
+ * Two clauses, not four: a strong meetup reads `in person · meetup`, and the rest is one tap away.
+ */
+export function cardReasonLine(event: FeedEvent): string {
+  const covered = ['food', 'attendees', 'price'] as const;
+  return scoreReasonLine(event, {
+    max: 2,
+    exclude: event.format === 'online' ? [...covered, 'format'] : covered,
+  });
+}
+
+/**
  * How likely is this event to leave you with useful contacts?
  *
  * `connectionScore` is computed for every event by lib/events/connection-score.ts —
@@ -196,26 +223,35 @@ export default function EventRow({
  * that sort order looked arbitrary.
  *
  * Three bars, not the number. The score is a ranking signal, not a measurement, and
- * printing "83" invites a precision it does not have. Bars rank at a glance; the title
- * attribute carries the detail for anyone who wants it.
+ * printing "83" invites a precision it does not have.
+ *
+ * BUT BARS ALONE WERE NOT ENOUGH, and the words are the fix. Three unlabelled bars rank at a glance
+ * and explain nothing, so "Best for connections" still read as an arbitrary order — the reader had
+ * no way to agree or disagree with it. The clause is derived from the same arithmetic that produced
+ * the bars (`lib/events/score-reason.ts` differences `connectionScore` rather than restating it), so
+ * the two cannot contradict each other.
+ *
+ * The level and the screen-reader label come from the same module for the same reason: this
+ * component and the detail page each held their own copy of `>= 70 ? 3 : >= 50 ? 2 : 1`.
  */
-function ConnectionMeter({ score }: { score: number }) {
-  const level = score >= 70 ? 3 : score >= 50 ? 2 : 1;
-  const label =
-    level === 3
-      ? 'Strong chance of useful contacts'
-      : level === 2
-        ? 'Some chance of useful contacts'
-        : 'Unlikely to lead to contacts';
+export function ConnectionMeter({ score, reason }: { score: number; reason?: string }) {
+  const level = meterLevel(score);
+  const label = meterLabel(score);
 
   return (
-    <span className="inline-flex items-center gap-1.5 shrink-0" title={`${label} · score ${score}/100`}>
-      <span className="meter" data-level={level} aria-hidden="true">
+    <span className="inline-flex items-center gap-1.5 min-w-0" title={label}>
+      <span className="meter shrink-0" data-level={level} aria-hidden="true">
         <i />
         <i />
         <i />
       </span>
       <span className="sr-only">{label}</span>
+      {reason && (
+        /* Truncated rather than wrapped: this sits in a flex-wrap row with the host and the venue,
+           and a long clause pushing those onto a third line costs more than the tail of the clause
+           is worth. The full rationale is on the event page. */
+        <span className="truncate max-w-[210px]">{reason}</span>
+      )}
     </span>
   );
 }
