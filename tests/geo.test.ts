@@ -114,3 +114,122 @@ describe('resolveArea', () => {
     expect(resolveArea({})).toBeUndefined();
   });
 });
+
+/**
+ * ── THE NEGATIVE HALF, AND IT IS THE IMPORTANT HALF ──────────────────────────────────────────
+ *
+ * A widened gazetteer does not fail by resolving fewer events. It fails by putting events in the
+ * WRONG area, and no aggregate coverage number can reveal that — the resolved count goes UP
+ * either way. `lib/events/relevance.ts` scores `areaMatch: +22` and `areaUnknown: 0`, so a
+ * mislabelled row is ranked UP for a neighbourhood the reader cannot reach while an unresolved
+ * row is merely neutral: **a wrong area is strictly worse than no area.** Hence every case below
+ * asserts a REFUSAL.
+ *
+ * Three of them are regressions that were live in the shipped table, all the same shape as the
+ * tagger's bare `\bpm\b` matching the "PM" in "6 PM" — a locality name appearing INSIDE a longer
+ * word. They were found by replaying the real patterns over the live corpus
+ * (`scripts/diag-area-coverage.ts`, `scripts/backfill-area.ts` dry run), not by inspection.
+ */
+describe('resolveArea — the tokens it must REFUSE to match', () => {
+  it('does not read a locality out of the middle of a longer word', () => {
+    // `agara` (HSR Layout), unbounded, matched "Thi<agara>jar College" — in MADURAI. That match
+    // was also vetoing the off-city gate's rejection of it, so bounding the token is what lets
+    // the gate do its job. See the note in geo.ts's AREAS header.
+    expect(resolveArea({ venue: 'Thiagarajar College, Madurai' })).toBe('Other');
+    // Same token inside "Sampangi Rama Nagara". HSR Layout sits EARLIER in the table than MG
+    // Road, so this Cubbon Park address resolved to HSR Layout and beat `cubbon`.
+    expect(
+      resolveArea({
+        venue: 'Cubbon Park',
+        address: 'Kasturba Road, Behind High Court of Karnataka, Sampangi Rama Nagara, Bengaluru',
+      })
+    ).toBe('MG Road');
+    // `jayanagar`, unbounded, matched "San<jayanagar>a" — an RMV 2nd Stage club roughly 12 km
+    // north of Jayanagar, i.e. the wrong side of the city.
+    expect(
+      resolveArea({ venue: 'ZOZO THE CLUB', address: 'Raj Mahal Vilas 2nd Stage, Sanjayanagara, Bengaluru' })
+    ).not.toBe('Jayanagar');
+    // `majestic` (Bengaluru Central), unbounded, matched "majestically".
+    expect(resolveArea({ venue: 'The temple stands majestically above the valley' })).toBe('Other');
+  });
+
+  it('CANNOT save "majestic mountains" — the boundary is not what protects that', () => {
+    // Stated as a limit rather than left as a surprise. `\bmajestic\b` fixes "majestically" and
+    // nothing more: in "majestic mountains" the token genuinely IS its own word, so it matches,
+    // and Majestic (the Kempegowda bus station) is a real Bengaluru place name that has to keep
+    // matching. What actually keeps trip copy out of the area facet is that `resolveArea` never
+    // reads the description — 5 of 5 Bengaluru Central hits on that path came from this exact
+    // phrase in Bhutan, Morocco and Coorg listings. The two defences are not interchangeable.
+    expect(resolveArea({ venue: 'majestic mountains of the Western Ghats' })).toBe('Bengaluru Central');
+    // The description is not consulted, which is the defence that does the work here.
+    expect(resolveArea({ text: 'Trek through the majestic mountains of Coorg.' })).toBeUndefined();
+  });
+
+  it('still matches those localities when they stand as their own word', () => {
+    // Bounding a token is only correct if it does not cost the true positives it was there for.
+    expect(resolveArea({ venue: 'Agara Lake, Bangalore' })).toBe('HSR Layout');
+    expect(resolveArea({ venue: 'Jayanagar 4th Block' })).toBe('Jayanagar');
+    // The Kannada spelling, which is why the trailing boundary is deliberately absent.
+    expect(resolveArea({ venue: 'Jayanagara, Bengaluru' })).toBe('Jayanagar');
+    expect(resolveArea({ venue: 'Majestic Bus Stand' })).toBe('Bengaluru Central');
+    expect(resolveArea({ venue: 'Arekere Mico Layout' })).toBe('Bannerghatta Road');
+  });
+
+  it('refuses day-trip destinations OUTSIDE the city rather than labelling them a neighbourhood', () => {
+    // Both are real, recurring rows in this corpus: Skandagiri is in Chikkaballapur and
+    // Sakleshpura is in Hassan. They are advertised to a Bengaluru audience and leave from here,
+    // which is exactly why a gazetteer is tempted to place them. 'Other' is the honest answer —
+    // labelling them would hand an out-of-town trek the +22 area bonus.
+    expect(resolveArea({ venue: 'Skandagiri Hills', city: 'Karnataka' })).toBe('Other');
+    expect(resolveArea({ venue: 'Sakleshpur', address: 'Hassan, Karnataka' })).toBe('Other');
+  });
+
+  it('refuses a venue brand that exists in other cities, even at the cost of coverage', () => {
+    // 4 rows in the corpus, all "Draper Startup House for Entrepreneurs, 384, 1st A Main Rd".
+    // Deliberately unmatched: the chain has houses in Bali, Lisbon, San Francisco and Singapore,
+    // and `matchArea` is ALSO what vetoes an off-city rejection — so a token that matched this
+    // would spare the Bali one. The stored address carries no locality to use instead.
+    expect(resolveArea({ venue: 'Draper Startup House for Entrepreneurs', address: '384, 1st A Main Rd' })).toBe(
+      'Other'
+    );
+  });
+
+  it('prefers the VENUE field over the ADDRESS, so a connecting road cannot win', () => {
+    // The address names the two neighbourhoods the road CONNECTS; the venue names where the
+    // event is. Embassy Golf Links is in Domlur. Matching the joined string gave Koramangala.
+    expect(
+      resolveArea({
+        venue: 'IBM EGL D Block',
+        address: 'D Block, Embassy Golf Links, Off Indira Nagar-Koramangala Intermediate Ring Road',
+      })
+    ).toBe('Domlur');
+    // A vague address must not override a named venue.
+    expect(
+      resolveArea({ venue: 'Bommanahalli', address: 'approx 3kms from Silkboard junction., Bangalore' })
+    ).toBe('Bommanahalli');
+    // Precedence must not COST a resolution: with no venue, the address still decides.
+    expect(resolveArea({ address: 'approx 3kms from Silkboard junction., Bangalore' })).toBe('BTM Layout');
+  });
+
+  it('reads the spellings sources actually publish, not the correct ones', () => {
+    // One real venue string, three defects in it: "Mahadevpura" is a letter short of
+    // Mahadevapura, "K.R. Puram" is dotted, and it runs straight into "Marathalli" with no
+    // separator — so a trailing \b on the KR Puram token could never match.
+    expect(
+      resolveArea({
+        venue:
+          'Amazon Development Centre India Pvt. Ltd, Taurus-1 Bagmane Constellation Business Park, K.R. PuramMarathalli Ring Road, Mahadevpura,Bengaluru - 560037',
+      })
+    ).toBe('Whitefield');
+    // Marathalli on its own, without the Whitefield-owned tokens beside it.
+    expect(resolveArea({ venue: 'Marathalli Ring Road' })).toBe('Marathahalli');
+  });
+
+  it('leaves a Bengaluru event we cannot place at Other, and an online one at undefined', () => {
+    // 41 upcoming rows are stored exactly like this — the city is known and no neighbourhood is
+    // named anywhere. 'Other' is the correct answer and no gazetteer can improve on it, which is
+    // why area coverage has a ceiling well below 100%.
+    expect(resolveArea({ address: 'Bangalore', city: 'Bangalore' })).toBe('Other');
+    expect(resolveArea({ venue: 'To Be Announced, Bangalore, Bangalore, Bangalore' })).toBe('Other');
+  });
+});
