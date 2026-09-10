@@ -32,6 +32,12 @@ import { getCurrentUserId } from '@/lib/auth-helpers';
  *   hasFood    yes | no | unknown
  *   isFree     true | false
  *   techOnly   true
+ *   audience   comma-separated (AUDIENCE_NAMES)
+ *   perks      comma-separated (PERK_NAMES)
+ *   tier       comma-separated (EVENT_TIERS)
+ *   followed   true — narrow to companies the SIGNED-IN caller follows. The list is read from
+ *              their `User.targetCompanies`, never from the querystring; anonymous callers and
+ *              users following nobody get an empty result set, not an unfiltered one.
  *   sort       soonest | newest | popular | relevance | connections | foryou
  *   page,limit pagination (limit capped at 100)
  *   includePast / includeAll   include events that have finished
@@ -56,6 +62,28 @@ export async function GET(request: NextRequest) {
 
     const searchParams = request.nextUrl.searchParams;
     const params = parseEventParams(searchParams);
+
+    /*
+     * `?followed=true` — the "Hosted by a company you follow" shelf.
+     *
+     * RESOLVED HERE FROM THE SESSION, never from the querystring. `parseEventParams` deliberately
+     * does not read `followedCompanies`, because a client-supplied list would make "companies you
+     * follow" indistinguishable from "companies you named" while the shelf's heading asserts the
+     * first. The querystring carries only the REQUEST (`followed=true`); the answer comes from the
+     * caller's own `User` row.
+     *
+     * `?? []` IS THE FAIL-CLOSED PATH AND IT IS THE IMPORTANT LINE. Anonymous caller, no `User`
+     * row, a row predating the field, or a user who cleared their list — all four land on an empty
+     * array, and `buildEventFilter` turns that into `{ companies: { $in: [] } }`, which matches
+     * nothing. The alternative, leaving `followedCompanies` undefined, would drop the clause and
+     * answer a request for a personal shelf with the WHOLE feed under a heading claiming every row
+     * is a company the reader follows. The empty array is not a degenerate case to tidy away; it is
+     * the guard.
+     */
+    if (searchParams.get('followed') === 'true') {
+      params.followedCompanies = await loadFollowedCompanies(userId);
+    }
+
     // Nullable, not `requireUser()`: the feed is public. See the note in the facets route.
     const filter = buildEventFilter(params, userId);
 
@@ -113,6 +141,19 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       events: await attachTracked(events, userId),
+      /*
+       * The resolved follow list, echoed back ONLY on the `?followed=true` path.
+       *
+       * The shelf's caption names the companies it matched on, and it can only do that honestly if
+       * it knows which of a row's `companies` the reader actually follows — an event can name three
+       * companies while only one of them is followed, and a caption naming the other two would be a
+       * false claim sitting under a heading that says "a company you follow".
+       *
+       * Not a leak: it is the caller's own `targetCompanies`, derived from their own session, and it
+       * is absent from every other request. `undefined` is dropped by `JSON.stringify`, so the
+       * ordinary feed response is byte-identical to what it was.
+       */
+      followed: params.followedCompanies,
       pagination: {
         page,
         limit,
@@ -124,6 +165,36 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error('Error fetching events:', error);
     return NextResponse.json({ error: 'Failed to fetch events' }, { status: 500 });
+  }
+}
+
+/**
+ * The canonical company names this caller follows (`User.targetCompanies`), or `[]`.
+ *
+ * `[]` FOR EVERY "WE DO NOT KNOW" CASE, and never `null`/`undefined`. The distinction matters
+ * because the caller assigns the result straight to `params.followedCompanies`, where an absent
+ * value drops the clause and an empty array matches nothing — so returning nothing-ish here would
+ * turn "you follow nobody" into "show everything". Anonymous, no `User` row, field absent, list
+ * cleared: one answer, and it is the safe one.
+ *
+ * `findOne` rather than `ensureUser()`, for the same reason `loadRelevanceContext` below does it:
+ * a missing row means "follows nothing we know about", which is a true and complete answer, and
+ * creating a `User` document as a side effect of reading a public feed would be the worse bug.
+ *
+ * A THROW MUST NOT COST THE FEED — but note the failure here is not "no shelf", it is a shelf that
+ * would show the wrong thing, so the catch also returns `[]`. An empty shelf hides itself; a
+ * wrongly-populated one lies.
+ */
+async function loadFollowedCompanies(userId: string | null): Promise<string[]> {
+  if (!userId) return [];
+  try {
+    const user = await User.findOne({ googleId: userId })
+      .select('targetCompanies')
+      .lean<{ targetCompanies?: string[] } | null>();
+    return user?.targetCompanies ?? [];
+  } catch (error) {
+    console.error('Could not load followed companies:', error);
+    return [];
   }
 }
 

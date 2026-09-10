@@ -25,6 +25,48 @@ export interface EventQueryParams {
   source?: string[];
   /** Canonical company names (see lib/companies/registry.ts). */
   company?: string[];
+  /**
+   * Canonical company names the SIGNED-IN CALLER follows (`User.targetCompanies`), for the
+   * "Hosted by a company you follow" shelf.
+   *
+   * ───────────────────────────────────────────────────────────────────────────────────────────
+   * IT IS MATCHED ON PRESENCE, NOT LENGTH, AND AN EMPTY ARRAY DELIBERATELY MATCHES NOTHING.
+   *
+   * That asymmetry with `company` above is the entire safety property. `company` uses
+   * `if (params.company?.length)` because an empty list there means "the user selected no
+   * company", i.e. do not filter. Here an empty list means the OPPOSITE: the caller asked for
+   * "companies I follow" and follows none — either because they are signed out or because they
+   * cleared the list. Treating that as "do not filter" would answer a request for a personal
+   * shelf with the ENTIRE feed, under a heading claiming every row is a company they follow.
+   * `{ $in: [] }` matches zero documents, so the shelf renders empty and the section hides
+   * itself. Fail closed, by construction rather than by a caller remembering to check.
+   *
+   * NOT PARSEABLE FROM A QUERYSTRING — `parseEventParams` never reads it, exactly like
+   * `includeDeleted`. It is resolved server-side in `GET /api/events` from the session, because
+   * a list a client could supply is not "companies you follow", it is "companies you named", and
+   * the two would be indistinguishable in the response.
+   *
+   * It is pushed into `and` rather than assigned to `filter.companies`, so it INTERSECTS an
+   * explicit `company` selection instead of silently clobbering it — both write the same key.
+   * ───────────────────────────────────────────────────────────────────────────────────────────
+   */
+  followedCompanies?: string[];
+  /**
+   * Card metadata (`lib/event-types.ts`: `AUDIENCE_NAMES`, `PERK_NAMES`, `EVENT_TIERS`).
+   *
+   * ALL THREE MATCH ZERO DOCUMENTS TODAY. Measured 2026-09-10 against the live corpus:
+   * `{ audience: { $exists: true } }`, `{ perks: { $exists: true } }` and
+   * `{ tier: { $exists: true } }` each return 0 of 1616 — the schema landed but no writer has
+   * run, so not one document carries even the `default: []`. They are supported here anyway
+   * because the filter is the cheap half and a tagger backfill is the expensive half: with this
+   * in place the backfill lights up the facets with no further query work. The FILTER RAIL is
+   * what gates on a non-zero count, so nothing empty is ever offered to a reader.
+   *
+   * `$in` within a dimension, not `$all` — a facet chip group ORs, the same as `category`.
+   */
+  audience?: string[];
+  perks?: string[];
+  tier?: string[];
   format?: string;
   hasFood?: string;
   isFree?: boolean;
@@ -82,6 +124,12 @@ export function parseEventParams(searchParams: URLSearchParams): EventQueryParam
     area: list('area'),
     source: list('source'),
     company: list('company'),
+    // `followedCompanies` is ABSENT from this list on purpose — see its note on `EventQueryParams`.
+    // A querystring-supplied list would make "companies you follow" indistinguishable from
+    // "companies you typed into the URL", and the shelf's heading asserts the first.
+    audience: list('audience'),
+    perks: list('perks'),
+    tier: list('tier'),
     format: searchParams.get('format') || undefined,
     hasFood: searchParams.get('hasFood') || undefined,
     techOnly: searchParams.get('techOnly') === 'true',
@@ -160,6 +208,63 @@ export function resolveWindow(when: string): { from: Date; to: Date } | null {
     default:
       return null;
   }
+}
+
+/**
+ * The absolute window covering ONE IST calendar day, from a `YYYY-MM-DD` key.
+ *
+ * The inverse of `dayKeyIST` in `lib/format.ts`, and it exists so the week-ahead strip can turn
+ * the day a reader tapped into `from`/`to` without inventing a second notion of "a day". The
+ * calendar page's comment is the rule this follows: A DAY IS A `YYYY-MM-DD` IST KEY, NEVER A
+ * `Date`. Anything reading the browser's clock — `startOfDay`, `setHours(0,0,0,0)` — puts a
+ * reader outside IST on the wrong day, which is the defect that made the calendar's grid and its
+ * day panel disagree.
+ *
+ * A FIXED `+05:30` OFFSET IS CORRECT HERE, not a shortcut: IST has no DST, so the offset is
+ * constant for every date, and `app/calendar/page.tsx` already builds its IST instants the same
+ * way. A named-timezone conversion would be more machinery for an identical answer.
+ *
+ * `to` is `from + 24h` rather than the next key's midnight for the same reason — with no DST the
+ * two are always equal, and this needs no calendar arithmetic to get the month rollover right.
+ *
+ * Returns `null` on anything that is not a well-formed key, so a hand-edited URL degrades to "no
+ * day selected" instead of `Invalid Date`, which would serialise as `null` and silently widen the
+ * window to the whole corpus.
+ */
+export function resolveDayWindow(dayKey: string): { from: Date; to: Date } | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dayKey);
+  if (!match) return null;
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const dayOfMonth = Number(match[3]);
+
+  /*
+   * THE SHAPE CHECK ABOVE IS NOT ENOUGH, AND A `NaN` CHECK IS NOT EITHER — `Date` SILENTLY ROLLS
+   * OVER. Found by `tests/shelves.test.ts`, not by reading: `new Date('2026-02-30T00:00:00+05:30')`
+   * does not fail, it returns 1 MARCH. So `?day=2026-02-30` would have drawn nothing as selected in
+   * the strip (no card carries that key) while narrowing the feed to a different day entirely, with
+   * the URL asserting a date the page was not showing. `2026-13-01` happens to reject, so a NaN
+   * guard looks sufficient until a day-of-month is out of range rather than a month.
+   *
+   * The round trip through `Date.UTC` is the fix, and it is UTC on purpose: this is pure calendar
+   * arithmetic — does this year/month/day exist — with no timezone in the question. It is the same
+   * rule `app/calendar/page.tsx` follows for "how many days in this month" and "which weekday is the
+   * 1st". Mixing IST into a validity check would be borrowing a zone to answer a question that has
+   * none.
+   */
+  const probe = new Date(Date.UTC(year, month - 1, dayOfMonth));
+  if (
+    probe.getUTCFullYear() !== year ||
+    probe.getUTCMonth() !== month - 1 ||
+    probe.getUTCDate() !== dayOfMonth
+  ) {
+    return null;
+  }
+
+  const from = new Date(`${dayKey}T00:00:00+05:30`);
+  if (Number.isNaN(from.getTime())) return null;
+  return { from, to: new Date(from.getTime() + 24 * 3600 * 1000) };
 }
 
 /** Build the Mongo filter for a parsed parameter set. */
@@ -266,6 +371,19 @@ export function buildEventFilter(
   if (params.area?.length) filter.area = { $in: params.area };
   if (params.source?.length) filter.source = { $in: params.source };
   if (params.company?.length) filter.companies = { $in: params.company };
+  /*
+   * PRESENCE, NOT LENGTH — and it goes into `and`, not onto `filter.companies`.
+   *
+   * Both reasons are on the parameter's own doc comment and both are load-bearing: an empty list
+   * has to match NOTHING (a shelf headed "companies you follow" may never fall back to the whole
+   * feed), and a top-level assignment would clobber the `company` selection two lines above since
+   * they write the same key. In `and` the two intersect, which is what a reader who has both a
+   * company chip and a following shelf would expect.
+   */
+  if (params.followedCompanies) and.push({ companies: { $in: params.followedCompanies } });
+  if (params.audience?.length) filter.audience = { $in: params.audience };
+  if (params.perks?.length) filter.perks = { $in: params.perks };
+  if (params.tier?.length) filter.tier = { $in: params.tier };
   if (params.format) filter.format = params.format;
   if (params.hasFood) filter.hasFood = params.hasFood;
   if (params.isFree !== undefined) filter.isFree = params.isFree;
@@ -453,6 +571,22 @@ export const FEED_FIELDS = [
   'registrationDeadline', 'attendeeCount', 'capacity', 'isTechEvent', 'companies',
   'connectionScore', 'isTargetCompany', 'recruiterMentioned', 'seenInSources', 'spotlightAt',
   'createdAt',
+  /*
+   * CARD METADATA, CARRIED BEFORE ANYTHING RENDERS IT — and that is deliberate, not an oversight.
+   *
+   * `FeedEvent` already types all three and no document carries any of them yet (0 of 1616 on
+   * 2026-09-10), so today they add three absent keys to the payload: no bytes, no query cost.
+   * What they do add is the ability for a card to show an audience or a perk the moment the tagger
+   * backfills, because this constant is the ONE definition both feed paths project through and a
+   * card cannot reach around it. Leaving them out would mean the tagger work lands and the cards
+   * still show nothing until somebody edits this line — the field would be populated, projected
+   * away, and look like a tagger failure.
+   *
+   * `agenda` and `speakers` are deliberately still absent: they are per-event depth for the DETAIL
+   * page, they are unbounded in size, and the feed renders a two-line excerpt — the same reason
+   * `description` is not here.
+   */
+  'audience', 'perks', 'tier',
 ] as const;
 
 /** `FEED_FIELDS` as a space-separated string, for `Query.select()`. */

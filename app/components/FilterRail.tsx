@@ -4,6 +4,37 @@ import { useState } from 'react';
 import { CATEGORY_GROUPS, Facets } from '@/lib/event-types';
 
 /**
+ * `Facets` plus the three card-metadata dimensions `GET /api/events/facets` now returns.
+ *
+ * DECLARED HERE RATHER THAN IN `lib/event-types.ts` because that module is not this agent's to
+ * edit. It is a widening only — every existing key keeps its type — so a caller passing a plain
+ * `Facets` still type-checks, and folding these three into the shared interface later is a
+ * delete-this-block change with no call-site churn.
+ *
+ * OPTIONAL, NOT REQUIRED, and that is not laziness: a facet response served from a cache written
+ * before these keys existed has to keep rendering the rest of the rail rather than throwing.
+ */
+export type FacetsWithCardMeta = Facets & {
+  audience?: Record<string, number>;
+  perks?: Record<string, number>;
+  tier?: Record<string, number>;
+};
+
+/**
+ * A controlled-vocabulary value as a reader should see it: `senior-engineers` -> `Senior engineers`.
+ *
+ * Sentence case, not Title Case — the vocabularies are plain descriptions of people and things
+ * (`students`, `lunch`, `swag`), and Title-Casing them would make them read like proper nouns.
+ * Only the first letter is raised, so `sre` stays `Sre` rather than becoming a shouted acronym in
+ * a rail where every other row is sentence case; the alternative is an acronym exception list,
+ * which is more machinery than one row of the shortest facet deserves.
+ */
+function vocabLabel(value: string): string {
+  const spaced = value.replace(/-/g, ' ');
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+}
+
+/**
  * `techOnly` IS DELIBERATELY NOT A MEMBER OF THIS TYPE.
  *
  * It used to be, defaulting to `false` in `EMPTY_FILTERS` — and both whole-reset paths pass
@@ -26,6 +57,22 @@ export interface FilterState {
   format: string;
   freeOnly: boolean;
   foodOnly: boolean;
+  /**
+   * Card metadata — `audience`, `perks`, `tier`.
+   *
+   * THEIR CONTROLS DO NOT RENDER TODAY, AND THAT IS THE POINT. Measured 2026-09-10, the keys are
+   * absent on all 1616 documents: the schema landed and no tagger run has written them. So each
+   * facet map comes back `{}` and each section below is gated on a non-empty map, which means a
+   * reader is never offered a chip that cannot match — the mistake that got the "Everything else"
+   * category group deleted, and the reason the events spec refuses a "Filling up fast" shelf.
+   *
+   * They live in the state anyway so the whole path — URL, `buildParams`, `buildEventFilter`,
+   * facet counting, rendering — is complete and tested before the data arrives. When the tagger
+   * backfills, the sections appear on their own.
+   */
+  audience: string[];
+  perks: string[];
+  tier: string[];
 }
 
 export const EMPTY_FILTERS: FilterState = {
@@ -35,6 +82,9 @@ export const EMPTY_FILTERS: FilterState = {
   format: '',
   freeOnly: false,
   foodOnly: false,
+  audience: [],
+  perks: [],
+  tier: [],
 };
 
 /** Format options, in the order they matter for meeting people in person. */
@@ -50,6 +100,9 @@ export function countActive(filters: FilterState): number {
     filters.categories.length +
     filters.areas.length +
     filters.companies.length +
+    filters.audience.length +
+    filters.perks.length +
+    filters.tier.length +
     (filters.format ? 1 : 0) +
     (filters.freeOnly ? 1 : 0) +
     (filters.foodOnly ? 1 : 0)
@@ -73,7 +126,7 @@ export default function FilterRail({
   onChange,
   loading,
 }: {
-  facets: Facets | null;
+  facets: FacetsWithCardMeta | null;
   filters: FilterState;
   onChange: (next: FilterState) => void;
   loading?: boolean;
@@ -91,6 +144,16 @@ export default function FilterRail({
   const areas = Object.entries(facets?.areas || {}).sort((a, b) => b[1] - a[1]);
   const formats = facets?.formats || {};
   const totals = facets?.totals;
+  /*
+   * Each is `[]` until the tagger writes the field, which is what keeps its section unrendered.
+   * Sorted by count like `companies` and `areas`, NOT by the vocabulary's declaration order: the
+   * vocabularies are written to read sensibly in `lib/event-types.ts` (students -> juniors ->
+   * senior-engineers is a seniority ramp), but a rail is for finding what exists, and a fixed order
+   * would put a 40-event bucket below an empty one.
+   */
+  const audience = Object.entries(facets?.audience || {}).sort((a, b) => b[1] - a[1]);
+  const perks = Object.entries(facets?.perks || {}).sort((a, b) => b[1] - a[1]);
+  const tier = Object.entries(facets?.tier || {}).sort((a, b) => b[1] - a[1]);
 
   return (
     <div className="flex flex-col gap-6">
@@ -313,6 +376,40 @@ export default function FilterRail({
         </section>
       )}
 
+      {/* CARD METADATA — who it is for, what you get, and what kind of event it is.
+          ─────────────────────────────────────────────────────────────────────────────────────
+          ALL THREE RENDER NOTHING TODAY. `rows.length === 0` returns null, and every map is empty
+          because the fields exist on no document yet (measured 2026-09-10: 0 of 1616). So this is
+          three sections' worth of markup that a reader currently never sees — deliberately, and it
+          is the same gate the Company section above uses, for the same reason. A chip that cannot
+          match anything is the defect that removed the "Everything else" category group.
+
+          Placed between Company and Area because that is the order of a reader's questions: what
+          it's about (Category), whose it is (Company), whether it's for me (Audience), what I get
+          (Perks), how big a deal it is (Tier), then where (Area). Tier last of the three because it
+          is the only one that judges rather than describes. */}
+      <VocabSection
+        heading="Audience"
+        rows={audience}
+        selected={filters.audience}
+        onToggle={name => onChange({ ...filters, audience: toggleIn(filters.audience, name) })}
+        onClear={() => onChange({ ...filters, audience: [] })}
+      />
+      <VocabSection
+        heading="Perks"
+        rows={perks}
+        selected={filters.perks}
+        onToggle={name => onChange({ ...filters, perks: toggleIn(filters.perks, name) })}
+        onClear={() => onChange({ ...filters, perks: [] })}
+      />
+      <VocabSection
+        heading="Kind of event"
+        rows={tier}
+        selected={filters.tier}
+        onToggle={name => onChange({ ...filters, tier: toggleIn(filters.tier, name) })}
+        onClear={() => onChange({ ...filters, tier: [] })}
+      />
+
       {/* Areas */}
       <section>
         <div className="flex items-center justify-between mb-2.5">
@@ -354,6 +451,64 @@ export default function FilterRail({
         </button>
       )}
     </div>
+  );
+}
+
+/**
+ * One controlled-vocabulary facet, or NOTHING AT ALL when the vocabulary has no events behind it.
+ *
+ * The early return is the whole reason this is a component rather than three inline blocks: the
+ * "render only when non-empty" rule has to be stated once, where it cannot be forgotten for one of
+ * the three. A row is kept when it has events OR when it is currently selected — the same rule the
+ * Category groups use, so narrowing to a value that then falls to zero does not make the chip you
+ * are standing on vanish and leave the filter unremovable.
+ *
+ * No `loading` skeleton, unlike Category and Area. Those two are always present, so a skeleton
+ * reserves space that is about to be filled; this one may legitimately never appear, and a skeleton
+ * for a section that then does not exist is a promise of content that is not coming.
+ */
+function VocabSection({
+  heading,
+  rows,
+  selected,
+  onToggle,
+  onClear,
+}: {
+  heading: string;
+  rows: Array<readonly [string, number]>;
+  selected: string[];
+  onToggle: (name: string) => void;
+  onClear: () => void;
+}) {
+  const visible = rows.filter(([name, count]) => count > 0 || selected.includes(name));
+  if (visible.length === 0) return null;
+
+  return (
+    <section>
+      <div className="flex items-center justify-between mb-2.5">
+        <h2 className="text-label-sm uppercase tracking-widest text-[#86868B]">{heading}</h2>
+        {selected.length > 0 && (
+          <button
+            type="button"
+            onClick={onClear}
+            className="text-[11px] font-semibold text-[#0071E3] hover:underline"
+          >
+            Clear
+          </button>
+        )}
+      </div>
+      <div className="flex flex-col gap-0.5">
+        {visible.map(([name, count]) => (
+          <CheckRow
+            key={name}
+            label={vocabLabel(name)}
+            count={count}
+            checked={selected.includes(name)}
+            onToggle={() => onToggle(name)}
+          />
+        ))}
+      </div>
+    </section>
   );
 }
 

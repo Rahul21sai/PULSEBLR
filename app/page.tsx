@@ -6,11 +6,30 @@ import { useSession } from 'next-auth/react';
 import { DesktopNav, MobileBottomNav } from './components/NavBar';
 import EventRow from './components/EventRow';
 import EventGridCard from './components/EventGridCard';
-import FilterRail, { FilterState, EMPTY_FILTERS, countActive } from './components/FilterRail';
-import { FeedEvent, Facets, Pagination } from '@/lib/event-types';
-import { MIN_SEARCH_CHARS } from '@/lib/events/query';
+import FilterRail, {
+  FilterState,
+  EMPTY_FILTERS,
+  countActive,
+  type FacetsWithCardMeta,
+} from './components/FilterRail';
+import EventShelf from './components/shelves/EventShelf';
+import WeekAheadStrip, {
+  bucketWeek,
+  WEEK_AHEAD_DAYS,
+  type WeekDay,
+} from './components/shelves/WeekAheadStrip';
+import { claimSection, shelfEligible } from './components/shelves/precedence';
+import { FeedEvent, Pagination } from '@/lib/event-types';
+import { MIN_SEARCH_CHARS, resolveDayWindow } from '@/lib/events/query';
 import { preferenceSummary, type UserPreferences } from '@/lib/events/relevance';
-import { dayKeyIST, dayHeading, fullDateIST, isHappeningNow, NOW_GROUP_KEY } from '@/lib/format';
+import {
+  dayKeyIST,
+  dayKeyOffsetIST,
+  dayHeading,
+  fullDateIST,
+  isHappeningNow,
+  NOW_GROUP_KEY,
+} from '@/lib/format';
 
 /**
  * The time window chips, BROADEST FIRST — and the order is a fix, not a preference.
@@ -102,6 +121,28 @@ const SPOTLIGHT_COUNT = 2;
  */
 const CURATED_COUNT = 6;
 
+/**
+ * How many events the "Hosted by a company you follow" shelf shows.
+ *
+ * Six, matching the curated shelf, because they are the same treatment and a reader should not have
+ * to work out why one rail is longer. It is also comfortably above the measured supply: 12 upcoming
+ * tech events intersect the default follow list, so the shelf has room to grow before the cap bites,
+ * and a cap exists at all so a reader who follows thirty companies cannot push the ranked feed off
+ * the screen.
+ */
+const FOLLOWING_COUNT = 6;
+
+/**
+ * How many events the week-ahead strip asks for.
+ *
+ * 100 is the route's own ceiling, and it is deliberately far above the supply rather than tuned to
+ * it: the strip reports COUNTS, and a count computed from a truncated page is wrong in the one way
+ * a reader cannot detect. Measured 2026-09-10 — 281 upcoming tech events in the entire corpus and
+ * ~50 in any one week — so this covers a week several times over. `bucketWeek`'s header records what
+ * happens if that ever stops being true, and the strip renders a `+` rather than a false total.
+ */
+const WEEK_STRIP_LIMIT = 100;
+
 /** Same members in the same order. Used to keep `filters` identity stable — see below. */
 function sameList(a: string[], b: string[]): boolean {
   return a.length === b.length && a.every((v, i) => v === b[i]);
@@ -132,7 +173,28 @@ export default function Home() {
    * than being left to compete for a ranked slot against 1200 scraped rows.
    */
   const [curatedEvents, setCuratedEvents] = useState<FeedEvent[]>([]);
-  const [facets, setFacets] = useState<Facets | null>(null);
+  /**
+   * Events hosted by a company the signed-in reader follows (`User.targetCompanies`).
+   *
+   * Empty for a signed-out visitor and for anyone following nobody, and empty is the correct,
+   * ordinary state rather than a failure — the shelf simply does not render. The list is resolved
+   * SERVER-SIDE from the session (`?followed=true`); this page never sends the company names,
+   * because a shelf headed "a company you follow" must not be satisfiable by a URL.
+   */
+  const [followingEvents, setFollowingEvents] = useState<FeedEvent[]>([]);
+  /**
+   * The reader's own follow list, as the server resolved it — echoed back by `?followed=true`.
+   *
+   * Needed for the shelf's CAPTION, not for the query: an event can name three companies while the
+   * reader follows only one of them, so naming a row's companies without this would put a company
+   * they do not follow under a heading saying they do.
+   */
+  const [followedList, setFollowedList] = useState<string[]>([]);
+  /** The next seven IST days, for the week-ahead strip. Its own request — see `load`. */
+  const [weekDays, setWeekDays] = useState<WeekDay[]>([]);
+  /** The week held more events than one page returned, so the strip's later counts may be low. */
+  const [weekTruncated, setWeekTruncated] = useState(false);
+  const [facets, setFacets] = useState<FacetsWithCardMeta | null>(null);
   const [pagination, setPagination] = useState<Pagination | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -141,6 +203,39 @@ export default function Home() {
   const [searchInput, setSearchInput] = useState('');
   const [query, setQuery] = useState('');
   const [when, setWhen] = useState<string>('');
+  /**
+   * One IST `YYYY-MM-DD` day the feed is narrowed to, from the week-ahead strip, or `''`.
+   *
+   * ─────────────────────────────────────────────────────────────────────────────────────────────
+   * `day` AND `when` ARE MUTUALLY EXCLUSIVE, AND ONE RULE ENFORCES IT IN BOTH DIRECTIONS:
+   * selecting a day clears `when`, selecting a `when` chip clears `day`. They are two controls for
+   * the same thing — the window the feed covers — and letting both hold a value would produce a
+   * highlighted chip reading "This weekend" above a strip highlighting Thursday, with the feed
+   * obeying whichever `buildParams` happened to check first. This is the defect CLAUDE.md records
+   * on the calendar, where an independent `currentDate` and `selectedDate` left the day panel headed
+   * "7 September" describing a day with no square on screen.
+   *
+   * It is a KEY, never a `Date` — `resolveDayWindow` turns it into the request window, in IST, so a
+   * reader outside IST gets the day they tapped rather than the browser's idea of it.
+   * ─────────────────────────────────────────────────────────────────────────────────────────────
+   */
+  const [day, setDay] = useState<string>('');
+  /**
+   * Set the day, clearing the other window control. Every day-selection path goes through this.
+   *
+   * A function rather than two `setState` calls at each call site, because "and clear the other one"
+   * is the invariant above and a call site that forgets half of it produces exactly the
+   * two-controls-disagreeing bug the comment describes.
+   */
+  const selectDay = useCallback((dayKey: string) => {
+    setDay(dayKey);
+    if (dayKey) setWhen('');
+  }, []);
+  /** Set the time window, clearing any selected day. The other half of the same invariant. */
+  const selectWhen = useCallback((id: string) => {
+    setWhen(id);
+    setDay('');
+  }, []);
   /**
    * DEFAULT SORT IS THE RANKING, NOT THE CALENDAR — and the measurement is why.
    *
@@ -230,7 +325,11 @@ export default function Home() {
     if (!active) return;
     const centred = active.offsetLeft - (row.clientWidth - active.offsetWidth) / 2;
     row.scrollLeft = Math.max(0, Math.min(centred, row.scrollWidth - row.clientWidth));
-  }, [when]);
+    // `day` is a dependency because it decides whether ANY chip is active (see the chip row): with a
+    // day selected the query below finds nothing and the row is left where it was, which is correct
+    // — but it has to re-run on the transition back, or the chip that just became active is off
+    // screen with nothing to scroll it into view.
+  }, [when, day]);
 
   // Deep links from the companies page arrive as ?company=Google. Read once on
   // mount rather than holding the URL as state, so the filter model stays
@@ -265,6 +364,19 @@ export default function Home() {
       }
       const w = p.get('when');
       if (w !== null && WHEN_TABS.some(t => t.id === w)) setWhen(w);
+      /*
+       * VALIDATED THROUGH `resolveDayWindow`, not by a regex here. That function is what
+       * `buildParams` will use, so validating with anything else means a value could pass this
+       * check and then fail there — the strip would draw a day as selected while the feed showed
+       * every upcoming event, which is the "the URL asserts something the feed does not do" failure
+       * the `techOnly` note below is about.
+       *
+       * `setDay` directly rather than `selectDay`: `when` was set from the URL two lines up, and a
+       * link carrying both is malformed. Clearing `when` here would silently pick a winner; letting
+       * `buildParams`' documented precedence decide keeps one rule instead of two.
+       */
+      const d = p.get('day');
+      if (d && resolveDayWindow(d)) setDay(d);
       const s = p.get('sort');
       if (s && SORTS.some(o => o.id === s)) setSort(s);
       const v = p.get('view');
@@ -385,6 +497,10 @@ export default function Home() {
     const p = new URLSearchParams();
     if (query) p.set('q', query);
     if (when) p.set('when', when);
+    // Written alongside `when` rather than instead of it. They cannot both be set (see `selectDay`),
+    // so this is not an either/or in practice — and writing it unconditionally means a shared link
+    // round-trips whatever the state actually holds instead of what this effect assumes it holds.
+    if (day) p.set('day', day);
     // Must track the DEFAULT above, not a hardcoded 'soonest'. This writer omits default values so
     // a clean view stays a clean "/" — so if it omitted the wrong one, opening "/" would render
     // ranked while the URL said nothing, and "?sort=soonest" would be written for the default and
@@ -408,7 +524,7 @@ export default function Home() {
     if (next !== window.location.pathname + window.location.search) {
       window.history.replaceState(null, '', next);
     }
-  }, [query, when, sort, view, feed, filters]);
+  }, [query, when, day, sort, view, feed, filters]);
 
   /**
    * The signed-in user's preferences, for DRAWING only.
@@ -504,7 +620,26 @@ export default function Home() {
     (page: number) => {
       const params = new URLSearchParams();
       if (query) params.set('q', query);
-      if (when) params.set('when', when);
+      /*
+       * ONE WINDOW, AND `day` OUTRANKS `when` — though the state invariant means they can never
+       * both be set (see `selectDay`/`selectWhen`). The precedence is written down anyway because
+       * this is the one place where a future third window control would silently produce two
+       * `startDateTime` bounds, and `parseEventParams` resolves `when` only `if (!params.from)` —
+       * so a `from` sent alongside a `when` wins on the server too. Matching that here keeps the
+       * client's idea of the window and the server's identical.
+       *
+       * `resolveDayWindow` returning null (a hand-edited `?day=nonsense`) falls through to `when`,
+       * i.e. to the whole upcoming window. That is the safe direction: the alternative is sending
+       * `from=Invalid Date`, which serialises to `null` and widens the window while the strip still
+       * draws a day as selected.
+       */
+      const dayWindow = day ? resolveDayWindow(day) : null;
+      if (dayWindow) {
+        params.set('from', dayWindow.from.toISOString());
+        params.set('to', dayWindow.to.toISOString());
+      } else if (when) {
+        params.set('when', when);
+      }
       if (filters.categories.length) params.set('category', filters.categories.join(','));
       if (filters.areas.length) params.set('area', filters.areas.join(','));
       if (filters.companies.length) params.set('company', filters.companies.join(','));
@@ -524,7 +659,7 @@ export default function Home() {
       params.set('limit', '30');
       return params;
     },
-    [query, when, filters, effectiveSort]
+    [query, when, day, filters, effectiveSort]
   );
 
   /**
@@ -607,13 +742,69 @@ export default function Home() {
       curatedParams.set('sort', 'soonest');
       curatedParams.set('limit', String(CURATED_COUNT));
 
-      const [listRes, facetRes, liveRes, pinnedRes, curatedRes] = await Promise.all([
-        fetch(`/api/events?${params.toString()}`),
-        fetch(`/api/events/facets?${params.toString()}`),
-        fetch(`/api/events?${liveParams.toString()}`),
-        wantsSpotlight ? fetch(`/api/events?${pinnedParams.toString()}`) : Promise.resolve(null),
-        wantsSpotlight ? fetch(`/api/events?${curatedParams.toString()}`) : Promise.resolve(null),
-      ]);
+      /*
+       * "Hosted by a company you follow" — `Event.companies` x `User.targetCompanies`.
+       *
+       * `followed=true` AND NOTHING ELSE ABOUT COMPANIES. The list is read server-side from the
+       * caller's own `User` row; this page does not know it and must not send it, because a shelf
+       * whose heading says "a company you follow" would otherwise be satisfiable by anyone editing
+       * the URL. An anonymous visitor gets an empty set, not an unfiltered one — the route's
+       * `loadFollowedCompanies` returns `[]` and `buildEventFilter` turns that into a clause that
+       * matches nothing.
+       *
+       * Same eligibility as the Spotlight, so a searched or filtered page spends nothing on it.
+       */
+      const followedParams = buildParams(1);
+      followedParams.set('followed', 'true');
+      followedParams.set('limit', String(FOLLOWING_COUNT));
+
+      /*
+       * THE WEEK-AHEAD STRIP, AND IT DELIBERATELY IGNORES THE WINDOW THE READER HAS CHOSEN.
+       *
+       * Every other request here goes through `buildParams` unchanged, so it obeys `when`/`day`.
+       * This one overrides the window to the next seven days, because the strip is the control that
+       * CHANGES the window: scoping it to the current selection would leave a reader who tapped
+       * Thursday looking at a one-day strip with no way back to the rest of the week. It still
+       * honours every other filter, so its counts agree with the feed on everything except the axis
+       * it exists to move.
+       *
+       * `from`/`to` rather than `when=week`: `buildParams` may have set `from`/`to` for a selected
+       * day, and `parseEventParams` resolves `when` only when `from` is absent — so sending
+       * `when=week` would be silently ignored and the strip would show one day seven times.
+       *
+       * `sort=connections`, not `soonest`. `bucketWeek` takes the FIRST event it sees for a day as
+       * that day's headline, so the sort decides what "the best thing on Thursday" means. Soonest
+       * would make it "whatever starts earliest", i.e. a 9 AM webinar over an evening meetup with a
+       * company host — the exact inversion CLAUDE.md measured when the whole feed sorted that way
+       * (median score 20 against 88, 15 of 20 online).
+       */
+      const weekWindow = {
+        from: resolveDayWindow(dayKeyIST(new Date())),
+        to: resolveDayWindow(dayKeyOffsetIST(WEEK_AHEAD_DAYS - 1)),
+      };
+      const weekParams = buildParams(1);
+      weekParams.delete('when');
+      if (weekWindow.from && weekWindow.to) {
+        weekParams.set('from', weekWindow.from.from.toISOString());
+        weekParams.set('to', weekWindow.to.to.toISOString());
+      }
+      weekParams.set('sort', 'connections');
+      weekParams.set('limit', String(WEEK_STRIP_LIMIT));
+      // The strip is a time navigator, so it is drawn whenever the page is about browsing rather
+      // than about a search. It stays up under active filters — that is what makes its counts a
+      // readout of the filters — and only a query retires it, because then the page is about results.
+      const wantsWeek = !query;
+
+      const [listRes, facetRes, liveRes, pinnedRes, curatedRes, followedRes, weekRes] =
+        await Promise.all([
+          fetch(`/api/events?${params.toString()}`),
+          fetch(`/api/events/facets?${params.toString()}`),
+          fetch(`/api/events?${liveParams.toString()}`),
+          wantsSpotlight ? fetch(`/api/events?${pinnedParams.toString()}`) : Promise.resolve(null),
+          wantsSpotlight ? fetch(`/api/events?${curatedParams.toString()}`) : Promise.resolve(null),
+          wantsSpotlight ? fetch(`/api/events?${followedParams.toString()}`) : Promise.resolve(null),
+          wantsWeek ? fetch(`/api/events?${weekParams.toString()}`) : Promise.resolve(null),
+        ]);
       if (!listRes.ok) throw new Error('Could not load events');
 
       const list = await listRes.json();
@@ -644,6 +835,44 @@ export default function Home() {
         }
       } else if (!wantsSpotlight && generation === requestGeneration.current) {
         setCuratedEvents([]);
+      }
+
+      /*
+       * Same contract as the pins and the curated shelf: an enhancement, CLEARED rather than left
+       * stale when the view stops being eligible for it. A stale following shelf is worse than a
+       * missing one — it would sit above a searched page claiming those results are hosted by
+       * companies the reader follows.
+       */
+      if (followedRes?.ok) {
+        const followed = await followedRes.json();
+        if (generation === requestGeneration.current) {
+          setFollowingEvents((followed.events || []) as FeedEvent[]);
+          setFollowedList((followed.followed || []) as string[]);
+        }
+      } else if (!wantsSpotlight && generation === requestGeneration.current) {
+        setFollowingEvents([]);
+        setFollowedList([]);
+      }
+
+      /*
+       * The week strip. Bucketed here rather than in the component so the component stays a pure
+       * render of a `WeekDay[]` and `bucketWeek` stays testable without a DOM.
+       *
+       * `total > limit` is the truncation signal, and it comes from the SERVER's count rather than
+       * from `events.length === limit` — the latter cannot tell a week that holds exactly 100 events
+       * from one that holds 400, and the strip would report the first as approximate and the second
+       * as exact.
+       */
+      if (weekRes?.ok) {
+        const week = await weekRes.json();
+        if (generation === requestGeneration.current) {
+          const rows = (week.events || []) as FeedEvent[];
+          setWeekDays(bucketWeek(rows));
+          setWeekTruncated((week.pagination?.total ?? 0) > rows.length);
+        }
+      } else if (!wantsWeek && generation === requestGeneration.current) {
+        setWeekDays([]);
+        setWeekTruncated(false);
       }
 
       // Live set is an enhancement, not content: a failure here must leave the feed intact.
@@ -816,9 +1045,15 @@ export default function Home() {
    * Only computed for the ranked view. Under `soonest` the day grouping already does this, and
    * running it there would put the same events in two places.
    */
-  const [liveNow, spotlight, curated, comingUp] = useMemo(() => {
+  const [liveNow, spotlight, curated, following, comingUp] = useMemo(() => {
     if (chronological)
-      return [[] as FeedEvent[], [] as FeedEvent[], [] as FeedEvent[], events];
+      return [
+        [] as FeedEvent[],
+        [] as FeedEvent[],
+        [] as FeedEvent[],
+        [] as FeedEvent[],
+        events,
+      ];
     // `liveEvents` comes from its own soonest-ordered request, so it is authoritative for what
     // is on now. Live rows that ALSO happen to rank onto the page are folded in and de-duplicated
     // by id, then removed from "coming up" so nothing is listed twice.
@@ -849,7 +1084,7 @@ export default function Home() {
      * editorial and paid ("FLAGSHIP", "INVITE ONLY", "GET TICKETS"): ours is just the ranking
      * being honest about its own top result, so it cannot disagree with the list underneath it.
      */
-    const eligible = !query && countActive(filters) === 0;
+    const eligible = shelfEligible(query, countActive(filters));
     /*
      * AN ADMIN PIN WINS OVER THE RANKING, and the fallback is the ranking rather than nothing.
      *
@@ -888,13 +1123,82 @@ export default function Home() {
           .slice(0, CURATED_COUNT);
     const handIds = new Set(hand.map(event => event._id));
 
+    /*
+     * FOLLOWING: events hosted by a company the reader follows, after the three that outrank it.
+     *
+     * ORDER: live > spotlight > curated > following > coming up. It sits below "curated" because a
+     * hand-added event is the rarer and more specific claim — somebody typed it in — while following
+     * is a standing preference that can match many events; and above "coming up" because it is a
+     * fact about the reader rather than about the ranking.
+     *
+     * Done with `claimSection` rather than a fourth `!seen.has(id) && !featuredIds.has(id) &&
+     * !handIds.has(id)` chain. The three sections above still spell theirs out (they predate this)
+     * and adding a fourth in the same style is where the pattern breaks: the clause list grows with
+     * every shelf, and forgetting one term does not crash — it renders one event twice in two
+     * sections that each look right on their own. Threading the claimed set through makes that
+     * impossible instead of merely unlikely. See `components/shelves/precedence.ts`.
+     */
+    const followed = claimSection(
+      eligible ? followingEvents : [],
+      new Set([...seen, ...featuredIds, ...handIds]),
+      FOLLOWING_COUNT
+    );
+    const followedIds = new Set(followed.rows.map(event => event._id));
+
     return [
       live,
       featured,
       hand,
-      ranked.filter(event => !featuredIds.has(event._id) && !handIds.has(event._id)),
+      followed.rows,
+      ranked.filter(
+        event =>
+          !featuredIds.has(event._id) &&
+          !handIds.has(event._id) &&
+          !followedIds.has(event._id)
+      ),
     ];
-  }, [chronological, events, liveEvents, pinnedEvents, curatedEvents, query, filters]);
+  }, [
+    chronological,
+    events,
+    liveEvents,
+    pinnedEvents,
+    curatedEvents,
+    followingEvents,
+    query,
+    filters,
+  ]);
+
+  /**
+   * The following shelf's caption: the companies it actually matched on, named.
+   *
+   * IT MUST SIT BELOW THE PRECEDENCE MEMO ABOVE, and that is not a style preference. It reads
+   * `following`, which that memo declares — `const [liveNow, spotlight, curated, following,
+   * comingUp] = useMemo(...)`. Written above it, this is a `const` in its own temporal dead zone:
+   * `error TS2448: Block-scoped variable 'following' used before its declaration`, and at runtime a
+   * ReferenceError on first render rather than `undefined`, so the whole feed would blank rather
+   * than lose a caption. Do not "group the memos together" by moving it back up.
+   *
+   * ONLY COMPANIES IN BOTH SETS. Intersecting the shelf's rows with the reader's own follow list is
+   * what makes the caption true — a row can carry several company names and only one of them need be
+   * followed, so naming every company on the shelf would put companies the reader does not follow
+   * under a heading saying they do. `followedList` exists for this and nothing else.
+   *
+   * Three names then a count, because the caption sits on one line beside the heading and a fourth
+   * would wrap it. Order follows the shelf's own ranking rather than the alphabet, so the company
+   * behind the top row is named first.
+   */
+  const followingCaption = useMemo(() => {
+    const followed = new Set(followedList);
+    const named: string[] = [];
+    for (const event of following) {
+      for (const company of event.companies ?? []) {
+        if (followed.has(company) && !named.includes(company)) named.push(company);
+      }
+    }
+    if (named.length === 0) return `You follow ${followedList.length}`;
+    const shown = named.slice(0, 3).join(', ');
+    return named.length > 3 ? `${shown} +${named.length - 3}` : shown;
+  }, [following, followedList]);
 
   return (
     <div className="min-h-screen bg-[#F5F5F7]">
@@ -1022,13 +1326,19 @@ export default function Home() {
               ref={chipRowRef}
               className="flex snap-x snap-mandatory gap-1 overflow-x-auto overscroll-x-contain no-scrollbar -mx-1 px-1"
             >
+              {/* `!day` IS PART OF "ACTIVE", AND IT IS NOT COSMETIC. With a day selected from the
+                  week strip, `when` is `''` — so without this the "All upcoming" chip would render
+                  highlighted above a feed showing one Thursday, and the reader would have two
+                  controls on screen making contradictory claims about the same window. With a day
+                  selected NO chip is active, which is the honest reading: the window came from the
+                  strip, and the strip is where it is shown and cleared. */}
               {WHEN_TABS.map(tab => (
                 <button
                   key={tab.id || 'all'}
                   type="button"
-                  data-active={when === tab.id}
-                  onClick={() => setWhen(tab.id)}
-                  aria-pressed={when === tab.id}
+                  data-active={!day && when === tab.id}
+                  onClick={() => selectWhen(tab.id)}
+                  aria-pressed={!day && when === tab.id}
                   /* The PAINTED pill stays 32px: its height is part of the command bar's density
                      and of the type scale the design system pins (CLAUDE.md section 7, rule 1).
                      The TOUCH TARGET grows to 44px with an `::after` overlay instead — the WCAG
@@ -1040,7 +1350,7 @@ export default function Home() {
                      taller than the row's band would be clipped, and a clipped overlay is a dead
                      strip that MEASURES as a hit area without being one. */
                   className={`relative shrink-0 snap-start rounded-full px-3.5 py-1.5 text-[13px] font-semibold transition-colors after:absolute after:inset-x-0 after:-inset-y-1.5 after:content-[''] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0071E3] [touch-action:manipulation] ${
-                    when === tab.id
+                    !day && when === tab.id
                       ? 'bg-[#1D1D1F] text-white'
                       : 'text-[#6E6E73] hover:bg-white hover:text-[#1D1D1F]'
                   }`}
@@ -1300,6 +1610,27 @@ export default function Home() {
           )}
         </div>
 
+        {/* ── The week ahead ─────────────────────────────────────────────────
+            FIRST OF THE SECTIONS, above every shelf, because it is the only one that is NAVIGATION
+            rather than content: it answers "what does my week look like" and then lets a reader
+            narrow to a day. Putting it below the shelves would mean scrolling past curated content
+            to reach the control that decides what the page is showing.
+
+            It is NOT in the `useMemo` chain and claims none of its events — see the component
+            header. A day cell names an event; it does not render its card, and subtracting seven
+            events from the feed so they could be named here would remove this week's best events
+            from the list underneath.
+
+            Rendered under a chronological sort too, unlike the shelves below: the strip is about
+            time, so `soonest` is the view it makes the most sense in, not the one it should vanish
+            from. */}
+        <WeekAheadStrip
+          days={weekDays}
+          selectedDay={day}
+          onSelectDay={selectDay}
+          truncated={weekTruncated}
+        />
+
         {/* ── Spotlight ──────────────────────────────────────────────────────
             Full width, above the filters, so two covers get room to be seen. It uses the SAME
             `EventGridCard` as grid view rather than a bespoke feature card: the cover image is
@@ -1419,6 +1750,36 @@ export default function Home() {
           </section>
         )}
 
+        {/* HOSTED BY A COMPANY YOU FOLLOW — `Event.companies` x `User.targetCompanies`.
+
+            WHY THIS SHELF AND NOT A POPULARITY ONE. The competitor's strongest shelf is "filling up
+            fast", and copying it was rejected on measurement: `attendeeCount` is a number on 75 of
+            1146 upcoming events and non-zero on 45, because only Luma supplies it — so the shelf
+            would render nearly empty and read as broken. This uses two fields that are already
+            populated, and it asks a better question. "500 people are going" is a fact about a room;
+            "Microsoft is hosting this and you follow Microsoft" is a fact about the reader.
+
+            THE CAPTION NAMES THE COMPANIES, and that is the honest form of the claim. A bare
+            "because you follow them" is unfalsifiable — the reader cannot tell whether the shelf
+            worked or whether it is showing them anything at all. Naming Microsoft and Google lets
+            them judge it, and lets them notice when a company they care about is missing.
+
+            It renders for nobody who is signed out and for nobody following anything, and both of
+            those are ordinary states rather than failures — `EventShelf` returns null on an empty
+            list. Worth knowing before wondering why it is not there. */}
+        <EventShelf
+          heading="Hosted by a company you follow"
+          caption={followingCaption}
+          events={following}
+          /* COMPACT, not the cover rail the curated shelf uses, and `EventShelf`'s own header carries
+             the argument: this shelf sits directly beneath a 441px cover rail and would read as the
+             same block, its justifying fact (the company) is not on a cover at all, and measured on a
+             390px screen it is ~180px against 441px on a page that had already spent 2008px above the
+             feed. All three point the same way. */
+          variant="compact"
+          highlight={followedList}
+        />
+
         <div className="max-w-[1240px] mx-auto px-4 md:px-8 flex gap-8">
           {/* Desktop filter rail */}
           <aside className="hidden lg:block w-[248px] shrink-0">
@@ -1522,7 +1883,10 @@ export default function Home() {
                         onClick: () => {
                           setFilters(EMPTY_FILTERS);
                           setSearchInput('');
-                          setWhen('');
+                          // Through `selectWhen`, so clearing the filters also clears a selected
+                          // day. Calling `setWhen('')` alone would leave the feed narrowed to one
+                          // day by a control the user had just asked to reset.
+                          selectWhen('');
                         },
                       }
                     : { label: 'Add an event', href: '/add-event' }

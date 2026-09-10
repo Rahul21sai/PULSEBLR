@@ -44,9 +44,32 @@ export async function GET(request: NextRequest) {
     const sourceFilter = buildEventFilter({ ...params, source: undefined }, viewerId);
     const formatFilter = buildEventFilter({ ...params, format: undefined }, viewerId);
     const companyFilter = buildEventFilter({ ...params, company: undefined }, viewerId);
+    /*
+     * CARD METADATA — and every one of these three counts ZERO today.
+     *
+     * Measured 2026-09-10 against the live corpus: `audience`, `perks` and `tier` are not merely
+     * empty, the KEYS ARE ABSENT on all 1616 documents — the schema landed in `b7620ad` and no
+     * scrape or backfill has run since, so not even the `default: []` has been applied. So these
+     * three aggregations return no rows, `toMap` gives `{}`, and `FilterRail` renders no group.
+     *
+     * THAT IS THE DESIGN, NOT AN OVERSIGHT. CLAUDE.md records the "Everything else" category group
+     * being deleted precisely because it could only ever render empty, and the events spec refuses
+     * "Filling up fast" on the same ground — a control that cannot match anything reads as broken.
+     * The rule those two cases establish is about what a READER is offered, not about what the
+     * server computes: counting here is three `$group` stages over a filter that is already being
+     * run five other ways in this same `Promise.all`, while the rail gates on a non-empty map. The
+     * facets light up the moment the tagger populates the fields, with no second deployment and no
+     * coordination between whoever writes the tagger and whoever owns this route.
+     *
+     * If these are still zero long after the tagger work lands, the fault is upstream of here —
+     * check `scripts/diag-recent-writes.ts` before touching this file.
+     */
+    const audienceFilter = buildEventFilter({ ...params, audience: undefined }, viewerId);
+    const perksFilter = buildEventFilter({ ...params, perks: undefined }, viewerId);
+    const tierFilter = buildEventFilter({ ...params, tier: undefined }, viewerId);
     const baseFilter = buildEventFilter(params, viewerId);
 
-    const [categories, areas, sources, formats, companies, totals] = await Promise.all([
+    const [categories, areas, sources, formats, companies, audience, perks, tier, totals] = await Promise.all([
       Event.aggregate([
         { $match: categoryFilter },
         { $unwind: '$category' },
@@ -74,6 +97,29 @@ export async function GET(request: NextRequest) {
         { $group: { _id: '$companies', count: { $sum: 1 } } },
         { $sort: { count: -1 } },
       ]),
+      // `$ne: []` mirrors the company facet above rather than using `$exists`: it excludes both an
+      // empty array and an absent key in one predicate, which is what the ~1500 documents
+      // predating these fields need. `$unwind` on an absent path emits nothing, so a document
+      // without the key cannot reach the `$group` and cannot invent a bucket.
+      Event.aggregate([
+        { $match: { ...audienceFilter, audience: { $ne: [] } } },
+        { $unwind: '$audience' },
+        { $group: { _id: '$audience', count: { $sum: 1 } } },
+        { $sort: { count: -1 } },
+      ]),
+      Event.aggregate([
+        { $match: { ...perksFilter, perks: { $ne: [] } } },
+        { $unwind: '$perks' },
+        { $group: { _id: '$perks', count: { $sum: 1 } } },
+        { $sort: { count: -1 } },
+      ]),
+      // A scalar, so no `$unwind`. `$nin: [null, '']` is the `area` facet's guard, for the same
+      // reason: an empty string passes `$type: 'string'` and would render a nameless chip.
+      Event.aggregate([
+        { $match: { ...tierFilter, tier: { $nin: [null, ''] } } },
+        { $group: { _id: '$tier', count: { $sum: 1 } } },
+        { $sort: { count: -1 } },
+      ]),
       Event.aggregate([
         { $match: baseFilter },
         {
@@ -97,6 +143,9 @@ export async function GET(request: NextRequest) {
       sources: toMap(sources),
       formats: toMap(formats),
       companies: toMap(companies),
+      audience: toMap(audience),
+      perks: toMap(perks),
+      tier: toMap(tier),
       totals: totals[0]
         ? {
             total: totals[0].total,
