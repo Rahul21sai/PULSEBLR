@@ -57,6 +57,16 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: absoluteUrl('/calendar'), lastModified: now, changeFrequency: 'daily', priority: 0.7 },
     { url: absoluteUrl('/topics'), lastModified: now, changeFrequency: 'daily', priority: 0.8 },
     /*
+     * `/mcp` is the MCP server's connect page, and it is worth submitting. It is how a developer
+     * discovers that this corpus is queryable from inside Claude, and the competitor advertises the
+     * same capability on its free tier — so this is a distribution asset, not an internal page.
+     * Static config, so it changes only when the tool list does.
+     *
+     * The ENDPOINT is a different matter and is correctly not here: `app/robots.ts` disallows
+     * `/api/`, which covers `/api/mcp`. A crawler has no use for a JSON-RPC POST target.
+     */
+    { url: absoluteUrl('/mcp'), lastModified: now, changeFrequency: 'monthly', priority: 0.5 },
+    /*
      * `/companies` is deliberately absent. The route is public and stays public — event pages link
      * to it — but it was removed from the nav at the owner's direction because 44 of 375 companies
      * have any events, so a visitor meets a mostly-empty directory. Submitting it would advertise
