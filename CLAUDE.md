@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 @AGENTS.md
 
-> **Next.js version warning (from AGENTS.md, repeated because it governs almost every change here):** This repo pins Next.js `16.3.2` (exactly, no caret), which has breaking changes from older releases. Before writing any Next.js code, read the relevant guide in `node_modules/next/dist/docs/` and heed deprecation notices. Notably, route protection lives in **`proxy.ts`** at the repo root (this version's middleware equivalent) — there is no `middleware.ts`, and route-handler `params` is a `Promise` you must `await`.
+> **Next.js version warning (from AGENTS.md, repeated because it governs almost every change here):** This repo pins Next.js `16.3.4` (exactly, no caret), which has breaking changes from older releases. Before writing any Next.js code, read the relevant guide in `node_modules/next/dist/docs/` and heed deprecation notices. Notably, route protection lives in **`proxy.ts`** at the repo root (this version's middleware equivalent) — there is no `middleware.ts`, and route-handler `params` is a `Promise` you must `await`.
 
 > **Why it moved off 16.2.9 (2026-08-23):** `npm audit` reported 9 vulnerabilities, and two mattered
 > here — a **critical `next-auth` fail-open on existence-based auth checks** (which is exactly what
@@ -13,9 +13,32 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > `16.3.2` additionally cleared the transitive `postcss` and `sharp` ones. `next-auth@5.0.0-beta.32`
 > pins the patched `@auth/core@0.41.3`. Peer requirements are byte-identical between 16.2.12 and
 > 16.3.2 (same React range), `proxy.ts` and the awaited-`params` convention are unchanged in the
-> bundled docs, and the full suite passes. **`npm audit` is now 0 vulnerabilities.** Versions are
+> bundled docs, and the full suite passes. Versions are
 > pinned exactly on purpose — `npm install` rewrites them to carets, which would let a future
-> install drift off the pin this warning exists to protect.
+> install drift off the pin this warning exists to protect. Use `--save-exact` when you must bump.
+
+> **AND WHY IT MOVED AGAIN, 16.3.2 → 16.3.4 (2026-09-10). DO NOT TRUST A DATED `npm audit` CLAIM IN
+> THIS FILE — RE-RUN IT.** The paragraph above ended with "**`npm audit` is now 0 vulnerabilities**"
+> and that sentence was true on 2026-08-23 and false 18 days later: `npm audit` reported **5, one
+> CRITICAL**, against `next` itself — unauthenticated **remote code execution** on Windows-hosted
+> servers, and unauthenticated RCE in the **Image Optimization API** via AVIF.
+>
+> **Nothing drifted.** Verified before concluding it: the lockfile diff contained no `-version` line
+> at all, so no installed version had changed. These were newly *published* advisories against the
+> versions already pinned. That is the general lesson worth more than the bump — a vulnerability
+> count is a claim with a timestamp, and an audit statement in a document ages into a false
+> reassurance that stops the next person from checking.
+>
+> Production is Linux on Vercel, so the Windows RCE reached the **dev server on this machine**
+> rather than the deployment. The AVIF one is harder to wave away than it first looks: this app
+> deliberately uses a plain `<img>` rather than `next/image` and sets no `remotePatterns`, so the
+> Image Optimization API *should* be unreachable — but "should be unreachable" is precisely the
+> reasoning that left `GET /api/sources` open because `requireAdmin` happened to be imported in the
+> file. Both conventions re-checked in the bundled 16.3.4 docs: `proxy.ts` is still the middleware
+> equivalent (`01-getting-started/16-proxy.md`) and `params` is still a `Promise`.
+> `eslint-config-next` moved in lockstep, and `npm audit fix` (no `--force`) cleared the three
+> remaining transitive build-time advisories. **0 vulnerabilities as of 2026-09-10 — re-run it
+> rather than believing this sentence.**
 
 ## Commands
 
@@ -1341,7 +1364,10 @@ and exposes no page↔worker channel.
 >   The draft goes through `queueContact`, so a tag typed offline gets the same canonicalisation as
 >   one typed online and lands in the same facet bucket. `blocked` is cleared, because the previous
 >   verdict was about a record that no longer exists.
-> - **CSV export is a bare `<a>`** — no loading or error state, so a 500 renders a raw error page.
+> - ~~**CSV export is a bare `<a>`**~~ — still true of the FOLDER export. `/people`'s export is a
+>   `fetch` with a real pending state whose route answers JSON on 500, so a failure cannot navigate
+>   the user to a raw error page and lose their filtered view. Copy that shape when fixing the
+>   folder one.
 
 > **`Folder.eventId` IS ALWAYS NULL IN PRACTICE, WHICH MAKES CORRECT CODE UNREACHABLE.** Nothing in
 > the UI links a folder to a corpus event. So the `folder.eventId ?? folder._id` branch in
@@ -1632,3 +1658,80 @@ public read path depends on.
 ### 13. Automation
 
 `.github/workflows/daily-scrape.yml` and `daily-digest.yml` run at 8 AM IST. Secrets: `MONGODB_URI`, optionally `NVIDIA_API_KEY`/`NVIDIA_MODEL`/`ICA_*`/`ANTHROPIC_API_KEY`, and `RESEND_API_KEY`.
+
+---
+
+### 14. What landed 2026-09-10 — six parallel streams
+
+Built as six agent streams on strictly disjoint file sets, then integrated and verified as a whole.
+Each has its own commit message carrying the measurements; this section is the map, plus the traps
+that are not obvious from any one file.
+
+| Stream | Where | The one thing to know |
+| --- | --- | --- |
+| Meetup uncap | `lib/scrapers/adapters/meetup.ts`, `core/render.ts` | **The ICS cap is TEN, and the old comment claimed "every".** 72 of 285 groups sat on it. The fix needs **no browser** — events are server-rendered into `__NEXT_DATA__.__APOLLO_STATE__`. +993 events for +72 requests, measured over all 285 groups. |
+| Person surface | `app/people/**`, `app/api/people/**` | One row per **human**, not per capture. Rows are clickable at last; merge, export and bulk tags exist. |
+| Personalisation | `lib/events/relevance.ts`, `app/onboarding/**` | Topic is the **smallest** weight (AI/ML is 189 of 297 tech events); **area** is the biggest. `RELEVANCE_MULTIPLIER_FLOOR` exists because zero annihilates. |
+| Reminders + typed capture | `lib/notifications/reminder-policy.ts`, `app/scan/page.tsx` | The `ReminderLog` row is **claimed before the send**. Consent is the flag **and** `onboardedAt`. |
+| Control room | `app/admin/**`, `lib/admin/**` | The impact gate is **server-side** (409 unless `?force=true`), not the dialog. Every list is **ranked**, because a count without a rank under-reports severity. |
+| MCP v1 | `lib/mcp/**`, `app/api/mcp` | Read-only, unauthenticated, **no new dependency**. Private-event exclusion is asserted **structurally** against `visibilityClause(null)`, not hoped for. |
+
+> **SOFT DELETE: `{ deletedAt: null }`, NEVER `$exists`.** That predicate matches a null field AND an
+> absent one, and both halves are load-bearing — absent must match because ~1500 documents predate
+> the field (getting it backwards **empties** the feed rather than narrowing it), and null must match
+> or a restore writing `$set: null` instead of `$unset` strands the row as invisible while every
+> admin screen reports it restored. `notDeletedClause()` and `publicEventScope()` in
+> `lib/events/query.ts`; `tests/soft-delete.test.ts` asserts the exact object, because both candidate
+> predicates look plausible in review and no count over today's corpus can tell them apart.
+
+> **THE PART OF SOFT DELETE THAT LOOKED LIKE IT WOULD JUST WORK.** The plan said undo needed no
+> change, because `restore-document` already treats a duplicate-key failure as "already back in the
+> corpus". **Exactly inverted for a soft delete:** the row never left, so `new Event(snapshot).save()`
+> collides with the unique `dedupHash`, the handler answers **200 `already-present`**, and `deletedAt`
+> is still set — an undo that reports success and leaves the event invisible for good, which nobody
+> goes looking for. Undo now clears `deletedAt` on an existing row **first** and only falls back to
+> re-creating from the snapshot when no row is there. The fallback is not dead code:
+> `DELETE /api/events/[id]`, the plain non-audited route, still hard-deletes.
+
+> **A NEW ARM ON `buildEventFilter` DOES NOT REACH EVERY READER.** Two "similar events" queries — in
+> `GET /api/events/[id]` and the `/events/[id]` page — hand-roll their filter and spread
+> `visibilityClause`, so they were structurally incapable of learning about soft delete. Without
+> `publicEventScope()` they would keep offering a just-deleted event as a suggestion at the foot of
+> every related page. **A hand-rolled event query spreads `publicEventScope`, not `visibilityClause`.**
+
+> **`canViewEvent` NOW READS THREE FIELDS, AND AN INCOMPLETE `.select()` FAILS OPEN.** Every check in
+> it treats absence as permissive, because absence genuinely is the common case for scraped rows — so
+> a projection missing a field it reads does not throw and does not deny, it silently returns true for
+> everything. `POST /api/folders` shipped exactly this bug once with `visibility`. Carry `visibility`,
+> `createdByUserId` **and** `deletedAt`.
+
+> **TWO STREAMS CONVERGED ON `preferences.onboardedAt` INDEPENDENTLY, and that is why reminders
+> work.** The reminders stream reported that consent needs the flag *and* `onboardedAt` and that
+> "nothing writes it yet, so zero reminders send" — true when it checked, and resolved by the
+> personalisation stream landing alongside it: `PUT /api/me/preferences` stamps it server-side on any
+> save, **including a skip**. Do not "simplify" consent to the flag alone: `DEFAULT_PREFERENCES
+> .remindersEnabled` is `true` with a schema default, so the flag by itself silently opts in every
+> account. `readPreferences()` is deliberately not used there — coercing absent → default → true is
+> right for ranking a feed and wrong for mailing a person.
+
+> **`playwright` IS A devDependency, AND THE BUNDLE IS PROVEN CLEAN.** It is launched only on a
+> GitHub runner, never on Vercel. Verified from the build rather than argued: the `render.ts` chunk is
+> **1,743 bytes** (playwright-core alone is ~10 MB), its only two mentions of the word are our own
+> call site and a warning string, and **0 of 81** dependency-trace files name the package.
+
+> **A COMPLETED AGENT'S "NOT BUILT" LIST CAN BE STALE — CHECK THE CODE.** The control-room stream
+> reported `GET /api/sources` as still unguarded and `PUT /api/sources/[id]` as having no allowlist.
+> Both were wrong: `requireAdmin()` guards all four handlers and the PUT has a validator, fixed in
+> `0463776`. It had read the plan rather than the route. Same class of error as the "there is no test
+> runner" paragraph this file used to carry.
+
+**Verified as a whole, not commit by commit:** `tsc --noEmit` exit 0 run bare, `npm run lint` 0 errors,
+**1166 tests across 37 suites**, production build clean with 85 static pages, `npm audit` 0
+vulnerabilities. The Person spine migration is applied: 22 Persons, 22 Contacts attached, 22 `met`
+interactions, `diag-people-spine.ts` all 9 checks passing, and the backfill idempotent on re-run.
+
+**Not built, deliberately:** follow-up message drafting (Phase 3 item 3 — the retention stream left it
+rather than add a second unexercised path); the 36 Meetup groups still capped by the page's own 30-row
+ceiling (needs GraphQL cursor pagination); `scripts/diag-landing-pages.ts`; the events-surface spec's
+`audience`/`perks`/`tier` shelves; and a "recently deleted" admin listing — undo is reached through the
+audit log, so the partial index on `deletedAt` is currently unqueried and says so in its own comment.
