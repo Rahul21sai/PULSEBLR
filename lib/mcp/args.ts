@@ -80,6 +80,20 @@ export type Validated<T> = { ok: true; value: T } | { ok: false; issues: Issues 
 
 /* ────────────────────────────── primitives ────────────────────────────── */
 
+/*
+ * THE PRIMITIVES BELOW ARE EXPORTED FOR `lib/mcp/personal-args.ts` AND FOR NOTHING ELSE.
+ *
+ * They were module-private while there was one arguments file. There are now two — the public tools
+ * and the authenticated ones — and the operator-injection guard those two files share must have
+ * exactly ONE implementation. A copied `scalarString` is the failure this repo has already paid for
+ * twice in other shapes: `WorthGoing` copied the funnel regex and fell behind it, and
+ * `cleanup-non-bengaluru.ts` mirrored the off-city predicate instead of importing it. A drifted copy
+ * of THIS one does not merely mis-rank an event, it lets `{"$ne": null}` reach a Mongo value
+ * position on a query scoped to somebody's private contacts.
+ *
+ * So: import them, never re-implement them, and do not widen what they accept.
+ */
+
 /**
  * A string, or undefined. THE OPERATOR-INJECTION GUARD.
  *
@@ -87,7 +101,7 @@ export type Validated<T> = { ok: true; value: T } | { ok: false; issues: Issues 
  * numeric. Objects and arrays are REFUSED — that is the whole point: an object reaching a Mongo
  * value position is an operator, not a value.
  */
-function scalarString(value: unknown, field: string, issues: Issues): string | undefined {
+export function scalarString(value: unknown, field: string, issues: Issues): string | undefined {
   if (value === undefined || value === null) return undefined;
   if (typeof value === 'string') {
     const trimmed = value.trim();
@@ -106,7 +120,7 @@ const MAX_STRING_CHARS = 200;
 /** How many entries a list argument may carry, so `category: [...1000 values]` cannot be sent. */
 const MAX_LIST_ITEMS = 20;
 
-function boundedString(value: unknown, field: string, issues: Issues): string | undefined {
+export function boundedString(value: unknown, field: string, issues: Issues): string | undefined {
   const raw = scalarString(value, field, issues);
   if (raw === undefined) return undefined;
   if (raw.length > MAX_STRING_CHARS) {
@@ -123,7 +137,7 @@ function boundedString(value: unknown, field: string, issues: Issues): string | 
  * they write an array, and because this app's own querystring convention is comma-separated. Any
  * non-scalar ELEMENT is refused, for the operator-injection reason above.
  */
-function stringList(value: unknown, field: string, issues: Issues): string[] | undefined {
+export function stringList(value: unknown, field: string, issues: Issues): string[] | undefined {
   if (value === undefined || value === null) return undefined;
 
   let parts: unknown[];
@@ -166,7 +180,7 @@ function matchEnum(raw: string, allowed: readonly string[]): string | undefined 
   return allowed.find(a => slugify(a) === slug);
 }
 
-function enumValue(
+export function enumValue(
   value: unknown,
   field: string,
   allowed: readonly string[],
@@ -182,7 +196,7 @@ function enumValue(
   return matched;
 }
 
-function enumList(
+export function enumList(
   value: unknown,
   field: string,
   allowed: readonly string[],
@@ -203,7 +217,7 @@ function enumList(
 }
 
 /** `true`/`false`, plus the string and 0/1 forms a model sends. Anything else is an issue. */
-function boolValue(value: unknown, field: string, issues: Issues): boolean | undefined {
+export function boolValue(value: unknown, field: string, issues: Issues): boolean | undefined {
   if (value === undefined || value === null) return undefined;
   if (typeof value === 'boolean') return value;
   if (typeof value === 'number' && (value === 0 || value === 1)) return value === 1;
@@ -224,7 +238,7 @@ function boolValue(value: unknown, field: string, issues: Issues): boolean | und
  * an error it has to recover from. A non-numeric value IS an issue, because silently substituting
  * the default for `limit: "lots"` hides a real misunderstanding.
  */
-function intValue(
+export function intValue(
   value: unknown,
   field: string,
   bounds: { default: number; max: number },
@@ -421,7 +435,7 @@ export function parseTrendingTopicsArgs(raw: unknown): Validated<TrendingTopicsA
 
 /** Arguments may legitimately be absent; anything non-object is treated as absent-with-a-complaint
  *  by the individual field readers, which each name their own field. */
-function asRecord(raw: unknown): Record<string, unknown> {
+export function asRecord(raw: unknown): Record<string, unknown> {
   if (typeof raw === 'object' && raw !== null && !Array.isArray(raw)) {
     return raw as Record<string, unknown>;
   }

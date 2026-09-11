@@ -14,7 +14,15 @@ import {
   type ToolOutcome,
   type ToolRunner,
 } from '@/lib/mcp/server';
-import { TOOL_DEFS, TOOL_NAMES, findToolDef } from '@/lib/mcp/tool-defs';
+import {
+  ALL_TOOL_DEFS,
+  PERSONAL_TOOL_NAMES,
+  PUBLIC_TOOL_DEFS,
+  PUBLIC_TOOL_NAMES,
+  findToolDef,
+  isPersonalTool,
+  type McpToolDef,
+} from '@/lib/mcp/tool-defs';
 import {
   MCP_AREAS,
   MCP_CATEGORIES,
@@ -439,9 +447,11 @@ describe('initialize', () => {
 });
 
 describe('tools/list', () => {
-  it('lists exactly the four v1 tools', async () => {
+  it('an ANONYMOUS tools/list is exactly the four public tools', async () => {
+    // `dispatch` is called with no identity argument, which is how every pre-v2 call site invokes it.
+    // That default must resolve to "anonymous", not to "trusted".
     const response = await dispatch(request('tools/list'), stubRunner);
-    const { tools } = (response as { result: { tools: typeof TOOL_DEFS } }).result;
+    const { tools } = (response as { result: { tools: McpToolDef[] } }).result;
     expect(tools.map(t => t.name)).toEqual([
       'search_events',
       'get_event',
@@ -450,8 +460,8 @@ describe('tools/list', () => {
     ]);
   });
 
-  it('every tool declares a schema, an output schema and read-only annotations', () => {
-    for (const tool of TOOL_DEFS) {
+  it('every tool in BOTH families declares a schema, an output schema and read-only annotations', () => {
+    for (const tool of ALL_TOOL_DEFS) {
       expect(tool.inputSchema.type).toBe('object');
       expect(tool.outputSchema.type).toBe('object');
       expect(tool.annotations.readOnlyHint).toBe(true);
@@ -463,17 +473,50 @@ describe('tools/list', () => {
   });
 
   it('every listed tool has a definition findable by name', () => {
-    for (const name of TOOL_NAMES) expect(findToolDef(name)).toBeDefined();
-    expect(findToolDef('my_people')).toBeUndefined();
+    for (const name of [...PUBLIC_TOOL_NAMES, ...PERSONAL_TOOL_NAMES]) {
+      expect(findToolDef(name)).toBeDefined();
+    }
+    expect(findToolDef('drop_database')).toBeUndefined();
   });
 
-  it('no tool mentions a user’s own data — v1 is unauthenticated by construction', () => {
-    // A tool named for private data on an endpoint that reads no session would return somebody
-    // else's rows or nothing at all. This fails the day one is added without auth.
-    const listed = TOOL_NAMES.join(' ');
-    for (const forbidden of ['my_', 'who_did_i', 'follow_up', 'saved']) {
-      expect(listed).not.toContain(forbidden);
+  /**
+   * THIS TEST REPLACES A WEAKER ONE, AND THE REPLACEMENT IS THE POINT.
+   *
+   * It used to read: no tool name may contain `my_`, `who_did_i`, `follow_up` or `saved` — a substring
+   * check whose stated purpose was to FAIL the day a personal tool shipped without auth, so that
+   * whoever added one had to do the auth work rather than skip it. It has now done its job: the four
+   * personal tools exist and the auth work is in `lib/mcp/auth.ts`.
+   *
+   * Deleting it and moving on would have thrown away the guarantee. Weakening it to "unless the name
+   * is on this allowlist" would have been worse — an allowlist of names is precisely the thing a
+   * fifth tool gets added to without thinking. So it is replaced by the STRUCTURAL property the
+   * substring check was approximating: whatever is in the personal set must be absent from the public
+   * set, and the public set is what an anonymous caller is offered.
+   *
+   * `tests/mcp-auth.test.ts` carries the other half — that a personal tool called without a credential
+   * is refused rather than merely unlisted.
+   */
+  it('NO personal tool can appear in the public set, whatever it is called', () => {
+    expect(PERSONAL_TOOL_NAMES.length).toBeGreaterThan(0);
+
+    for (const name of PERSONAL_TOOL_NAMES) {
+      expect(PUBLIC_TOOL_NAMES).not.toContain(name);
+      expect(isPersonalTool(name)).toBe(true);
     }
+    for (const name of PUBLIC_TOOL_NAMES) {
+      expect(isPersonalTool(name)).toBe(false);
+    }
+
+    // Disjoint AND exhaustive: a tool that belonged to neither set would be reachable by name through
+    // `findToolDef` while `isPersonalTool` called it public, which is the gap that matters.
+    expect(ALL_TOOL_DEFS.length).toBe(PUBLIC_TOOL_NAMES.length + PERSONAL_TOOL_NAMES.length);
+  });
+
+  it('the public four are still identity-blind: their handlers take no identity parameter', () => {
+    // A property of the DEFINITIONS rather than the wiring: `openWorldHint` is the declared difference
+    // between "reads an open-ended external corpus" and "reads this caller's own closed records", and a
+    // public tool that started returning per-user data would have to change it.
+    for (const tool of PUBLIC_TOOL_DEFS) expect(tool.annotations.openWorldHint).toBe(true);
   });
 });
 

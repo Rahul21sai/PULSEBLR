@@ -50,6 +50,21 @@ export const JSON_RPC_ERRORS = {
   invalidParams: -32602,
   internal: -32603,
   rateLimited: -32000,
+  /**
+   * A tool that exists, was called correctly, and needs a credential the caller did not supply.
+   *
+   * ── WHY NOT `-32601 methodNotFound`, AND WHY NOT `-32602 invalidParams` ──────────────────────
+   * `methodNotFound` would be a lie with a consequence: a client whose token has just been revoked
+   * would be told the server no longer has the tool, and would stop offering it to the model rather
+   * than prompting for auth. `invalidParams` is worse still — it blames the caller's arguments, which
+   * were fine, and sends whoever is debugging to the schema.
+   *
+   * -32001 sits in the implementation-defined `-32000..-32099` band alongside `rateLimited`, and the
+   * route lifts it to an HTTP **401** with a `WWW-Authenticate` header, which is the signal a client
+   * actually acts on. MCP's own error table names 401 for "Authorization required", so the HTTP layer
+   * is where this is legible and the JSON-RPC code is what carries it there.
+   */
+  unauthorized: -32001,
 } as const;
 
 /** A JSON-RPC id. `null` is deliberately absent — see `parseIncoming`. */

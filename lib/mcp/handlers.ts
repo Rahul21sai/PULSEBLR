@@ -7,10 +7,21 @@
 // leaked private-event counts as a result (CLAUDE.md §7). The plans are pure, so the exclusion is
 // asserted in `tests/mcp-tools.test.ts` rather than trusted.
 //
-// THIS MODULE READS NO SESSION. There is no `getCurrentUserId()` call, no cookie read and no
-// `requireUser()`, because v1 is unauthenticated on purpose — there is no user-specific data in the
-// surface, so there is no OAuth to build and nothing to leak. That is not a gap to be filled by
-// adding a session read here; see the v2 note in `app/mcp/page.tsx`.
+// THIS MODULE STILL READS NO SESSION, AND THAT PROPERTY SURVIVED v2 INTACT. There is no
+// `getCurrentUserId()` call here, no cookie read and no `requireUser()`. `scripts/diag-api-auth.ts`
+// cites it by name when it blesses `POST /api/mcp` as public, and predicted that "the day somebody
+// adds a session read to `lib/mcp/handlers.ts` this line stops being true" — that day did not come,
+// because the authenticated half is ADDITIVE and partitioned rather than bolted onto these four:
+//
+//   · the four PUBLIC handlers below are unchanged and take no identity;
+//   · identity is resolved in `lib/mcp/auth.ts` from a bearer token, by the ROUTE, never from a cookie;
+//   · `dispatch` refuses a personal tool before any handler runs;
+//   · `runTool` below only forwards an identity to `runPersonalTool`, whose every handler takes the
+//     user id as a REQUIRED POSITIONAL parameter.
+//
+// So an anonymous `tools/list` and an anonymous `search_events` still answer 200 with public data and
+// still read no session. Keep it that way: a session read in THIS file would put a cookie-derived
+// identity behind the public tools, which is the thing that assertion is protecting.
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 
 import Event from '../models/Event';
@@ -32,6 +43,7 @@ import {
   type McpEventRow,
   type StoredEvent,
 } from './serialize';
+import { isPersonalHandler, runPersonalTool } from './personal-handlers';
 import { invalidArgs, toolFailure, toolResult, type ToolOutcome, type ToolRunner } from './server';
 
 /**
@@ -298,7 +310,11 @@ async function runTrendingTopics(rawArgs: unknown): Promise<ToolOutcome> {
 
 /* ────────────────────────────── wiring ────────────────────────────── */
 
-const HANDLERS: Record<string, (args: unknown) => Promise<ToolOutcome>> = {
+/**
+ * The four PUBLIC handlers. Note the signature takes only `args` — there is no identity parameter to
+ * accidentally read, so none of these can become user-scoped without a visible change here.
+ */
+const PUBLIC_HANDLERS: Record<string, (args: unknown) => Promise<ToolOutcome>> = {
   search_events: runSearchEvents,
   get_event: runGetEvent,
   events_near: runEventsNear,
@@ -306,18 +322,30 @@ const HANDLERS: Record<string, (args: unknown) => Promise<ToolOutcome>> = {
 };
 
 /**
- * The runner handed to `dispatch()`.
+ * The runner handed to `dispatch()`. The ONE place the two tool families meet.
  *
- * An unknown name cannot reach here — `dispatch` checks it against `TOOL_DEFS` first, so the tool a
- * client sees listed and the tool that runs are the same set. The guard below exists so this
- * function is total rather than relying on that ordering.
+ * An unknown name cannot reach here — `dispatch` checks it against the catalogue first, so the tool a
+ * client sees listed and the tool that runs are the same set. The guards below exist so this function
+ * is total rather than relying on that ordering.
+ *
+ * ── THE PUBLIC BRANCH DISCARDS `identity`, DELIBERATELY ──────────────────────────────────────
+ * `PUBLIC_HANDLERS[name](args)` — the identity is not forwarded even when one exists. An authenticated
+ * caller's `search_events` must return exactly what an anonymous one gets, because the moment a viewer
+ * id reaches `buildEventFilter` through this path the anonymous-visibility assertions in
+ * `tests/mcp-tools.test.ts` stop describing what production does. If per-user event ranking is ever
+ * wanted here, it belongs in a NEW tool with its own plan, not as a silent widening of these four.
  */
-export const runTool: ToolRunner = async (name, args) => {
-  const handler = HANDLERS[name];
-  if (!handler) {
-    return { error: { code: -32602, message: `Unknown tool "${name}".` } };
+export const runTool: ToolRunner = async (name, args, identity) => {
+  const publicHandler = PUBLIC_HANDLERS[name];
+  if (publicHandler) return publicHandler(args);
+
+  if (isPersonalHandler(name)) {
+    // `identity?.userId` is `undefined` when anonymous, and `runPersonalTool` THROWS on a falsy id
+    // rather than querying — see its own note on why the unreachable guard is worth having.
+    return runPersonalTool(name, identity?.userId, args);
   }
-  return handler(args);
+
+  return { error: { code: -32602, message: `Unknown tool "${name}".` } };
 };
 
 /* ────────────────────────────── prose helpers ────────────────────────────── */

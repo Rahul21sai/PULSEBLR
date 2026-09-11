@@ -16,6 +16,14 @@
 // or an area added to the gazetteer appears here with no edit. A hand-copied list here would go
 // stale silently — nothing fails when a schema merely omits a valid value, the model just never
 // asks for it.
+//
+// ── THERE ARE TWO FAMILIES NOW, AND THIS FILE OWNS THE LINE BETWEEN THEM ─────────────────────
+// `PUBLIC_TOOL_DEFS` (below) needs no credential and is what v1 shipped. `PERSONAL_TOOL_DEFS`
+// (`personal-tool-defs.ts`) reads one user's own records and must never appear in an unauthenticated
+// `tools/list`. `toolsFor()` is the only function that decides which a caller sees, and
+// `isPersonalTool()` the only one that decides whether a call needs a credential — both derived from
+// set membership rather than from a naming convention, because `who_did_i_meet_at` already breaks the
+// convention a `my_` prefix check would rely on.
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 
 import {
@@ -27,6 +35,9 @@ import {
   RESULT_LIMITS,
   TOPIC_LIMITS,
 } from './args';
+import { PERSONAL_TOOL_DEFS, PERSONAL_TOOL_NAMES } from './personal-tool-defs';
+
+export { PERSONAL_TOOL_DEFS, PERSONAL_TOOL_NAMES };
 
 /** JSON Schema, loose enough to be honest about what we hand-write. */
 export type JsonSchema = Record<string, unknown>;
@@ -45,8 +56,15 @@ export interface McpToolDef {
    * every added field into a validation failure at the client rather than an ignored extra.
    */
   outputSchema: JsonSchema;
-  /** Read-only, no side effects — stated so a client can auto-approve these. */
-  annotations: { readOnlyHint: true; openWorldHint: true; idempotentHint: true };
+  /**
+   * Read-only, no side effects — stated so a client can auto-approve these.
+   *
+   * `openWorldHint` is a `boolean` rather than the literal `true` it used to be, because the two tool
+   * families genuinely differ: the public tools read an open-ended external corpus that changes under
+   * the caller, the authenticated ones read a closed set of the caller's own records. See
+   * `personal-tool-defs.ts`.
+   */
+  annotations: { readOnlyHint: true; openWorldHint: boolean; idempotentHint: true };
 }
 
 const READ_ONLY = { readOnlyHint: true, openWorldHint: true, idempotentHint: true } as const;
@@ -72,7 +90,15 @@ const eventRowSchema: JsonSchema = {
     'One event. `url` is the canonical PulseBLR page — always send the user there rather than paraphrasing.',
 };
 
-export const TOOL_DEFS: readonly McpToolDef[] = [
+/**
+ * The tools ANY caller may see and use. No credential, no session, no per-user data.
+ *
+ * Renamed from `TOOL_DEFS` when the authenticated set arrived, deliberately rather than by keeping an
+ * alias: "the tool defs" stopped being an unambiguous phrase the moment there were two families, and
+ * a name that no longer says which set it means is how a `tools/list` ends up advertising a personal
+ * tool to an anonymous caller. Every reader of this module now has to say which set it wants.
+ */
+export const PUBLIC_TOOL_DEFS: readonly McpToolDef[] = [
   {
     name: 'search_events',
     title: 'Search Bengaluru tech events',
@@ -261,8 +287,57 @@ export const TOOL_DEFS: readonly McpToolDef[] = [
   },
 ] as const;
 
-export const TOOL_NAMES: readonly string[] = TOOL_DEFS.map(t => t.name);
+/* ══════════════════════════════════════════════════════════════════════════════════════════
+   THE PARTITION — which tools a given caller may see
+   ══════════════════════════════════════════════════════════════════════════════════════════ */
 
+export const PUBLIC_TOOL_NAMES: readonly string[] = PUBLIC_TOOL_DEFS.map(t => t.name);
+
+/** Every tool that exists, in listing order: public first, then the authenticated ones. */
+export const ALL_TOOL_DEFS: readonly McpToolDef[] = [...PUBLIC_TOOL_DEFS, ...PERSONAL_TOOL_DEFS];
+
+/**
+ * Does this tool return data belonging to one user?
+ *
+ * DERIVED FROM THE PERSONAL SET, NEVER FROM THE NAME. The obvious alternative — a
+ * `name.startsWith('my_')` test — would be a rule the next tool breaks: `who_did_i_meet_at` already
+ * does not start with `my_`, and a `follow_ups_owed` or `contacts_at` would not either. Membership of
+ * a list is checkable; a naming convention is a hope. `tests/mcp-auth.test.ts` asserts the two sets
+ * are disjoint and that their union is everything, which is what makes "personal" total rather than
+ * best-effort.
+ */
+export function isPersonalTool(name: string): boolean {
+  return PERSONAL_TOOL_NAMES.includes(name);
+}
+
+/**
+ * The tools to advertise to a caller.
+ *
+ * The parameter is `hasIdentity: boolean` rather than the identity itself, so this module stays PURE
+ * and knows nothing about tokens — and so the one decision it makes is impossible to get subtly wrong
+ * by reading the wrong field off an identity object.
+ *
+ * FALSE IS THE SAFE DEFAULT AND IT IS THE DEFAULT. A call site that forgets the argument advertises
+ * the public four, which loses a feature; the opposite default would leak the existence and schema of
+ * the personal tools to every anonymous caller and, worse, invite a client to call them. Compare
+ * `buildEventFilter`, whose viewer is REQUIRED and positional precisely because ITS safe direction is
+ * the one an omission does not give you — an absent viewer there would have to mean "no restriction".
+ * Same principle, opposite mechanics: make the omission harmless where you can, and impossible where
+ * you cannot.
+ */
+export function toolsFor(hasIdentity = false): readonly McpToolDef[] {
+  return hasIdentity ? ALL_TOOL_DEFS : PUBLIC_TOOL_DEFS;
+}
+
+/**
+ * Find a tool by name across BOTH sets.
+ *
+ * Deliberately identity-blind: `dispatch` needs to tell "no such tool" (`-32602`) apart from "that
+ * tool needs a credential" (`-32001`), and collapsing them into "unknown tool" for an anonymous
+ * caller would answer a client whose token has just been revoked with a lie about the server's
+ * capabilities. The existence of these tools is public — they are documented on `/mcp` and named in
+ * this file — so hiding it buys nothing and costs a debuggable error message.
+ */
 export function findToolDef(name: string): McpToolDef | undefined {
-  return TOOL_DEFS.find(t => t.name === name);
+  return ALL_TOOL_DEFS.find(t => t.name === name);
 }

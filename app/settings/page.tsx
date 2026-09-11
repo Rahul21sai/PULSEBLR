@@ -204,6 +204,9 @@ export default function SettingsPage() {
           {/* ── My card ─────────────────────────────────────────────────── */}
           {session?.user && <MyCardSection />}
 
+          {/* ── Assistant access (MCP tokens) ───────────────────────────── */}
+          {session?.user && <McpTokensSection />}
+
           {/* ── What you can do ─────────────────────────────────────────── */}
           <section className="bg-white rounded-2xl card-shadow p-5">
             <h2 className="text-[16px] font-bold text-[#1D1D1F]">Your permissions</h2>
@@ -216,6 +219,12 @@ export default function SettingsPage() {
               <Permission icon="explore" granted title="Browse and search events" detail="Filter by topic, area, format and date." />
               <Permission icon="bookmarks" granted title="Track events" detail="Save events, move them through your board, and log who you met." />
               <Permission icon="event_available" granted title="Apply and follow up" detail="Keep application links and follow-up reminders in one place." />
+              <Permission
+                icon="smart_toy"
+                granted
+                title="Connect an assistant"
+                detail="Mint a read-only token above so Claude, Cursor or Copilot can read your people and saved events."
+              />
               <Permission
                 icon="sync"
                 granted={isAdmin}
@@ -325,6 +334,322 @@ export default function SettingsPage() {
       <MobileBottomNav />
     </div>
   );
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════════════════
+   Assistant access — the MCP personal access tokens
+   ══════════════════════════════════════════════════════════════════════════════════════════ */
+
+interface McpTokenRow {
+  id: string;
+  name: string;
+  hint: string;
+  scope: string;
+  createdAt: string;
+  expiresAt: string;
+  expired: boolean;
+  lastUsedAt: string | null;
+}
+
+/**
+ * Mint, list and revoke the tokens that let an assistant read your own PulseBLR data.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────────────────────
+ * WHY THIS LIVES IN `/settings` AND NOT ON `/mcp`. `/mcp` is public, statically rendered and in the
+ * sitemap — it is the page a developer finds from a README. A credential belongs behind a session, so
+ * `/mcp` documents the feature and links here, and this section is the only place a token is ever
+ * produced. `/settings` is already in `PROTECTED_PATHS`, so the gate is inherited rather than invented.
+ *
+ * THE TOKEN IS SHOWN EXACTLY ONCE, and the UI has to be honest about that BEFORE the user navigates
+ * away — hence the panel that stays until dismissed, the copy button, and the wording that says it
+ * cannot be shown again. The server stores only a hash, so "show it to me again" is not a feature
+ * somebody can add later without changing that.
+ * ─────────────────────────────────────────────────────────────────────────────────────────────
+ */
+function McpTokensSection() {
+  const [tokens, setTokens] = useState<McpTokenRow[] | null>(null);
+  const [max, setMax] = useState(10);
+  const [name, setName] = useState('');
+  const [days, setDays] = useState(90);
+  const [creating, setCreating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  /** The one-time plaintext. Held in component state only, and never persisted anywhere. */
+  const [fresh, setFresh] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [open, setOpen] = useState(false);
+
+  async function load() {
+    try {
+      const response = await fetch('/api/me/mcp-tokens');
+      if (!response.ok) throw new Error(String(response.status));
+      const data = await response.json();
+      setTokens(data.tokens ?? []);
+      if (typeof data.max === 'number') setMax(data.max);
+    } catch {
+      setError('Could not load your access tokens.');
+      setTokens([]);
+    }
+  }
+
+  /**
+   * The list is fetched from the CLICK, not from an effect.
+   *
+   * An effect that calls `setState` synchronously is the `react-hooks/set-state-in-effect` error, and
+   * the rule is right here rather than merely strict: opening a panel is a user event, so fetching in
+   * response to it is synchronising with an external system at the moment the user asked. Deriving it
+   * from an effect on `open` would re-run on every state change that touches the dependency and needs a
+   * `tokens === null` guard to stop looping — a guard that exists only to undo the wrong trigger.
+   */
+  function toggle() {
+    const next = !open;
+    setOpen(next);
+    if (next && tokens === null) void load();
+  }
+
+  async function create() {
+    setCreating(true);
+    setError(null);
+    try {
+      const response = await fetch('/api/me/mcp-tokens', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: name.trim(), expiresInDays: days }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        setError(data?.error ?? 'Could not create that token.');
+        return;
+      }
+      setFresh(data.token);
+      setCopied(false);
+      setName('');
+      await load();
+    } catch {
+      setError('Could not create that token.');
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  async function revoke(token: McpTokenRow) {
+    // A confirm, because this is irreversible AND it breaks something the user has configured
+    // elsewhere. Naming the token means they cannot revoke the wrong one by muscle memory.
+    const ok = window.confirm(
+      `Revoke "${token.name}"? Any assistant configured with it stops being able to read your ` +
+        'people and saved events immediately. This cannot be undone — you would mint a new token and ' +
+        'update that client.'
+    );
+    if (!ok) return;
+
+    setError(null);
+    try {
+      const response = await fetch(`/api/me/mcp-tokens?id=${encodeURIComponent(token.id)}`, {
+        method: 'DELETE',
+      });
+      if (!response.ok) {
+        setError('Could not revoke that token.');
+        return;
+      }
+      await load();
+    } catch {
+      setError('Could not revoke that token.');
+    }
+  }
+
+  const live = (tokens ?? []).filter(t => !t.expired).length;
+
+  return (
+    <section className="bg-white rounded-2xl card-shadow p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="text-[16px] font-bold text-[#1D1D1F]">Assistant access</h2>
+          <p className="mt-0.5 text-[13px] leading-relaxed text-[#6E6E73]">
+            Let Claude, Cursor or Copilot read <span className="font-semibold text-[#1D1D1F]">your</span>{' '}
+            PulseBLR data — the people you have met, who you know at a company, what is on your tracker
+            and which follow-ups are overdue. Read-only, and revocable here.{' '}
+            <Link href="/mcp" className="font-semibold text-[#0071E3] hover:underline">
+              Setup instructions
+            </Link>
+            .
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={toggle}
+          className="pressable inline-flex h-10 shrink-0 items-center rounded-full bg-[#1D1D1F] px-5 text-[13px] font-semibold text-white hover:bg-black"
+          aria-expanded={open}
+        >
+          {open ? 'Hide' : 'Manage tokens'}
+        </button>
+      </div>
+
+      {open && (
+        <div className="mt-4 border-t border-[color:var(--hairline)] pt-4">
+          {/* The one-time reveal. Deliberately loud, and it does not disappear on its own. */}
+          {fresh && (
+            <div className="mb-4 rounded-xl border border-[#0071E3]/30 bg-[#e8f3ff] p-4">
+              <p className="text-[13px] font-semibold text-[#1D1D1F]">
+                Copy this now — it cannot be shown again.
+              </p>
+              <p className="mt-1 text-[12.5px] leading-relaxed text-[#3a3a3c]">
+                Only a hash is stored, so there is no way to look it up later. If you lose it, revoke it
+                and mint another.
+              </p>
+              <div className="mt-2.5 flex flex-wrap items-center gap-2">
+                <code className="min-w-0 flex-1 break-all rounded-lg bg-white px-3 py-2 font-mono text-[12px] text-[#1D1D1F]">
+                  {fresh}
+                </code>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void navigator.clipboard?.writeText(fresh).then(
+                      () => setCopied(true),
+                      () => setError('Could not copy — select the token and copy it manually.')
+                    );
+                  }}
+                  className="pressable h-10 shrink-0 rounded-full bg-[#0071E3] px-4 text-[12.5px] font-semibold text-white hover:bg-blue-600"
+                >
+                  {copied ? 'Copied' : 'Copy'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFresh(null)}
+                  className="pressable h-10 shrink-0 rounded-full bg-white px-4 text-[12.5px] font-semibold text-[#6E6E73] hover:bg-[#f3f3f5]"
+                >
+                  Done
+                </button>
+              </div>
+            </div>
+          )}
+
+          {error && (
+            <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-[12.5px] font-medium text-[#FF3B30]">
+              {error}
+            </p>
+          )}
+
+          {/* ── Mint ─────────────────────────────────────────────────── */}
+          <div className="flex flex-wrap items-end gap-2">
+            <label className="min-w-[180px] flex-1">
+              <span className="block text-[11.5px] font-semibold uppercase tracking-wide text-[#8E8E93]">
+                Name
+              </span>
+              <input
+                type="text"
+                value={name}
+                onChange={e => setName(e.target.value)}
+                maxLength={80}
+                placeholder="Claude Code on my laptop"
+                className="mt-1 h-10 w-full rounded-xl border border-[color:var(--hairline)] bg-[#f9f9fb] px-3 text-[13px] text-[#1D1D1F] outline-none focus:border-[#0071E3]"
+              />
+            </label>
+            <label>
+              <span className="block text-[11.5px] font-semibold uppercase tracking-wide text-[#8E8E93]">
+                Expires
+              </span>
+              <select
+                value={days}
+                onChange={e => setDays(Number(e.target.value))}
+                className="mt-1 h-10 rounded-xl border border-[color:var(--hairline)] bg-[#f9f9fb] px-3 text-[13px] text-[#1D1D1F] outline-none focus:border-[#0071E3]"
+              >
+                {/* There is no "never" option on purpose — a credential with no end date is one you
+                    forget you issued. The server clamps to 365 days regardless of what is sent. */}
+                <option value={30}>in 30 days</option>
+                <option value={90}>in 90 days</option>
+                <option value={365}>in a year</option>
+              </select>
+            </label>
+            <button
+              type="button"
+              onClick={() => void create()}
+              disabled={creating || name.trim().length === 0 || live >= max}
+              className="pressable h-10 shrink-0 rounded-full bg-[#0071E3] px-5 text-[13px] font-semibold text-white hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {creating ? 'Creating…' : 'Create token'}
+            </button>
+          </div>
+          {live >= max && (
+            <p className="mt-2 text-[12.5px] text-[#6E6E73]">
+              You have {max} active tokens, which is the limit. Revoke one you no longer use.
+            </p>
+          )}
+
+          {/* ── List ─────────────────────────────────────────────────── */}
+          <div className="mt-4">
+            {tokens === null ? (
+              <p className="text-[12.5px] text-[#8E8E93]">Loading…</p>
+            ) : tokens.length === 0 ? (
+              <p className="text-[12.5px] leading-relaxed text-[#6E6E73]">
+                No tokens yet. Without one, an assistant connected to PulseBLR can still search public
+                events — it just cannot see anything of yours.
+              </p>
+            ) : (
+              <ul className="flex flex-col">
+                {tokens.map(token => (
+                  <li
+                    key={token.id}
+                    className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-[color:var(--hairline)] py-2.5 first:border-0 first:pt-0"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="flex flex-wrap items-center gap-2 text-[13.5px] font-semibold text-[#1D1D1F]">
+                        <span className="truncate">{token.name}</span>
+                        <code className="font-mono text-[11.5px] font-normal text-[#8E8E93]">
+                          pblr_…{token.hint}
+                        </code>
+                        {token.expired && (
+                          <span className="rounded bg-[#f3f3f5] px-1.5 py-0.5 text-[10.5px] font-bold uppercase tracking-wide text-[#86868B]">
+                            expired
+                          </span>
+                        )}
+                      </p>
+                      <p className="text-[12px] text-[#8E8E93]">
+                        {token.scope} ·{' '}
+                        {token.expired
+                          ? `expired ${shortDate(token.expiresAt)}`
+                          : `expires ${shortDate(token.expiresAt)}`}
+                        {' · '}
+                        {/* "Never used" is worth saying explicitly: it is the signal that a config was
+                            pasted wrong, which is otherwise indistinguishable from a working setup. */}
+                        {token.lastUsedAt ? `last used ${shortDate(token.lastUsedAt)}` : 'never used'}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void revoke(token)}
+                      className="pressable shrink-0 rounded-full bg-red-50 px-4 py-2 text-[12.5px] font-semibold text-[#FF3B30] hover:bg-red-100"
+                    >
+                      Revoke
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          <p className="mt-3 text-[12px] leading-relaxed text-[#8E8E93]">
+            A token is a password, not a share link. It can only read, never write — nothing with one
+            can save an event, record a person or complete a follow-up. It cannot mint or revoke another
+            token either; that needs this page.
+          </p>
+        </div>
+      )}
+    </section>
+  );
+}
+
+/**
+ * A short IST date. Uses `Asia/Kolkata` explicitly rather than the browser locale, for the reason
+ * `lib/format.ts` exists: this is a Bengaluru product and a phone set to another zone would otherwise
+ * show a token expiring on the wrong day. Not imported from `lib/format.ts` because that module's
+ * helpers are shaped for event instants, and this is a plain calendar date.
+ */
+function shortDate(iso: string): string {
+  return new Date(iso).toLocaleDateString('en-IN', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    timeZone: 'Asia/Kolkata',
+  });
 }
 
 /** One row in the permissions list: what you can do, and what you cannot. */
