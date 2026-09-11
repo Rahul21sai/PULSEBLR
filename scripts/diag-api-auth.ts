@@ -124,6 +124,126 @@ const MUST_REFUSE: Case[] = [
     body: { contactId: GHOST },
     why: 'mark somebody else’s follow-up complete',
   },
+
+  /*
+   * -- EVERYTHING BELOW WAS BUILT AFTER THIS LIST WAS LAST TOUCHED, AND THAT IS THE POINT --------
+   *
+   * `All checks passed` was true and INCOMPLETE: the list predated the person surface, the control
+   * room, MCP v2, the digest, reminders and follow-up drafting. An endpoint this file has no opinion
+   * about is not safe by default, it is UNEXAMINED -- which is exactly the lesson the two
+   * `GET /api/sources` rows above already record, and the reason these are asserted rather than
+   * assumed.
+   */
+
+  // -- The person surface. Every one of these reads or writes a named third party's details. --
+  { method: 'GET', path: '/api/people', why: 'read every human a user has met, merged across folders' },
+  { method: 'GET', path: '/api/people/facets', why: 'per-company and per-tag counts of somebody’s contacts' },
+  { method: 'GET', path: `/api/people/${GHOST}`, why: 'one person, their captures, timeline and private notes' },
+  {
+    method: 'PATCH',
+    path: `/api/people/${GHOST}`,
+    body: { ownTags: ['x'] },
+    why: 'rewrite a person, their tags or their follow-up',
+  },
+  { method: 'GET', path: '/api/people/export', why: 'bulk PII export - names, companies, reach, notes' },
+  {
+    method: 'POST',
+    path: '/api/people/tags',
+    body: { personIds: [GHOST], add: ['x'] },
+    why: 'bulk-tag people in another account',
+  },
+  { method: 'GET', path: '/api/people/merge', why: 'suggested duplicate pairs, i.e. a list of who they know' },
+  {
+    method: 'POST',
+    path: '/api/people/merge',
+    body: { action: 'dismiss' },
+    why: 'merge or unmerge somebody else’s people',
+  },
+  /*
+   * THE DRAFT ROUTE IS THE MOST SENSITIVE ONE IN THE APP. It sends a private note about a named
+   * person to a third-party model, so an unguarded version is both a disclosure AND a way to spend
+   * somebody else's LLM budget. Probed WITH a body, so a 400 here would mean validation outran the
+   * guard.
+   */
+  {
+    method: 'POST',
+    path: `/api/people/${GHOST}/draft`,
+    body: { channel: 'email' },
+    why: 'send a stranger’s private notes to an LLM on their behalf',
+  },
+  {
+    method: 'POST',
+    path: '/api/contacts/bulk',
+    body: { ids: [GHOST], tags: ['x'] },
+    why: 'bulk-rewrite contacts in another account',
+  },
+
+  /*
+   * -- CREDENTIAL MINTING. If only one row in this file matters, it is this one. ----------------
+   *
+   * `POST /api/me/mcp-tokens` issues a bearer token granting read access to the caller's saved
+   * events, their people, and who they met where. Unguarded it would let a stranger mint a
+   * LONG-LIVED credential against somebody else's account -- strictly worse than any single read
+   * in this file, because it survives the request. `DELETE` matters for the mirror reason:
+   * revocation must not be something a stranger can do on your behalf either.
+   */
+  { method: 'GET', path: '/api/me/mcp-tokens', why: 'list somebody’s MCP tokens' },
+  {
+    method: 'POST',
+    path: '/api/me/mcp-tokens',
+    body: { label: 'diag' },
+    why: 'MINT a bearer credential against another account',
+  },
+  {
+    method: 'DELETE',
+    path: `/api/me/mcp-tokens?id=${GHOST}`,
+    why: 'revoke another user’s credential',
+  },
+  { method: 'GET', path: '/api/me/preferences', why: 'read a user’s topics, areas and notification settings' },
+  {
+    method: 'PUT',
+    path: '/api/me/preferences',
+    body: { topics: ['AI/ML'] },
+    why: 'rewrite feed preferences and opt somebody into mail',
+  },
+
+  // -- The control room. Global effects, so these need requireAdmin, not merely a session. --
+  { method: 'GET', path: '/api/admin/audit', why: 'the full audit log - who changed what, with before/after' },
+  {
+    method: 'POST',
+    path: '/api/admin/audit/undo',
+    body: { id: GHOST },
+    why: 'undo an operator action, i.e. resurrect or revert any event',
+  },
+  { method: 'GET', path: '/api/admin/impact', why: 'which users have tracked or scanned a given event' },
+  { method: 'GET', path: '/api/admin/engagement', why: 'per-account activity - signups, actives, what each user saved' },
+  { method: 'GET', path: '/api/admin/feed-quality', why: 'corpus internals and delete candidates' },
+  {
+    method: 'PATCH',
+    path: `/api/admin/events/${GHOST}`,
+    body: { isTechEvent: false },
+    why: 'rewrite any event through the audited path',
+  },
+  { method: 'DELETE', path: `/api/admin/events/${GHOST}`, why: 'soft-delete any event out of the public feed' },
+  {
+    method: 'PATCH',
+    path: `/api/admin/sources/${GHOST}`,
+    body: { enabled: false },
+    why: 'disable a source, silently shrinking the feed',
+  },
+  {
+    method: 'POST',
+    path: '/api/admin/sources/bulk',
+    body: { ids: [GHOST], enabled: false },
+    why: 'disable sources in bulk',
+  },
+  { method: 'GET', path: '/api/admin/submissions', why: 'read pending submissions awaiting review' },
+  {
+    method: 'PATCH',
+    path: '/api/admin/submissions',
+    body: { id: GHOST, action: 'approve' },
+    why: 'publish an event to the whole city',
+  },
 ];
 
 /**
