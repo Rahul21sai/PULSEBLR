@@ -52,6 +52,35 @@ export function shelfEligible(query: string, activeFilterCount: number): boolean
   return !query && activeFilterCount === 0;
 }
 
+/**
+ * Split a claimed section's rows into the ones drawn immediately and the ones behind an expander.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────────────────────
+ * THE POINT OF THIS FUNCTION IS THE PROPERTY ITS TEST ASSERTS: `[...shown, ...deferred]` is `rows`,
+ * for every `preview`. That is the difference between deferring a card and losing one, and on this
+ * page it is the difference that matters — every section above the feed SUBTRACTS its ids from
+ * "Coming up" so nothing renders twice, so a row a section holds and does not draw is gone from the
+ * page entirely. `rows.slice(0, n)` on its own is exactly how that happens: it is one line, it looks
+ * obviously correct, and it silently discards the tail.
+ *
+ * So the split is a function with a total on both sides, and the caller renders BOTH halves — the
+ * deferred half hidden rather than absent, with a control that names how many it holds. "Happening
+ * now" is the caller: it has no cap at all, so three live events cost 809px on a 390px screen before
+ * the ranked feed begins, and a quiet Tuesday and a festival week produce very different pages.
+ *
+ * `preview` is clamped rather than validated. A negative value defers everything (which a caller can
+ * legitimately want) and a value past the end defers nothing; neither is an error worth throwing over
+ * in a render path, and both keep the total.
+ * ─────────────────────────────────────────────────────────────────────────────────────────────
+ */
+export function splitForPreview<T>(
+  rows: readonly T[],
+  preview: number
+): { shown: T[]; deferred: T[] } {
+  const at = Math.min(Math.max(0, preview), rows.length);
+  return { shown: rows.slice(0, at), deferred: rows.slice(at) };
+}
+
 export interface SectionClaim<T> {
   /** The rows this section shows — deduplicated, capped, and free of anything already claimed. */
   rows: T[];

@@ -18,7 +18,7 @@ import WeekAheadStrip, {
   WEEK_AHEAD_DAYS,
   type WeekDay,
 } from './components/shelves/WeekAheadStrip';
-import { claimSection, shelfEligible } from './components/shelves/precedence';
+import { claimSection, shelfEligible, splitForPreview } from './components/shelves/precedence';
 import { FeedEvent, Pagination } from '@/lib/event-types';
 import { MIN_SEARCH_CHARS, resolveDayWindow } from '@/lib/events/query';
 import { preferenceSummary, type UserPreferences } from '@/lib/events/relevance';
@@ -56,10 +56,27 @@ const WHEN_TABS = [
  * A select whose first option is not its current value reads as though the default were
  * arbitrary, which is exactly the impression this app's ranking should not give.
  */
+/*
+ * ── "MOST POPULAR" IS GONE FROM THE CONTROL, AND `popular` STAYS IN THE API ──────────────────
+ *
+ * `attendeeCount` exists on **4.4% of events** — only Luma supplies it — so the sort ranked about
+ * 49 rows and then silently fell through to its `startDateTime` tiebreak for everything else.
+ * Measured on the first 20 rows it returned: 11 online, and TWO organisers owned 12 of the 20.
+ * That is not a popularity ranking, it is one platform's subscriber list followed by date order,
+ * presented to the reader as a judgement about the city.
+ *
+ * The same reasoning removed the "Filling up fast" shelf (§15) and the "show all events" toggle
+ * (§Architecture): a control whose output cannot mean what its label claims is worse than an
+ * absent one, because a reader has no way to tell. `diag-demo-readiness.ts` measured this.
+ *
+ * REMOVED FROM THE UI ONLY. `SortKey`, `buildSort('popular')` and `?sort=popular` all still work
+ * — exactly as `techOnly` remained a real parameter after its toggle went, and for the same
+ * reason: expressing a UI decision by deleting a query parameter would be the wrong layer, and
+ * the sort becomes honest the moment attendee coverage does.
+ */
 const SORTS = [
   { id: 'connections', label: 'Best for connections' },
   { id: 'soonest', label: 'Soonest' },
-  { id: 'popular', label: 'Most popular' },
   { id: 'newest', label: 'Just added' },
 ] as const;
 
@@ -131,6 +148,21 @@ const CURATED_COUNT = 6;
  * the screen.
  */
 const FOLLOWING_COUNT = 6;
+
+/**
+ * How many "Happening now" rows a PHONE draws before the rest go behind an expander.
+ *
+ * Two, and the number is the whole design. One would make the section read as "there is a live event"
+ * when the honest statement is "there are several"; three is the case that was measured at 809px,
+ * which is most of a phone screen spent before the ranked feed begins on a fact that is true for a
+ * couple of hours.
+ *
+ * It bounds the RENDER, never the data: `splitForPreview` hands back both halves and both are in the
+ * DOM (see the section itself). Live rows are subtracted from "Coming up", so a genuine cap here would
+ * delete the third live event from a phone outright — the trap this whole page is arranged around.
+ * From `sm` up nothing is deferred at all.
+ */
+const LIVE_PREVIEW = 2;
 
 /**
  * How many events the week-ahead strip asks for.
@@ -304,6 +336,14 @@ export default function Home() {
   const [filters, setFilters] = useState<FilterState>(EMPTY_FILTERS);
   const [view, setView] = useState<ViewMode>('rail');
   const [sheetOpen, setSheetOpen] = useState(false);
+  /**
+   * Has the reader asked to see every live event, rather than the first `LIVE_PREVIEW`?
+   *
+   * One-way on purpose (see the button): this reveals and then removes itself. It is deliberately NOT
+   * reset by `load()` — a reader who expanded the section and then tapped a time-window chip has said
+   * what they want to see, and re-collapsing it under them would be the page arguing back.
+   */
+  const [liveExpanded, setLiveExpanded] = useState(false);
 
   /**
    * The time-window chip scroller, so the ACTIVE chip can be brought into view.
@@ -1169,6 +1209,15 @@ export default function Home() {
   ]);
 
   /**
+   * The live section, split into what a phone draws and what sits behind the expander.
+   *
+   * Both halves render — see the section and `splitForPreview`'s own header. Computed here rather than
+   * inline so the section body reads as two lists rather than as two slices, and so the split is one
+   * expression instead of one per call site.
+   */
+  const livePreview = useMemo(() => splitForPreview(liveNow, LIVE_PREVIEW), [liveNow]);
+
+  /**
    * The following shelf's caption: the companies it actually matched on, named.
    *
    * IT MUST SIT BELOW THE PRECEDENCE MEMO ABOVE, and that is not a style preference. It reads
@@ -1446,28 +1495,72 @@ export default function Home() {
             No card, no gradient, no new elevation: globals.css keeps one accent and one live
             state, and a hero is not a reason to spend either. The only colour is the live dot,
             and only when something is actually on. */}
-        <div className="max-w-[1240px] mx-auto px-4 md:px-8 pt-2 pb-7 md:pb-9">
+        {/* `pb-5` below `sm` only, was `pb-7` everywhere below `md`. See the paragraph below for the
+            measurement this is part of: the hero was 367px on a 390px screen and every pixel of it is
+            copy, so it is the one block above the feed that can be tightened without touching an
+            event. `sm:pb-7` rather than letting `pb-5` run to `md`, so every width the phone budget is
+            not about stays exactly as it was. */}
+        <div className="max-w-[1240px] mx-auto px-4 md:px-8 pt-2 pb-5 sm:pb-7 md:pb-9">
           {/* Eyebrow: a short rule then letterspaced caps. `.t-label` is +0.055em because the
               type scale sets POSITIVE tracking for small caps — tight small caps are unreadable,
               which is the same rule that gives the headline below its negative tracking. */}
-          <div className="flex items-center gap-3">
+          {/* ── `hidden sm:flex`, AND THE WRAP IS THE REASON, NOT THE BUDGET. ────────────────────
+              Screenshotted at 390px: the string is ~324px of tracked 11px caps against ~314px of
+              room once the 32px rule and its 12px gap are taken, so it wrapped — leaving a hairline
+              followed by two lines of capitals with "WORKSHOPS" alone on the second. A tracked label
+              is a device for a single line; two lines of it is just noise at the very top of the
+              page.
+
+              Nothing is lost at this width, which is the other half of the argument: the sentence
+              directly below names all four kinds in prose ("developer meetup, conference, hackathon
+              and workshop"), so the eyebrow was restating it in a form that did not fit. Dropping it
+              opens a phone on the headline, which is the strongest thing the hero has. The rule-plus-
+              caps device still appears on every section heading down the page.
+
+              `mt-0` on the H1 to match — leaving `mt-3.5` behind a hidden sibling is 14px of nothing
+              at the top of the scroll area. 38px in total. */}
+          <div className="hidden items-center gap-3 sm:flex">
             <span aria-hidden="true" className="h-px w-8 bg-[color:var(--hairline-strong)]" />
             <p className="t-label text-[#8E8E93]">
               Meetups · Conferences · Hackathons · Workshops
             </p>
           </div>
 
-          <h1 className="t-hero mt-3.5 max-w-[22ch] text-[#1D1D1F]">
+          <h1 className="t-hero max-w-[22ch] text-[#1D1D1F] sm:mt-3.5">
             Bengaluru tech events, ranked by who you’ll meet
           </h1>
 
+          {/* ── THE TAIL OF THIS SENTENCE IS DESKTOP-ONLY, AND IT IS A MEASURED CUT. ────────────
+              Measured in a static harness at 390×844: the paragraph wraps to FIVE lines of 15px
+              (116px), inside a hero that is 367px in total — 43% of a phone screen spent on copy
+              before the reader reaches a control, let alone an event. The two lines that survive
+              carry the one fact the headline above does not state (what counts as an event here);
+              the tail restates the headline's own claim — "ranked by who you'll meet" — and points
+              at the scanner, which the stats line below already links to and the bottom nav already
+              carries. Two lines instead of five is 70px back.
+
+              ONE SENTENCE, NOT TWO COPIES OF IT. The mobile text is a PREFIX of the desktop text, so
+              there is nothing to keep in step: a `hidden sm:inline` span holds the tail and a
+              `sm:hidden` span holds the full stop that would otherwise be inside it. Two `<p>`s with
+              two hand-written versions is the shape that drifts, and prose drifting is worse than
+              markup drifting because nobody diffs it.
+
+              THIS IS COPY, NOT A CARD. Every section below subtracts its events from "Coming up", so
+              a card a phone does not draw is gone from the phone — that rule is why the shelves are
+              scrollers rather than shorter lists. It does not reach a sentence: nothing is
+              subtracted, nothing becomes unreachable, and the full text is one breakpoint away. */}
           <p className="mt-4 max-w-[64ch] text-[15px] leading-[1.55] text-[#3a3a3c]">
             Every{' '}
             <strong className="font-semibold text-[#1D1D1F]">
               developer meetup, conference, hackathon and workshop
             </strong>{' '}
-            in the city, in one place — sorted by whether you’ll leave with useful contacts, not
-            just by what’s on soonest. Scan a badge and keep the people you met.
+            in the city, in one place
+            <span className="sm:hidden">.</span>
+            <span className="hidden sm:inline">
+              {' '}
+              — sorted by whether you’ll leave with useful contacts, not just by what’s on soonest.
+              Scan a badge and keep the people you met.
+            </span>
           </p>
           <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[12.5px] text-[#6E6E73]">
             <span>
@@ -1581,15 +1674,35 @@ export default function Home() {
               Deliberately not an interstitial after first sign-in: that would block the feed, which
               is the entire reason they are here. Dismissing it records the answer server-side (see
               `dismissPrompt`) so it is asked once, not every visit. */}
+          {/* ── `min-w-0` MADE THIS 251px TALL ON A PHONE, AND THE FIX IS A FLOOR, NOT LESS COPY. ──
+              Measured in a static harness at 390×844: this banner was **251px** — taller than the
+              week-ahead strip and the following shelf combined — for a prompt with one sentence in
+              it. The cause is the flex arithmetic, not the words. `flex-wrap` with a `flex-1 min-w-0`
+              paragraph lets that paragraph shrink to nothing rather than push a sibling onto the next
+              row, so the 20px icon and the ~150px button pair both stayed on row one and the
+              paragraph got the ~140px left over — wrapping to four lines in a column half the width
+              of the card it sits in.
+
+              `min-w-[11rem]` gives it a floor, so the buttons wrap to their own row and the copy gets
+              the full width of row one. Same elements, same order, same wrap rules — 251px → 110px.
+
+              The tail of the sentence is desktop-only for the same reason as the hero paragraph: it
+              enumerates the three questions that the page it links to asks anyway. "Nothing gets
+              hidden either way" is the sentence worth keeping and it is kept, because it is the
+              answer to the objection a reader actually has. */}
           {showFeedSetupPrompt && (
-            <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-[14px] bg-white px-4 py-3 shadow-[inset_0_0_0_1px_var(--hairline)]">
-              <span aria-hidden="true" className="material-symbols-outlined text-[20px] text-[#0071E3]">
+            <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2.5 sm:gap-x-4 sm:gap-y-2 rounded-[14px] bg-white px-4 py-3 shadow-[inset_0_0_0_1px_var(--hairline)]">
+              <span aria-hidden="true" className="material-symbols-outlined shrink-0 text-[20px] text-[#0071E3]">
                 tune
               </span>
-              <p className="min-w-0 flex-1 text-[13px] leading-relaxed text-[#3a3a3c]">
+              <p className="min-w-[11rem] flex-1 text-[13px] leading-relaxed text-[#3a3a3c]">
                 <span className="font-semibold text-[#1D1D1F]">Make this feed yours.</span> Three
-                questions — what you’re into, which areas you can reach, and which evenings work.
-                Nothing gets hidden either way.
+                questions
+                <span className="hidden sm:inline">
+                  {' '}
+                  — what you’re into, which areas you can reach, and which evenings work
+                </span>
+                . Nothing gets hidden either way.
               </p>
               <div className="flex shrink-0 items-center gap-2">
                 <Link
@@ -1643,7 +1756,7 @@ export default function Home() {
             screen; a magenta-to-orange hero card would spend exactly the attention those covers
             are supposed to get. */}
         {spotlight.length > 0 && (
-          <section className="max-w-[1240px] mx-auto px-4 md:px-8 pb-8">
+          <section className="max-w-[1240px] mx-auto px-4 md:px-8 pb-6 sm:pb-8">
             <div className="day-heading pb-2 mb-3.5">
               <div className="flex items-center gap-2.5">
                 <h2 className="t-label shrink-0 text-[#1D1D1F]">Spotlight</h2>
@@ -1670,19 +1783,40 @@ export default function Home() {
                 two best events from a phone entirely. That is the trap here, and it is why this
                 switches the treatment rather than the visibility.
 
-                Cover cards use HORIZONTAL room, which is the whole reason they earn their space —
-                two 16:9 covers side by side. A 375px screen has none, so there they stack at 391px
-                each and pushed the first ranked row to y=1511, nearly two full screens of scroll
-                before the feed. Measured. So phones get the compact rail rows instead: same events,
-                same heading above them, ~192px each. */}
+                ── THE MOBILE HALF IS A SCROLLER NOW, NOT TWO STACKED RAIL ROWS. ──────────────────
+                What this comment used to say, and it was true of what it was comparing: two cover
+                cards STACKED are 391px each and pushed the first ranked row to y=1511, so phones got
+                compact rail rows instead at ~192px each. The option it did not consider is the one
+                the curated shelf below settled on afterwards — a horizontal snap scroller, which
+                costs ONE card height however many cards it holds.
+
+                Measured in a static harness at 390×844, worst-case content, same two events:
+
+                  two stacked rail rows      520px
+                  two-card cover scroller    441px
+
+                So the scroller is 79px cheaper AND it is the treatment that actually delivers what
+                this section is for. The rail row gives a cover a 76px thumbnail; the scroller gives
+                it 262×147. globals.css rations one accent colour precisely so covers are the only
+                colourful thing on screen, and on the two events the page is promoting hardest, a
+                phone had been seeing thumbnails.
+
+                The cost, stated plainly: with two cards, one is fully visible and about 40% of the
+                second is, where two rows showed both. That is what snap scrolling is for, and it is
+                the same bargain the curated shelf makes with six. Nothing is dropped — both cards
+                are in the DOM, reachable by swipe and by Tab, which scrolls a focused link into
+                view. `-mx-4 px-4` bleeds the cards to the screen edge so the row reads as continuing
+                past it while the first stays aligned with the heading. */}
             <div className="hidden gap-5 sm:grid sm:grid-cols-2">
               {spotlight.map(event => (
                 <EventGridCard key={event._id} event={event} />
               ))}
             </div>
-            <div className="rail sm:hidden">
+            <div className="-mx-4 flex snap-x snap-mandatory gap-3.5 overflow-x-auto overscroll-x-contain px-4 pb-1 no-scrollbar sm:hidden">
               {spotlight.map(event => (
-                <EventRow key={event._id} event={event} showDate />
+                <div key={event._id} className="w-[262px] shrink-0 snap-start">
+                  <EventGridCard event={event} />
+                </div>
               ))}
             </div>
           </section>
@@ -1696,59 +1830,45 @@ export default function Home() {
             announced only in a WhatsApp group. Left to the ranking those rows compete against
             ~1200 scraped ones and are seen only if `connectionScore` happens to favour them.
 
-            One heading, one rail, no cover grid. The Spotlight above already spends the page's
-            budget for large covers; a second grid would make the feed the third thing on the
-            screen. Rows keep `showDate` because the shelf is chronological and spans weeks, so
-            without it the ordering would look arbitrary.
-
             Rendered only when non-empty, and empty is the ordinary state on a database where
-            nobody has used /add-event — same contract as the Spotlight's pin set. */}
-        {curated.length > 0 && (
-          <section className="max-w-[1240px] mx-auto px-4 md:px-8 pb-8">
-            <div className="day-heading pb-2 mb-3.5">
-              <div className="flex items-center gap-2.5">
-                <h2 className="t-label shrink-0 text-[#1D1D1F]">Curated by us</h2>
-                <span aria-hidden="true" className="h-px flex-1 bg-[color:var(--hairline)]" />
-                {/* States the PROVENANCE, which is the entire claim the section makes. The count
-                    is here rather than in the heading so the heading stays a stable landmark for
-                    a screen reader instead of changing every time the shelf does. */}
-                <span className="shrink-0 text-[11.5px] text-[#8E8E93]">
-                  Added by hand · {curated.length}
-                </span>
-              </div>
-            </div>
-            {/* TWO TREATMENTS, SWITCHED BY WIDTH — and unlike the Spotlight above, the
-                horizontal one is the MOBILE half. Same reason, opposite conclusion: the Spotlight
-                shows two events, so its covers fit side by side on a laptop and have to stack on a
-                phone; this shelf shows up to six, so stacking them is what does not fit.
+            nobody has used /add-event — same contract as the Spotlight's pin set.
 
-                MEASURED, because the first attempt got it wrong. Five vertical rows are 877px, and
-                that pushed the first ranked row to y=1899 on a 375x812 screen — 2.34 screens of
-                scroll before the feed, worse than the y=1511 the Spotlight comment above already
-                calls out as too far. A horizontal shelf costs ONE card height instead of five.
+            ── IT IS `EventShelf` NOW, NOT A HAND-ROLLED COPY OF IT. ────────────────────────────────
+            This section used to spell out its own heading row and both width treatments, which were
+            character-for-character what `EventShelf`'s `cover` variant already renders. Two copies of
+            a layout decision drift, and the drift is invisible: each looks right on its own. The swap
+            is exact — same heading device, same caption slot, same `sm:hidden` scroller and
+            `hidden rail sm:block` fallback.
 
-                A scroller rather than a shorter list, because hiding rows is not available here:
-                the memo REMOVES these events from "Coming up", so a row dropped on mobile is gone
-                from the phone entirely rather than merely deferred. Every card stays reachable —
-                swipe, or Tab, which scrolls the focused link into view.
+            ── `compactOnMobile`: THE BIGGEST SINGLE SAVING ON THE PHONE. ───────────────────────────
+            Measured in a static harness at 390×844, worst-case content, the same six events:
 
-                `-mx-4 px-4` cancels the section padding so cards bleed to the screen edge and the
-                shelf reads as continuing past it, while the inner padding keeps the first card
-                aligned with the heading. Same idiom as the date chips. */}
-            <div className="-mx-4 flex snap-x snap-mandatory gap-3.5 overflow-x-auto overscroll-x-contain px-4 pb-1 no-scrollbar sm:hidden">
-              {curated.map(event => (
-                <div key={event._id} className="w-[262px] shrink-0 snap-start">
-                  <EventGridCard event={event} />
-                </div>
-              ))}
-            </div>
-            <div className="hidden rail sm:block">
-              {curated.map(event => (
-                <EventRow key={event._id} event={event} showDate />
-              ))}
-            </div>
-          </section>
-        )}
+              cover cards in a scroller     449px
+              compact cards in a scroller   164px
+
+            285px — a third of a phone screen. The shelf's own prop comment carries the argument for
+            why the cover is the wrong thing to spend it on at this width; the short version is that a
+            262px cover in a scroller shows one and a half of six, while when/where/who are text and
+            legible at 248px. Every one of the six still renders, in order, reachable by swipe and by
+            Tab. That is the line this stays on the right side of: it changes the CARD, never the
+            number of cards, because the memo above subtracts these ids from "Coming up" and a row a
+            phone does not draw would be gone from the phone entirely.
+
+            From `sm` up nothing changes: the cover rail is still what a laptop gets. */}
+        {/* No `curated.length > 0 &&` guard, matching the following shelf below: `EventShelf` returns
+            null on an empty list precisely so no caller repeats the condition, and an empty curated
+            shelf is the ORDINARY state on a database where nobody has used /add-event. */}
+        <EventShelf
+          heading="Curated by us"
+          /* States the PROVENANCE, which is the entire claim the section makes — and on mobile it is
+             now the ONLY place that claim appears, since the compact card has no pill row and it was
+             `EventPills` that drew the "Curated" pill. The count sits in the caption rather than the
+             heading so the heading stays a stable landmark for a screen reader instead of changing
+             every time the shelf does. */
+          caption={`Added by hand · ${curated.length}`}
+          events={curated}
+          compactOnMobile
+        />
 
         {/* HOSTED BY A COMPANY YOU FOLLOW — `Event.companies` x `User.targetCompanies`.
 
@@ -1809,7 +1929,9 @@ export default function Home() {
                 a readout, not a title. Demoting it is also what closes the heading outline, since
                 the page now runs H1 (hero) -> H2 (this) -> H2 (section) -> H3 (card) with nothing
                 skipped. Visual weight is unchanged: `.t-display` does the sizing, not the tag. */}
-            <div className="mb-5" aria-live="polite" aria-atomic="true">
+            {/* `mb-4 sm:mb-5` — the same 8px-a-section argument as the shelves above, applied to the
+                last gap before the first ranked row. */}
+            <div className="mb-4 sm:mb-5" aria-live="polite" aria-atomic="true">
               <h2 className="t-display text-[#1D1D1F]">
                 {/* Always the tech heading: the feed is unconditionally tech-only, so the old
                     `filters.techOnly` ternary had a branch that could only ever render if the
@@ -1922,9 +2044,62 @@ export default function Home() {
                         </span>
                       </div>
                     </div>
-                    {liveNow.map(event => (
+                    {/* ── "HAPPENING NOW" HAD NO CAP, AND IT IS THE ONLY SECTION WHOSE HEIGHT IS
+                        DECIDED BY THE CITY RATHER THAN BY THIS FILE. ─────────────────────────────
+                        Measured in a static harness at 390×844: three live events are 809px of rows
+                        before the ranked feed even starts. Nothing bounds it — `liveEvents` is its
+                        own `sort=soonest` request with `limit=20`, so a festival Saturday could put
+                        twenty rows here. A quiet Tuesday and a busy Saturday therefore produce very
+                        different pages, and only one of them was ever measured.
+
+                        DEFERRED, NOT DROPPED, AND ONLY ON A PHONE. `splitForPreview` returns both
+                        halves and both are rendered; the deferred rows carry `hidden sm:block`, so a
+                        laptop — which has the room and never had the problem — is byte-identical to
+                        before, and a phone shows two rows plus a control that NAMES how many it is
+                        holding. The count in the heading beside it is `liveNow.length`, the true
+                        total, so the section never under-reports what is on.
+
+                        This is the one place on the page where a cap would have been fatal rather
+                        than merely rude: live rows are subtracted from "Coming up", so `slice(0, 2)`
+                        would delete the third live event from the phone with nothing anywhere to
+                        reach it. `splitForPreview` exists so that guarantee is a tested property
+                        rather than a promise — see tests/shelves.test.ts. */}
+                    {livePreview.shown.map(event => (
                       <EventRow key={event._id} event={event} showDate />
                     ))}
+                    {livePreview.deferred.map(event => (
+                      <div key={event._id} className={liveExpanded ? undefined : 'hidden sm:block'}>
+                        <EventRow event={event} showDate />
+                      </div>
+                    ))}
+                    {livePreview.deferred.length > 0 && !liveExpanded && (
+                      /* `pl-[75px]` lines the control up with the CARDS rather than the section
+                         edge, so it reads as belonging to the list instead of to the rail: 42px time
+                         column + 12px gap + 9px node column + 12px gap. No `md:` variant is needed —
+                         the whole control is `sm:hidden`.
+
+                         A plain action button with no `aria-expanded`, matching "Load more" further
+                         down this file. `aria-expanded` would be a lie here: the control does not
+                         toggle, it reveals and then goes, because collapsing what is on RIGHT NOW
+                         back out of view is not something a reader wants twice.
+
+                         `min-h-11` for the 44px floor. It stands alone with 12px of clearance either
+                         side, so it needs no `::after` overlay and contests no neighbour's band —
+                         which is the failure the scan-sheet note warns about when two overhangs meet. */
+                      <div className="mb-3 pl-[75px] sm:hidden">
+                        <button
+                          type="button"
+                          onClick={() => setLiveExpanded(true)}
+                          className="pressable inline-flex min-h-11 items-center gap-1.5 rounded-full bg-white px-4 text-[12.5px] font-semibold text-[#1D1D1F] shadow-[inset_0_0_0_1px_var(--hairline-strong)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0071E3] [touch-action:manipulation]"
+                        >
+                          <span className="tnum">{livePreview.deferred.length}</span> more happening
+                          now
+                          <span aria-hidden="true" className="material-symbols-outlined text-[18px]">
+                            expand_more
+                          </span>
+                        </button>
+                      </div>
+                    )}
                   </section>
                 )}
 

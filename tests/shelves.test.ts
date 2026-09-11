@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   claimSection,
   shelfEligible,
+  splitForPreview,
   type Claimable,
 } from '@/app/components/shelves/precedence';
 import { bucketWeek, WEEK_AHEAD_DAYS } from '@/app/components/shelves/WeekAheadStrip';
@@ -188,6 +189,68 @@ describe('the whole chain: live > spotlight > curated > following > coming up', 
   it('leaves the ranked feed untouched when no shelf claims anything', () => {
     const out = chain({ live: [], spotlight: [], curated: [], following: [], ranked: ['a', 'b'] });
     expect(out.comingUp).toEqual(['a', 'b']);
+  });
+});
+
+describe('splitForPreview — deferring a card is not the same as losing one', () => {
+  /**
+   * ONE PROPERTY MATTERS HERE AND EVERY CASE BELOW IS A WAY OF STATING IT: the two halves put back
+   * together are the input, unchanged and in order. That is the entire difference between a phone
+   * drawing fewer rows and a phone LOSING rows — every section above the ranked feed subtracts its
+   * ids from "Coming up" so nothing renders twice, so a row a section holds and never draws is gone
+   * from the page altogether, with nothing anywhere to reach it.
+   *
+   * The one-line implementation that gets this wrong is `rows.slice(0, n)` on its own. It looks
+   * obviously correct in review and silently discards the tail, which is why the split returns both
+   * halves and the caller renders both.
+   */
+  const total = <T,>(rows: readonly T[], preview: number) => {
+    const { shown, deferred } = splitForPreview(rows, preview);
+    return [...shown, ...deferred];
+  };
+
+  it('LOSES NOTHING, at every preview size from 0 past the end', () => {
+    const rows = ['a', 'b', 'c', 'd'];
+    for (const preview of [-3, 0, 1, 2, 3, 4, 5, 99]) {
+      expect(total(rows, preview)).toEqual(rows);
+    }
+  });
+
+  it('draws the first N and defers the rest, in order', () => {
+    const { shown, deferred } = splitForPreview(['a', 'b', 'c'], 2);
+    expect(shown).toEqual(['a', 'b']);
+    expect(deferred).toEqual(['c']);
+  });
+
+  it('defers nothing when the list already fits, so no control renders', () => {
+    // The caller draws the expander on `deferred.length > 0`. An empty deferred half is what makes a
+    // quiet evening — one live event — look exactly as it did before this existed.
+    const { shown, deferred } = splitForPreview(['a', 'b'], 2);
+    expect(shown).toEqual(['a', 'b']);
+    expect(deferred).toEqual([]);
+  });
+
+  it('handles an empty list without inventing a control', () => {
+    const { shown, deferred } = splitForPreview([], 2);
+    expect(shown).toEqual([]);
+    expect(deferred).toEqual([]);
+  });
+
+  it('CLAMPS rather than throwing, and keeps the total either way', () => {
+    // A render path is the wrong place to throw over an out-of-range number, and both directions are
+    // meaningful: negative defers everything, past-the-end defers nothing.
+    expect(splitForPreview(['a', 'b'], -1)).toEqual({ shown: [], deferred: ['a', 'b'] });
+    expect(splitForPreview(['a', 'b'], 9)).toEqual({ shown: ['a', 'b'], deferred: [] });
+  });
+
+  it('never mutates or aliases the input', () => {
+    // `slice` copies, but the guarantee is worth pinning: the input is a memo's output, shared with
+    // the heading's own count (`liveNow.length`), which must keep reporting the TRUE total.
+    const rows = ['a', 'b', 'c'];
+    const { shown, deferred } = splitForPreview(rows, 1);
+    shown.push('x');
+    deferred.push('y');
+    expect(rows).toEqual(['a', 'b', 'c']);
   });
 });
 

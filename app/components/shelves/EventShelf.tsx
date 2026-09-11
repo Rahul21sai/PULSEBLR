@@ -71,6 +71,44 @@ function CompactShelfCard({
 }
 
 /**
+ * The row of compact cards, in its two jobs.
+ *
+ * ONE DEFINITION, TWO CALLERS, and the only difference is what happens at `sm`. As the `compact`
+ * VARIANT it is the shelf at every width, so it reflows from a scroller into a grid. As the mobile
+ * half of a `cover` shelf it must simply stop existing at `sm`, where the cover rail takes over —
+ * `sm:hidden` rather than `sm:grid`. Writing it twice is how the two drift, and the failure mode is
+ * a shelf that renders both treatments at once on a laptop.
+ */
+function CompactRail({
+  events,
+  highlight,
+  reflowAtSm,
+}: {
+  events: FeedEvent[];
+  highlight: readonly string[];
+  reflowAtSm: boolean;
+}) {
+  return (
+    <div
+      className={`-mx-4 flex snap-x snap-mandatory gap-2.5 overflow-x-auto overscroll-x-contain px-4 pb-1 no-scrollbar ${
+        reflowAtSm
+          ? 'sm:mx-0 sm:grid sm:grid-cols-2 sm:gap-3 sm:overflow-visible sm:px-0 lg:grid-cols-3'
+          : 'sm:hidden'
+      }`}
+    >
+      {events.map(event => (
+        <div
+          key={event._id}
+          className={`flex w-[248px] shrink-0 snap-start ${reflowAtSm ? 'sm:w-auto' : ''}`}
+        >
+          <CompactShelfCard event={event} highlight={highlight} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/**
  * A titled shelf of events above the ranked feed.
  *
  * ─────────────────────────────────────────────────────────────────────────────────────────────
@@ -98,6 +136,10 @@ function CompactShelfCard({
  * from the phone entirely rather than merely deferred. Every card stays reachable by swipe, and by
  * Tab — focusing a link scrolls it into view.
  *
+ * `compactOnMobile` REPLACES THE MOBILE HALF OF A COVER SHELF WITH THE COMPACT CARD, and its own
+ * comment carries the measurement (285px on the curated shelf). It changes the card, never the number
+ * of cards — which is what keeps it on the right side of the paragraph above.
+ *
  * `-mx-4 px-4` cancels the section padding so the cards bleed to the screen edge and the shelf reads
  * as continuing past it, while the inner padding keeps the first card aligned with the heading.
  * ─────────────────────────────────────────────────────────────────────────────────────────────
@@ -107,6 +149,7 @@ export default function EventShelf({
   caption,
   events,
   variant = 'cover',
+  compactOnMobile = false,
   highlight = [],
 }: {
   heading: string;
@@ -129,6 +172,36 @@ export default function EventShelf({
    * feed's card is what stops a shelf drifting from the list underneath it.
    */
   variant?: 'cover' | 'compact';
+  /**
+   * `cover` only: use the COMPACT card below `sm` and the cover rail from `sm` up.
+   *
+   * ─────────────────────────────────────────────────────────────────────────────────────────────
+   * MEASURED, AND IT IS THE LARGEST SINGLE SAVING ON THE MOBILE HOME PAGE. A 262px cover card in the
+   * mobile scroller is 375px tall — the cover is 147px of it and the body another 228px — so the
+   * "Curated by us" section costs 449px on a 390px screen. The same six events as compact cards cost
+   * 164px. That is 285px, a third of a phone screen, for a treatment nobody asked for on a phone.
+   *
+   * WHY THIS IS NOT THE SAME AS DROPPING ROWS. Every event still renders, in the same order, all six
+   * reachable by swipe and by Tab. `app/page.tsx` subtracts a shelf's ids from "Coming up", so a row
+   * a phone does not draw is gone from the phone entirely — that is the trap, and switching the CARD
+   * does not go near it. Compare `WeekAheadStrip`, which may hide its per-day title precisely because
+   * it claims nothing.
+   *
+   * THE COVER IS NOT WHAT THIS SHELF IS FOR. A cover earns its space by being the one colourful thing
+   * on the screen, and it needs horizontal room to do that. At 262px inside a scroller a phone shows
+   * one and a half of them, so the reader pays for six covers and sees one — while the facts that make
+   * a shelf row worth a tap (when, where, who) are all text. From `sm` up the rail has the room and
+   * the cover comes back.
+   *
+   * IT DOES PUT TWO COMPACT RAILS NEXT TO EACH OTHER ON A PHONE, which is the mirror of the clash
+   * `CompactShelfCard`'s own header warns about. Checked on a screenshot rather than argued: the two
+   * still read as two, because each keeps its own heading device (tracked label, hairline, caption) and
+   * the cards differ where it matters — the following shelf's lead with a blue company line and the
+   * curated shelf's do not, so one is visibly a line taller than the other. If a THIRD compact shelf
+   * is ever added above the feed, re-check that on a screenshot before believing it still holds.
+   * ─────────────────────────────────────────────────────────────────────────────────────────────
+   */
+  compactOnMobile?: boolean;
   /** For `compact`: the company names it may name. See `CompactShelfCard`. */
   highlight?: readonly string[];
 }) {
@@ -139,7 +212,11 @@ export default function EventShelf({
   if (events.length === 0) return null;
 
   return (
-    <section className="max-w-[1240px] mx-auto px-4 md:px-8 pb-8">
+    /* `pb-6 sm:pb-8`, and the 8px it gives back is not cosmetic on a phone. Four of these sections
+       stack above the ranked feed, so the gap between them is paid four times — 32px, most of a
+       card's title. From `sm` up the page is not fighting for vertical room and the original rhythm
+       stands. The heading device itself is untouched: what changes is the space AFTER the shelf. */
+    <section className="max-w-[1240px] mx-auto px-4 md:px-8 pb-6 sm:pb-8">
       <div className="day-heading pb-2 mb-3.5">
         <div className="flex items-center gap-2.5">
           <h2 className="t-label shrink-0 text-[#1D1D1F]">{heading}</h2>
@@ -156,22 +233,20 @@ export default function EventShelf({
            fix — and the two-treatment switch exists only because a COVER needs horizontal room. On a
            phone this is a snap scroller; from `sm` up the same cards sit in a three-column grid,
            which is the same row of objects reflowed rather than a second design. */
-        <div className="-mx-4 flex snap-x snap-mandatory gap-2.5 overflow-x-auto overscroll-x-contain px-4 pb-1 no-scrollbar sm:mx-0 sm:grid sm:grid-cols-2 sm:gap-3 sm:overflow-visible sm:px-0 lg:grid-cols-3">
-          {events.map(event => (
-            <div key={event._id} className="flex w-[248px] shrink-0 snap-start sm:w-auto">
-              <CompactShelfCard event={event} highlight={highlight} />
-            </div>
-          ))}
-        </div>
+        <CompactRail events={events} highlight={highlight} reflowAtSm />
       ) : (
         <>
-          <div className="-mx-4 flex snap-x snap-mandatory gap-3.5 overflow-x-auto overscroll-x-contain px-4 pb-1 no-scrollbar sm:hidden">
-            {events.map(event => (
-              <div key={event._id} className="w-[262px] shrink-0 snap-start">
-                <EventGridCard event={event} />
-              </div>
-            ))}
-          </div>
+          {compactOnMobile ? (
+            <CompactRail events={events} highlight={highlight} reflowAtSm={false} />
+          ) : (
+            <div className="-mx-4 flex snap-x snap-mandatory gap-3.5 overflow-x-auto overscroll-x-contain px-4 pb-1 no-scrollbar sm:hidden">
+              {events.map(event => (
+                <div key={event._id} className="w-[262px] shrink-0 snap-start">
+                  <EventGridCard event={event} />
+                </div>
+              ))}
+            </div>
+          )}
           {/* `showDate` because a shelf is not a schedule — its rows can be weeks apart, and without
               a date the ordering reads as arbitrary. */}
           <div className="hidden rail sm:block">

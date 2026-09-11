@@ -116,7 +116,10 @@ export default function WeekAheadStrip({
   if (total === 0) return null;
 
   return (
-    <section className="max-w-[1240px] mx-auto px-4 md:px-8 pb-8">
+    /* `pb-6 sm:pb-8` — see the same change in `EventShelf`. Four sections stack above the ranked
+       feed on the home page, so the inter-section gap is paid four times on the width that can least
+       afford it. Unchanged from `sm` up. */
+    <section className="max-w-[1240px] mx-auto px-4 md:px-8 pb-6 sm:pb-8">
       <div className="day-heading pb-2 mb-3.5">
         <div className="flex items-center gap-2.5">
           <h2 className="t-label shrink-0 text-[#1D1D1F]">The week ahead</h2>
