@@ -906,13 +906,44 @@ async function landMicrositeCandidates(
           report.alreadyDecided++;
           continue;
         }
+        /*
+         * ── A REFRESH MAY FILL GAPS. IT MAY NOT OVERWRITE WHAT A REVIEWER CORRECTED ─────────────
+         *
+         * This block used to assign `description`, `startDateTime`, `endDateTime`, `venue` and
+         * `address` outright. The row it is assigning to is `visibility: 'pending'` — which means a
+         * human may have opened it in the submissions queue and fixed exactly those fields, because
+         * correcting them before approving is the entire purpose of that editor. The next scrape
+         * then read the same page, produced the same claim, and **silently reverted the correction.**
+         * A reviewer's edit lasted until the following night and nothing anywhere reported it.
+         *
+         * The fix is the discipline §2 already states for `mergeInto`: a later sighting may only
+         * FILL GAPS or improve values, never blank or replace them. That rule exists for
+         * cross-source merging and applies with more force here, because the value being replaced
+         * was put there by a person rather than by another scraper.
+         *
+         * Cost, stated plainly: if the ORGANISER corrects a wrong date on their own page, a pending
+         * row that already holds a date does not pick it up. That is the right trade — the fresh
+         * text and its fingerprint are still written below, so the reviewer is judging against what
+         * the page says today, and `diag-microsite-audit.ts`'s drift check is what surfaces the
+         * disagreement. Losing a human's correction silently is the worse failure, and it is the one
+         * with no signal at all.
+         *
+         * `description` is included in the gap rule rather than exempted from it. It is the field a
+         * reviewer is most likely to trim, and an empty one is the only case where replacing it
+         * cannot destroy a judgement.
+         */
         existing.sourceEventId = fingerprintSourceEventId(candidate.fingerprint);
         existing.lastSeenAt = new Date();
-        existing.description = doc.description;
-        existing.startDateTime = doc.startDateTime;
-        if (doc.endDateTime) existing.endDateTime = doc.endDateTime;
-        if (doc.venue) existing.venue = doc.venue;
-        if (doc.address) existing.address = doc.address;
+        if (!existing.description) existing.description = doc.description;
+        if (!existing.venue && doc.venue) existing.venue = doc.venue;
+        if (!existing.address && doc.address) existing.address = doc.address;
+        if (!existing.endDateTime && doc.endDateTime) existing.endDateTime = doc.endDateTime;
+        /*
+         * `startDateTime` is `required`, so it is never absent and therefore never gap-fillable —
+         * it is deliberately not assigned at all. Note the row is addressed by `dedupHash`, which
+         * folds the IST day, so a genuinely re-dated event produces a DIFFERENT hash and arrives
+         * as a new candidate rather than needing this path to move an existing one.
+         */
         /*
          * REPLACED IN THE SAME BREATH AS THE FINGERPRINT, and the pairing is the correctness point.
          * `sourceEventId` above is the fingerprint of the text THIS run read; if the retained text

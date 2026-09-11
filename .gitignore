@@ -96,3 +96,10 @@ IMPROVEMENT-IDEAS.md
 # Local tool output like the entries above — measurements go stale, and the diag captures
 # include upstream response bodies. Load-bearing conclusions belong in CLAUDE.md instead.
 /audit/
+
+# Isolated verify builds from scripts/start-verify.js, and the layout harness a stream used to
+# hit-test tap targets. Both machine-local: a second dev server needs its own distDir so it does
+# not swap the route manifest under a session already using `.next`, which produces phantom 404s
+# on routes that exist.
+.next-verify*/
+_layout-harness/
