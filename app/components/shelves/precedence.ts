@@ -81,6 +81,55 @@ export function splitForPreview<T>(
   return { shown: rows.slice(0, at), deferred: rows.slice(at) };
 }
 
+/** The minimum a row needs for the following shelf's caption: the companies it names. */
+export interface Attributed {
+  companies?: string[];
+}
+
+/**
+ * The following shelf's caption: the companies it ACTUALLY matched, named, capped, in shelf order.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────────────────────
+ * ONLY COMPANIES IN BOTH SETS MAY BE NAMED. An event can carry three company names while the reader
+ * follows one of them, so naming every company on the shelf would put companies they do not follow
+ * under a heading saying they do. That is what makes the caption checkable rather than
+ * unfalsifiable — and unfalsifiable is the thing separating a shelf from an ad.
+ *
+ * `cap` IS A MEASURED WIDTH BUDGET, NOT A ROUND NUMBER, WHICH IS WHY THIS IS A TESTED FUNCTION.
+ * The caption shares one line with the heading and `SectionHeading`'s `shelf` tone bounds it at 52%
+ * of the column — 186px inside a 390px viewport. Three long names plus a count is
+ * `BrowserStack, ThoughtWorks, ServiceNow +5`, ~236px at 11.5px, which truncates mid-word; two is
+ * ~167px and fits. Before that bound existed the same string did not truncate, it OVERFLOWED, pushing
+ * the document's right edge to x=506 in a 390px viewport and scrolling the whole page body sideways.
+ *
+ * So a later edit raising this to 3 to "show more" silently reintroduces a truncated claim, and the
+ * only thing standing between that and the reader is a number. It is pinned in tests/shelves.test.ts.
+ *
+ * Order follows the shelf's own ranking rather than the alphabet, so the company behind the top row is
+ * named first — which is what makes two enough: they are the two the reader will actually meet.
+ * ─────────────────────────────────────────────────────────────────────────────────────────────
+ */
+export function followedCaption(
+  rows: readonly Attributed[],
+  followed: readonly string[],
+  cap = 2
+): string {
+  const set = new Set(followed);
+  const named: string[] = [];
+  for (const row of rows) {
+    for (const company of row.companies ?? []) {
+      if (set.has(company) && !named.includes(company)) named.push(company);
+    }
+  }
+  // Nothing matched — which happens when the shelf is empty, and when a row's followed company sits
+  // in a field the resolver did not write to `companies`. Falling back to the follow list's SIZE
+  // rather than to silence keeps the caption honest: it stops claiming which companies and says only
+  // how many are being watched.
+  if (named.length === 0) return `You follow ${followed.length}`;
+  const shown = named.slice(0, cap).join(', ');
+  return named.length > cap ? `${shown} +${named.length - cap}` : shown;
+}
+
 export interface SectionClaim<T> {
   /** The rows this section shows — deduplicated, capped, and free of anything already claimed. */
   rows: T[];

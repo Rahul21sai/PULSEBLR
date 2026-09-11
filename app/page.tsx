@@ -13,12 +13,18 @@ import FilterRail, {
   type FacetsWithCardMeta,
 } from './components/FilterRail';
 import EventShelf from './components/shelves/EventShelf';
+import SectionHeading from './components/shelves/SectionHeading';
 import WeekAheadStrip, {
   bucketWeek,
   WEEK_AHEAD_DAYS,
   type WeekDay,
 } from './components/shelves/WeekAheadStrip';
-import { claimSection, shelfEligible, splitForPreview } from './components/shelves/precedence';
+import {
+  claimSection,
+  followedCaption,
+  shelfEligible,
+  splitForPreview,
+} from './components/shelves/precedence';
 import { FeedEvent, Pagination } from '@/lib/event-types';
 import { MIN_SEARCH_CHARS, resolveDayWindow } from '@/lib/events/query';
 import { preferenceSummary, type UserPreferences } from '@/lib/events/relevance';
@@ -1232,22 +1238,18 @@ export default function Home() {
    * followed, so naming every company on the shelf would put companies the reader does not follow
    * under a heading saying they do. `followedList` exists for this and nothing else.
    *
-   * Three names then a count, because the caption sits on one line beside the heading and a fourth
-   * would wrap it. Order follows the shelf's own ranking rather than the alphabet, so the company
-   * behind the top row is named first.
+   * ── IT IS `followedCaption()` IN `precedence.ts` NOW, NOT AN INLINE LOOP. ─────────────────────
+   * The rule it encodes is a MEASURED WIDTH BUDGET — two names, because three truncate inside the 52%
+   * the caption gets on a 390px screen, and because before that bound existed three overflowed and
+   * scrolled the whole page body sideways. A number arrived at by measurement, guarding a defect that
+   * is invisible until somebody opens the page on a phone with three followed companies, does not
+   * belong in a closure where the next person will read it as a taste call. `tests/shelves.test.ts`
+   * pins it; that file's own header explains why the shelves' rules live in a pure module.
    */
-  const followingCaption = useMemo(() => {
-    const followed = new Set(followedList);
-    const named: string[] = [];
-    for (const event of following) {
-      for (const company of event.companies ?? []) {
-        if (followed.has(company) && !named.includes(company)) named.push(company);
-      }
-    }
-    if (named.length === 0) return `You follow ${followedList.length}`;
-    const shown = named.slice(0, 3).join(', ');
-    return named.length > 3 ? `${shown} +${named.length - 3}` : shown;
-  }, [following, followedList]);
+  const followingCaption = useMemo(
+    () => followedCaption(following, followedList),
+    [following, followedList]
+  );
 
   return (
     <div className="min-h-screen bg-[#F5F5F7]">
@@ -1299,7 +1301,12 @@ export default function Home() {
                 autoComplete="off"
                 spellCheck={false}
                 enterKeyHint="search"
-                className="w-full h-10 pl-10 pr-9 rounded-full bg-white text-[14px] text-[#1D1D1F] placeholder:text-[#a1a1a6] shadow-[inset_0_0_0_1px_var(--hairline-strong)] transition-[box-shadow,background-color] focus:outline-none focus-visible:shadow-[inset_0_0_0_2px_#0071E3] [touch-action:manipulation]"
+                /* `placeholder:text-[#6E6E73]`, was `#a1a1a6` — 2.58:1 on white, the worst contrast in
+                   the command bar and on the one string that teaches a reader what this box accepts
+                   ("Kubernetes, Razorpay, Koramangala"). A placeholder is text and is not exempt from
+                   the floor. Height and padding are untouched: `--commandbar-h` is a single source of
+                   truth in globals.css that this file may not edit. */
+                className="w-full h-10 pl-10 pr-9 rounded-full bg-white text-[14px] text-[#1D1D1F] placeholder:text-[#6E6E73] shadow-[inset_0_0_0_1px_var(--hairline-strong)] transition-[box-shadow,background-color] focus:outline-none focus-visible:shadow-[inset_0_0_0_2px_#0071E3] [touch-action:manipulation]"
               />
               {searchInput && (
                 <button
@@ -1447,7 +1454,7 @@ export default function Home() {
             ) : (
             <label
               htmlFor="event-sort"
-              className="relative flex h-11 w-11 shrink-0 items-center justify-center gap-1.5 rounded-full text-[12.5px] text-[#8E8E93] focus-within:ring-2 focus-within:ring-[#0071E3] sm:h-auto sm:w-auto sm:justify-start sm:rounded-none sm:focus-within:ring-0"
+              className="relative flex h-11 w-11 shrink-0 items-center justify-center gap-1.5 rounded-full text-[12.5px] text-[#6E6E73] focus-within:ring-2 focus-within:ring-[#0071E3] sm:h-auto sm:w-auto sm:justify-start sm:rounded-none sm:focus-within:ring-0"
             >
               <span className="hidden sm:inline">Sort</span>
               <span className="material-symbols-outlined sm:hidden text-[19px]" aria-hidden="true">
@@ -1501,32 +1508,19 @@ export default function Home() {
             event. `sm:pb-7` rather than letting `pb-5` run to `md`, so every width the phone budget is
             not about stays exactly as it was. */}
         <div className="max-w-[1240px] mx-auto px-4 md:px-8 pt-2 pb-5 sm:pb-7 md:pb-9">
-          {/* Eyebrow: a short rule then letterspaced caps. `.t-label` is +0.055em because the
-              type scale sets POSITIVE tracking for small caps — tight small caps are unreadable,
-              which is the same rule that gives the headline below its negative tracking. */}
-          {/* ── `hidden sm:flex`, AND THE WRAP IS THE REASON, NOT THE BUDGET. ────────────────────
-              Screenshotted at 390px: the string is ~324px of tracked 11px caps against ~314px of
-              room once the 32px rule and its 12px gap are taken, so it wrapped — leaving a hairline
-              followed by two lines of capitals with "WORKSHOPS" alone on the second. A tracked label
-              is a device for a single line; two lines of it is just noise at the very top of the
-              page.
+          {/* ── THE EYEBROW IS GONE AT EVERY WIDTH, NOT JUST BELOW `sm`. ─────────────────────────
+              It was a 32px rule followed by `Meetups · Conferences · Hackathons · Workshops` in
+              tracked 11px caps, and it managed to be all three of the patterns
+              `docs/design-direction.md` names for removal at once: a tracked-out ALL-CAPS eyebrow, a
+              middle-dot meta string, and a label above content that does not need announcing. The
+              sentence immediately below names all four kinds in prose — "developer meetup,
+              conference, hackathon and workshop" — so it was restating the next paragraph in a form
+              that had already been hidden on a phone for wrapping to two lines.
 
-              Nothing is lost at this width, which is the other half of the argument: the sentence
-              directly below names all four kinds in prose ("developer meetup, conference, hackathon
-              and workshop"), so the eyebrow was restating it in a form that did not fit. Dropping it
-              opens a phone on the headline, which is the strongest thing the hero has. The rule-plus-
-              caps device still appears on every section heading down the page.
-
-              `mt-0` on the H1 to match — leaving `mt-3.5` behind a hidden sibling is 14px of nothing
-              at the top of the scroll area. 38px in total. */}
-          <div className="hidden items-center gap-3 sm:flex">
-            <span aria-hidden="true" className="h-px w-8 bg-[color:var(--hairline-strong)]" />
-            <p className="t-label text-[#8E8E93]">
-              Meetups · Conferences · Hackathons · Workshops
-            </p>
-          </div>
-
-          <h1 className="t-hero max-w-[22ch] text-[#1D1D1F] sm:mt-3.5">
+              Opening on the headline is the strongest thing the hero has. 26px back at `sm` and up
+              (the label plus the `sm:mt-3.5` that only existed to clear it), 0 on a phone, where it
+              was already hidden. Measured in the harness: hero 309px -> 283px at 1440x900. */}
+          <h1 className="t-hero max-w-[22ch] text-[#1D1D1F]">
             Bengaluru tech events, ranked by who you’ll meet
           </h1>
 
@@ -1563,20 +1557,43 @@ export default function Home() {
             </span>
           </p>
           <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[12.5px] text-[#6E6E73]">
-            <span>
-              <span className="tnum font-semibold text-[#1D1D1F]">
-                {total.toLocaleString('en-IN')}
-              </span>{' '}
-              upcoming
-            </span>
+            {/* ── THIS PRINTED "0 upcoming" ON A FAILED FETCH, IN SEMIBOLD INK, AT THE TOP OF THE
+                PAGE. ─────────────────────────────────────────────────────────────────────────────
+                `total` is `pagination?.total ?? 0`, and `load()` sets `setPagination(null)` before
+                every request and leaves it null when one throws. So the number the hero presents as
+                live evidence — the whole reason this line exists rather than a marketing paragraph —
+                read **0 upcoming** for the entire duration of every request and permanently after a
+                500. A confident factual claim about Bengaluru standing in for a broken request, which
+                is the exact pattern `docs/design-direction.md` says this app has already been burned
+                by on the calendar.
+
+                Three states, because there are three: unknown while a request is in flight (a
+                skeleton, never a zero), nothing at all when the request failed (the error card in the
+                feed says what happened, and a second voice here would be noise), and the figure once
+                it is a figure. */}
+            {error ? null : loading ? (
+              <span
+                aria-hidden="true"
+                className="skeleton inline-block h-3 w-[86px] rounded align-middle"
+              />
+            ) : (
+              <span>
+                <span className="tnum font-semibold text-[#1D1D1F]">
+                  {total.toLocaleString('en-IN')}
+                </span>{' '}
+                upcoming
+              </span>
+            )}
             {liveNow.length > 0 && (
               <span className="inline-flex items-center gap-1.5 font-semibold text-[#FF3B30]">
                 <span className="live-dot h-1.5 w-1.5 rounded-full bg-[#FF3B30]" />
                 <span className="tnum">{liveNow.length}</span> happening now
               </span>
             )}
+            {/* No trailing `→`. A link says what happens; the arrow is decoration, and it is on
+                `docs/design-direction.md`'s list of patterns to remove. */}
             <Link href="/folders" className="font-semibold text-[#0071E3] hover:underline">
-              Keep the people you meet →
+              Keep the people you meet
             </Link>
           </div>
         </div>
@@ -1640,7 +1657,7 @@ export default function Home() {
                   </>
                 ) : activePreferences === null ? null : personalised ? (
                   <>
-                    Ranked by who you’ll meet <span className="text-[#a1a1a6]">×</span> what fits you
+                    Ranked by who you’ll meet <span className="text-[#6E6E73]">×</span> what fits you
                     {preferenceSummary(activePreferences) && (
                       <>
                         {' · '}
@@ -1714,7 +1731,7 @@ export default function Home() {
                 <button
                   type="button"
                   onClick={dismissPrompt}
-                  className="h-9 rounded-full px-3 text-[12.5px] font-semibold text-[#8E8E93] hover:text-[#1D1D1F]"
+                  className="h-9 rounded-full px-3 text-[12.5px] font-semibold text-[#6E6E73] hover:text-[#1D1D1F]"
                 >
                   Not now
                 </button>
@@ -1757,26 +1774,38 @@ export default function Home() {
             are supposed to get. */}
         {spotlight.length > 0 && (
           <section className="max-w-[1240px] mx-auto px-4 md:px-8 pb-6 sm:pb-8">
-            <div className="day-heading pb-2 mb-3.5">
-              <div className="flex items-center gap-2.5">
-                <h2 className="t-label shrink-0 text-[#1D1D1F]">Spotlight</h2>
-                <span aria-hidden="true" className="h-px flex-1 bg-[color:var(--hairline)]" />
-                {/* Says which of the two modes produced this. Not decoration: "hand-picked" and
-                    "top of the ranking" are different claims, and a reader who cannot tell which
-                    one they are looking at has no way to judge it. */}
-                {/* THREE modes now, not two. The unpinned fallback is the top of whichever ranking
-                    is active, so on `For you` it is the personalised one — and saying "Best for
-                    connections" there would name a ranking that is not the one that chose these two
-                    events. The caption's whole job is to let a reader judge the claim. */}
-                <span className="shrink-0 text-[11.5px] text-[#8E8E93]">
-                  {pinnedEvents.length > 0
-                    ? 'Hand-picked'
-                    : feed === 'for-you' && personalised
-                      ? 'Best for you right now'
-                      : 'Best for connections right now'}
-                </span>
-              </div>
-            </div>
+            {/* ── THE CLAIM IS THE HEADING NOW. "Spotlight" IS GONE. ────────────────────────────
+                The row used to read `SPOTLIGHT` in tracked caps, a hairline, then the claim set in
+                11.5px grey at the far right — the least-read position on the line. So the word that
+                carried no information got the emphasis, and the sentence that explains why these two
+                events are here got the smallest type on the page. `Spotlight` is a magazine word: it
+                says a section exists, not what it asserts.
+
+                Which of the three modes produced these rows is the ONE thing a reader needs in order
+                to judge them, so it is the heading, in the `editorial` tone — the loudest thing
+                between the hero and the feed, because this section is two large covers chosen on the
+                reader's behalf and covers are the only colour this design system permits.
+
+                THIS REVERSES the "keep the heading stable for a screen reader" note that used to sit
+                here, and the reversal is deliberate: that argument was about a COUNT changing every
+                time the shelf's data did. These three values change only when an admin pins
+                something or the reader personalises the feed — state, not data — so the landmark is
+                stable in the way that matters. */}
+            <SectionHeading
+              tone="editorial"
+              title={
+                /* All three end "right now", so the three states read as one heading changing rather
+                   than three unrelated titles — and none is longer than `t-head` can set on one line
+                   at 390px. `Our pick` rather than a second "by hand": the curated shelf below is
+                   already `Added by hand`, and these are different claims — a pin PROMOTES an event
+                   the scraper found, while that shelf holds events no platform had. */
+                pinnedEvents.length > 0
+                  ? 'Our pick right now'
+                  : feed === 'for-you' && personalised
+                    ? 'Best for you right now'
+                    : 'Best for connections right now'
+              }
+            />
             {/* TWO PRESENTATIONS OF THE SAME TWO EVENTS, chosen by width — not two different
                 sets, and the section is never hidden. It cannot be: the memo REMOVES these from
                 "Coming up" so nothing is listed twice, so CSS-hiding the section would delete the
@@ -1858,17 +1887,17 @@ export default function Home() {
         {/* No `curated.length > 0 &&` guard, matching the following shelf below: `EventShelf` returns
             null on an empty list precisely so no caller repeats the condition, and an empty curated
             shelf is the ORDINARY state on a database where nobody has used /add-event. */}
-        <EventShelf
-          heading="Curated by us"
-          /* States the PROVENANCE, which is the entire claim the section makes — and on mobile it is
-             now the ONLY place that claim appears, since the compact card has no pill row and it was
-             `EventPills` that drew the "Curated" pill. The count sits in the caption rather than the
-             heading so the heading stays a stable landmark for a screen reader instead of changing
-             every time the shelf does. */
-          caption={`Added by hand · ${curated.length}`}
-          events={curated}
-          compactOnMobile
-        />
+        {/* ── HEADING AND CAPTION SAID THE SAME THING, SO ONE OF THEM WENT. ──────────────────────
+            It was `Curated by us` + `Added by hand · 6`. "Curated by us" is the vaguer of the two and
+            says nothing a reader can check; "Added by hand" is the actual provenance and the entire
+            claim the section makes — and on mobile it is the ONLY place that claim appears, since the
+            compact card has no pill row and it was `EventPills` that drew the "Curated" pill. So the
+            provenance became the heading and the caption went with it.
+
+            The `· 6` went too, and not only for the middle dot: it counted a row of cards the reader
+            is looking at. A count earns its place when the section is capped and the reader cannot see
+            what was left out — which is true of "Happening now" and false here. */}
+        <EventShelf heading="Added by hand" events={curated} compactOnMobile />
 
         {/* HOSTED BY A COMPANY YOU FOLLOW — `Event.companies` x `User.targetCompanies`.
 
@@ -1887,8 +1916,14 @@ export default function Home() {
             It renders for nobody who is signed out and for nobody following anything, and both of
             those are ordinary states rather than failures — `EventShelf` returns null on an empty
             list. Worth knowing before wondering why it is not there. */}
+        {/* `From companies you follow`, five characters shorter than `Hosted by a company you
+            follow` and it reads as a source rather than a sentence. The length is not cosmetic: this
+            heading plus its caption is the row that was scrolling the page body sideways at 390px
+            (right edge x=426 in a 390px viewport — see `SectionHeading`), and while the tone change
+            fixes the overflow structurally, a heading that fits without truncating is what keeps the
+            fix invisible. */}
         <EventShelf
-          heading="Hosted by a company you follow"
+          heading="From companies you follow"
           caption={followingCaption}
           events={following}
           /* COMPACT, not the cover rail the curated shelf uses, and `EventShelf`'s own header carries
@@ -1904,49 +1939,65 @@ export default function Home() {
           {/* Desktop filter rail */}
           <aside className="hidden lg:block w-[248px] shrink-0">
             <div className="sticky top-[152px] max-h-[calc(100vh-176px)] overflow-y-auto pr-1 pb-8">
+              {/* `onRetry` is `load`, the same function the feed's own error card calls: the facet
+                  aggregation and the list are one request cycle, so there is one retry. */}
               <FilterRail
                 facets={facets}
                 filters={filters}
                 onChange={setFilters}
                 loading={loading}
+                onRetry={load}
               />
             </div>
           </aside>
 
           <div className="flex-1 min-w-0">
-            {/* Large title, in the SCROLL area rather than the fixed chrome.
-                The events are still the hero — this does not become a banner — but the
-                page had no title at all: its h1 was a 19px result count, so the top of
-                the document opened on a statistic. An iOS-style large title that scrolls
-                away gives the page a voice for the first screenful and then gets out of
-                the way, and keeping it out of the fixed bars leaves --feed-offset (and
-                the sticky day-heading maths that depends on it) untouched.
+            {/* ── THE PAGE HAD TWO DISPLAY TITLES SAYING THE SAME THING, FOUR SECTIONS APART. ────
+                This was `Tech events in Bengaluru` at `.t-display` — 28px on a phone, 40px on a
+                laptop — sitting under a hero H1 reading `Bengaluru tech events, ranked by who you'll
+                meet`. Two statements of the page's subject, the second one competing with the first
+                for the same job, with four quiet sections between them. That is the rhythm failure
+                this pass exists to fix: the eye met a big moment, a run of four identical small ones,
+                then a second big moment of no greater importance than the first.
 
-                The title states the ACTIVE VIEW, so it doubles as a readout of the
-                filters — which is why it earns the space. */}
-            {/* An H2, not the H1 — the hero above owns the page's subject. This one names the
-                ACTIVE VIEW and updates as filters change, which is why it keeps `aria-live`: it is
-                a readout, not a title. Demoting it is also what closes the heading outline, since
-                the page now runs H1 (hero) -> H2 (this) -> H2 (section) -> H3 (card) with nothing
-                skipped. Visual weight is unchanged: `.t-display` does the sizing, not the tag. */}
-            {/* `mb-4 sm:mb-5` — the same 8px-a-section argument as the shelves above, applied to the
-                last gap before the first ranked row. */}
-            <div className="mb-4 sm:mb-5" aria-live="polite" aria-atomic="true">
-              <h2 className="t-display text-[#1D1D1F]">
-                {/* Always the tech heading: the feed is unconditionally tech-only, so the old
-                    `filters.techOnly` ternary had a branch that could only ever render if the
-                    feed had silently stopped being what it says it is. */}
-                {query ? `“${query}”` : 'Tech events in Bengaluru'}
-              </h2>
-              <p id="search-hint" className="mt-1.5 text-[13px] text-[#6E6E73] tracking-[0]">
-                {loading ? (
+                On the browsing view the H1 has already said it, so what remains here is a COUNT, and
+                a count is a caption. On a SEARCH the string the reader typed genuinely is the page's
+                subject and nothing above states it, so there the heading returns — at `.t-title`
+                (24px), below the hero and above every section heading, which is where a result title
+                belongs. Two modes, two weights, one element.
+
+                The wrapper keeps `aria-live`, because the count is a readout that has to announce
+                when it changes, and keeps `id="search-hint"` on the paragraph, which the search input
+                references through `aria-describedby`.
+
+                Heading outline is unaffected and slightly better: H1 (hero) -> H2 (section) -> H3
+                (card), with the query's H2 slotting in above the sections when it exists. */}
+            <div className="mb-3 sm:mb-4" aria-live="polite" aria-atomic="true">
+              {/* No `Tech events in Bengaluru` branch: the feed is unconditionally tech-only, and the
+                  hero states it. */}
+              {query && <h2 className="t-title mb-1 text-[#1D1D1F]">“{query}”</h2>}
+              <p id="search-hint" className="text-[13px] text-[#6E6E73] tracking-[0]">
+                {/* ── `error` IS CHECKED FIRST, AND THAT ORDER IS THE WHOLE FIX. ─────────────────
+                    `total` is `pagination?.total ?? 0` and `load()` nulls `pagination` before every
+                    request, so on a failed fetch this fell straight through to `total === 0` and
+                    printed **"No events match these filters."** — or, with a query,
+                    **"No match for “kubernetes”"** — directly above the error card. A confident
+                    factual claim about the corpus produced by a request that never returned, and the
+                    reader's own filters blamed for it. `docs/design-direction.md` names this exact
+                    pattern (the calendar rendering "No events this month" for a 500) as the one this
+                    app has already been burned by; it was live on the home page.
+
+                    It says nothing here instead of guessing: the error card immediately below states
+                    what happened and offers the retry, and two voices describing one failure is
+                    worse than one. */}
+                {error ? null : loading ? (
                   'Searching…'
                 ) : needsMoreChars ? (
                   <>Keep typing — {MIN_SEARCH_CHARS} characters minimum.</>
                 ) : total === 0 ? (
                   query ? (
                     <>
-                      No match for{' '}
+                      Nothing matches{' '}
                       <span className="font-semibold text-[#1D1D1F]">“{query}”</span>
                     </>
                   ) : (
@@ -1958,23 +2009,25 @@ export default function Home() {
                       {total.toLocaleString('en-IN')}
                     </span>{' '}
                     {query ? (
-                      <>
-                        match{total === 1 ? '' : 'es'} for{' '}
-                        <span className="font-semibold text-[#1D1D1F]">“{query}”</span>
-                      </>
+                      <>match{total === 1 ? '' : 'es'}</>
                     ) : (
                       'upcoming'
                     )}
                     {/* Reads `effectiveSort`, not `sort`. In `For you` the select is not what
                         decides the order, so switching on `sort` here would print "ranked by who
                         you'll meet there" beside a list that was ranked by something else — a
-                        readout that is confidently wrong is worse than no readout. */}
+                        readout that is confidently wrong is worse than no readout.
+
+                        A COMMA, NOT A MIDDLE DOT. Two facts about one list is not a list of equals,
+                        and `docs/design-direction.md` allows at most one middle-dot string per
+                        surface — the compact shelf card's when/where/who line is where this page
+                        spends it. */}
                     {effectiveSort === 'foryou' &&
                       (personalised
-                        ? ' · ranked for you'
-                        : ' · ranked by who you’ll meet there')}
-                    {effectiveSort === 'connections' && ' · ranked by who you’ll meet there'}
-                    {effectiveSort === 'soonest' && !query && ' · soonest first'}
+                        ? ', ranked for you'
+                        : ', ranked by who you’ll meet there')}
+                    {effectiveSort === 'connections' && ', ranked by who you’ll meet there'}
+                    {effectiveSort === 'soonest' && !query && ', soonest first'}
                   </>
                 )}
               </p>
@@ -1983,20 +2036,42 @@ export default function Home() {
             {loading ? (
               <FeedSkeleton view={view} />
             ) : error ? (
+              /* ── A FAILURE SAYS WHAT HAPPENED AND WHAT TO DO, AND NOTHING ELSE. ────────────────
+                 `body` was `{error}`, and `error` is the string thrown a few lines above —
+                 "Could not load events" — under a title reading "Couldn't load events". The same
+                 sentence twice, one of them a paraphrase of the other, and no instruction in either.
+                 The other value `error` ever holds is a fetch rejection ("Failed to fetch"), which
+                 tells a reader nothing they can act on, so it is not printed at all; the real wording
+                 is in the console for whoever is debugging.
+
+                 What the reader needs instead is the reassurance that their own work survived — a
+                 reader who has just narrowed six filters wants to know whether retrying costs them
+                 that — and one button. */
               <EmptyState
                 icon="cloud_off"
                 title="Couldn’t load events"
-                body={error}
+                body="The request didn’t come back. Your search and filters are still set, so this is safe to retry."
                 action={{ label: 'Try again', onClick: load }}
               />
             ) : events.length === 0 ? (
               <EmptyState
                 icon="event_busy"
-                title="Nothing here yet"
+                title={activeCount > 0 || query ? 'Nothing matches that' : 'Nothing scheduled yet'}
                 body={
                   activeCount > 0 || query
-                    ? 'Try widening the time window or clearing a filter.'
-                    : 'Run the scraper to pull in this week’s Bengaluru events.'
+                    ? 'Try a wider time window, or clear a filter.'
+                    : /* ── "Run the scraper to pull in this week's events" WAS OPERATOR COPY SHOWN
+                         TO A READER. ────────────────────────────────────────────────────────────
+                         The person looking at this screen is a Bengaluru engineer deciding where to
+                         spend an evening. They cannot run the scraper, they have no reason to know
+                         one exists, and the sentence reads as an internal error message that leaked.
+
+                         An empty screen is an invitation, so this one names the thing the reader can
+                         actually do and that this product genuinely wants: hand-added events are a
+                         real supply channel here (`source: 'manual'`), and the shelf above exists to
+                         show them. `/add-event` is behind a sign-in gate, which is the correct
+                         friction for a write and explains itself when they get there. */
+                      'Nothing in the city is listed for this window. If you know of an event we’ve missed, add it and it shows up here.'
                 }
                 action={
                   activeCount > 0 || query
@@ -2032,18 +2107,15 @@ export default function Home() {
               <div className="rail">
                 {liveNow.length > 0 && (
                   <section className="mb-2">
-                    <div className="day-heading pt-2.5 pb-2 mb-1.5">
-                      <div className="flex items-center gap-2.5">
-                        <h2 className="t-label flex shrink-0 items-center gap-1.5 text-[#FF3B30]">
-                          <span className="live-dot w-1.5 h-1.5 rounded-full bg-[#FF3B30]" />
-                          Happening now
-                        </h2>
-                        <span aria-hidden="true" className="h-px flex-1 bg-[color:var(--hairline)]" />
-                        <span className="tnum shrink-0 text-[11.5px] text-[#8E8E93]">
-                          {liveNow.length}
-                        </span>
-                      </div>
-                    </div>
+                    {/* `feed` tone: the ONLY tone that stays sticky and keeps the hairline rule,
+                        because only here is a heading doing a grouped-list job. `live` spends the
+                        second hue — the one thing on the page more urgent than the ranking. */}
+                    <SectionHeading
+                      tone="feed"
+                      live
+                      title="Happening now"
+                      trailing={liveNow.length}
+                    />
                     {/* ── "HAPPENING NOW" HAD NO CAP, AND IT IS THE ONLY SECTION WHOSE HEIGHT IS
                         DECIDED BY THE CITY RATHER THAN BY THIS FILE. ─────────────────────────────
                         Measured in a static harness at 390×844: three live events are 809px of rows
@@ -2112,20 +2184,26 @@ export default function Home() {
                         the page's only <h2> in that state, so dropping it leaves the outline at
                         H1 -> H3 with the level skipped. A section label that is always there is
                         also just easier to scan against than one that appears and disappears. */}
-                    <div className="day-heading pt-2.5 pb-2 mb-1.5">
-                      <div className="flex items-center gap-2.5">
-                        <h2 className="t-label flex shrink-0 items-center gap-1.5 text-[#1D1D1F]">
-                          {liveNow.length > 0 ? 'Coming up' : 'Top events'}
-                        </h2>
-                        <span
-                          aria-hidden="true"
-                          className="h-px flex-1 bg-[color:var(--hairline)]"
-                        />
-                        <span className="tnum shrink-0 text-[11.5px] text-[#8E8E93]">
-                          {comingUp.length}
-                        </span>
-                      </div>
-                    </div>
+                    {/* THREE LABELS, EACH ACCURATE FOR ITS STATE. `Top events` was printed above
+                        SEARCH RESULTS too, which is a ranking claim about the corpus sitting on top
+                        of an answer to a query. Under a search these rows are the top MATCHES — still
+                        ranked by connections, so "top" is right and "events" is not. */}
+                    {/* ── NO TRAILING COUNT HERE, AND IT IS THE ONE THING TAKEN OFF. ────────────
+                        It printed `comingUp.length` — the rows rendered SO FAR. Infinite scroll
+                        appends, so it read 30, then 60, then 90, two lines below a readout saying
+                        `297 upcoming`. Two numbers about the same list that disagree, neither
+                        explaining the other, and the one a reader would trust least is the one in
+                        the bolder position. It is a paging artifact, not a fact about the city.
+
+                        The other two `feed` headings keep theirs because theirs are facts: a day
+                        group's count is the events on that day, and "Happening now" is capped to two
+                        rows on a phone, so its count is how many the reader has not been shown. */}
+                    <SectionHeading
+                      tone="feed"
+                      title={
+                        query ? 'Top matches' : liveNow.length > 0 ? 'Coming up' : 'Top events'
+                      }
+                    />
                     {comingUp.map(event => (
                       /* showDate is REQUIRED here. Neither section carries day headings, so without
                          it the rail shows a bare "18:30" and the date appears nowhere on the row —
@@ -2139,40 +2217,31 @@ export default function Home() {
               <div className="rail">
                 {days.map(([dayKey, dayEvents]) => (
                   <section key={dayKey} className="mb-2">
-                    {/* Grouped-list header, Apple's sectioned-table treatment: a small
-                        tracked label with a hairline that runs to the edge. The day
-                        boundary is real structure — it is the one thing the reader
-                        navigates by — so it gets a device, while the label itself stays
-                        quiet enough that the event titles remain the loudest text. */}
-                    <div className="day-heading pt-2.5 pb-2 mb-1.5">
-                      <div className="flex items-center gap-2.5">
-                        <h2
-                          className={`t-label flex shrink-0 items-center gap-1.5 ${
-                            dayKey === NOW_GROUP_KEY ? 'text-[#FF3B30]' : 'text-[#1D1D1F]'
-                          }`}
-                        >
-                          {dayKey === NOW_GROUP_KEY ? (
-                            <>
-                              <span className="live-dot w-1.5 h-1.5 rounded-full bg-[#FF3B30]" />
-                              Happening now
-                            </>
-                          ) : (
-                            dayHeading(dayEvents[0].startDateTime)
-                          )}
-                        </h2>
-                        {dayKey !== NOW_GROUP_KEY && (
-                          <span className="shrink-0 text-[11.5px] text-[#8E8E93] tracking-[0]">
-                            {fullDateIST(dayEvents[0].startDateTime)}
-                          </span>
-                        )}
-                        {/* Hairline fills whatever space is left, so the rule always
-                            reaches the column edge without a fixed width. */}
-                        <span aria-hidden="true" className="h-px flex-1 bg-[color:var(--hairline)]" />
-                        <span className="tnum shrink-0 text-[11.5px] text-[#8E8E93]">
-                          {dayEvents.length}
-                        </span>
-                      </div>
-                    </div>
+                    {/* Grouped-list header, Apple's sectioned-table treatment: a small label with a
+                        hairline that runs to the edge. The day boundary is real structure — it is the
+                        one thing the reader navigates by — so it earns the rule and the stickiness,
+                        while the label stays quiet enough that the event titles remain the loudest
+                        text.
+
+                        SENTENCE CASE, because `dayHeading` already returns exactly what should be
+                        drawn: `Today`, `Tomorrow`, `Sat, 12 Sep`. The shouting came entirely from
+                        `t-label`'s `text-transform: uppercase`, which turned a date into `SAT, 12
+                        SEP` — a tracked-out abbreviation of an abbreviation. */}
+                    <SectionHeading
+                      tone="feed"
+                      live={dayKey === NOW_GROUP_KEY}
+                      title={
+                        dayKey === NOW_GROUP_KEY
+                          ? 'Happening now'
+                          : dayHeading(dayEvents[0].startDateTime)
+                      }
+                      caption={
+                        dayKey === NOW_GROUP_KEY
+                          ? null
+                          : fullDateIST(dayEvents[0].startDateTime)
+                      }
+                      trailing={dayEvents.length}
+                    />
                     {dayEvents.map(event => (
                       <EventRow key={event._id} event={event} />
                     ))}
@@ -2183,9 +2252,25 @@ export default function Home() {
 
             {/* Infinite-scroll sentinel */}
             {pagination?.hasMore && (
-              <div ref={sentinelRef} className="py-8 flex justify-center">
+              /* ── SKELETONS, NEVER SPINNERS — AND THIS WAS THE LAST SPINNER ON THE PAGE. ─────────
+                 A `.spinner` said "something is happening somewhere"; two skeleton rows in the shape
+                 of the rows that are about to arrive say what is coming and reserve the space for it,
+                 so the page does not jump when the page-2 response lands. It is also the one place a
+                 spinner was least defensible: the thing being loaded is MORE OF THE SAME LIST, whose
+                 shape is already on screen directly above.
+
+                 Wrapped in `.rail` for the rail view so the spine continues through the placeholder
+                 rather than breaking and resuming — outside it, `.rail::before` draws nothing and the
+                 skeleton rows float free of the timeline they belong to. */
+              <div ref={sentinelRef} className={loadingMore ? 'pt-1' : 'py-8 flex justify-center'}>
                 {loadingMore ? (
-                  <div className="spinner" />
+                  view === 'grid' ? (
+                    <FeedSkeleton view="grid" rows={2} />
+                  ) : (
+                    <div className="rail">
+                      <FeedSkeleton view="rail" rows={2} bare />
+                    </div>
+                  )
                 ) : (
                   <button
                     type="button"
@@ -2199,7 +2284,9 @@ export default function Home() {
             )}
 
             {!loading && events.length > 0 && !pagination?.hasMore && (
-              <p className="py-8 text-center text-[12.5px] text-[#a1a1a6]">
+              /* `#a1a1a6` measures 2.35:1 against the page grey — this is 12.5px text making a
+                 factual statement, so it has to clear 4.5:1. `#6E6E73` is 4.6:1. */
+              <p className="py-8 text-center text-[12.5px] text-[#6E6E73]">
                 That’s everything we have for now.
               </p>
             )}
@@ -2239,7 +2326,13 @@ export default function Home() {
                 its content height and the panel grows past max-h instead of
                 scrolling. */}
             <div className="min-h-0 flex-1 overflow-y-auto p-5">
-              <FilterRail facets={facets} filters={filters} onChange={setFilters} loading={loading} />
+              <FilterRail
+                facets={facets}
+                filters={filters}
+                onChange={setFilters}
+                loading={loading}
+                onRetry={load}
+              />
             </div>
             <div className="shrink-0 bg-[#F5F5F7]/97 glass-nav p-4 border-t border-black/5">
               <button
@@ -2259,11 +2352,26 @@ export default function Home() {
   );
 }
 
-function FeedSkeleton({ view }: { view: ViewMode }) {
+/**
+ * The feed's loading state, in the shape of the feed.
+ *
+ * `rows` so the same component serves both jobs: a full first page, and the two-row placeholder the
+ * infinite scroll shows while page N+1 is in flight. `bare` drops the outer `.rail`, for the caller
+ * that supplies its own so the spine runs unbroken through the placeholder.
+ */
+function FeedSkeleton({
+  view,
+  rows = 6,
+  bare = false,
+}: {
+  view: ViewMode;
+  rows?: number;
+  bare?: boolean;
+}) {
   if (view === 'grid') {
     return (
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5">
-        {Array.from({ length: 6 }, (_, i) => (
+        {Array.from({ length: rows }, (_, i) => (
           <div key={i} className="bg-white rounded-2xl overflow-hidden card-shadow">
             <div className="skeleton aspect-[16/9]" />
             <div className="p-4 flex flex-col gap-2">
@@ -2276,9 +2384,7 @@ function FeedSkeleton({ view }: { view: ViewMode }) {
       </div>
     );
   }
-  return (
-    <div className="rail">
-      {Array.from({ length: 6 }, (_, i) => (
+  const railRows = Array.from({ length: rows }, (_, i) => (
         <div key={i} className="flex items-stretch gap-3 md:gap-4">
           <div className="w-[42px] md:w-[58px] shrink-0 pt-4 flex justify-end">
             <div className="skeleton h-3.5 w-9 rounded" />
@@ -2295,11 +2401,18 @@ function FeedSkeleton({ view }: { view: ViewMode }) {
             </div>
           </div>
         </div>
-      ))}
-    </div>
-  );
+      ));
+  return bare ? <>{railRows}</> : <div className="rail">{railRows}</div>;
 }
 
+/**
+ * The feed with nothing in it, or the feed after a failed request.
+ *
+ * ONE SHELL, TWO JOBS, AND THE COPY IS WHAT SEPARATES THEM — see the two call sites. What is shared
+ * is the shape; what must never be shared is the voice, because an empty result is a fact about
+ * Bengaluru and a failed fetch is a fact about this app, and presenting the second as the first is
+ * the defect `docs/design-direction.md` records.
+ */
 function EmptyState({
   icon,
   title,
@@ -2311,25 +2424,33 @@ function EmptyState({
   body: string;
   action?: { label: string; onClick?: () => void; href?: string };
 }) {
+  /* `py-16` -> `py-12 sm:py-16`: 32px of a phone screen spent on air around four words, in the one
+     state where the reader has the least reason to keep scrolling. */
+  const button =
+    'mt-6 inline-flex min-h-11 items-center rounded-full bg-[#1D1D1F] px-6 text-label-md font-semibold text-white transition-colors hover:bg-black focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0071E3]';
   return (
-    <div className="bg-white rounded-2xl card-shadow py-16 px-6 text-center">
+    <div className="bg-white rounded-2xl card-shadow py-12 sm:py-16 px-6 text-center">
       <span aria-hidden="true" className="material-symbols-outlined text-[44px] text-[#d5d5da] block mb-3">{icon}</span>
       <p className="text-[17px] font-semibold text-[#1D1D1F]">{title}</p>
-      <p className="text-[14px] text-[#6E6E73] mt-1.5 max-w-sm mx-auto">{body}</p>
+      {/* `max-w-[46ch]`, not `max-w-sm`. `docs/design-direction.md` sets the line length in
+          characters, and 24rem at 14px is ~62 characters of a font whose measure should be under 46
+          when centred — centred text is harder to track back, so it wants a shorter line, not the
+          same one. */}
+      <p className="text-[14px] leading-[1.5] text-[#6E6E73] mt-1.5 max-w-[46ch] mx-auto">{body}</p>
+      {/* ── ONE COLOUR FOR THE PRIMARY ACTION, WHICHEVER ELEMENT IT IS. ──────────────────────────
+          The `href` branch was ink and the `onClick` branch was `--blue`, so the SAME slot in the
+          SAME component rendered two different buttons depending on an implementation detail the
+          reader cannot see. Ink is the one that matches the rest of the page ("Set it up", "Show N
+          events"), and it keeps the empty state from being the loudest blue on screen — blue is
+          rationed here to mean "you can act on this", which is not a licence to spend it on the
+          largest button in the column. */}
       {action &&
         (action.href ? (
-          <Link
-            href={action.href}
-            className="inline-block mt-6 px-6 py-2.5 rounded-full bg-[#1D1D1F] text-white text-label-md font-semibold hover:bg-black transition-colors"
-          >
+          <Link href={action.href} className={button}>
             {action.label}
           </Link>
         ) : (
-          <button
-            type="button"
-            onClick={action.onClick}
-            className="mt-6 px-6 py-2.5 rounded-full bg-[#0071E3] text-white text-label-md font-semibold hover:bg-blue-600 transition-colors"
-          >
+          <button type="button" onClick={action.onClick} className={button}>
             {action.label}
           </button>
         ))}

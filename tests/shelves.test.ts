@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   claimSection,
+  followedCaption,
   shelfEligible,
   splitForPreview,
   type Claimable,
@@ -251,6 +252,64 @@ describe('splitForPreview — deferring a card is not the same as losing one', (
     shown.push('x');
     deferred.push('y');
     expect(rows).toEqual(['a', 'b', 'c']);
+  });
+});
+
+describe('followedCaption — the claim a reader can check, inside the width it has', () => {
+  const ev = (...companies: string[]) => ({ companies });
+
+  it('names ONLY companies in both sets', () => {
+    /*
+     * An event can carry three company names while the reader follows one. Naming all of them would
+     * put a company they do not follow under a heading saying they do, which turns the shelf's one
+     * checkable claim into an unfalsifiable one.
+     */
+    expect(followedCaption([ev('Razorpay', 'Stripe')], ['Razorpay'])).toBe('Razorpay');
+    expect(followedCaption([ev('Stripe')], ['Razorpay'])).toBe('You follow 1');
+  });
+
+  it('CAPS AT TWO NAMES, and the cap is a measured width not a preference', () => {
+    /*
+     * THE ASSERTION MOST WORTH KEEPING IN THIS BLOCK. The caption shares a line with the heading and
+     * `SectionHeading`'s `shelf` tone bounds it at 52% of the column — 186px at 390px wide. Three long
+     * names plus a count is ~236px and truncates mid-word; before that bound existed the same string
+     * OVERFLOWED, putting the document's right edge at x=506 in a 390px viewport and scrolling the
+     * whole page body sideways. Raising this to 3 to "show more" silently brings the truncation back.
+     */
+    const rows = [ev('BrowserStack'), ev('ThoughtWorks'), ev('ServiceNow'), ev('Postman')];
+    const followed = ['BrowserStack', 'ThoughtWorks', 'ServiceNow', 'Postman'];
+    expect(followedCaption(rows, followed)).toBe('BrowserStack, ThoughtWorks +2');
+  });
+
+  it('does not append "+0" when the matches exactly fill the cap', () => {
+    expect(followedCaption([ev('Razorpay'), ev('Postman')], ['Razorpay', 'Postman'])).toBe(
+      'Razorpay, Postman'
+    );
+  });
+
+  it('keeps the SHELF order, not the alphabet', () => {
+    // The shelf is ranked, so the company behind the top row is the one worth naming first. That is
+    // what makes two names enough rather than arbitrary.
+    expect(followedCaption([ev('Zoho'), ev('Airbnb')], ['Airbnb', 'Zoho'])).toBe('Zoho, Airbnb');
+  });
+
+  it('deduplicates a company that hosts several rows', () => {
+    expect(followedCaption([ev('Razorpay'), ev('Razorpay')], ['Razorpay'])).toBe('Razorpay');
+  });
+
+  it('falls back to the follow COUNT rather than to silence', () => {
+    /*
+     * Reached when the shelf is empty, and when a followed company sits in a field the resolver never
+     * wrote to `companies`. Saying how many are watched is true; saying nothing leaves the heading
+     * making a claim with no evidence beside it at all.
+     */
+    expect(followedCaption([], ['Razorpay', 'Postman', 'Zoho'])).toBe('You follow 3');
+    expect(followedCaption([ev()], [])).toBe('You follow 0');
+  });
+
+  it('survives a row with no companies field at all', () => {
+    // `companies` is optional on `FeedEvent` and absent on plenty of scraped rows.
+    expect(followedCaption([{}, ev('Razorpay')], ['Razorpay'])).toBe('Razorpay');
   });
 });
 

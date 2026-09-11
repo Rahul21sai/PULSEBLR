@@ -1,5 +1,6 @@
 'use client';
 
+import SectionHeading from './SectionHeading';
 import { IST, dayKeyIST, fullDateIST, todayKeyIST, dayKeyOffsetIST } from '@/lib/format';
 import { FeedEvent } from '@/lib/event-types';
 
@@ -120,30 +121,34 @@ export default function WeekAheadStrip({
        feed on the home page, so the inter-section gap is paid four times on the width that can least
        afford it. Unchanged from `sm` up. */
     <section className="max-w-[1240px] mx-auto px-4 md:px-8 pb-6 sm:pb-8">
-      <div className="day-heading pb-2 mb-3.5">
-        <div className="flex items-center gap-2.5">
-          <h2 className="t-label shrink-0 text-[#1D1D1F]">The week ahead</h2>
-          <span aria-hidden="true" className="h-px flex-1 bg-[color:var(--hairline)]" />
-          {/* Says what the numbers mean and offers the way out of a selection, in the place a reader
-              is already looking. Without the second half, clearing a day means finding the "All
-              upcoming" chip in the command bar above — a different control, in different chrome,
-              for undoing what was done here. */}
-          {selectedDay ? (
+      {/* `shelf` tone — the quietest of the three, because this section is NAVIGATION and the seven
+          cards below label themselves (Today, Sun, Mon…). The heading is here to hold the readout
+          and the way out of a selection, not to announce a week the reader can see.
+
+          The caption says what the numbers mean and offers that way out, in the place a reader is
+          already looking. Without the second half, clearing a day means finding the "All upcoming"
+          chip in the command bar above — a different control, in different chrome, for undoing what
+          was done here. Blue stays on the button because it IS an action (globals.css rule 4). */}
+      <SectionHeading
+        tone="shelf"
+        title="The week ahead"
+        caption={
+          selectedDay ? (
             <button
               type="button"
               onClick={() => onSelectDay('')}
-              className="shrink-0 text-[11.5px] font-semibold text-[#0071E3] hover:underline"
+              className="text-[11.5px] font-semibold text-[#0071E3] hover:underline"
             >
               Show all upcoming
             </button>
           ) : (
-            <span className="tnum shrink-0 text-[11.5px] text-[#8E8E93]">
+            <span className="tnum">
               {total}
               {truncated ? '+' : ''} in 7 days
             </span>
-          )}
-        </div>
-      </div>
+          )
+        }
+      />
 
       {/* A snap scroller on a phone and a seven-column grid from `sm` up.
           Seven cards need ~1120px to read comfortably, which a laptop has and a 390px screen does
@@ -185,9 +190,14 @@ export default function WeekAheadStrip({
                     : 'bg-white text-[#1D1D1F] shadow-[inset_0_0_0_1px_var(--hairline)] hover:bg-[#FAFAFC]'
               }`}
             >
+              {/* Sentence case, not `t-label`. `weekdayFmt` already yields "Sun" and `Today` — the
+                  uppercase came from the class, and it turned both into shouted abbreviations for no
+                  gain. `#6E6E73` rather than `#8E8E93`: the latter measures 3.26:1 on white at 11px,
+                  under the 4.5:1 floor `docs/design-direction.md` asks for at the sizes actually
+                  used. Disabled tiles keep `#c7c7cc` — a disabled control is exempt. */}
               <span
-                className={`t-label ${
-                  selected ? 'text-white/70' : empty ? 'text-[#c7c7cc]' : 'text-[#8E8E93]'
+                className={`text-[11px] font-semibold leading-[1.15] tracking-[0] ${
+                  selected ? 'text-white/70' : empty ? 'text-[#c7c7cc]' : 'text-[#6E6E73]'
                 }`}
               >
                 {weekday}
@@ -199,15 +209,29 @@ export default function WeekAheadStrip({
                 {dayNumFmt.format(instant)}
                 <span
                   className={`ml-1 text-[11.5px] font-medium ${
-                    selected ? 'text-white/60' : 'text-[#a1a1a6]'
+                    /* `#a1a1a6` measured 2.58:1 on white — the month is real information, not a
+                       decorative flourish, so it has to clear the floor. */
+                    selected ? 'text-white/60' : 'text-[#6E6E73]'
                   }`}
                 >
                   {monthFmt.format(instant)}
                 </span>
               </span>
+              {/* ── INK, NOT `--blue`, AND THE RULE IS globals.css's OWN. ────────────────────────
+                  Seven blue counts in one row were the loudest colour on the page above the
+                  Spotlight, in a design whose fourth settled rule is that `--blue` means "you can
+                  act on this" and is never decoration. A count is not an action. The tile IS one, and
+                  its affordance is already carried the way every other card on this page carries
+                  it — white, hairline ring, `.pressable` — so the accent was buying nothing that the
+                  card treatment was not already saying, at the cost of the thing rationing it
+                  protects: the covers being the only colour on screen.
+
+                  Ink also reads as data rather than as a link, which is what it is. The date above
+                  keeps the tile's emphasis by size; this stays semibold so density is still scannable
+                  across seven tiles. */}
               <span
                 className={`tnum text-[11.5px] font-semibold ${
-                  selected ? 'text-white/80' : empty ? 'text-[#c7c7cc]' : 'text-[#0071E3]'
+                  selected ? 'text-white/80' : empty ? 'text-[#c7c7cc]' : 'text-[#1D1D1F]'
                 }`}
               >
                 {empty ? 'Nothing yet' : `${day.count} event${day.count === 1 ? '' : 's'}`}

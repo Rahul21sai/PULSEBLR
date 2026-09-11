@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import EventRow from '../EventRow';
 import EventGridCard from '../EventGridCard';
+import SectionHeading from './SectionHeading';
 import { FeedEvent } from '@/lib/event-types';
 import { dayHeading, timeIST, locationLabel } from '@/lib/format';
 
@@ -53,7 +54,26 @@ function CompactShelfCard({
       href={`/events/${event._id}`}
       className="pressable flex h-full w-full flex-col gap-1 rounded-[14px] bg-white px-3.5 py-3 text-left shadow-[inset_0_0_0_1px_var(--hairline)] transition-colors hover:bg-[#FAFAFC] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0071E3]"
     >
-      {matched && <span className="t-label truncate text-[#0071E3]">{matched}</span>}
+      {/* ── NOT BLUE, AND NOT `t-label`, AND BOTH CHANGES HAVE A RULE BEHIND THEM. ───────────────
+          It was `t-label text-[#0071E3]`: 11px uppercase at +0.055em in the accent. Two problems.
+
+          globals.css rule 4 — the one that outranks every other document here — is that `--blue`
+          means "you can act on this" and is never decoration. This whole card is ONE `<Link>`, so a
+          single blue line inside it advertises a second, different target that does not exist. The
+          company is the card's justification, not another destination.
+
+          And `t-label`'s uppercase is actively wrong on a proper noun: it renders ThoughtWorks as
+          THOUGHTWORKS and BrowserStack as BROWSERSTACK, destroying the one part of the string a
+          reader recognises at a glance.
+
+          Ink at 11.5px above an ink title at 13.5px is an attribution line, which is exactly what
+          this is. The shelf keeps its visual difference from the curated shelf beside it — three
+          text lines against two — without spending the accent to get it. */}
+      {matched && (
+        <span className="truncate text-[11.5px] font-semibold tracking-[0] text-[#1D1D1F]">
+          {matched}
+        </span>
+      )}
       <span className="line-clamp-2 text-[13.5px] font-semibold leading-[1.3] tracking-[-0.01em] text-[#1D1D1F]">
         {event.title}
       </span>
@@ -154,14 +174,21 @@ export default function EventShelf({
 }: {
   heading: string;
   /**
-   * What makes these events THESE events, stated so a reader can judge the shelf.
+   * The EVIDENCE for the shelf's claim — the companies it matched, not a restatement of the heading.
    *
-   * Required, not optional. Every shelf on this page is a claim — "hand-picked", "added by hand",
-   * "hosted by a company you follow" — and a shelf whose basis a reader cannot see is indistinguishable
-   * from an ad. The Spotlight's caption exists for exactly this reason and names which of its two
-   * modes produced the rows.
+   * ── OPTIONAL NOW, AND THE INVARIANT IS UNCHANGED. ────────────────────────────────────────────
+   * It used to be required, on the reasoning that "a shelf whose basis a reader cannot see is
+   * indistinguishable from an ad". That reasoning is right and it still holds — what was wrong was
+   * assuming the caption is the only place the basis can live. The curated shelf's heading is now
+   * `Added by hand`, which IS the basis, so its caption said `Added by hand · 6`: the same words
+   * again plus a count of a row the reader can see. Two elements competing to make one claim, which
+   * is the thing to take off.
+   *
+   * So the rule is: the basis must be visible, in the heading OR the caption. Pass a caption when it
+   * carries something the heading cannot — the following shelf names the companies, and naming them
+   * is what makes its claim checkable rather than unfalsifiable.
    */
-  caption: string;
+  caption?: string;
   events: FeedEvent[];
   /**
    * `cover` reuses the feed's own cards; `compact` is the text treatment above.
@@ -217,15 +244,12 @@ export default function EventShelf({
        card's title. From `sm` up the page is not fighting for vertical room and the original rhythm
        stands. The heading device itself is untouched: what changes is the space AFTER the shelf. */
     <section className="max-w-[1240px] mx-auto px-4 md:px-8 pb-6 sm:pb-8">
-      <div className="day-heading pb-2 mb-3.5">
-        <div className="flex items-center gap-2.5">
-          <h2 className="t-label shrink-0 text-[#1D1D1F]">{heading}</h2>
-          <span aria-hidden="true" className="h-px flex-1 bg-[color:var(--hairline)]" />
-          {/* The caption sits beside the heading rather than inside it so the heading stays a stable
-              landmark for a screen reader instead of changing every time the shelf does. */}
-          <span className="shrink-0 text-[11.5px] text-[#8E8E93]">{caption}</span>
-        </div>
-      </div>
+      {/* `shelf` tone: sentence case, no rule, NOT sticky. See `SectionHeading` for why a one-row
+          shelf must not carry the grouped-list device the feed's own headings use — and for the
+          390px horizontal page scroll the old ALL-CAPS version of this row was causing. The caption
+          still sits beside the heading rather than inside it, so the heading stays a stable landmark
+          for a screen reader instead of changing every time the shelf does. */}
+      <SectionHeading tone="shelf" title={heading} caption={caption} />
 
       {variant === 'compact' ? (
         /* ONE TREATMENT AT EVERY WIDTH, unlike the cover variant below.
