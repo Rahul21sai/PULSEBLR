@@ -60,17 +60,21 @@ export default function EventActions({ event }: { event: FeedEvent }) {
         href={event.applyLink || event.sourceUrl}
         target="_blank"
         rel="noopener noreferrer"
-        className="w-full text-center bg-[#1D1D1F] text-white text-label-md font-semibold py-3 rounded-full hover:bg-black transition-colors active:scale-[0.98]"
+        /* `.pressable` rather than a hand-rolled `active:scale-[0.98]`: one curve and one scale for
+           every interactive surface in the app, and a hover-grow has no touch equivalent. */
+        className="pressable w-full text-center bg-[#1D1D1F] text-white text-label-md font-semibold py-3 rounded-full hover:bg-black"
       >
         {event.soldOut ? `View on ${event.source}` : 'Register'}
       </a>
       <div className="flex gap-2">
         <SaveButton eventId={event._id} variant="full" />
+        {/* Both 44px PAINTED, so no 44px overlay is needed and the two cannot contest each other's
+            tap band — the failure mode a smaller painted control with an overlay produces. */}
         <a
           href={`/api/events/${event._id}/ics`}
           title="Add to calendar"
           aria-label="Add to calendar"
-          className="w-11 h-11 rounded-full bg-[#f3f3f5] flex items-center justify-center text-[#1D1D1F] hover:bg-[#e8e8ea] transition-colors shrink-0"
+          className="pressable w-11 h-11 rounded-full bg-[#f3f3f5] flex items-center justify-center text-[#1D1D1F] hover:bg-[#e8e8ea] shrink-0"
         >
           <span aria-hidden="true" className="material-symbols-outlined text-[18px]">event_available</span>
         </a>
@@ -79,15 +83,23 @@ export default function EventActions({ event }: { event: FeedEvent }) {
           onClick={share}
           title={copied ? 'Link copied' : 'Share'}
           aria-label="Share event"
-          className="w-11 h-11 rounded-full bg-[#f3f3f5] flex items-center justify-center text-[#1D1D1F] hover:bg-[#e8e8ea] transition-colors shrink-0"
+          className="pressable w-11 h-11 rounded-full bg-[#f3f3f5] flex items-center justify-center text-[#1D1D1F] hover:bg-[#e8e8ea] shrink-0"
         >
           <span aria-hidden="true" className="material-symbols-outlined text-[18px]">
             {copied ? 'check' : 'ios_share'}
           </span>
         </button>
       </div>
+      {/* `--good`, not a fourth hue. `#34C759` was a third green in a palette that declares exactly
+          one (`--good: #166B35`, used by `.pill-free`). `aria-live` because the only other signal
+          that the copy worked is a `title` tooltip, which a touch device never shows. */}
       {copied && (
-        <p className="text-[12px] text-center text-[#34C759] font-semibold">Link copied</p>
+        <p
+          aria-live="polite"
+          className="text-[12px] text-center font-semibold text-[color:var(--good)]"
+        >
+          Link copied
+        </p>
       )}
     </div>
   );

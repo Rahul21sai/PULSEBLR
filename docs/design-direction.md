@@ -58,8 +58,12 @@ Two constraints from CLAUDE.md that are not negotiable:
 - **Never print the number.** The score is a ranking signal, not a measurement, and "83" implies a
   precision it does not have. This was already removed once from a tooltip.
 - The reason must come from `score-reason.ts`. A restated copy is exactly how `/events/[id]`'s old
-  panel drifted eight entries behind `FUNNEL_PATTERN` and explained a coaching advert without
-  mentioning its penalty.
+  panel drifted behind `FUNNEL_PATTERN` and explained a coaching advert without mentioning its
+  penalty. **FOUR entries, not eight** — `demo class`, `trial class`, `placement`, `\d+% off`. An
+  earlier version of this document said eight; `lib/events/score-reason.ts` and
+  `tests/score-reason.test.ts` both say four, and they are the source. The number does not change the
+  lesson, but a document that invents a figure is the thing this repo has already been bitten by
+  twice.
 
 ---
 
@@ -162,6 +166,10 @@ the technique: serve a plain HTML file on a high port with `python -m http.serve
 **verbatim class strings** from the real components, styled by **this project's own `globals.css`
 compiled through the installed `@tailwindcss/postcss`** — swap its `@import` line, never copy the
 file. Probe it in a browser at 390×844 and 1440×900.
+
+**PUT THE HARNESS OUTSIDE THE REPO.** An untracked `.harness/` was wiped twice by sibling agents'
+working trees, and `.playwright-mcp/` once. Build it in a temp directory with a `node_modules`
+junction back to this checkout — `@import "tailwindcss"` then resolves — and delete it when done.
 
 **DO NOT HARDCODE A TYPEFACE OR A HEX IN THE HARNESS. THIS DOCUMENT USED TO SAY "with the same Inter
 faces" AND THAT INSTRUCTION BROKE A MEASUREMENT MID-SESSION.** The display face changed to Familjen

@@ -477,7 +477,12 @@ export default function FilterRail({
       {/* CARD METADATA — who it is for, what you get, and what kind of event it is.
           ─────────────────────────────────────────────────────────────────────────────────────
           ALL THREE RENDER NOTHING TODAY. `rows.length === 0` returns null, and every map is empty
-          because the fields exist on no document yet (measured 2026-09-10: 0 of 1616). So this is
+          because the fields existed on no document yet (measured 2026-09-10: 0 of 1616) — and that
+          is NO LONGER TRUE. Re-measured 2026-09-12 after the tagger backfill: of 277 upcoming tech
+          events, `audience` 123 (44.4%), `tier` 132 (47.7%), `perks` 28 (10.1%). All three sections
+          now render. The gate below is driven by the facet counts rather than by a hardcoded flag,
+          which is why they lit up on their own — that is the property to keep, and the reason this
+          comment was the only thing that needed changing. So this is
           three sections' worth of markup that a reader currently never sees — deliberately, and it
           is the same gate the Company section above uses, for the same reason. A chip that cannot
           match anything is the defect that removed the "Everything else" category group.

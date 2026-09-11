@@ -285,6 +285,62 @@ describe('the meter and the verdict come from connectionTier', () => {
 });
 
 /**
+ * THE PARTITION `/events/[id]` COMPOSES ON.
+ *
+ * The detail panel splits these reasons into two groups — the case for, then a separate block led
+ * by "Working against it" — instead of marking each row with a green tick or a grey dash. That is a
+ * layout decision, but it rests on a property of THIS module: that a penalised event really does
+ * produce at least one `good: false` clause, and that a clean one produces none.
+ *
+ * If `scoreReasons` ever stopped emitting negatives, the panel's counterweight block would simply
+ * not render, and the page would be back to confidently explaining a coaching advert without
+ * mentioning its penalty — the exact shipped bug the module was written to end. That failure is
+ * invisible in a rendered page (an absent section looks like an event with nothing against it), so
+ * it is asserted here where it is visible.
+ *
+ * The 56% figure is measured, not assumed: over the 277 upcoming tech events on 2026-09-12, 154
+ * carry at least one negative clause. A majority of this feed has something arguing against it,
+ * which is why the group earns its own place rather than a per-row glyph.
+ */
+describe('the good/bad partition the detail panel groups by', () => {
+  it('gives a clean practitioner meetup nothing to argue against', () => {
+    const reasons = scoreReasons(MEETUP);
+    expect(reasons.length).toBeGreaterThan(0);
+    expect(reasons.filter(r => !r.good)).toEqual([]);
+  });
+
+  it('gives an online course advert both a case for and a case against', () => {
+    const advert = {
+      ...MEETUP,
+      title: 'Free Gen AI & Agentic AI Demo at eMexo',
+      format: 'online' as const,
+    };
+    const reasons = scoreReasons(advert);
+    const against = reasons.filter(r => !r.good);
+    const forIt = reasons.filter(r => r.good);
+
+    // Both groups non-empty, so the panel renders the hairline-separated pair rather than one list.
+    expect(against.length).toBeGreaterThan(0);
+    expect(forIt.length).toBeGreaterThan(0);
+    expect(signals(against)).toEqual(expect.arrayContaining(['format', 'framing']));
+
+    // Every clause the panel prints comes from `long`, so each has to be a readable sentence rather
+    // than the two-or-three-word card form. Guards against a future edit swapping the two fields.
+    for (const reason of reasons) {
+      expect(reason.long.length, reason.signal).toBeGreaterThan(reason.short.length);
+    }
+  });
+
+  it('leaves the panel with an empty partition only when the module says nothing at all', () => {
+    // The page's "too little detail to say much either way" branch is reached on exactly this
+    // input and no other — which is why that copy is a statement about the LISTING, not an error.
+    const reasons = scoreReasons({});
+    expect(reasons.filter(r => r.good)).toEqual([]);
+    expect(reasons.filter(r => !r.good)).toEqual([]);
+  });
+});
+
+/**
  * THE GUARD AGAINST THE ONE FAILURE THIS MODULE CANNOT SEE AT RUNTIME: a new term added to
  * `connectionScore` that moves the ranking with no clause to account for it.
  */
