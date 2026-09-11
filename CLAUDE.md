@@ -1861,3 +1861,150 @@ follow-up message drafting; "Near you" (plausible at 63.7% but needs an existing
 scroll budget); the 36 Meetup groups still capped by the page's own 30-row ceiling. **`agenda` and
 `speakers` markup is UNVERIFIED** — 0 stored events carry either field, so only the absent path is
 reachable without a database write.
+
+
+---
+
+### 16. What landed 2026-09-11 — the ICA-unblocked batch
+
+Three streams that had all been waiting on a frontier model, plus two defects found while merging.
+
+> **ICA'S BASE URL MOVED, AND A NEW KEY ALONE DOES NOT FIX IT.**
+> `api.nextgen-beta.ica.ibm.com` -> `api.servicesessentials.ibm.com/v1/chat-models`. A fresh key
+> against the old host answers `{"error":"Unknown icaKey"}`, which reads like a bad key and is not:
+> **the key and the base URL have to come from the same environment.** Check the host before
+> concluding a credential is dead. NVIDIA is still dead at the account level (every model 404s
+> "not found for account", including ones its own `/models` lists) and Anthropic is unset — so
+> **ICA is the only working tier and there is no second net.**
+
+> **ICA DELIVERS A THROTTLE AS AN HTTP 400, AND THAT SILENTLY FAKED A MEASUREMENT.** It fronts
+> Bedrock through litellm and loses the 429 on the way:
+> `400 {"detail":"litellm.RateLimitError: BedrockException - Too many requests…"}`. The tagger threw
+> on any 400 not mentioning `temperature`, so a transient throttle was handled as permanent: no
+> backoff, model chain skipped, straight to keywords. Because `pipeline.ts` calls `tagEvents()` once
+> for the whole corpus, **the first throttled batch tripped the strike counter and every later batch
+> fell to keywords too** — a full scrape would have quietly produced a keyword-tagged corpus with a
+> correctly-configured frontier model idle.
+>
+> Worse, it faked the gate. `diag-retag-preview.ts` reported `Tagging: 0/13 via LLM` and
+> `FIXED 0  BROKE 1`, which reads exactly like "this model is not good enough to rewrite the corpus
+> with". It was comparing the keyword floor against itself. With backoff: `13/13 via LLM`,
+> **FIXED 1, BROKE 0**, every control holding. `check-llm.ts` passes either way because it sends two
+> tiny requests — **a green `check-llm.ts` does not mean the tagger works under load.**
+
+> **THE `--inconsistent` vs `--all` DECISION HAS FLIPPED, as §3 predicted it would.** With
+> `claude-sonnet-5` the model returns categories that are **richer or equal on 12 of 13** —
+> `IndiaFOSS` gains `Conference`, and `Databricks Campus Hackathon` REGAINS the `Hackathon`
+> event-type the 8B used to drop. Disagreement is now **24 of 1113 upcoming (2.2%)**, of which only
+> **11** are real recall loss. But the specific win is invisible to `--inconsistent`: `droidCon India`
+> and `TechSparks 2026` are stored `[Meetup]` with no tech topic, which is **self-consistent and
+> wrong**, so only `--all` reaches them. Re-run `diag-retag-preview.ts` before acting; a retag
+> replaces categories and merging can never undo it.
+
+| Stream | Where | The one thing to know |
+| --- | --- | --- |
+| Follow-up drafting | `lib/llm/draft-followup.ts` | The note is on `Contact.note`, **not** the interaction timeline. |
+| MCP v2 | `lib/mcp/auth.ts`, `lib/models/McpToken.ts` | A scoped PAT, not OAuth — argued on testability. |
+| Event microsites | `lib/scrapers/adapters/microsite.ts` | Bespoke microsites **do** publish `Event` JSON-LD. GIDS and BTS for one request each. |
+
+> **"STRUCTURED EXTRACTION FROM COMPANY SITES IS DEAD" IS TRUE OF INDEX PAGES AND FALSE OF EVENT
+> MICROSITES.** The 0-of-5 measurement §4 records was taken on company marketing index pages.
+> Bespoke conference sites publish schema.org `Event` JSON-LD over **plain HTTP**, because their
+> organisers want Google's event rich results. Measured 2026-09-11: `developersummit.com` gives
+> **GIDS 2027** and `bengalurutechsummit.com` gives **Bengaluru Tech Summit 2026 at BIEC**, one HTTP
+> request each, no browser and no model. Two of the city's largest flagships were being skipped
+> because one flag protected both the expensive path and the free one. The gate is now split —
+> JSON-LD and platform detection always run; render + LLM stays opt-in and **ships disabled**.
+
+> **THE CHEAP MICROSITE PATH NEEDED THE CITY GATE, and the row that proves it has no model to
+> blame.** `reactindia.io` publishes clean JSON-LD and its venue is "Planet Hollywood Beach Resort"
+> — **Goa**. `offCityReason` alone KEEPS it: no field says "Goa" and there is no Bengaluru evidence
+> either. So a Goa conference would have walked into the public feed through the half of the feature
+> with no LLM in it. Step 1 applies the same two-tier gate `universal.ts` has, plus a past-event
+> filter (`rootconf.in` would otherwise report "20 events" for a page contributing zero).
+
+> **A WATCHLIST ENTRY CAN ROT INTO A DIFFERENT WEBSITE.** `indiafoss.net` has lapsed and now serves
+> ~17,000 characters of Indonesian gambling SEO. The model correctly returned `[]`, but the lesson is
+> the domain, not the model: **a URL in a watchlist is an assumption with no expiry date.** IndiaFOSS
+> is covered by `fossunited.ts`; the entry is gone. Re-probe a watchlist rather than trusting it.
+
+> **PLATFORM DETECTION MUST NOT SHORT-CIRCUIT ON A PLATFORM IT CANNOT USE.** `cypherconf.com`
+> resolves to Eventbrite on the strength of a **2017** ticket link in its footer — so "any platform
+> hit wins" would route a page away from the only path that can read it, on a nine-year-old link.
+> Short-circuit only when an adapter can take over (`sourceKind` present).
+
+> **A REQUIRED FIELD THE PAGE LACKS IS A HALLUCINATION YOU ORDERED.** The extraction prompt demanded
+> `HH:MM`, so for a page whose only claim is "7-8 OCT 2026" the model invented `2026-10-07T00:00`.
+> Date-only ISO plus a `timeAssumed` flag. Strict output validation is not enough if the schema
+> itself is unsatisfiable.
+
+> **THE FOLLOW-UP NOTE IS ON `Contact.note`, NOT ON THE INTERACTION TIMELINE.**
+> `attachPersonSpine()` writes its `met` interaction with `personId`/`kind`/`at`/`eventId`/
+> `contactId` and **no note** — `Interaction.note` is only ever written by the person page's "Add a
+> note". So drafting from the timeline alone finds nothing for the ordinary flow: scan someone, type
+> what you discussed, open their page next morning. Both stores must be read. Same family as
+> `Folder.eventId` being null in practice: correct code made unreachable by where the data actually
+> lands. `eventTitle` needs the folder-name fallback for exactly that reason.
+
+> **THE DRAFT FIELD ALLOWLIST IS ENFORCED BY A FUNCTION, NOT REMEMBERED AT CALL SITES.**
+> `selectDraftFields()` returns only `personName`, `company`, `role`, `headline`, `eventTitle`,
+> `metAt`, `notes`. This is the most privacy-sensitive call in the app — one person's private notes
+> about a named third party — so a later field addition cannot silently start leaking. `DraftMaterial`
+> is a `type` rather than an `interface` so selected material can be re-fed through the allowlist
+> without a cast, because **a cast at a redaction boundary is what stops being checked.**
+
+> **MCP v2 USES A SCOPED PAT, NOT OAUTH, AND THE ARGUMENT IS TESTABILITY.** The spec makes
+> authorization OPTIONAL and conformance a SHOULD; conforming means being a full OAuth 2.1 AS
+> (RFC 9728/8414 metadata, 7591 DCR, `/authorize`, `/token` with PKCE, refresh rotation) whose only
+> failure mode is a browser redirect dance — and no dev server could be started, so none of it could
+> have been exercised. **Untested OAuth in front of a private contact list is worse than tested
+> bearer auth in front of it.** Cost, stated on `/mcp`: anything reading an `mcp.json` (Claude Code,
+> Desktop, Cursor, VS Code) gets all 8 tools; the claude.ai connector directory drives OAuth and
+> offers no header field, so it gets the public 4.
+
+> **TOKEN REVOCATION IS A HARD DELETE — DELIBERATELY THE OPPOSITE OF SOFT-DELETE FOR EVENTS.** A
+> forgotten `deletedAt` arm on an event is a stale listing; on a credential it is **a revoked token
+> that still works.** Delete cannot be got wrong by omission. `expiresAt` is `required`, so "a token
+> that never dies" is not a state the collection can hold. SHA-256 rather than bcrypt because a KDF
+> slows *guessing* a low-entropy secret and there is no dictionary against 256 bits. The unique index
+> on `tokenHash` is NOT `sparse`, and the schema says why — the option has already misled twice here.
+
+> **BEARER + WILDCARD CORS IS SAFE, AND THE COUPLING IS THE PART TO REMEMBER.** CSRF exists because
+> browsers attach **ambient** credentials automatically; a bearer header is not ambient, and this
+> route reads no cookie at all, so ambient authority is structurally unreachable rather than merely
+> unused. Browsers **forbid** `Allow-Origin: *` together with `Allow-Credentials: true` — so anyone
+> adding the latter is forced to narrow the former, and **that combined change is exactly what would
+> let the session cookie flow here.** `Vary: Authorization` beside `no-store`. Also: a `my_` prefix
+> cannot express the personal/public split (`who_did_i_meet_at` breaks it) — the test asserts the two
+> sets are disjoint AND exhaustive.
+
+> **ONE THROTTLE IMPLEMENTATION: `lib/llm/throttle.ts`.** It was written three times in one day —
+> the tagger's, a copy in `draft-followup.ts` (correctly refusing to reach into a file it did not
+> own), and a third about to be written for microsites. `isRateLimited` is shared outright because it
+> describes what ICA does, not what a caller wants. The **CAP is a required parameter**, because 20s
+> is right for a batch on a runner with hundreds queued behind it and wrong where a person is
+> watching a spinner. `random` is injectable so jittered backoff is testable arithmetically rather
+> than statistically.
+
+> **A FUNCTION THAT ACCEPTS `now` AND IGNORES IT IS WORSE THAN ONE THAT DOES NOT ACCEPT IT.**
+> `tests/reminders.test.ts` went red overnight with no code change — `Today:` became
+> `Thu, 10 Sept:` when the date rolled over. `formatReminderEmail` accepted a `now` and threaded it
+> carefully, then called `dayHeading(start)`, which asked `new Date()`. **Production was right by
+> luck**: a reminder sends the morning of the event, so the two clocks agreed. Any caller not sharing
+> that accident — a preview, a digest for another day, a backfill, a test — got the wrong word.
+> `todayKeyIST`, `dayKeyOffsetIST` and `dayHeading` now take the clock as a defaulted argument. Fixed
+> by making the injection real, **not** by rewriting the assertion.
+
+**Verified as a whole:** `tsc --noEmit` exit 0 run bare, `npm run lint` 0 errors, **1596 tests across
+46 suites**, production build clean with 88 static pages, `npm audit` 0 vulnerabilities.
+
+**Not built / not verified:** the retag itself (needs a decision — see the `--all` note above);
+`Event.extraction { text, model, fingerprint, extractedAt }`, so an extracted candidate's source text
+is auditable — the fingerprint is in `sourceEventId` but the text is not stored; **the submissions
+panel cannot EDIT**, only approve or reject, which is the strongest argument for keeping the LLM half
+disabled (the OSI row would enter the feed titled "Open Source India | India's #1 Open Source Event");
+`includeDecided=true` filters on `createdByUserId: {$exists: true}` so a decided *microsite*
+submission appears in neither queue view. No live HTTP anywhere in this batch — `diag-api-auth.ts`
+has still never run against the admin, people, MCP, digest, reminders or draft routes, and
+`node scripts/start-verify.js --dev --port 3201` is the isolated way to do it (own `distDir`, so it
+does not disturb a session holding port 3000).
