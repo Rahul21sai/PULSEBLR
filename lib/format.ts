@@ -101,14 +101,34 @@ export function fullDateIST(date: Date | string): string {
   return fullDateFormatter.format(new Date(date));
 }
 
+/*
+ * ── THE CLOCK IS AN ARGUMENT, AND THAT IS NOT A CONVENIENCE ─────────────────────────────────
+ *
+ * These three read "now" to decide whether a date is Today or Tomorrow. Reading it from the
+ * ambient clock made `dayHeading` UNTESTABLE for exactly the property that matters, and it did
+ * so silently: `formatReminderEmail` already accepted a `now` and threaded it carefully through
+ * its own logic, then called `dayHeading(start)`, which ignored it and asked `new Date()`.
+ *
+ * That is worse than not accepting `now` at all, because the signature invites a caller to
+ * believe the injection works. Measured when the date rolled over mid-session: the reminder
+ * suite's subject assertion went from `Today: BLR Kubernetes Meetup` to
+ * `Thu, 10 Sept: BLR Kubernetes Meetup` overnight, with no code change — a test that passed
+ * only on the day it was written, and a green CI that would have turned red at midnight IST.
+ *
+ * Production was correct by luck rather than by design: a reminder is sent the morning of the
+ * event, so the real clock and the intended clock agreed. Any caller that does not share that
+ * accident — a preview, a digest generated for another day, a backfill, a test — got the wrong
+ * word. Defaulted so every existing call site is unchanged.
+ */
+
 /** Today's IST day key. */
-export function todayKeyIST(): string {
-  return dayKeyIST(new Date());
+export function todayKeyIST(now: Date = new Date()): string {
+  return dayKeyIST(now);
 }
 
-/** IST day key N days from today. */
-export function dayKeyOffsetIST(offsetDays: number): string {
-  return dayKeyIST(new Date(Date.now() + offsetDays * 24 * 3600 * 1000));
+/** IST day key N days from `now`. */
+export function dayKeyOffsetIST(offsetDays: number, now: Date = new Date()): string {
+  return dayKeyIST(new Date(now.getTime() + offsetDays * 24 * 3600 * 1000));
 }
 
 /**
@@ -119,13 +139,13 @@ export function dayKeyOffsetIST(offsetDays: number): string {
  * a January 2027 event rendered as "Sat, 25 Jan" and read as a past date sitting
  * oddly in the middle of the feed.
  */
-export function dayHeading(date: Date | string): string {
+export function dayHeading(date: Date | string, now: Date = new Date()): string {
   const key = dayKeyIST(date);
-  if (key === todayKeyIST()) return 'Today';
-  if (key === dayKeyOffsetIST(1)) return 'Tomorrow';
+  if (key === todayKeyIST(now)) return 'Today';
+  if (key === dayKeyOffsetIST(1, now)) return 'Tomorrow';
 
   const year = key.slice(0, 4);
-  const currentYear = todayKeyIST().slice(0, 4);
+  const currentYear = todayKeyIST(now).slice(0, 4);
   return year === currentYear ? dayLabelIST(date) : `${dayLabelIST(date)} ${year}`;
 }
 

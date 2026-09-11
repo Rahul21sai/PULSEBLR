@@ -336,8 +336,11 @@ export interface ReminderEmail {
  * about which day an event is on. The failure this avoids is an email saying "tomorrow" about
  * something the app lists as today.
  */
-function whenLabel(start: Date | string): string {
-  return `${dayHeading(start)} · ${timeIST(start)}`;
+function whenLabel(start: Date | string, now: Date): string {
+  // `now` is THREADED, not defaulted, and the parameter is required on purpose: this function
+  // exists inside a formatter that already takes an explicit clock, and letting it fall back to
+  // the ambient one is precisely the bug this signature closes. See the note in `lib/format.ts`.
+  return `${dayHeading(start, now)} · ${timeIST(start)}`;
 }
 
 function whereLabel(event: ReminderEventView): string {
@@ -372,7 +375,7 @@ export function formatReminderEmail(input: {
 
   const subject =
     events.length === 1
-      ? `${dayHeading(events[0].startDateTime)}: ${events[0].title}`
+      ? `${dayHeading(events[0].startDateTime, now)}: ${events[0].title}`
       : `${events.length} saved events coming up`;
 
   const eventUrl = (event: ReminderEventView) => `${base}/events/${event.id}`;
@@ -381,7 +384,7 @@ export function formatReminderEmail(input: {
   const lines: string[] = [lede, ''];
   for (const event of events) {
     lines.push(`• ${event.title}`);
-    lines.push(`  ${whenLabel(event.startDateTime)} · ${whereLabel(event)}`);
+    lines.push(`  ${whenLabel(event.startDateTime, now)} · ${whereLabel(event)}`);
     lines.push(`  ${event.applyLink || eventUrl(event)}`);
     lines.push('');
   }
@@ -401,7 +404,7 @@ export function formatReminderEmail(input: {
       <div class="title"><a href="${escapeHtml(eventUrl(event))}">${escapeHtml(
         event.title
       )}</a></div>
-      <div class="meta">${escapeHtml(whenLabel(event.startDateTime))}</div>
+      <div class="meta">${escapeHtml(whenLabel(event.startDateTime, now))}</div>
       <div class="meta">${escapeHtml(whereLabel(event))}</div>
     </div>`
     )
@@ -436,7 +439,7 @@ ${cards}
     <p><a href="${escapeHtml(
       unsubscribeUrl
     )}">Stop these reminders</a> — one tap, no sign-in needed.</p>
-    <p>${escapeHtml(dayHeading(now))} · PulseBLR, Bengaluru</p>
+    <p>${escapeHtml(dayHeading(now, now))} · PulseBLR, Bengaluru</p>
   </div>
 </body>
 </html>`;

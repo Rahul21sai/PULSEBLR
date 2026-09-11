@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import AppShell from '../../components/AppShell';
 import Sheet from '../../components/Sheet';
 import MergeSheet from '../MergeSheet';
-import { useTagVocabulary } from '../../components/scan/ContactFields';
+import { TAP_44, useTagVocabulary } from '../../components/scan/ContactFields';
 import {
   Banner,
   Button,
@@ -15,6 +15,7 @@ import {
   PageHeader,
   SectionTitle,
   Skeleton,
+  Well,
 } from '../../components/ui';
 import { dayHeading, fullDateIST, relativeTime, shortDateIST } from '@/lib/format';
 import {
@@ -65,6 +66,15 @@ interface Payload {
   suggestions: MergeSuggestion[];
 }
 
+/**
+ * The note textarea's id, shared with the draft sheet.
+ *
+ * A constant rather than a literal in two places: the sheet's "Add a note" button is the ONLY exit
+ * from its blocked state, and a button that silently fails to find its target reads as a button that
+ * does nothing.
+ */
+const NOTE_FIELD_ID = 'person-note-draft';
+
 /** Follow-up offsets. Deliberately few — the point is one tap, not a date picker. */
 const SNOOZE_CHOICES: Array<{ label: string; days: number }> = [
   { label: 'Tomorrow', days: 1 },
@@ -98,6 +108,7 @@ export default function PersonDetailClient({ id }: { id: string }) {
 
   const [noteDraft, setNoteDraft] = useState('');
   const [editing, setEditing] = useState(false);
+  const [drafting, setDrafting] = useState(false);
   const [mergePairs, setMergePairs] = useState<MergePair[]>([]);
   const [mergeOpen, setMergeOpen] = useState(false);
 
@@ -405,6 +416,24 @@ export default function PersonDetailClient({ id }: { id: string }) {
                   ? `${overdue ? 'Was due' : 'Due'} ${dayHeading(person.nextActionAt)} · ${relativeTime(person.nextActionAt)}`
                   : 'Nothing outstanding.'
               }
+              /*
+                DRAFTING LIVES HERE, NOT IN THE PAGE HEADER, because writing the message IS the
+                follow-up — the header already carries LinkedIn / Message / Correct, and a fourth
+                control there would put four sub-44px targets in one row, which is the adjacency the
+                `TAP_44` note warns about. Alone in this slot it has 12px of clear space below it and
+                nothing beside it, so the overlay cannot contest a neighbour's band.
+              */
+              action={
+                <Button
+                  tone="quiet"
+                  icon="edit_note"
+                  disabled={busy}
+                  onClick={() => setDrafting(true)}
+                  className={TAP_44}
+                >
+                  Draft a follow-up
+                </Button>
+              }
             />
             {/*
               FOLLOW-UPS ARE STORED PER ENCOUNTER AND SHOWN PER PERSON, so the controls have to
@@ -454,6 +483,9 @@ export default function PersonDetailClient({ id }: { id: string }) {
               subtitle="Appended to the timeline. Nothing you wrote before is overwritten."
             />
             <textarea
+              /* Addressed by the draft sheet's "Add a note" button, which has to land the user in
+                 this field rather than merely closing itself and claiming to have helped. */
+              id={NOTE_FIELD_ID}
               value={noteDraft}
               onChange={e => setNoteDraft(e.target.value)}
               rows={3}
@@ -635,6 +667,24 @@ export default function PersonDetailClient({ id }: { id: string }) {
         />
       )}
 
+      {/*
+        MOUNTED ONLY WHILE OPEN, for the reason the edit sheet above records — and for one more here:
+        the sheet fetches what a draft would be written from when it mounts, so a fresh mount is what
+        guarantees the disclosure describes the note as it is NOW rather than as it was when the page
+        loaded. A note added in the meantime would otherwise be missing from a screen whose whole job
+        is to say what will be sent.
+      */}
+      {drafting && (
+        <DraftFollowupSheet
+          personId={id}
+          personName={person.displayName}
+          linkedin={details.linkedin}
+          email={details.email}
+          onClose={() => setDrafting(false)}
+          onOpenedChannel={() => void patch({ messageSent: true }, 'Logged that you reached out.')}
+        />
+      )}
+
       <MergeSheet
         open={mergeOpen}
         pairs={mergePairs}
@@ -681,6 +731,397 @@ function DetailRow({
         )}
       </dd>
     </div>
+  );
+}
+
+/**
+ * Draft the day-after follow-up: prose written from the note you took, always editable, never sent.
+ *
+ * ═════════════════════════════════════════════════════════════════════════════════════════════════
+ * THE DISCLOSURE IS THE FIRST SCREEN, NOT A FOOTNOTE, AND THAT IS THE DESIGN.
+ *
+ * The material is one person's private notes about a named third party. Somebody who wrote "seemed
+ * unhappy at his job" has to know that leaves the machine BEFORE it does — a notice shown next to a
+ * finished draft is not a disclosure, it is an apology. So the sheet opens on the note itself,
+ * quoted, under a sentence that says where it is going and, more usefully, what is NOT going with it.
+ *
+ * NAMING THE EXCLUSIONS IS THE PART THAT EARNS TRUST. "Sent to a model" is a phrase people have
+ * learned to skim. "Their email, phone and your private tags stay here" is a specific, checkable
+ * claim — and it is true by construction: `DRAFT_FIELDS` in `lib/llm/draft-followup.ts` is the whole
+ * allowlist and `tests/draft-followup.test.ts` asserts against the bytes handed to `fetch`.
+ *
+ * THE PREVIEW IS FETCHED, NOT COMPUTED HERE. `GET /api/people/[id]/draft` returns exactly what the
+ * POST will send. This page already holds the timeline and the captures and could have merged them
+ * locally in about eight lines — and then the screen promising what will be sent and the handler
+ * deciding it would be two definitions free to drift, which is how `/events/[id]`'s `WorthGoing`
+ * panel ended up explaining a penalty it no longer applied.
+ *
+ * WHEN IT FAILS THERE IS NO TEMPLATE. There is no keyword floor for prose: "Hi <name>, great meeting
+ * you at <event>" is not a degraded draft, it is a worse product wearing the same label, and the user
+ * cannot tell which one they got. The failure screen says the drafting service is unavailable and
+ * hands back the note verbatim to copy. Their own words are the honest fallback.
+ * ═════════════════════════════════════════════════════════════════════════════════════════════════
+ */
+function DraftFollowupSheet({
+  personId,
+  personName,
+  linkedin,
+  email,
+  onClose,
+  onOpenedChannel,
+}: {
+  personId: string;
+  personName: string;
+  linkedin: string | null;
+  email: string | null;
+  onClose: () => void;
+  onOpenedChannel: () => void;
+}) {
+  type Phase = 'loading' | 'preflight' | 'blocked' | 'drafting' | 'drafted' | 'failed';
+
+  const [phase, setPhase] = useState<Phase>('loading');
+  const [notes, setNotes] = useState<string[]>([]);
+  const [eventTitle, setEventTitle] = useState<string | null>(null);
+  const [draft, setDraft] = useState('');
+  const [message, setMessage] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  /** What a draft would be written from. No model call, so opening the sheet costs nothing. */
+  useEffect(() => {
+    let live = true;
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/people/${personId}/draft`);
+        const payload = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+        if (!live) return;
+        if (!res.ok) {
+          setMessage(
+            typeof payload.error === 'string'
+              ? payload.error
+              : 'Could not read what a draft would use.'
+          );
+          setPhase('failed');
+          return;
+        }
+        setNotes(Array.isArray(payload.notes) ? (payload.notes as string[]) : []);
+        setEventTitle(typeof payload.eventTitle === 'string' ? payload.eventTitle : null);
+        // `canDraft: false` is a successful answer to "what would you send" — nothing. It gets its own
+        // screen with a real next step rather than an error, because the fix is the user's to make.
+        setPhase(payload.canDraft ? 'preflight' : 'blocked');
+      } catch {
+        if (!live) return;
+        setMessage('Could not reach the server. Nothing was sent.');
+        setPhase('failed');
+      }
+    }, 0);
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
+  }, [personId]);
+
+  const requestDraft = useCallback(async () => {
+    setPhase('drafting');
+    setMessage(null);
+    setCopied(false);
+    try {
+      const res = await fetch(`/api/people/${personId}/draft`, { method: 'POST' });
+      const payload = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+      if (Array.isArray(payload.notes)) setNotes(payload.notes as string[]);
+      if (!res.ok || typeof payload.draft !== 'string') {
+        setMessage(
+          typeof payload.error === 'string'
+            ? payload.error
+            : `Drafting failed (${res.status}). Your note is below.`
+        );
+        // A missing note is not an outage. The two screens differ because the next steps do.
+        setPhase(payload.code === 'no-note' || payload.code === 'no-name' ? 'blocked' : 'failed');
+        return;
+      }
+      setDraft(payload.draft);
+      setPhase('drafted');
+    } catch {
+      setMessage('Could not reach the drafting service. Your note is below; nothing was lost.');
+      setPhase('failed');
+    }
+  }, [personId]);
+
+  /**
+   * Copy, without awaiting inside the click handler where a window is also being opened.
+   *
+   * `writeText` rejects once the document loses focus, and a popup blocker drops a window opened
+   * after an `await`. Both constraints are satisfied by STARTING the write synchronously and awaiting
+   * the promise afterwards, which is why this takes a promise rather than the text.
+   */
+  const settleCopy = useCallback(async (pending: Promise<void> | undefined) => {
+    if (!pending) {
+      setMessage('This browser will not let a page write to the clipboard. Select the text instead.');
+      return;
+    }
+    try {
+      await pending;
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2500);
+    } catch {
+      setMessage('The clipboard was blocked. Select the text and copy it by hand.');
+    }
+  }, []);
+
+  const firstName = personName.trim().split(/\s+/)[0] || personName;
+
+  /**
+   * ONE ACTION THAT ACTUALLY COMPLETES THE JOB.
+   *
+   * LinkedIn cannot be pre-filled, so a bare "Open LinkedIn" leaves the draft behind and the user
+   * retypes it. Copy-then-open is the whole move, in that order for the focus and popup reasons
+   * above. Email CAN be pre-filled, so there the draft travels in the `mailto:` body and no copy is
+   * needed — a different action for a different channel rather than one compromise for both.
+   *
+   * Opening the channel is also what logs `message-sent`, matching the existing Message button in the
+   * page header. That row is what moves `lastInteractionAt`, which is what makes "who have I gone
+   * quiet on" answerable — the reason the whole timeline exists.
+   */
+  function openChannel() {
+    if (linkedin) {
+      const pending = navigator.clipboard?.writeText(draft);
+      window.open(linkedin, '_blank', 'noopener,noreferrer');
+      onOpenedChannel();
+      void settleCopy(pending);
+      return;
+    }
+    if (email) {
+      const subject = eventTitle ? `Following up from ${eventTitle}` : 'Following up';
+      window.open(
+        `mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(draft)}`,
+        '_blank',
+        'noopener,noreferrer'
+      );
+      onOpenedChannel();
+    }
+  }
+
+  const channelLabel = linkedin ? 'Copy & open LinkedIn' : 'Open in email';
+  const hasChannel = Boolean(linkedin || email);
+
+  return (
+    <Sheet
+      open
+      onClose={onClose}
+      labelledBy="draft-followup-title"
+      title={`Follow up with ${firstName}`}
+      subtitle={eventTitle ? `From ${eventTitle}` : 'From what you wrote down'}
+      footer={
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          {phase === 'drafted' && (
+            <>
+              <Button tone="quiet" icon="refresh" onClick={() => void requestDraft()}>
+                Draft again
+              </Button>
+              <Button
+                tone="quiet"
+                icon={copied ? 'check' : 'content_copy'}
+                onClick={() => void settleCopy(navigator.clipboard?.writeText(draft))}
+              >
+                {copied ? 'Copied' : 'Copy'}
+              </Button>
+              {hasChannel && (
+                <Button tone="primary" icon="send" onClick={openChannel}>
+                  {channelLabel}
+                </Button>
+              )}
+            </>
+          )}
+
+          {phase === 'preflight' && (
+            <>
+              <Button tone="quiet" onClick={onClose}>
+                Cancel
+              </Button>
+              <Button tone="primary" icon="edit_note" onClick={() => void requestDraft()}>
+                Write the draft
+              </Button>
+            </>
+          )}
+
+          {phase === 'drafting' && (
+            <Button tone="primary" disabled>
+              Writing…
+            </Button>
+          )}
+
+          {phase === 'failed' && (
+            <>
+              <Button
+                tone="quiet"
+                icon={copied ? 'check' : 'content_copy'}
+                disabled={notes.length === 0}
+                onClick={() => void settleCopy(navigator.clipboard?.writeText(notes.join('\n\n')))}
+              >
+                {copied ? 'Copied' : 'Copy my note'}
+              </Button>
+              <Button tone="primary" icon="refresh" onClick={() => void requestDraft()}>
+                Try again
+              </Button>
+            </>
+          )}
+
+          {phase === 'blocked' && (
+            <Button
+              tone="primary"
+              icon="add"
+              onClick={() => {
+                onClose();
+                /*
+                 * AFTER the close, deliberately. `Sheet` restores focus to whatever was focused
+                 * before it opened as part of its unmount cleanup, so focusing the field from inside
+                 * this handler would be undone a moment later. Deferred by a tick so the restore
+                 * happens first and this wins.
+                 */
+                setTimeout(() => {
+                  const field = document.getElementById(NOTE_FIELD_ID);
+                  field?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+                  field?.focus();
+                }, 0);
+              }}
+            >
+              Add a note
+            </Button>
+          )}
+        </div>
+      }
+    >
+      <div className="flex flex-col gap-4">
+        {phase === 'loading' && (
+          <>
+            <Skeleton className="h-4 w-2/3" />
+            <Skeleton className="h-20 w-full" />
+          </>
+        )}
+
+        {(phase === 'preflight' || phase === 'drafting') && (
+          <>
+            <div>
+              <p className="text-[13.5px] leading-relaxed text-[#1D1D1F]">
+                {notes.length === 1 ? 'This is the note' : 'These are the notes'} the draft will be
+                written from.
+              </p>
+              <div className="mt-2 flex flex-col gap-2">
+                {notes.map((note, index) => (
+                  <Well key={index}>
+                    <span className="whitespace-pre-wrap">{note}</span>
+                  </Well>
+                ))}
+              </div>
+            </div>
+
+            {/*
+              THE DISCLOSURE. Named exclusions rather than a generic reassurance — see the header. The
+              provider is spelled out because "a model" is a phrase people skim; if the cascade in
+              `lib/llm/draft-followup.ts` ever gains a second tier, this sentence is what changes with
+              it.
+            */}
+            <div className="flex items-start gap-2.5 border-t border-[color:var(--hairline)] pt-4">
+              <span
+                aria-hidden="true"
+                className="material-symbols-outlined mt-[1px] text-[18px] text-[#8E8E93]"
+              >
+                lock
+              </span>
+              <p className="text-[12.5px] leading-relaxed text-[#6E6E73]">
+                Sent to the drafting model (IBM-hosted Claude) along with {firstName}&apos;s name,
+                role, company and the event. Their email, phone, LinkedIn and your private tags stay
+                here. Nothing is sent anywhere until you press the button, and no message is ever sent
+                for you.
+              </p>
+            </div>
+          </>
+        )}
+
+        {phase === 'drafted' && (
+          <>
+            <div>
+              <label
+                htmlFor="draft-followup-text"
+                className="text-[13.5px] font-semibold text-[#1D1D1F]"
+              >
+                Your draft
+              </label>
+              <p className="mt-0.5 text-[12.5px] leading-relaxed text-[#6E6E73]">
+                Edit it. It is a first pass from your note, not a message from you yet — and nothing
+                sends until you do it yourself.
+              </p>
+              <textarea
+                id="draft-followup-text"
+                value={draft}
+                onChange={e => setDraft(e.target.value)}
+                rows={8}
+                maxLength={4000}
+                className="mt-2 w-full rounded-xl bg-[#F7F7F9] p-3.5 text-[14.5px] leading-relaxed text-[#1D1D1F] outline-none focus:shadow-[inset_0_0_0_2px_var(--blue)]"
+              />
+            </div>
+
+            {/* Provenance, kept on screen: the claim "written from your note" is checkable rather
+                than asserted, and it is also what you fall back to if the draft is wrong. */}
+            {notes.length > 0 && (
+              <div className="border-t border-[color:var(--hairline)] pt-4">
+                <p className="t-label text-[#8E8E93]">Written from</p>
+                <div className="mt-2 flex flex-col gap-2">
+                  {notes.map((note, index) => (
+                    <Well key={index}>
+                      <span className="whitespace-pre-wrap">{note}</span>
+                    </Well>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {message && <Banner tone="warn">{message}</Banner>}
+          </>
+        )}
+
+        {phase === 'failed' && (
+          <>
+            <Banner tone="error">
+              {message ?? 'Drafting is unavailable right now. Your note is below; nothing was lost.'}
+            </Banner>
+            {notes.length > 0 ? (
+              <div>
+                <p className="t-label text-[#8E8E93]">Your note, to send yourself</p>
+                <div className="mt-2 flex flex-col gap-2">
+                  {notes.map((note, index) => (
+                    <Well key={index}>
+                      <span className="whitespace-pre-wrap">{note}</span>
+                    </Well>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              /* NOT "there is no note" — this branch is also reached when the FETCH failed, in which
+                 case whether a note exists is exactly what we do not know. Asserting it would be a
+                 confident factual claim standing in for a broken request, the failure mode the
+                 calendar's "No events this month" already demonstrated on this codebase. */
+              <p className="text-[13px] text-[#6E6E73]">
+                Your note could not be loaded either. It is still on this page, further down.
+              </p>
+            )}
+          </>
+        )}
+
+        {phase === 'blocked' && (
+          <>
+            <p className="text-[14.5px] leading-relaxed text-[#1D1D1F]">
+              {message ??
+                'Add a note about what you talked about, then draft. A follow-up with nothing in it is worse than none.'}
+            </p>
+            <p className="text-[12.5px] leading-relaxed text-[#6E6E73]">
+              A message written from an empty record can only say &ldquo;great to meet you&rdquo; —
+              which needs no model and tells {firstName} nothing. Two lines about what you actually
+              discussed is all it takes. The note field is on this page, just below.
+            </p>
+          </>
+        )}
+      </div>
+    </Sheet>
   );
 }
 
