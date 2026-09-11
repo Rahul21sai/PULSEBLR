@@ -64,6 +64,16 @@ import { scrapeHasgeek } from './adapters/hasgeek';
 import { scrapeFossUnited } from './adapters/fossunited';
 import { scrapeDistrict, DISTRICT_SOURCE_URL } from './adapters/district';
 import { scrapeUrlUniversal, COMPANY_EVENT_PAGES } from './adapters/universal';
+import {
+  scrapeMicrosites,
+  candidateToRawEvent,
+  fingerprintSourceEventId,
+  fingerprintFromSourceEventId,
+  FINGERPRINT_PREFIX,
+  MICROSITE_WATCHLIST,
+  DEFAULT_MAX_EXTRACTIONS,
+  type MicrositeCandidate,
+} from './adapters/microsite';
 import { offCityReason } from './core/geo';
 import { normalizeEvents } from './normalizer';
 import { ingestEvents, IngestionResult, updateSource } from './ingestion';
@@ -118,6 +128,28 @@ export interface PipelineOptions {
   includeEventbrite?: boolean;
   /** Include the company-page sweep via the universal adapter. */
   includeCompanyPages?: boolean;
+  /**
+   * Run the company-MICROSITE pass: render a hand-curated watchlist and, where no cheaper path
+   * answers, read the rendered text with a frontier model and land the result as
+   * `visibility: 'pending'` for human review.
+   *
+   * ── OFF BY DEFAULT, AND FOR THREE INDEPENDENT REASONS ──────────────────────────────────────
+   *
+   *  1. IT NEEDS A BROWSER. Same constraint as `renderCappedGroups` and the same consequence:
+   *     `app/api/scrape/route.ts` imports this module into a Vercel function that cannot run
+   *     Chromium. Only `scripts/scrape.ts` on a GitHub runner may turn it on.
+   *  2. IT SPENDS A FRONTIER MODEL PER CHANGED PAGE. ICA is the only working tier and it is
+   *     shared, so this is the one stage in the pipeline whose cost is not a fetch.
+   *  3. IT PRODUCES WORK FOR A HUMAN. Every candidate is a row somebody has to judge in
+   *     `/admin` → Submissions. A stage that fills a review queue must be turned on by the
+   *     person who will empty it.
+   *
+   * WHAT IT MAY AND MAY NOT WRITE. The JSON-LD half of the pass produces ordinary scraped events
+   * that join the public path like any other source. The LLM half may ONLY ever write
+   * `visibility: 'pending'` rows — see `landMicrositeCandidates`, which is the only writer and
+   * hard-codes it. That separation is the entire reason the LLM path is permissible at all.
+   */
+  micrositeCandidates?: boolean;
   /** Delete events that stopped appearing and are now in the past. */
   prune?: boolean;
   /**
@@ -225,6 +257,17 @@ export interface PipelineResult {
   gates: GateBreakdown;
   /** What the Meetup ICS ceiling cost this run, and what the second pass recovered. */
   meetupTruncation: MeetupTruncationReport;
+  /**
+   * The company-microsite pass. `micrositeCandidates` now gates only the RENDER + LLM half, which
+   * is still off by default; the JSON-LD and platform-detection halves run whenever the stage is
+   * selected, because they cost one HTTP request per page and deliver GIDS and Bengaluru Tech
+   * Summit. `structuredEvents` is therefore non-zero on an ordinary run and `created` is not.
+   *
+   * Reported as a first-class section rather than folded into `sources`, because it is the only
+   * stage that produces rows a reader cannot see — a count of pending candidates belongs beside
+   * the review queue that has to absorb them, not inside a list of feeds.
+   */
+  microsite: MicrositeReport;
   /** Sources not fetched tonight because they are on a weekly/monthly cadence. */
   backoff: { skipped: number; weekly: number; monthly: number; sources: SkippedSource[] };
   pruned: number;
@@ -375,6 +418,10 @@ export const DEFAULTS: Required<PipelineOptions> = {
   renderCappedGroups: false,
   includeEventbrite: true,
   includeCompanyPages: true,
+  // OFF. Needs a browser, spends a frontier model, and creates a review queue somebody has to
+  // work through. See the option's own docblock for why each of those alone is disqualifying as a
+  // default.
+  micrositeCandidates: false,
   prune: true,
   onlySources: [],
   ignoreBackoff: false,
@@ -652,6 +699,242 @@ async function loadRenderer(enabled: boolean): Promise<RendererHandle> {
       }`
     );
     return NO_RENDERER;
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// COMPANY MICROSITES — the pending-candidate landing path.
+//
+// ═════════════════════════════════════════════════════════════════════════════════════════════
+// THIS IS THE ONLY WRITER OF MICROSITE ROWS, AND IT HARD-CODES `visibility: 'pending'`.
+//
+// An LLM reading a marketing page is allowed to produce an event here for exactly one reason: it
+// cannot reach a reader without a human approving it. So the stamp is not a parameter, not a
+// default, and not derived from anything — it is a literal, in one function, and everything below
+// is about making sure nothing else can undo it.
+//
+// ── WHY THE DEDUP KEYS ARE NAMESPACED, WHICH IS THE PART THAT LOOKS LIKE OVER-ENGINEERING ────
+//
+// `clusterKey` is normalised title + IST day with no source in it, and `ingestEvents`' three
+// lookups are all scoped by `SCRAPED_ONLY = { createdByUserId: { $exists: false } }`. A microsite
+// candidate has NO owner — no user typed it in — so it satisfies that scope, and `mergeInto`'s
+// guard (`if (existing.createdByUserId) return false`) does not fire for it either.
+//
+// So an un-namespaced pending row is not a duplicate-card risk, it is SILENT LOSS of a public
+// event: the scraper later finds the same conference on Luma, the cluster lookup finds the pending
+// row FIRST, `mergeInto` fills it, `Event.create` is never reached, and the run counts a
+// successful merge. The real event then exists only as a row nobody but an admin can see, and
+// nothing reports an error. That is precisely the failure `Event.generateClusterKey`'s own docblock
+// describes for hand-entered events, arriving from the one direction its `createdByUserId` guards
+// cannot see.
+//
+// The fix is the same one that file chose, for the same stated reason — a namespaced key makes the
+// row STRUCTURALLY incapable of entering a scraped cluster, so a fourth lookup written next year
+// inherits the protection instead of having to remember a rule. `generateDedupHash`'s fifth
+// parameter is documented as an owner id; it is a hash input, and the namespace is what an owner id
+// IS here.
+//
+// THE COST, STATED PLAINLY, AND IT IS THE SAME TRADE: an APPROVED microsite event keeps its
+// namespaced key, so if the scraper later finds the same event the city gets two cards. A visible
+// duplicate rather than invisible loss — the right way round, and review is exactly where somebody
+// notices the event is already in the corpus and rejects it.
+//
+// ── WHAT HAPPENS ON A SECOND NIGHT ───────────────────────────────────────────────────────────
+//
+// The namespaced `dedupHash` is stable across runs for the same page + title + start, so a page
+// whose text changed but whose event did not resolves to the SAME row. Three outcomes, and the
+// third is the one that matters:
+//
+//   · no row        → create it, pending.
+//   · pending row   → refresh the fingerprint and `lastSeenAt`. The reviewer sees one item, not
+//                     one per night.
+//   · DECIDED row   → leave it completely alone. Approved (`visibility` absent) or rejected
+//                     (`'private'`), a decision has been made, and re-creating a rejected
+//                     candidate every night is how a review queue becomes something nobody opens.
+//                     This is also why the lookup cannot be `{ dedupHash, visibility: 'pending' }`:
+//                     it has to be able to SEE a decided row in order to respect it.
+// ═════════════════════════════════════════════════════════════════════════════════════════════
+
+export interface MicrositeReport {
+  /** Pages in the watchlist that were attempted. */
+  pages: number;
+  /** How each page resolved, keyed by `MicrositeVia`. */
+  via: Record<string, number>;
+  /** Upcoming events the free JSON-LD path produced. These joined the PUBLIC path. */
+  structuredEvents: number;
+  /** Model rows accepted by the strict validator. */
+  candidates: number;
+  /** Model rows refused, by reason. The number that says whether to trust this stage. */
+  rejections: Record<string, number>;
+  /** Accepted rows dropped as not-Bengaluru. */
+  offCity: number;
+  /** Pending rows created, refreshed, and left alone because they were already decided. */
+  created: number;
+  refreshed: number;
+  alreadyDecided: number;
+  /** Platform handles found, worth registering as exact sources. */
+  platformsFound: number;
+  errors: string[];
+}
+
+export const EMPTY_MICROSITE_REPORT: MicrositeReport = {
+  pages: 0,
+  via: {},
+  structuredEvents: 0,
+  candidates: 0,
+  rejections: {},
+  offCity: 0,
+  created: 0,
+  refreshed: 0,
+  alreadyDecided: 0,
+  platformsFound: 0,
+  errors: [],
+};
+
+/**
+ * The namespace folded into both dedup keys. One per watchlist URL.
+ *
+ * Per-URL rather than one flat `'microsite'`, so two pages announcing the same conference produce
+ * two reviewable rows rather than one silently overwriting the other — the reviewer can then see
+ * both and reject the weaker extraction.
+ */
+function micrositeNamespace(pageUrl: string): string {
+  return `microsite:${pageUrl}`;
+}
+
+/**
+ * What this page yielded last time, so the model only reads pages that changed.
+ *
+ * Reads the fingerprint back off `sourceEventId`, which is where the landing path put it. That is
+ * the whole state store: no new collection, no new field, and the version that produced a row
+ * sits on the row itself, so a bad extraction can be re-run against the same input.
+ *
+ * `{ deletedAt: null }` and NOT `$exists` — the predicate has to match a null field and an absent
+ * one, and getting it backwards here would make every page look unchanged and the stage do nothing.
+ */
+async function loadMicrositeFingerprints(urls: string[]): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
+  if (urls.length === 0) return map;
+  try {
+    await connectDB();
+    const rows = await Event.find({
+      source: 'company',
+      sourceEventId: { $regex: `^${FINGERPRINT_PREFIX}` },
+      clusterKey: { $in: urls.map(url => new RegExp(`^${escapeRegex(micrositeNamespace(url))}\\|`)) },
+      deletedAt: null,
+    })
+      .select('clusterKey sourceEventId')
+      .lean<Array<{ clusterKey: string; sourceEventId?: string }>>();
+
+    for (const url of urls) {
+      const prefix = `${micrositeNamespace(url)}|`;
+      // Most recent wins is not expressible without a sort, and it does not need to be: any row
+      // from this page carries a fingerprint of a version we already extracted, and a MISMATCH is
+      // what triggers a re-read. Being conservative in the wrong direction here costs one model
+      // call, not a wrong event.
+      const row = rows.find(r => r.clusterKey?.startsWith(prefix));
+      const fingerprint = fingerprintFromSourceEventId(row?.sourceEventId);
+      if (fingerprint) map.set(url, fingerprint);
+    }
+  } catch (error) {
+    // Fails OPEN: with no history every page looks changed, so the stage does more work rather
+    // than less. The opposite failure — treating a database error as "nothing changed" — would
+    // make the stage silently stop producing candidates while reporting success.
+    console.warn(
+      `  ! could not read microsite fingerprints, treating every page as changed: ${
+        error instanceof Error ? error.message : String(error)
+      }`
+    );
+  }
+  return map;
+}
+
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Land extracted candidates as pending submissions.
+ *
+ * `normalizeEvents` is reused rather than hand-assembling a document, because it is what derives
+ * `area`, `companies`, `connectionScore`, `audience`/`perks`/`tier`, the slug and the base dedup
+ * keys — and a copy of that would be a second definition of every one. It maps input index to
+ * output index, which is how each normalised row is paired back to the candidate it came from.
+ *
+ * Never throws. Each row is written inside its own try/catch: one validation failure must not cost
+ * the others, and none of it may cost the scrape.
+ */
+async function landMicrositeCandidates(
+  candidates: MicrositeCandidate[],
+  report: MicrositeReport
+): Promise<void> {
+  if (candidates.length === 0) return;
+  await connectDB();
+
+  const normalized = await normalizeEvents(candidates.map(candidateToRawEvent));
+
+  for (const [index, doc] of normalized.entries()) {
+    const candidate = candidates[index];
+    if (!candidate) continue;
+    try {
+      const namespace = micrositeNamespace(candidate.url);
+      const dedupHash = Event.generateDedupHash(
+        doc.title,
+        doc.startDateTime,
+        doc.venue,
+        doc.source,
+        namespace
+      );
+      // Namespaced by PREFIX rather than through `generateClusterKey`'s owner slot, which would
+      // stamp a literal `user:` on a row no user owns. Same structural guarantee, honest label.
+      const clusterKey = `${namespace}|${doc.clusterKey}`;
+
+      const existing = await Event.findOne({ dedupHash });
+      if (existing) {
+        if (existing.visibility !== 'pending') {
+          // Approved or rejected. A decision stands.
+          report.alreadyDecided++;
+          continue;
+        }
+        existing.sourceEventId = fingerprintSourceEventId(candidate.fingerprint);
+        existing.lastSeenAt = new Date();
+        existing.description = doc.description;
+        existing.startDateTime = doc.startDateTime;
+        if (doc.endDateTime) existing.endDateTime = doc.endDateTime;
+        if (doc.venue) existing.venue = doc.venue;
+        if (doc.address) existing.address = doc.address;
+        await existing.save();
+        report.refreshed++;
+        continue;
+      }
+
+      await Event.create({
+        ...doc,
+        dedupHash,
+        clusterKey,
+        sourceEventId: fingerprintSourceEventId(candidate.fingerprint),
+        // THE LITERAL. Not a variable, not a default, not derived. An extracted event may only
+        // ever exist as something awaiting review.
+        visibility: 'pending',
+        // NO `createdByUserId`. Nobody typed this in, so claiming an owner would be a lie — and it
+        // would put the row in `pruneStale`'s permanent-keep set, so an un-reviewed candidate for
+        // an event that has already happened would sit in the queue forever. Left unowned, it is
+        // cleaned up seven days after the event's own date, which is the correct lifetime for a
+        // candidate nobody judged. The submissions route renders `submitter: null` for it, a case
+        // it already handles.
+      });
+      report.created++;
+    } catch (error) {
+      const err = error as { code?: number; message?: string };
+      if (err.code === 11000) {
+        // A namespaced key collided, which means a concurrent run already landed this row.
+        report.refreshed++;
+        continue;
+      }
+      report.errors.push(
+        `microsite candidate "${doc.title.slice(0, 60)}": ${err.message || String(error)}`
+      );
+    }
   }
 }
 
@@ -1289,6 +1572,129 @@ export async function runPipeline(options: PipelineOptions = {}): Promise<Pipeli
     });
   }
 
+  // ── 4b. Company MICROSITES ────────────────────────────────────────────────
+  //
+  // The one stage that can write a row a reader cannot see. Its own renderer, opened and closed
+  // here, because the Meetup renderer above is already closed by the time this runs and reopening
+  // is ~470 ms against a stage that spends tens of seconds per page anyway.
+  //
+  // ISOLATED HARDER THAN THE REST. Every other source is wrapped because it fetches; this one
+  // fetches, launches a browser, calls a model AND writes to Mongo, so the whole stage sits inside
+  // one try/catch and the renderer closes in a `finally`. An open Chromium holds the Node event
+  // loop, which turns a working scrape into a run that only ends when the runner's 45-minute
+  // timeout kills it.
+  /*
+   * ── THE CHEAP HALF RUNS BY DEFAULT; ONLY THE MODEL HALF OPTS IN ──────────────────────────
+   *
+   * This stage used to be gated whole, behind `micrositeCandidates: false`, on the premise that a
+   * company page yields nothing without a browser and a model. **That premise was measured on
+   * company marketing INDEX pages and is false for bespoke event MICROSITES**, which publish
+   * schema.org `Event` JSON-LD over plain HTTP because their organisers want Google's event rich
+   * results. Measured 2026-09-11: `developersummit.com` (GIDS 2027) and `bengalurutechsummit.com`
+   * (BTS 2026, BIEC) both resolve on step 1 — **one HTTP request each, no browser, no model.** Two
+   * of the city's largest flagships were being skipped because a flag protecting the expensive path
+   * also switched off the free one.
+   *
+   * So the gate is split. Step 1 (JSON-LD) and step 2 (platform detection, which feeds `Source` and
+   * is permanent supply) always run; step 3 (render + LLM) runs only when `micrositeCandidates` is
+   * set. The adapter needs no new flag for that — step 3 requires `opts.render` and reports
+   * `no-render` without it, so withholding the renderer IS the switch.
+   *
+   * The asymmetry in where the output lands is unchanged and is the safety argument: JSON-LD joins
+   * the PUBLIC path because the site published it and no model touched it, while every extracted
+   * row is quarantined as `pending` for a human.
+   */
+  const microsite: MicrositeReport = { ...EMPTY_MICROSITE_REPORT };
+  if (wants('microsites')) {
+    const llmExtraction = Boolean(opts.micrositeCandidates);
+    // Only launched when the model half is on. `loadRenderer(false)` returns the no-op handle, so
+    // `close()` and `describe()` stay safe to call unconditionally in the `finally`.
+    const renderer = await loadRenderer(llmExtraction);
+    try {
+      const entries = MICROSITE_WATCHLIST.filter(entry => isEnabled(entry.url));
+      microsite.pages = entries.length;
+      console.log(
+        `Microsites: ${entries.length} page(s) — JSON-LD joins the public feed; ` +
+          (llmExtraction
+            ? 'LLM extraction lands as PENDING review'
+            : 'LLM extraction OFF (pass --microsites-llm to arm it)')
+      );
+
+      const known = await loadMicrositeFingerprints(entries.map(entry => entry.url));
+      const outcome = await scrapeMicrosites({
+        entries,
+        // Withheld when the model half is off — this is the switch for step 3.
+        render: llmExtraction ? renderer.render : undefined,
+        knownFingerprints: known,
+        maxExtractions: llmExtraction ? DEFAULT_MAX_EXTRACTIONS : 0,
+        now: timestamp,
+      });
+
+      for (const pageReport of outcome.reports) {
+        microsite.via[pageReport.via] = (microsite.via[pageReport.via] ?? 0) + 1;
+        microsite.offCity += pageReport.offCity;
+        if (pageReport.platform) microsite.platformsFound++;
+        for (const [reason, count] of Object.entries(pageReport.rejections)) {
+          microsite.rejections[reason] = (microsite.rejections[reason] ?? 0) + count;
+        }
+      }
+      microsite.candidates = outcome.candidates.length;
+      microsite.errors.push(...outcome.errors);
+
+      /*
+       * The JSON-LD half joins the PUBLIC path, and that asymmetry is the whole design.
+       *
+       * These are schema.org `Event` nodes the site published itself — the same class of data
+       * `universal.ts` reads from `postman.com/events` — so there is no model in the chain and no
+       * reason to make a human approve them. Only the extracted rows are quarantined.
+       *
+       * `claim` charges them to a source id so the gate ledger can report what stage 5b and 5c did
+       * to them, exactly like every other source.
+       */
+      if (outcome.structuredEvents.length > 0) {
+        claim(
+          collector,
+          {
+            id: 'microsites',
+            label: 'Microsites — JSON-LD',
+            type: 'scrape',
+            url: 'https://pulseblr.local/microsites',
+          },
+          outcome.structuredEvents,
+          outcome.errors[0]
+        );
+        microsite.structuredEvents = outcome.structuredEvents.length;
+      }
+
+      if (outcome.discovered.length > 0) {
+        // A platform handle is permanent supply for one request a night, which is worth far more
+        // than any extraction — see the cascade note in the adapter.
+        collector.discovered.push(...outcome.discovered);
+      }
+
+      await landMicrositeCandidates(outcome.candidates, microsite);
+
+      collector.reports.push({
+        sourceId: 'microsites',
+        label:
+          `Microsites — ${microsite.structuredEvents} public, ` +
+          `${microsite.created} new pending, ${microsite.refreshed} refreshed`,
+        events: microsite.structuredEvents,
+        errors: microsite.errors.length,
+        durationMs: 0,
+      });
+      collector.errors.push(...microsite.errors.map(e => `microsites: ${e}`));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      collector.errors.push(`microsites: ${message}`);
+      console.warn(`  ! microsite pass failed entirely: ${message}`);
+    } finally {
+      await renderer.close();
+      const note = renderer.describe();
+      if (note) console.log(`Microsites: ${note}`);
+    }
+  }
+
   const totalScraped = collector.events.length;
 
   // ── 5. Enrichment ─────────────────────────────────────────────────────────
@@ -1473,6 +1879,7 @@ export async function runPipeline(options: PipelineOptions = {}): Promise<Pipeli
     enrichment: { lumaDescriptions, meetupEvents: meetupEnriched },
     gates: ledger.totals,
     meetupTruncation,
+    microsite,
     backoff: {
       skipped: backoffSkipped.length,
       weekly: backoffSkipped.filter(s => s.cadence === 'weekly').length,
@@ -1535,6 +1942,42 @@ function printReport(result: PipelineResult): void {
             (truncation.empty > 0 ? `, ${truncation.empty} empty` : '')
           : ' (SECOND PASS DISABLED — those events were not scraped)')
     );
+  }
+  /*
+   * Printed whenever the microsite pass ran at all, INCLUDING when it produced nothing — the same
+   * rule as the Meetup cap line above and for the same reason. A stage that spends a browser and a
+   * frontier model and reports nothing is either a page with no events on it or an extraction path
+   * that has quietly stopped working, and those must not print identically.
+   *
+   * REJECTIONS ARE PRINTED SEPARATELY FROM CANDIDATES, because they are the only signal that says
+   * whether to trust this stage. `candidates 3, refused 0` and `candidates 3, refused 11` are
+   * completely different situations and a combined count hides both.
+   */
+  const micro = result.microsite;
+  if (micro.pages > 0) {
+    const via = Object.entries(micro.via)
+      .map(([key, count]) => `${key}=${count}`)
+      .join(' ');
+    console.log(`  microsites     ${micro.pages} page(s)  ${via}`);
+    console.log(
+      `                 ${micro.structuredEvents} public (JSON-LD), ${micro.candidates} extracted` +
+        ` → ${micro.created} new pending, ${micro.refreshed} refreshed, ${micro.alreadyDecided} already decided`
+    );
+    const refused = Object.entries(micro.rejections);
+    const refusedTotal = refused.reduce((sum, [, count]) => sum + count, 0);
+    console.log(
+      `                 model rows REFUSED ${refusedTotal}` +
+        (refused.length ? `  (${refused.map(([r, c]) => `${r}×${c}`).join(' ')})` : '') +
+        (micro.offCity ? `, ${micro.offCity} off-city` : '')
+    );
+    if (micro.platformsFound > 0) {
+      console.log(
+        `                 ${micro.platformsFound} page(s) front a known platform — register the handle, do not extract`
+      );
+    }
+    if (micro.created > 0) {
+      console.log(`                 → REVIEW THESE at /admin → Submissions before they can be seen`);
+    }
   }
   console.log(`  unique         ${result.uniqueRaw}`);
   console.log(`  inserted       ${ingestion.inserted}`);
