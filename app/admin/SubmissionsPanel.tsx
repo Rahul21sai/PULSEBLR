@@ -114,7 +114,7 @@ function statusOf(row: Submission): { label: string; className: string } {
   if (row.visibility === 'private') {
     return { label: 'Kept private', className: 'bg-white text-[#6E6E73]' };
   }
-  return { label: 'In the feed', className: 'bg-[#EBF7EF] text-[#1D8A44]' };
+  return { label: 'In the feed', className: 'bg-[#EBF7EF] text-[#166B35]' };
 }
 
 export default function SubmissionsPanel() {
@@ -310,7 +310,7 @@ export default function SubmissionsPanel() {
         </div>
       )}
       {note && (
-        <div className="rounded-xl bg-[#EBF7EF] px-4 py-3 text-[12.5px] text-[#1D8A44]" role="status">
+        <div className="rounded-xl bg-[#EBF7EF] px-4 py-3 text-[12.5px] text-[#166B35]" role="status">
           {note}
         </div>
       )}
@@ -549,7 +549,7 @@ export default function SubmissionsPanel() {
                               type="button"
                               disabled={busy === row._id}
                               onClick={() => void decide(row._id, 'approve')}
-                              className="pressable h-9 rounded-full bg-[#1D8A44] px-4 text-[12.5px] font-semibold text-white hover:bg-[#166F37] disabled:opacity-50"
+                              className="pressable h-9 rounded-full bg-[#166B35] px-4 text-[12.5px] font-semibold text-white hover:bg-[#166F37] disabled:opacity-50"
                             >
                               {busy === row._id ? '…' : 'Add to feed'}
                             </button>

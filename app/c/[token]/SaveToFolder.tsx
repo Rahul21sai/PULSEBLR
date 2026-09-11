@@ -84,7 +84,7 @@ export default function SaveToFolder({ card }: { card: PublicCardDTO }) {
   if (savedTo) {
     return (
       <section className="mt-4 rounded-[22px] bg-white p-5 text-center card-shadow">
-        <span aria-hidden="true" className="material-symbols-outlined text-[28px] text-[#1D8A44]">check_circle</span>
+        <span aria-hidden="true" className="material-symbols-outlined text-[28px] text-[#166B35]">check_circle</span>
         <p className="mt-1.5 text-[14px] font-semibold text-[#1D1D1F]">
           Saved to {savedTo}
         </p>

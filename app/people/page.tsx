@@ -4,13 +4,13 @@ import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import AppShell from '../components/AppShell';
 import FacetRail, { FacetToggle } from '../components/FacetRail';
-import MergeSheet from './MergeSheet';
+import MergeSheet, { sharedKeyEvidence } from './MergeSheet';
 import { Banner, Button, ButtonLink, Card, EmptyState, PageHeader, Skeleton } from '../components/ui';
-import { dayHeading, relativeTime, shortDateIST } from '@/lib/format';
+import { dayHeading, monogram, relativeTime, shortDateIST } from '@/lib/format';
 import {
   INTERACTION_ICON,
   INTERACTION_LABEL,
-  personSubtitle,
+  personIdentityLine,
   type InteractionDTO,
   type MergePair,
   type PersonDTO,
@@ -83,6 +83,57 @@ const SORT_OPTIONS: Array<{ value: Sort; label: string }> = [
 ];
 
 const DEFAULT_SORT: Sort = 'recent';
+
+/**
+ * The card the empty state draws, built at MODULE LOAD rather than in render.
+ *
+ * `Date.now()` in a component body is refused by `react-hooks/purity`, and the rule is right: an
+ * impure read during render produces values that change on any incidental re-render. Module scope is
+ * not render, so the dates are computed once — the example then ages by however long the tab stays
+ * open, which is nothing, and it never participates in hydration because this branch is unreachable
+ * until a client fetch has resolved (`loading` starts true, so the first render is skeletons).
+ *
+ * Dates are RELATIVE so the example never ages into "36mo ago"; a hardcoded 2026 date would.
+ */
+const EXAMPLE_PERSON: PersonDTO = (() => {
+  const daysAgo = (days: number) => new Date(Date.now() - days * 86400000).toISOString();
+  return {
+    _id: 'example',
+    displayName: 'Asha Rao',
+    company: 'Razorpay',
+    role: 'Staff Engineer, payments',
+    headline: null,
+    overrides: { displayName: null, company: null, role: null },
+    contactKeys: ['li:asha-rao-example'],
+    tags: ['hiring'],
+    ownTags: ['hiring'],
+    companies: ['Razorpay'],
+    isTargetCompany: true,
+    lastInteractionAt: daysAgo(5),
+    nextActionAt: null,
+    eventCount: 2,
+    interactionCount: 3,
+    createdAt: daysAgo(44),
+    updatedAt: daysAgo(5),
+    linkedin: null,
+    recent: [
+      {
+        _id: 'example-note',
+        kind: 'note',
+        at: daysAgo(5),
+        note: 'Wants an intro to whoever runs our payments platform — said to ping her after Diwali.',
+      },
+      {
+        _id: 'example-met',
+        kind: 'met',
+        at: daysAgo(44),
+        eventId: 'example-event',
+        eventTitle: 'IndiaFOSS 2026',
+        eventStartAt: daysAgo(44),
+      },
+    ],
+  };
+})();
 
 export default function PeoplePage() {
   const [people, setPeople] = useState<PersonDTO[]>([]);
@@ -418,7 +469,9 @@ export default function PeoplePage() {
       <div className="mx-auto max-w-[1100px] px-4 pt-4 md:px-8">
         <PageHeader
           title="Everyone you've met"
-          subtitle="One card per person, with every time you met them inside it. Filter by employer, by your own tags, or by who still needs a reply."
+          /* Names the three things a card now actually carries, rather than instructing the reader to
+             use filters that are visibly right there. */
+          subtitle="One card per person — where you met them, what you wrote down, and who still needs a reply."
           action={
             <div className="flex flex-wrap items-center gap-2">
               {/*
@@ -468,17 +521,28 @@ export default function PeoplePage() {
             <Card padding="tight">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="text-[13.5px] font-semibold text-[#1D1D1F]">
+                  <p className="text-[13.5px] font-semibold text-[color:var(--ink)]">
                     {pairs.length === 1
-                      ? 'Two records might be the same person'
-                      : `${pairs.length} possible duplicates`}
+                      ? 'Are two of these the same person?'
+                      : `Are ${pairs.length} of these the same people?`}
                   </p>
-                  <p className="mt-0.5 text-[12.5px] text-[#6E6E73]">
-                    They share an identity key. Nothing was merged — have a look and decide.
+                  {/*
+                    A QUESTION, AND IT NAMES WHAT MATCHED. The spine deliberately refuses to auto-join,
+                    so the only honest framing is a question — and "they share an identity key" is
+                    evidence a reader cannot weigh, which is the whole decision being asked of them. A
+                    shared LinkedIn slug is near-proof; a shared NAME is the exact failure `contactKey`
+                    was invented to stop (two people called Rahul at one event), so the banner leads with
+                    the strongest match it has and `sharedKeyEvidence` grades it in the sheet.
+                  */}
+                  <p className="mt-0.5 text-[12.5px] leading-relaxed text-[color:var(--ink-2)]">
+                    {pairs.length === 1
+                      ? `Two records carry ${sharedKeyEvidence(pairs[0].contactKey).what}.`
+                      : 'Some records point at the same person.'}{' '}
+                    Nothing was merged — a wrong merge is far harder to undo than a duplicate.
                   </p>
                 </div>
                 <Button size="sm" tone="primary" icon="merge" onClick={() => setMergeOpen(true)}>
-                  Review
+                  Have a look
                 </Button>
               </div>
             </Card>
@@ -490,7 +554,7 @@ export default function PeoplePage() {
           <div className="relative min-w-[220px] flex-1">
             <span
               aria-hidden="true"
-              className="material-symbols-outlined pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[18px] text-[#8E8E93]"
+              className="material-symbols-outlined pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[18px] text-[color:var(--ink-3)]"
             >
               search
             </span>
@@ -499,14 +563,14 @@ export default function PeoplePage() {
               onChange={e => setQ(e.target.value)}
               placeholder="Name, company, or role"
               aria-label="Search people"
-              className="h-11 w-full rounded-xl bg-white pl-10 pr-3 text-[14.5px] text-[#1D1D1F] shadow-[inset_0_0_0_1px_var(--hairline)] outline-none focus:shadow-[inset_0_0_0_2px_var(--blue)]"
+              className="h-11 w-full rounded-xl bg-white pl-10 pr-3 text-[14.5px] text-[color:var(--ink)] shadow-[inset_0_0_0_1px_var(--hairline)] outline-none focus:shadow-[inset_0_0_0_2px_var(--blue)]"
             />
           </div>
           <select
             value={sort}
             onChange={e => pickSort(e.target.value as Sort)}
             aria-label="Sort people"
-            className="h-11 rounded-xl bg-white px-3 text-[13.5px] font-semibold text-[#1D1D1F] shadow-[inset_0_0_0_1px_var(--hairline)] outline-none focus:shadow-[inset_0_0_0_2px_var(--blue)]"
+            className="h-11 rounded-xl bg-white px-3 text-[13.5px] font-semibold text-[color:var(--ink)] shadow-[inset_0_0_0_1px_var(--hairline)] outline-none focus:shadow-[inset_0_0_0_2px_var(--blue)]"
           >
             {SORT_OPTIONS.map(option => (
               <option key={option.value} value={option.value}>
@@ -540,24 +604,30 @@ export default function PeoplePage() {
             <button
               type="button"
               onClick={clearAll}
-              className="relative h-9 rounded-full px-3 text-[12.5px] font-semibold text-[#0071E3] hover:underline [touch-action:manipulation] after:absolute after:inset-x-0 after:top-1/2 after:h-11 after:-translate-y-1/2 after:content-['']"
+              className="relative h-9 rounded-full px-3 text-[12.5px] font-semibold text-[color:var(--blue)] hover:underline [touch-action:manipulation] after:absolute after:inset-x-0 after:top-1/2 after:h-11 after:-translate-y-1/2 after:content-['']"
             >
               Clear filters
             </button>
           )}
         </div>
 
-        {/* ── Two rails, deliberately not merged ────────────────────────── */}
+        {/*
+          TWO RAILS, DELIBERATELY NOT MERGED — and now visually distinguishable without reading the
+          titles. `kind` picks the chip treatment: a registry employer is BOUNDED (an edge, because it
+          came from a defined list), a tag the user typed is FILLED and prefixed with `#`. One rail would
+          be less code and would destroy exactly the distinction this feature was built to keep.
+        */}
         <FacetRail
           title="Company"
-          hint="Recognised employers, resolved from what people told you."
+          hint="Employers we recognised from what people told you"
           buckets={facets.companies}
           selected={company}
           onSelect={setCompany}
         />
         <FacetRail
           title="Your tags"
-          hint="Your own labels — for employers we don't recognise, and anything else."
+          kind="own"
+          hint="Your own labels, for everything the registry can't know"
           buckets={facets.tags}
           extra={facets.tagVocabulary
             .filter(t => !facets.tags.some(b => b.value === t))
@@ -572,7 +642,7 @@ export default function PeoplePage() {
           <div className="sticky top-16 z-20 mb-3">
             <Card padding="tight">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="text-[13px] font-semibold text-[#1D1D1F]">
+                <span className="text-[13px] font-semibold text-[color:var(--ink)]">
                   <span className="tnum">{selected.size}</span> selected
                 </span>
                 <input
@@ -585,7 +655,7 @@ export default function PeoplePage() {
                   maxLength={40}
                   placeholder="Tag them all…"
                   aria-label="Tag for the selected people"
-                  className="h-11 min-w-[160px] flex-1 rounded-full bg-[#F7F7F9] px-3.5 text-[13.5px] text-[#1D1D1F] outline-none focus:shadow-[inset_0_0_0_2px_var(--blue)]"
+                  className="h-11 min-w-[160px] flex-1 rounded-full bg-[#F7F7F9] px-3.5 text-[13.5px] text-[color:var(--ink)] outline-none focus:shadow-[inset_0_0_0_2px_var(--blue)]"
                 />
                 {/* Native datalist rather than a bespoke popover: it is a one-field type-ahead, and
                     the browser's own affordance beats a hand-rolled one. */}
@@ -622,18 +692,18 @@ export default function PeoplePage() {
 
         {/* ── Results ───────────────────────────────────────────────────── */}
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-          <p className="text-[12.5px] text-[#6E6E73]">
+          <p className="text-[12.5px] text-[color:var(--ink-2)]">
             {loading ? (
               'Loading…'
             ) : selecting ? (
               <>
-                <strong className="tnum text-[#1D1D1F]">{selected.size}</strong> of{' '}
+                <strong className="tnum text-[color:var(--ink)]">{selected.size}</strong> of{' '}
                 <span className="tnum">{people.length}</span> selected — tap a card to pick it,
                 Escape to stop
               </>
             ) : (
               <>
-                <strong className="tnum text-[#1D1D1F]">{total}</strong>{' '}
+                <strong className="tnum text-[color:var(--ink)]">{total}</strong>{' '}
                 {total === 1 ? 'person' : 'people'}
                 {activeFilters ? ' match' : ''}
               </>
@@ -659,71 +729,75 @@ export default function PeoplePage() {
         </div>
 
         {loading ? (
+          /* Skeletons, never a spinner — and shaped like the real card (identity tile, name, meta)
+             so the list does not reflow the moment the rows land. */
           <div className="flex flex-col gap-2">
             {[0, 1, 2, 3, 4].map(i => (
               <Card key={i} padding="tight">
-                <Skeleton className="h-4 w-1/3" />
-                <Skeleton className="mt-2 h-3 w-1/2" />
+                <div className="flex items-start gap-3">
+                  <Skeleton className="h-10 w-10 rounded-xl" />
+                  <div className="min-w-0 flex-1">
+                    <Skeleton className="h-4 w-1/3" />
+                    <Skeleton className="mt-2 h-3 w-1/2" />
+                    <Skeleton className="mt-3 h-3 w-2/3" />
+                  </div>
+                </div>
               </Card>
             ))}
           </div>
         ) : people.length === 0 ? (
-          <EmptyState
-            icon="group"
-            title={activeFilters ? 'Nobody matches that' : 'No people yet'}
-            body={
-              activeFilters
-                ? 'Try a different filter, or clear them all.'
-                : 'Confirm an event in the tracker to get a folder, then scan somebody’s LinkedIn QR into it. Everyone you capture lands here as one card, however many times you meet them.'
-            }
-            action={
-              activeFilters ? (
+          activeFilters ? (
+            <EmptyState
+              icon="search_off"
+              title="Nobody matches that"
+              body="Everyone you have met is still here — this combination of filters just has nobody in it."
+              action={
                 <Button tone="quiet" onClick={clearAll}>
                   Clear filters
                 </Button>
-              ) : (
-                <div className="flex flex-wrap justify-center gap-2">
-                  <ButtonLink href="/scan" tone="primary" icon="qr_code_scanner">
-                    Open the scanner
-                  </ButtonLink>
-                  <ButtonLink href="/folders" tone="quiet" icon="folder">
-                    See your folders
-                  </ButtonLink>
-                </div>
-              )
-            }
-          />
+              }
+            />
+          ) : (
+            <NoPeopleYet />
+          )
         ) : (
           <>
-            <div className="flex flex-col gap-2">
+            {/*
+              A REAL LIST, so a screen reader announces "40 items" and arrow-key navigation works. It
+              used to be a stack of divs each containing an `<h2>` INSIDE a `<button>` — invalid HTML
+              (a button takes phrasing content only), which is also why the card below is built out of
+              spans rather than headings.
+            */}
+            <ul className="flex flex-col gap-2">
               {people.map(person => (
-                <PersonCard
-                  key={person._id}
-                  person={person}
-                  selecting={selecting}
-                  selected={selected.has(person._id)}
-                  onSelect={() =>
-                    setSelected(current => {
-                      const next = new Set(current);
-                      if (next.has(person._id)) next.delete(person._id);
-                      else next.add(person._id);
-                      return next;
-                    })
-                  }
-                  open={expanded.has(person._id)}
-                  onToggle={() =>
-                    setExpanded(current => {
-                      const next = new Set(current);
-                      if (next.has(person._id)) next.delete(person._id);
-                      else next.add(person._id);
-                      return next;
-                    })
-                  }
-                  onPickCompany={setCompany}
-                  onPickTag={setTag}
-                />
+                <li key={person._id}>
+                  <PersonCard
+                    person={person}
+                    selecting={selecting}
+                    selected={selected.has(person._id)}
+                    onSelect={() =>
+                      setSelected(current => {
+                        const next = new Set(current);
+                        if (next.has(person._id)) next.delete(person._id);
+                        else next.add(person._id);
+                        return next;
+                      })
+                    }
+                    open={expanded.has(person._id)}
+                    onToggle={() =>
+                      setExpanded(current => {
+                        const next = new Set(current);
+                        if (next.has(person._id)) next.delete(person._id);
+                        else next.add(person._id);
+                        return next;
+                      })
+                    }
+                    onPickCompany={setCompany}
+                    onPickTag={setTag}
+                  />
+                </li>
               ))}
-            </div>
+            </ul>
             {hasMore && (
               <div className="mt-4 flex justify-center">
                 <Button tone="quiet" onClick={() => void loadMore()} disabled={loadingMore}>
@@ -734,17 +808,27 @@ export default function PeoplePage() {
           </>
         )}
 
-        <div className="mt-8 mb-4">
-          <Card padding="tight">
-            <p className="text-[12.5px] leading-relaxed text-[#6E6E73]">
-              <strong className="text-[#1D1D1F]">Company vs your tags.</strong> The company rail is
-              resolved from a registry of Bengaluru tech employers, so it is only as broad as that
-              list. When somebody works somewhere we don&apos;t recognise, tag them on their own page
-              — or select several and tag them all at once. Those tags stay yours and are never fed
-              back into the employer registry.
-            </p>
-          </Card>
-        </div>
+        {/*
+          THE EXPLAINER IS CONDITIONAL NOW, and the condition is the point. It used to sit at the foot
+          of the page on every visit, explaining a distinction the two rails above it already make —
+          decoration, by the fourth visit. It earns its place only while the user has no tags at all,
+          which is exactly when the "why are there two of these" question is live and the tag rail is
+          absent (`FacetRail` renders nothing for an empty dimension, so there is nothing else on
+          screen to answer it).
+        */}
+        {!loading && people.length > 0 && facets.tags.length === 0 && facets.tagVocabulary.length === 0 && (
+          <div className="mt-8 mb-4">
+            <Card padding="tight">
+              <p className="text-[12.5px] leading-relaxed text-[color:var(--ink-2)]">
+                <strong className="text-[color:var(--ink)]">You can add your own tags.</strong> The company rail
+                only knows the 375 Bengaluru employers in our registry. When somebody works somewhere it
+                has never heard of — or you want to find &ldquo;the hardware people&rdquo; later — tag
+                them on their own page, or select several here and tag them together. Your tags stay
+                yours: they are never read back as employer evidence.
+              </p>
+            </Card>
+          </div>
+        )}
       </div>
 
       <MergeSheet
@@ -768,20 +852,110 @@ export default function PeoplePage() {
   );
 }
 
+/* ══════════════════════════════════════════════════════════════════════════════════════════════
+   THE CARD, AND THE ONE QUESTION IT IS DESIGNED TO ANSWER
+   ══════════════════════════════════════════════════════════════════════════════════════════════
+
+   Not "display a contact record" — the question is: WHAT DOES A READER NEED TO RECALL SOMEBODY THEY
+   MET ONCE, SIX WEEKS AGO, AT AN EVENT THEY HALF-REMEMBER? Three things, in this order:
+
+     1. WHERE AND WHEN YOU MET THEM. This is the memory hook. It used to be hidden behind a disclosure
+        labelled "History — met at 2 events", so the single most recall-bearing fact on the card cost a
+        tap and the visible line was a label describing content nobody could see.
+     2. WHAT YOU WROTE DOWN. `person.recent` has carried the notes all along and the card rendered none
+        of them. This is also the thing no competitor has at any price: aggregated Luma and Meetup
+        listings are free, and nobody else holds your note about the person you met at them.
+     3. WHO THEY ARE — name, role, employer. Necessary, and third, because a name alone does not place
+        a stranger.
+
+   Everything else recedes to a quiet tier. `docs/design-direction.md`: two levels of emphasis per
+   card, not four. Level 1 is the name; level 2 is the encounter and the note; the rest is 12px grey.
+
+   TWO STRUCTURAL TARGETS, NOT AN OVERLAY. The summary is one target and the disclosure is a sibling,
+   because nesting a control inside an anchor is invalid HTML and the alternative — an absolutely
+   positioned link with `pointer-events` juggling — wrecks focus order.
+
+   WHAT THE SUMMARY TARGET *IS* DEPENDS ON THE MODE. Normally a `Link` to the person; in selection mode
+   a checkbox-shaped `button`, with the LinkedIn shortcut withdrawn, because a second competing target
+   in a row whose whole job has become "pick me" is how somebody selecting forty people lands on
+   linkedin.com. Built out of `<span>`s throughout: a `<button>` takes phrasing content only, so the
+   `<h2>` and `<p>` this used to nest inside one were invalid in the mode nobody inspects.
+*/
+
 /**
- * ONE HUMAN, WITH THEIR HISTORY INSIDE.
+ * The identity tile: initials, in the display face, on the well grey.
  *
- * The summary block is ONE target and the disclosure is a sibling button, rather than the whole card
- * being a link with an interactive control nested in it. Nesting a button inside an anchor is invalid
- * HTML and behaves differently in every browser; the alternative — an absolutely-positioned link
- * overlay with `pointer-events` juggling — wrecks focus order. Two sibling targets, each comfortably
- * past 44px, is the boring correct answer.
+ * WHY A MONOGRAM IS INFORMATION HERE AND IS NOT ON AN EVENT CARD. `docs/design-direction.md` replaces
+ * the event cover's monogram with the DATE, on the reasoning that "a letter carries no information" —
+ * true of "R" for "React Meetup". A person's initials are not a letter standing in for a fact, they
+ * ARE the fact: they are how a forty-row list becomes scannable by first letter, which is why every
+ * address book ever built uses them. Flat wash, never a gradient, same discipline as `EventCover`.
  *
- * WHAT THAT SUMMARY TARGET *IS* DEPENDS ON THE MODE, which is the same constraint read from the other
- * end. Normally it is a `Link` to the person. In selection mode it is a checkbox-shaped `button`, and
- * the LinkedIn shortcut is withdrawn — a second, competing target inside a row whose whole job has
- * just become "pick me" is how somebody selecting forty people ends up on linkedin.com instead.
+ * IN SELECTION MODE IT BECOMES THE CHECKBOX, and keeps the initials while unselected. Adding a
+ * checkbox column beside it would put three columns in a 390px row; more importantly, a list of
+ * anonymous checkboxes is a list you cannot check accurately.
  */
+function IdentityTile({
+  name,
+  selecting,
+  selected,
+}: {
+  name: string;
+  selecting: boolean;
+  selected: boolean;
+}) {
+  if (selecting && selected) {
+    return (
+      <span
+        aria-hidden="true"
+        className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[#0071E3] text-white"
+      >
+        <span className="material-symbols-outlined text-[20px] leading-none">check</span>
+      </span>
+    );
+  }
+  return (
+    <span
+      aria-hidden="true"
+      className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl text-[14px] font-semibold tracking-[-0.02em] ${
+        selecting
+          ? 'bg-white text-[color:var(--ink-2)] shadow-[inset_0_0_0_1.5px_var(--hairline-strong)]'
+          : 'bg-[#F7F7F9] text-[color:var(--ink-2)]'
+      }`}
+      style={{ fontFamily: 'var(--font-display)' }}
+    >
+      {monogram(name)}
+    </span>
+  );
+}
+
+/**
+ * The pill vocabulary, and the rule behind it: A FILL MEANS ACT NOW, AN OUTLINE MEANS A FACT.
+ *
+ * The card used to draw `met 3×` and `target` as two IDENTICAL green pills — the same loud treatment
+ * for a count and for a state — plus an amber pill for a scheduled follow-up, which is a fourth hue
+ * the token set does not have. `globals.css` already records why that fails: "five tinted blocks under
+ * every title turned each card into a swatch board and made the title compete with its own metadata."
+ *
+ * EXACTLY ONE FILL IS POSSIBLE ON A CARD NOW, and it is the overdue follow-up. `target` started this
+ * pass as a green fill and lost it for two reasons, one measured and one structural:
+ *
+ *   · MEASURED. `--good` on `--good-wash` is **4.00:1** in the harness, which fails WCAG AA at 11px.
+ *     Both are `globals.css` tokens owned by another surface, so forking the pair here would put a
+ *     fifth green in the app; removing the failing pair from this card does not.
+ *   · STRUCTURAL. `--live` already means "happening now" and `--good` already means "free" on an event
+ *     pill. A third meaning for green spends a rationed hue on a fact that is simply true.
+ *
+ * So target is bounded and carries the SAME `●` marker in `--good` that `FacetRail` already puts on a
+ * target-company chip — one glyph, one colour, one meaning, in the rail and on the card. `--good` on
+ * white measures **4.40:1**, which is under the 4.5:1 text threshold and comfortably over the 3:1 one
+ * for a non-text graphic (WCAG 1.4.11) — which is what the dot is: `aria-hidden`, carrying no meaning
+ * of its own, with the word "target" beside it in `--ink-2` at 6.65:1 doing the actual telling.
+ */
+const PILL_BASE =
+  'inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold leading-[1.45]';
+const PILL_BOUND = `${PILL_BASE} text-[color:var(--ink-2)] shadow-[inset_0_0_0_1px_var(--hairline-strong)]`;
+
 function PersonCard({
   person,
   selecting,
@@ -791,6 +965,7 @@ function PersonCard({
   onToggle,
   onPickCompany,
   onPickTag,
+  preview = false,
 }: {
   person: PersonDTO;
   selecting: boolean;
@@ -800,109 +975,111 @@ function PersonCard({
   onToggle: () => void;
   onPickCompany: (value: string) => void;
   onPickTag: (value: string) => void;
+  /**
+   * Render as an inert EXAMPLE — no link, no chip buttons, no disclosure.
+   *
+   * Used by the empty state, and reusing this component rather than hand-building a mock-up is the
+   * whole point: a preview of the real thing that has drifted from the real thing is worse than no
+   * preview, because it promises something the product does not do. Built this way it cannot drift.
+   */
+  preview?: boolean;
 }) {
-  const followUpDue = Boolean(person.nextActionAt);
-  const overdue = followUpDue && new Date(person.nextActionAt as string) <= new Date();
+  const followUpAt = person.nextActionAt;
+  const overdue = Boolean(followUpAt) && new Date(followUpAt as string) <= new Date();
   const history = person.recent ?? [];
-  const subtitle = personSubtitle(person);
+  // The employer is dropped from the prose when a registry chip below already carries it — see
+  // `personIdentityLine`. Two instances of "Razorpay" in one card is the same word twice, not detail.
+  const identity = personIdentityLine(person, person.companies);
+  const encounter = encounterLine(person);
+  const note = latestNote(history);
 
-  // Extracted so the two wrappers below render the IDENTICAL summary. Two copies would drift, and the
-  // one that drifts is always the mode you look at less often.
+  /* Extracted so all three wrappers render the IDENTICAL summary. Copies drift, and the copy that
+     drifts is always the mode you look at least often. */
   const summary = (
     <>
-          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-            <h2 className="t-sub truncate text-[#1D1D1F]">{person.displayName}</h2>
-            {/*
-              `met N x` MEANS N DISTINCT EVENTS — not N captures and not N folders.
-              `detectRepeatConnections` carries that bug's scar: it keyed on the folder, so two
-              folders for one event counted as two events. A badge that flatters is worse than none.
-            */}
-            {person.eventCount > 1 && (
-              <span className="rounded-full bg-[#EBF7EF] px-2 py-0.5 text-[10.5px] font-bold text-[#1D8A44]">
-                met {person.eventCount}×
+      <IdentityTile name={person.displayName} selecting={selecting} selected={selected} />
+      <span className="min-w-0 flex-1">
+        <span className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+          <span className="t-sub truncate text-[color:var(--ink)]">{person.displayName}</span>
+          {/* Bounded, with the rail's own target marker. See `PILL_BOUND` for why it is not a fill. */}
+          {person.isTargetCompany && (
+            <span className={PILL_BOUND}>
+              <span aria-hidden="true" className="text-[color:var(--good)]">
+                ●
               </span>
-            )}
-            {person.isTargetCompany && (
-              <span className="rounded-full bg-[#EBF7EF] px-2 py-0.5 text-[10.5px] font-bold text-[#1D8A44]">
-                target
-              </span>
-            )}
-            {followUpDue && (
-              <span
-                className={`rounded-full px-2 py-0.5 text-[10.5px] font-bold ${
-                  overdue ? 'bg-[#FFF1F0] text-[#C7362D]' : 'bg-[#FFF4E5] text-[#A85B00]'
-                }`}
-              >
-                {overdue ? 'follow up now' : `follow up ${shortDateIST(person.nextActionAt as string)}`}
-              </span>
-            )}
-          </div>
-
-          <p className="mt-0.5 truncate text-[12.5px] text-[#6E6E73]">
-            {subtitle || 'No role or company recorded'}
-          </p>
-
-          <p className="mt-0.5 text-[12px] text-[#8E8E93]">
-            {person.lastInteractionAt ? (
-              // The date NO COMPETITOR SHOWS AT ANY PRICE, and which did not exist in this schema
-              // until the spine: `max(Interaction.at)`, not capture time. A note or a completed
-              // follow-up is contact too.
-              <span title={dayHeading(person.lastInteractionAt)}>
-                Last contact {relativeTime(person.lastInteractionAt)}
-              </span>
-            ) : (
-              <span>No contact recorded yet</span>
-            )}
-          </p>
+              target
+            </span>
+          )}
+          {followUpAt && (
+            <span
+              className={
+                overdue
+                  ? /* The app's single alarm wash, and the only place this card spends a fill on a
+                       warning. An amber "scheduled" pill used to sit here too — a fourth hue the token
+                       set does not have, for a fact that is not urgent. */
+                    `${PILL_BASE} bg-[#FFF1F0] text-[#C7362D]`
+                  : PILL_BOUND
+              }
+            >
+              {overdue ? 'follow up now' : `follow up ${shortDateIST(followUpAt)}`}
+            </span>
+          )}
+        </span>
+        {identity && (
+          <span className="mt-0.5 block truncate text-[12.5px] text-[color:var(--ink-2)]">{identity}</span>
+        )}
+      </span>
     </>
   );
+
+  /**
+   * `min-h-11` IS THE 44px FLOOR, PAINTED RATHER THAN OVERLAID, and the hit test is why it is here.
+   *
+   * A thin row — a LinkedIn QR with no role and no employer, which is the COMMON capture — collapses to
+   * the 40px tile, and 40 is under the floor. An `::after` band would be the wrong instrument: this
+   * element is 100% of the card's width, so a 44px overlay would overhang into the encounter row above
+   * and below and contest whatever sits there. Painting the height instead costs 4px on the thinnest
+   * card, cannot overhang anything, and the only neighbour is the LinkedIn button beside it —
+   * horizontally adjacent, itself painted 44, so there is no band to contest.
+   */
+  const summaryClass =
+    'flex min-h-11 min-w-0 flex-1 items-start gap-3 rounded-xl text-left outline-none [touch-action:manipulation] focus-visible:shadow-[0_0_0_2px_var(--blue)]';
 
   return (
     <Card
       padding="tight"
-      className={selected ? 'shadow-[inset_0_0_0_2px_var(--blue)]' : undefined}
+      className={
+        selected ? 'shadow-[inset_0_0_0_2px_var(--blue)]' : preview ? 'opacity-70' : undefined
+      }
     >
       <div className="flex items-start gap-3">
-        {selecting ? (
+        {preview ? (
+          <span className={summaryClass}>{summary}</span>
+        ) : selecting ? (
           <button
             type="button"
             // `aria-pressed`, not a hidden `<input type="checkbox">`: the row IS the control, and a
             // real checkbox would be a second focus stop inside it saying the same thing.
             aria-pressed={selected}
             onClick={onSelect}
-            className="flex min-w-0 flex-1 items-start gap-3 rounded-lg text-left outline-none [touch-action:manipulation] focus-visible:shadow-[0_0_0_2px_var(--blue)]"
+            className={summaryClass}
           >
-            <span
-              aria-hidden="true"
-              className={`mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-[6px] ${
-                selected
-                  ? 'bg-[#0071E3] text-white'
-                  : 'bg-white shadow-[inset_0_0_0_1.5px_var(--hairline-strong)]'
-              }`}
-            >
-              {selected && (
-                <span className="material-symbols-outlined text-[15px] leading-none">check</span>
-              )}
-            </span>
-            <span className="min-w-0 flex-1">{summary}</span>
+            {summary}
           </button>
         ) : (
           // The whole summary is the link, so the tap target is the card's full width.
-          <Link
-            href={`/people/${person._id}`}
-            className="min-w-0 flex-1 rounded-lg outline-none focus-visible:shadow-[0_0_0_2px_var(--blue)]"
-          >
+          <Link href={`/people/${person._id}`} className={summaryClass}>
             {summary}
           </Link>
         )}
 
-        {person.linkedin && !selecting && (
+        {person.linkedin && !selecting && !preview && (
           <a
             href={person.linkedin}
             target="_blank"
             rel="noopener noreferrer"
             aria-label={`Open ${person.displayName} on LinkedIn`}
-            className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-[#F7F7F9] text-[#0071E3] hover:bg-[#EEEEF0] [touch-action:manipulation]"
+            className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-[#F7F7F9] text-[color:var(--blue)] hover:bg-[#EEEEF0] [touch-action:manipulation]"
           >
             <span aria-hidden="true" className="material-symbols-outlined text-[18px]">
               open_in_new
@@ -911,46 +1088,155 @@ function PersonCard({
         )}
       </div>
 
+      {/*
+        THE ENCOUNTER — the card's one middle-dot string, and it earns the exception because place and
+        date are two facts of the same rank about the same event. Set in full ink at 13px, one step ABOVE
+        the role-and-employer line, which is a deliberate inversion: "where we met" places a stranger and
+        "what they do" does not.
+
+        LEFT-GROUPED, NOT `justify-between`. On a 1036px desktop card, pushing the `met N×` pill to the far
+        edge left roughly 800px of white between two facts about the same encounter — a table row rather
+        than a sentence. Measured in the harness at 1440; at 390 the two treatments look identical, which
+        is exactly why it only shows up when you look at the wide case.
+      */}
+      <div className="mt-2.5 flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
+        <p className="min-w-0 truncate text-[13px] text-[color:var(--ink)] tracking-[-0.006em]">
+          {encounter.lead}
+          {/*
+            THE TOKEN, NOT A HEX — and the reason is a measurement that went stale inside this comment
+            while it was being written. It first read `#8E8E93`, which the harness put at **3.26:1** on
+            white: a WCAG AA failure at 12–13px. The fix was `#6E6E73` at 5.07:1. Then the owner of
+            `globals.css` darkened the whole ramp underneath — `--ink-2` is now `#5C5C61` (6.65:1) and
+            even `--ink-3` is `#6F6F75` (4.99:1), both passing — so BOTH hexes were suddenly lighter than
+            the app around them. Naming the token is what makes this line track the ramp instead of
+            freezing one moment of it. Re-measure rather than trusting these figures.
+          */}
+          {encounter.when && <span className="text-[color:var(--ink-2)]"> · {encounter.when}</span>}
+        </p>
+        {/*
+          `met N×` MEANS N DISTINCT EVENTS — not N captures and not N folders.
+          `detectRepeatConnections` carries that bug's scar: it keyed on the folder, so two folders for
+          one event counted as two events. A badge that flatters is worse than none. Bounded rather than
+          filled, and beside the encounter rather than beside the name, because it is a count of
+          encounters — not a state needing attention.
+        */}
+        {person.eventCount > 1 && (
+          /* ONE span, so `PILL_BASE`'s `gap-1` cannot land between the word, the figure and the ×.
+             As three flex children it rendered "met 2 ×" — again caught in the harness, not in review. */
+          <span className={PILL_BOUND}>
+            <span>
+              met <span className="tnum">{person.eventCount}</span>×
+            </span>
+          </span>
+        )}
+      </div>
+
+      {/*
+        WHAT YOU WROTE DOWN. The list has always had this on hand — `person.recent` carries `note` —
+        and rendered none of it, so the one thing on this screen no competitor can show was invisible.
+        A left rule rather than quote marks: it survives the two-line clamp, where a closing curly
+        quote cut mid-sentence would just look broken.
+      */}
+      {/* `max-w-[72ch]` is the measure, not decoration: at 1036px this ran to roughly 160 characters a
+          line, twice the under-80 limit `docs/design-direction.md` sets. It changes nothing at 390. */}
+      {note && (
+        <p className="mt-2 line-clamp-2 max-w-[72ch] border-l-2 border-[color:var(--hairline-strong)] pl-2.5 text-[12.5px] leading-relaxed text-[color:var(--ink-2)]">
+          {note}
+        </p>
+      )}
+
       {(person.companies.length > 0 || person.tags.length > 0) && (
-        <div className="mt-2 flex flex-wrap gap-x-1.5 gap-y-2">
-          {/* Registry companies and user tags stay visually distinct — blue for resolved, grey for
-              typed — because trusting them equally is the mistake this feature was built to avoid. */}
-          {person.companies.map(name => (
-            <button
-              key={`c:${name}`}
-              type="button"
-              onClick={() => onPickCompany(name)}
-              className="relative rounded-full bg-[#EBF4FE] px-2 py-1 text-[10.5px] font-bold text-[#0058B0] hover:bg-[#D6E7FB] [touch-action:manipulation] after:absolute after:inset-x-0 after:top-1/2 after:h-11 after:-translate-y-1/2 after:content-['']"
-            >
-              {name}
-            </button>
-          ))}
-          {person.tags.map(t => (
-            <button
-              key={`t:${t}`}
-              type="button"
-              onClick={() => onPickTag(t)}
-              className="relative rounded-full bg-[#F5F5F7] px-2 py-1 text-[10.5px] font-bold text-[#6E6E73] hover:bg-[#EEEEF0] [touch-action:manipulation] after:absolute after:inset-x-0 after:top-1/2 after:h-11 after:-translate-y-1/2 after:content-['']"
-            >
-              {t}
-            </button>
-          ))}
+        /* `gap-y-3` is measured against the chips' 44px tap band — see `CHIP_BASE_STYLE`. */
+        <div className="mt-2.5 flex flex-wrap gap-x-1.5 gap-y-3">
+          {/*
+            TWO KINDS OF FACT, DISTINGUISHED BY STRUCTURE RATHER THAN HUE.
+            · Company — BOUNDED, full ink. The registry recognised this employer, `strength`-gated, so
+              it has an edge: a defined thing from a defined list.
+            · Tag — FILLED grey, secondary ink, prefixed `#`. Free text the user typed.
+            These were previously blue-washed vs grey-filled. The distinction was right and the axis was
+            wrong: `--blue` means "you can act on this" and is rationed, so six blue chips per card spent
+            the app's only accent on the word "employer". The filled-grey tag also now matches how
+            own-tags are already drawn in the person edit sheet and in the tag rail, so three surfaces
+            agree instead of offering three looks.
+          */}
+          {person.companies.map(name =>
+            preview ? (
+              <span key={`c:${name}`} className={`${CHIP_COMPANY} pointer-events-none`}>
+                {name}
+              </span>
+            ) : (
+              <button
+                key={`c:${name}`}
+                type="button"
+                onClick={() => onPickCompany(name)}
+                aria-label={`Show everyone at ${name}`}
+                className={`${CHIP_COMPANY} ${CHIP_TAP} hover:bg-[#F7F7F9]`}
+              >
+                {name}
+              </button>
+            )
+          )}
+          {person.tags.map(t =>
+            preview ? (
+              <span key={`t:${t}`} className={`${CHIP_TAG} pointer-events-none`}>
+                <span aria-hidden="true" className="text-[color:var(--ink-3)]">
+                  #
+                </span>
+                {t}
+              </span>
+            ) : (
+              <button
+                key={`t:${t}`}
+                type="button"
+                onClick={() => onPickTag(t)}
+                aria-label={`Show everyone you tagged ${t}`}
+                className={`${CHIP_TAG} ${CHIP_TAP} hover:bg-[#EEEEF0]`}
+              >
+                <span aria-hidden="true" className="text-[color:var(--ink-3)]">
+                  #
+                </span>
+                {t}
+              </button>
+            )
+          )}
         </div>
       )}
 
       {/*
-        THE HISTORY, COLLAPSED IN PLACE — a disclosure, NOT a navigation.
-        Three cards for one human is the defect the spine removes; sending the reader to another page
-        to find out they met somebody twice would move the problem rather than solve it.
+        THE FOOTER CARRIES RECENCY AND OPENS THE HISTORY.
+        It used to read "History — met at 2 events", which is a label describing content the reader
+        cannot see, and it left the default sort ("Last contacted") unexplained on every row. Recency
+        now sits here in words, and the disclosure names what is behind it instead of summarising it.
+        Collapsed IN PLACE, never a navigation: three cards for one human is the defect the spine
+        removed, and sending somebody to another page to learn they met a person twice would move that
+        problem rather than solve it.
       */}
-      {history.length > 0 && (
-        <div className="mt-2 border-t border-[color:var(--hairline)] pt-2">
+      {/* Left-grouped for the same measured reason as the encounter row: "Last spoke 5d ago" and the
+          disclosure are two halves of one thought, and `justify-between` put a screen's width between
+          them on desktop. */}
+      <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-[color:var(--hairline)] pt-1.5">
+        <span
+          /* `--ink-2` for the reason spelled out on the encounter date above — and because this line is
+             what explains the default "Last contacted" ordering on every row, so it is a fact, not a
+             caption. Currently 6.65:1; re-measure rather than trusting that. */
+          className="min-w-0 truncate text-[12px] text-[color:var(--ink-2)]"
+          title={person.lastInteractionAt ? dayHeading(person.lastInteractionAt) : undefined}
+        >
+          {person.lastInteractionAt
+            ? // `max(Interaction.at)`, not capture time — a note or a completed follow-up is contact
+              // too. This field did not exist in the schema before the spine.
+              `Last spoke ${relativeTime(person.lastInteractionAt)}`
+            : 'No contact recorded yet'}
+        </span>
+        {history.length > 0 && !preview && (
           <button
             type="button"
             aria-expanded={open}
+            aria-label={`${open ? 'Hide' : 'Show'} the history with ${person.displayName}`}
             onClick={onToggle}
-            className="relative flex h-9 w-full items-center gap-1.5 rounded-lg text-left text-[12px] font-semibold text-[#0071E3] [touch-action:manipulation] after:absolute after:inset-x-0 after:top-1/2 after:h-11 after:-translate-y-1/2 after:content-['']"
+            className="relative flex h-9 shrink-0 items-center gap-1 rounded-lg pl-2 text-[12px] font-semibold text-[color:var(--blue)] [touch-action:manipulation] after:absolute after:inset-x-0 after:top-1/2 after:h-11 after:-translate-y-1/2 after:content-['']"
           >
+            {open ? 'Hide' : 'History'}
             <span
               aria-hidden="true"
               className={`material-symbols-outlined text-[16px] transition-transform ${
@@ -959,45 +1245,160 @@ function PersonCard({
             >
               expand_more
             </span>
-            {open ? 'Hide history' : summarise(person, history)}
           </button>
+        )}
+      </div>
 
-          {open && (
-            <ul className="mt-1 flex flex-col gap-1.5">
-              {history.map(item => (
-                <li key={item._id} className="flex items-start gap-2 text-[12px] text-[#6E6E73]">
-                  <span
-                    aria-hidden="true"
-                    className="material-symbols-outlined mt-[1px] text-[14px] text-[#A1A1A6]"
-                  >
-                    {INTERACTION_ICON[item.kind]}
-                  </span>
-                  <span className="min-w-0">
-                    <span className="font-semibold text-[#1D1D1F]">
-                      {INTERACTION_LABEL[item.kind]}
-                    </span>
-                    {item.eventId && (
-                      // Nullable on purpose: `pruneStale()` deletes events 7 days past without
-                      // touching their references, so a dangling id is normal rather than corruption.
-                      <> at {item.eventTitle ?? 'an event we no longer have'}</>
-                    )}
-                    {item.note && <> — {item.note}</>}
-                    <span className="text-[#A1A1A6]"> · {shortDateIST(item.at)}</span>
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
+      {open && !preview && history.length > 0 && (
+        <ul className="mt-2 flex flex-col gap-1.5">
+          {history.map(item => (
+            <li key={item._id} className="flex items-start gap-2 text-[12px] text-[color:var(--ink-2)]">
+              <span
+                aria-hidden="true"
+                className="material-symbols-outlined mt-[1px] text-[14px] text-[color:var(--ink-3)]"
+              >
+                {INTERACTION_ICON[item.kind]}
+              </span>
+              <span className="min-w-0">
+                <span className="font-semibold text-[color:var(--ink)]">{INTERACTION_LABEL[item.kind]}</span>
+                {item.eventId && (
+                  // Nullable on purpose: `pruneStale()` deletes events 7 days past without touching
+                  // their references, so a dangling id is normal rather than corruption.
+                  <> at {item.eventTitle ?? 'an event we no longer have'}</>
+                )}
+                {item.note && <> — {item.note}</>}
+                <span> · {shortDateIST(item.at)}</span>
+              </span>
+            </li>
+          ))}
+        </ul>
       )}
     </Card>
   );
 }
 
-/** The collapsed line: what the history says without opening it. */
-function summarise(person: PersonDTO, history: InteractionDTO[]): string {
-  const events = history.filter(i => i.eventId).length;
-  if (person.eventCount > 1) return `History — met at ${person.eventCount} events`;
-  if (events > 0) return 'History — where you met';
-  return `History — ${person.interactionCount} ${person.interactionCount === 1 ? 'entry' : 'entries'}`;
+/**
+ * Bounded = a fact from a defined list. Filled = a label somebody typed. See the card's chip note.
+ *
+ * `h-8` IS MEASURED AGAINST `gap-y-3`, AND THAT PAIR IS THE WHOLE POINT — change one, change the other.
+ * A 44px `::after` band on a shorter control overhangs `(44 − h) / 2` per side, so two chip ROWS need
+ * `44 − h` between them or the later row in the DOM wins taps aimed at the earlier one. Hit-tested in a
+ * static harness, not calculated: these chips were `py-1` with no height, which measured **25.3px** —
+ * 9.4px of overhang per side against `gap-y-2`'s 8px, so the two rows genuinely contested the band. At
+ * 32px the overhang is 6px per side and `gap-y-3` gives 12px, which clears it exactly, the same
+ * arithmetic `FacetRail`'s 36 + 8 = 44 records for the rails.
+ */
+/* NO `gap` HERE. The tag chip's `#` is a sibling flex child of its word, so any gap renders it as
+   "# hiring" — a stray glyph rather than a tag. Caught in the harness screenshot, not in review. */
+const CHIP_BASE_STYLE =
+  'inline-flex h-8 items-center rounded-full px-2.5 text-[11.5px] font-semibold';
+const CHIP_COMPANY = `${CHIP_BASE_STYLE} bg-white text-[color:var(--ink)] shadow-[inset_0_0_0_1px_var(--hairline-strong)]`;
+const CHIP_TAG = `${CHIP_BASE_STYLE} bg-[#F5F5F7] text-[color:var(--ink-2)]`;
+/** The 44px band, grown with `::after` so the painted chip stays small. `gap-y-3` above matches it. */
+const CHIP_TAP =
+  "relative [touch-action:manipulation] after:absolute after:inset-x-0 after:top-1/2 after:h-11 after:-translate-y-1/2 after:content-['']";
+
+/**
+ * WHERE AND WHEN YOU MET THEM — the card's headline fact, and the reason it is a function.
+ *
+ * It has to degrade honestly through four states, each of which really happens:
+ *
+ *   · The event is known           → "Met at IndiaFOSS 2026" + its date.
+ *   · The event id DANGLES         → `pruneStale()` deletes events 7 days past without touching their
+ *                                    references, so this is normal rather than corruption. Say so.
+ *   · There is no event on any of the three most recent interactions, but `eventCount` says there were
+ *                                    events → name the COUNT. `recent` is capped server-side at
+ *                                    `RECENT_INTERACTIONS`, so an older `met` row is simply not on hand;
+ *                                    claiming "not at an event" there would be a confident falsehood.
+ *   · Nothing at all               → a Contact captured before the spine has no `met` row until the
+ *                                    backfill runs. "No encounter recorded yet" is the truth.
+ */
+function encounterLine(person: PersonDTO): { lead: string; when: string | null } {
+  const history = person.recent ?? [];
+  const met = history.find(item => item.eventId) ?? history.find(item => item.kind === 'met');
+
+  if (met?.eventId) {
+    return {
+      lead: `Met at ${met.eventTitle ?? 'an event we no longer have'}`,
+      when: shortDateIST(met.eventStartAt ?? met.at),
+    };
+  }
+  if (met) return { lead: 'Met in person', when: shortDateIST(met.at) };
+
+  const intake = history.find(item => item.kind === 'intake');
+  if (intake) return { lead: 'Added themselves', when: shortDateIST(intake.at) };
+
+  if (person.eventCount > 0) {
+    return {
+      lead: `Met at ${person.eventCount} ${person.eventCount === 1 ? 'event' : 'events'}`,
+      when: null,
+    };
+  }
+  return { lead: 'No encounter recorded yet', when: null };
+}
+
+/** The most recent thing the user actually wrote. Undefined is the common case, and renders nothing. */
+function latestNote(history: InteractionDTO[]): string | undefined {
+  for (const item of history) {
+    const note = (item.note ?? '').trim();
+    if (note) return note;
+  }
+  return undefined;
+}
+
+/**
+ * THE EMPTY STATE IS THE FIRST IMPRESSION OF THE DIFFERENTIATOR, so it shows the thing rather than
+ * describing it.
+ *
+ * A brand-new account lands here. Aggregated Luma and Meetup listings are given away free by the
+ * competition; "who did I meet there" is the half nobody else has — so an apologetic grey circle
+ * reading "No people yet" spends the one screen that could explain that on a shrug.
+ *
+ * Three deliberate choices:
+ *
+ *   · LEFT-ALIGNED, not centred. A centred icon-over-two-lines block is the generated default for
+ *     every empty state in every app; this reads as a screen with something to say.
+ *   · IT RENDERS A REAL `PersonCard` in `preview` mode. Describing a card in prose and drawing one are
+ *     not the same promise, and a hand-built mock-up would drift from the component the moment either
+ *     changed. This cannot: it IS the component.
+ *   · THE EXAMPLE IS LABELLED AND INERT — dimmed, `aria-hidden`, no links, and captioned as an example
+ *     above it. A plausible fabricated person in a list of real people would be indefensible; the point
+ *     is to show the shape, and the caption is what keeps it honest.
+ */
+function NoPeopleYet() {
+  return (
+    <Card>
+      <h2 className="t-title text-[color:var(--ink)]">Nobody here yet</h2>
+      <p className="mt-2 max-w-[52ch] text-[14.5px] leading-relaxed text-[color:var(--ink-2)]">
+        Scan somebody&apos;s LinkedIn QR at your next event and they land here — one card, with the
+        event, the date and whatever you wrote down about them. Run into them again six months later and
+        it is the same card, not a second one.
+      </p>
+      <div className="mt-5 flex flex-wrap gap-2">
+        <ButtonLink href="/scan" tone="primary" icon="qr_code_scanner">
+          Open the scanner
+        </ButtonLink>
+        <ButtonLink href="/folders" tone="quiet" icon="folder">
+          See your folders
+        </ButtonLink>
+      </div>
+
+      <div className="mt-7 border-t border-[color:var(--hairline)] pt-4">
+        <p className="text-[12px] text-[color:var(--ink-2)]">An example of what one card holds</p>
+        <div className="mt-2" aria-hidden="true">
+          <PersonCard
+            person={EXAMPLE_PERSON}
+            selecting={false}
+            selected={false}
+            onSelect={() => {}}
+            open={false}
+            onToggle={() => {}}
+            onPickCompany={() => {}}
+            onPickTag={() => {}}
+            preview
+          />
+        </div>
+      </div>
+    </Card>
+  );
 }

@@ -370,7 +370,7 @@ export default function SourcesPanel({
                     </button>
                   </td>
                   <td className="tnum py-2.5 pr-3 font-semibold">{k.total}</td>
-                  <td className="tnum py-2.5 pr-3 text-[#1D8A44]">{k.producing}</td>
+                  <td className="tnum py-2.5 pr-3 text-[#166B35]">{k.producing}</td>
                   <td className="tnum py-2.5 pr-3 text-[#6E6E73]">{k.quiet}</td>
                   <td className="tnum py-2.5 pr-3 text-[#6E6E73]">{k.never}</td>
                   <td className={`tnum py-2.5 pr-3 ${k.dead > 0 ? 'font-semibold text-[#C7362D]' : 'text-[#6E6E73]'}`}>

@@ -314,7 +314,7 @@ export default function AuditPanel({ onChanged }: { onChanged: () => void }) {
                                     {f}
                                   </td>
                                   <td className="py-1 pr-3 text-[#C7362D]">{renderValue(row.before?.[f])}</td>
-                                  <td className="py-1 text-[#1D8A44]">{renderValue(row.after?.[f])}</td>
+                                  <td className="py-1 text-[#166B35]">{renderValue(row.after?.[f])}</td>
                                 </tr>
                               ))}
                             </tbody>

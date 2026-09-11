@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import AppShell from '../../components/AppShell';
 import Sheet from '../../components/Sheet';
-import MergeSheet from '../MergeSheet';
+import MergeSheet, { sharedKeyEvidence } from '../MergeSheet';
 import { TAP_44, useTagVocabulary } from '../../components/scan/ContactFields';
 import {
   Banner,
@@ -21,7 +21,7 @@ import { dayHeading, fullDateIST, relativeTime, shortDateIST } from '@/lib/forma
 import {
   INTERACTION_ICON,
   INTERACTION_LABEL,
-  personSubtitle,
+  personIdentityLine,
   type InteractionDTO,
   type MergePair,
   type PersonDTO,
@@ -74,6 +74,21 @@ interface Payload {
  * does nothing.
  */
 const NOTE_FIELD_ID = 'person-note-draft';
+
+/**
+ * Field and section labels inside the sheets. One constant rather than six copies, so the sheets cannot
+ * drift from each other one edit at a time.
+ *
+ * THIS WAS WRITTEN AS EXPLICIT SIZES AND THEN PUT BACK ON `.t-label` MID-TASK, and the reason is worth
+ * recording. `.t-label` used to be 11px at +0.055em with `text-transform: uppercase` — the tracked-out
+ * ALL-CAPS eyebrow `docs/design-direction.md` names first among the patterns to remove, shouting "NAME"
+ * above a name field. So these six labels were rewritten with their own sizes. While that was in flight
+ * the owner of `globals.css` de-capsed `.t-label` itself and moved the shout to a new `.t-label-caps`,
+ * which is the better fix in the better place — so hardcoding sizes here would now be a SECOND
+ * definition of the app's small-label style, drifting from the first by construction. The colour stays
+ * explicit because these are ink labels, not the grey the class is usually paired with.
+ */
+const SHEET_LABEL = 't-label text-[color:var(--ink)]';
 
 /** Follow-up offsets. Deliberately few — the point is one tap, not a date picker. */
 const SNOOZE_CHOICES: Array<{ label: string; days: number }> = [
@@ -279,7 +294,7 @@ export default function PersonDetailClient({ id }: { id: string }) {
       <div className="mx-auto max-w-[860px] px-4 pt-4 pb-6 md:px-8">
         <Link
           href="/people"
-          className="mb-3 inline-flex h-11 items-center gap-1 text-[13px] font-semibold text-[#0071E3] hover:underline"
+          className="mb-3 inline-flex h-11 items-center gap-1 text-[13px] font-semibold text-[color:var(--blue)] hover:underline"
         >
           <span aria-hidden="true" className="material-symbols-outlined text-[18px]">
             arrow_back
@@ -315,29 +330,41 @@ export default function PersonDetailClient({ id }: { id: string }) {
           </div>
         )}
 
+        {/*
+          NO EYEBROW. It rendered "MET AT 2 EVENTS" as a tracked-out ALL-CAPS label above the person's
+          own name — the pattern `docs/design-direction.md` names first, saying the same thing the pill
+          beside the name says, in the loudest available voice. The pills below follow the card's rule:
+          a FILL means act on this, an OUTLINE means it is simply true.
+        */}
         <PageHeader
-          eyebrow={person.eventCount > 0 ? `Met at ${person.eventCount} ${person.eventCount === 1 ? 'event' : 'events'}` : undefined}
           title={
             <span className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
               {person.displayName}
-              {person.eventCount > 1 && (
-                <span className="rounded-full bg-[#EBF7EF] px-2 py-0.5 text-[11px] font-bold text-[#1D8A44]">
-                  met {person.eventCount}×
+              {/* Bounded with a `--good` marker, matching the card and the rail. The filled version was
+                  `--good` on `--good-wash`, measured at 4.00:1 — a WCAG AA failure at 11px. */}
+              {person.isTargetCompany && (
+                <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold leading-[1.45] text-[color:var(--ink-2)] shadow-[inset_0_0_0_1px_var(--hairline-strong)]">
+                  <span aria-hidden="true" className="text-[color:var(--good)]">
+                    ●
+                  </span>
+                  target company
                 </span>
               )}
-              {person.isTargetCompany && (
-                <span className="rounded-full bg-[#EBF7EF] px-2 py-0.5 text-[11px] font-bold text-[#1D8A44]">
-                  target company
+              {person.eventCount > 1 && (
+                <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold leading-[1.45] text-[color:var(--ink-2)] shadow-[inset_0_0_0_1px_var(--hairline-strong)]">
+                  <span>met <span className="tnum">{person.eventCount}</span>×</span>
                 </span>
               )}
             </span>
           }
           subtitle={
             <>
-              {personSubtitle(person) || 'No role or company recorded'}
+              {personIdentityLine(person) || 'No role or company recorded'}
               {person.lastInteractionAt && (
-                <span className="text-[#8E8E93]">
-                  {' · '}last contact {relativeTime(person.lastInteractionAt)}
+                /* Its own line rather than appended after a middle dot: "who have I gone quiet on" is
+                   the question this half of the product exists to answer, not a trailing detail. */
+                <span className="mt-0.5 block text-[color:var(--ink-3)]">
+                  Last spoke {relativeTime(person.lastInteractionAt)}
                 </span>
               )}
             </>
@@ -383,19 +410,23 @@ export default function PersonDetailClient({ id }: { id: string }) {
             <Card padding="tight">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="text-[13.5px] font-semibold text-[#1D1D1F]">
-                    Might be the same person as{' '}
+                  <p className="text-[13.5px] font-semibold text-[color:var(--ink)]">
+                    Is this the same person as{' '}
                     <Link
                       href={`/people/${data.suggestions[0].personId}`}
-                      className="text-[#0071E3] hover:underline"
+                      className="text-[color:var(--blue)] hover:underline"
                     >
                       {data.suggestions[0].displayName}
                     </Link>
+                    ?
                   </p>
-                  <p className="mt-0.5 text-[12.5px] text-[#6E6E73]">
-                    Both point at the identity key{' '}
-                    <code className="text-[11.5px]">{data.suggestions[0].contactKey}</code>. Nothing
-                    was merged — a wrong merge is far harder to undo than a duplicate.
+                  {/* The raw key is evidence a reader cannot weigh, and weighing it IS the decision:
+                      a shared LinkedIn slug is near-proof, a shared NAME is the exact failure
+                      `contactKey` was invented to stop. `sharedKeyEvidence` grades it in words. */}
+                  <p className="mt-0.5 text-[12.5px] leading-relaxed text-[color:var(--ink-2)]">
+                    Both records carry{' '}
+                    {sharedKeyEvidence(data.suggestions[0].contactKey).what}. Nothing was merged — a
+                    wrong merge is far harder to undo than a duplicate.
                   </p>
                 </div>
                 <Button size="sm" tone="primary" icon="merge" onClick={() => void openMerge()}>
@@ -492,7 +523,7 @@ export default function PersonDetailClient({ id }: { id: string }) {
               maxLength={4000}
               placeholder="What did you talk about? What did you promise them?"
               aria-label="New note"
-              className="w-full rounded-xl bg-[#F7F7F9] p-3.5 text-[14.5px] leading-relaxed text-[#1D1D1F] outline-none focus:shadow-[inset_0_0_0_2px_var(--blue)]"
+              className="w-full rounded-xl bg-[#F7F7F9] p-3.5 text-[14.5px] leading-relaxed text-[color:var(--ink)] outline-none focus:shadow-[inset_0_0_0_2px_var(--blue)]"
             />
             <div className="mt-2 flex justify-end">
               <Button
@@ -523,7 +554,7 @@ export default function PersonDetailClient({ id }: { id: string }) {
               }
             />
             {interactions.length === 0 ? (
-              <p className="text-[13px] text-[#6E6E73]">
+              <p className="text-[13px] text-[color:var(--ink-2)]">
                 Captures made before this page existed have no timeline until the backfill runs.
               </p>
             ) : (
@@ -531,7 +562,7 @@ export default function PersonDetailClient({ id }: { id: string }) {
                 {groups.map(group => (
                   <div key={group.key}>
                     <div className="flex flex-wrap items-baseline gap-2 border-b border-[color:var(--hairline)] pb-1.5">
-                      <h3 className="text-[13.5px] font-semibold text-[#1D1D1F]">
+                      <h3 className="text-[13.5px] font-semibold text-[color:var(--ink)]">
                         {group.eventId ? (
                           // A dangling `eventId` is NORMAL: `pruneStale()` deletes events 7 days
                           // past without touching their references. Say so rather than render blank.
@@ -540,14 +571,14 @@ export default function PersonDetailClient({ id }: { id: string }) {
                               {group.title}
                             </Link>
                           ) : (
-                            <span className="text-[#8E8E93]">An event we no longer have</span>
+                            <span className="text-[color:var(--ink-3)]">An event we no longer have</span>
                           )
                         ) : (
                           'Not at an event'
                         )}
                       </h3>
                       {group.startAt && (
-                        <span className="text-[12px] text-[#8E8E93]">
+                        <span className="text-[12px] text-[color:var(--ink-3)]">
                           {shortDateIST(group.startAt)}
                         </span>
                       )}
@@ -557,20 +588,20 @@ export default function PersonDetailClient({ id }: { id: string }) {
                         <li key={item._id} className="flex items-start gap-2.5">
                           <span
                             aria-hidden="true"
-                            className="material-symbols-outlined mt-[2px] text-[16px] text-[#A1A1A6]"
+                            className="material-symbols-outlined mt-[2px] text-[16px] text-[color:var(--ink-3)]"
                           >
                             {INTERACTION_ICON[item.kind]}
                           </span>
                           <div className="min-w-0">
-                            <p className="text-[13px] text-[#1D1D1F]">
+                            <p className="text-[13px] text-[color:var(--ink)]">
                               <span className="font-semibold">{INTERACTION_LABEL[item.kind]}</span>
-                              <span className="text-[#8E8E93]">
+                              <span className="text-[color:var(--ink-3)]">
                                 {' · '}
                                 {fullDateIST(item.at)}
                               </span>
                             </p>
                             {item.note && (
-                              <p className="mt-0.5 whitespace-pre-wrap text-[13px] leading-relaxed text-[#3a3a3c]">
+                              <p className="mt-0.5 whitespace-pre-wrap text-[13px] leading-relaxed text-[color:var(--ink-2)]">
                                 {item.note}
                               </p>
                             )}
@@ -581,7 +612,7 @@ export default function PersonDetailClient({ id }: { id: string }) {
                   </div>
                 ))}
                 {data?.timelineTruncated && (
-                  <p className="text-[12px] text-[#A1A1A6]">
+                  <p className="text-[12px] text-[color:var(--ink-3)]">
                     Showing the most recent entries only.
                   </p>
                 )}
@@ -610,12 +641,12 @@ export default function PersonDetailClient({ id }: { id: string }) {
               subtitle="Each time you scanned or recorded them. These are what the fields above are derived from."
             />
             {contacts.length === 0 ? (
-              <p className="text-[13px] text-[#6E6E73]">No captures left — this record is empty.</p>
+              <p className="text-[13px] text-[color:var(--ink-2)]">No captures left — this record is empty.</p>
             ) : (
               <ul className="flex flex-col gap-2.5">
                 {contacts.map(contact => (
                   <li key={contact._id} className="text-[12.5px]">
-                    <p className="font-semibold text-[#1D1D1F]">
+                    <p className="font-semibold text-[color:var(--ink)]">
                       {contact.folderName ? (
                         <Link href={`/folders/${contact.folderId}`} className="hover:underline">
                           {contact.folderName}
@@ -626,7 +657,7 @@ export default function PersonDetailClient({ id }: { id: string }) {
                         </span>
                       )}
                     </p>
-                    <p className="text-[#8E8E93]">
+                    <p className="text-[color:var(--ink-3)]">
                       {shortDateIST(contact.scannedAt)}
                       {contact.company ? ` · ${contact.company}` : ''}
                     </p>
@@ -637,7 +668,7 @@ export default function PersonDetailClient({ id }: { id: string }) {
                       wrote; editing it from here would rebuild the defect.
                     */}
                     {contact.note && (
-                      <p className="mt-0.5 whitespace-pre-wrap text-[#3a3a3c]">{contact.note}</p>
+                      <p className="mt-0.5 whitespace-pre-wrap text-[color:var(--ink-2)]">{contact.note}</p>
                     )}
                   </li>
                 ))}
@@ -716,13 +747,13 @@ function DetailRow({
   if (!value) return null;
   return (
     <div className="flex items-start justify-between gap-4 border-b border-[color:var(--hairline)] py-2.5 last:border-0">
-      <dt className="shrink-0 text-[13px] text-[#8E8E93]">{label}</dt>
-      <dd className="min-w-0 break-words text-right text-[13px] font-medium text-[#1D1D1F]">
+      <dt className="shrink-0 text-[13px] text-[color:var(--ink-3)]">{label}</dt>
+      <dd className="min-w-0 break-words text-right text-[13px] font-medium text-[color:var(--ink)]">
         {href ? (
           <a
             href={href}
             {...(external ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
-            className="text-[#0071E3] hover:underline"
+            className="text-[color:var(--blue)] hover:underline"
           >
             {value}
           </a>
@@ -1001,7 +1032,7 @@ function DraftFollowupSheet({
         {(phase === 'preflight' || phase === 'drafting') && (
           <>
             <div>
-              <p className="text-[13.5px] leading-relaxed text-[#1D1D1F]">
+              <p className="text-[13.5px] leading-relaxed text-[color:var(--ink)]">
                 {notes.length === 1 ? 'This is the note' : 'These are the notes'} the draft will be
                 written from.
               </p>
@@ -1023,11 +1054,11 @@ function DraftFollowupSheet({
             <div className="flex items-start gap-2.5 border-t border-[color:var(--hairline)] pt-4">
               <span
                 aria-hidden="true"
-                className="material-symbols-outlined mt-[1px] text-[18px] text-[#8E8E93]"
+                className="material-symbols-outlined mt-[1px] text-[18px] text-[color:var(--ink-3)]"
               >
                 lock
               </span>
-              <p className="text-[12.5px] leading-relaxed text-[#6E6E73]">
+              <p className="text-[12.5px] leading-relaxed text-[color:var(--ink-2)]">
                 Sent to the drafting model (IBM-hosted Claude) along with {firstName}&apos;s name,
                 role, company and the event. Their email, phone, LinkedIn and your private tags stay
                 here. Nothing is sent anywhere until you press the button, and no message is ever sent
@@ -1042,11 +1073,11 @@ function DraftFollowupSheet({
             <div>
               <label
                 htmlFor="draft-followup-text"
-                className="text-[13.5px] font-semibold text-[#1D1D1F]"
+                className="text-[13.5px] font-semibold text-[color:var(--ink)]"
               >
                 Your draft
               </label>
-              <p className="mt-0.5 text-[12.5px] leading-relaxed text-[#6E6E73]">
+              <p className="mt-0.5 text-[12.5px] leading-relaxed text-[color:var(--ink-2)]">
                 Edit it. It is a first pass from your note, not a message from you yet — and nothing
                 sends until you do it yourself.
               </p>
@@ -1056,7 +1087,7 @@ function DraftFollowupSheet({
                 onChange={e => setDraft(e.target.value)}
                 rows={8}
                 maxLength={4000}
-                className="mt-2 w-full rounded-xl bg-[#F7F7F9] p-3.5 text-[14.5px] leading-relaxed text-[#1D1D1F] outline-none focus:shadow-[inset_0_0_0_2px_var(--blue)]"
+                className="mt-2 w-full rounded-xl bg-[#F7F7F9] p-3.5 text-[14.5px] leading-relaxed text-[color:var(--ink)] outline-none focus:shadow-[inset_0_0_0_2px_var(--blue)]"
               />
             </div>
 
@@ -1064,7 +1095,7 @@ function DraftFollowupSheet({
                 than asserted, and it is also what you fall back to if the draft is wrong. */}
             {notes.length > 0 && (
               <div className="border-t border-[color:var(--hairline)] pt-4">
-                <p className="t-label text-[#8E8E93]">Written from</p>
+                <p className={SHEET_LABEL}>Written from</p>
                 <div className="mt-2 flex flex-col gap-2">
                   {notes.map((note, index) => (
                     <Well key={index}>
@@ -1086,7 +1117,7 @@ function DraftFollowupSheet({
             </Banner>
             {notes.length > 0 ? (
               <div>
-                <p className="t-label text-[#8E8E93]">Your note, to send yourself</p>
+                <p className={SHEET_LABEL}>Your note, to send yourself</p>
                 <div className="mt-2 flex flex-col gap-2">
                   {notes.map((note, index) => (
                     <Well key={index}>
@@ -1100,7 +1131,7 @@ function DraftFollowupSheet({
                  case whether a note exists is exactly what we do not know. Asserting it would be a
                  confident factual claim standing in for a broken request, the failure mode the
                  calendar's "No events this month" already demonstrated on this codebase. */
-              <p className="text-[13px] text-[#6E6E73]">
+              <p className="text-[13px] text-[color:var(--ink-2)]">
                 Your note could not be loaded either. It is still on this page, further down.
               </p>
             )}
@@ -1109,11 +1140,11 @@ function DraftFollowupSheet({
 
         {phase === 'blocked' && (
           <>
-            <p className="text-[14.5px] leading-relaxed text-[#1D1D1F]">
+            <p className="text-[14.5px] leading-relaxed text-[color:var(--ink)]">
               {message ??
                 'Add a note about what you talked about, then draft. A follow-up with nothing in it is worse than none.'}
             </p>
-            <p className="text-[12.5px] leading-relaxed text-[#6E6E73]">
+            <p className="text-[12.5px] leading-relaxed text-[color:var(--ink-2)]">
               A message written from an empty record can only say &ldquo;great to meet you&rdquo; —
               which needs no model and tells {firstName} nothing. Two lines about what you actually
               discussed is all it takes. The note field is on this page, just below.
@@ -1185,7 +1216,7 @@ function EditPersonSheet({
   }
 
   const FIELD =
-    'mt-1.5 h-11 w-full rounded-xl bg-[#F7F7F9] px-3.5 text-[15px] text-[#1D1D1F] outline-none focus:shadow-[inset_0_0_0_2px_var(--blue)]';
+    'mt-1.5 h-11 w-full rounded-xl bg-[#F7F7F9] px-3.5 text-[15px] text-[color:var(--ink)] outline-none focus:shadow-[inset_0_0_0_2px_var(--blue)]';
 
   return (
     <Sheet
@@ -1211,7 +1242,7 @@ function EditPersonSheet({
     >
       <div className="flex flex-col gap-4">
         <label className="block">
-          <span className="t-label text-[#8E8E93]">Name</span>
+          <span className={SHEET_LABEL}>Name</span>
           <input
             value={displayName}
             onChange={e => setDisplayName(e.target.value)}
@@ -1220,13 +1251,13 @@ function EditPersonSheet({
             autoComplete="off"
             className={FIELD}
           />
-          <span className="mt-1.5 block text-[12px] text-[#A1A1A6]">
+          <span className="mt-1.5 block text-[12px] text-[color:var(--ink-3)]">
             Leave blank to use what your captures say ({person.displayName}).
           </span>
         </label>
 
         <label className="block">
-          <span className="t-label text-[#8E8E93]">Company</span>
+          <span className={SHEET_LABEL}>Company</span>
           <input
             value={company}
             onChange={e => setCompany(e.target.value)}
@@ -1238,7 +1269,7 @@ function EditPersonSheet({
         </label>
 
         <label className="block">
-          <span className="t-label text-[#8E8E93]">Role</span>
+          <span className={SHEET_LABEL}>Role</span>
           <input
             value={role}
             onChange={e => setRole(e.target.value)}
@@ -1250,8 +1281,8 @@ function EditPersonSheet({
         </label>
 
         <div>
-          <span className="t-label text-[#8E8E93]">Your tags</span>
-          <p className="mt-1 text-[12px] leading-relaxed text-[#A1A1A6]">
+          <span className={SHEET_LABEL}>Your tags</span>
+          <p className="mt-1 text-[12px] leading-relaxed text-[color:var(--ink-3)]">
             For employers the registry doesn&apos;t know, and anything else worth filtering by. These
             stay yours — they are never fed back into the company registry, because a tag counted as
             company evidence once filed a hardware engineer tagged “arm” under the company Arm.
@@ -1261,14 +1292,14 @@ function EditPersonSheet({
               {ownTags.map(tag => (
                 <span
                   key={tag}
-                  className="inline-flex h-9 items-center gap-1 rounded-full bg-[#F5F5F7] pl-3 pr-1.5 text-[12.5px] font-semibold text-[#3a3a3c]"
+                  className="inline-flex h-9 items-center gap-1 rounded-full bg-[#F5F5F7] pl-3 pr-1.5 text-[12.5px] font-semibold text-[color:var(--ink-2)]"
                 >
                   {tag}
                   <button
                     type="button"
                     onClick={() => setOwnTags(current => current.filter(t => t !== tag))}
                     aria-label={`Remove tag ${tag}`}
-                    className="grid h-8 w-8 place-items-center rounded-full text-[#8E8E93] hover:bg-[#E5E5EA] [touch-action:manipulation]"
+                    className="grid h-8 w-8 place-items-center rounded-full text-[color:var(--ink-3)] hover:bg-[#E5E5EA] [touch-action:manipulation]"
                   >
                     <span aria-hidden="true" className="material-symbols-outlined text-[16px]">
                       close
@@ -1294,7 +1325,7 @@ function EditPersonSheet({
               maxLength={40}
               placeholder="Add a tag…"
               aria-label="Add a tag"
-              className="h-11 min-w-0 flex-1 rounded-xl bg-[#F7F7F9] px-3.5 text-[15px] text-[#1D1D1F] outline-none focus:shadow-[inset_0_0_0_2px_var(--blue)]"
+              className="h-11 min-w-0 flex-1 rounded-xl bg-[#F7F7F9] px-3.5 text-[15px] text-[color:var(--ink)] outline-none focus:shadow-[inset_0_0_0_2px_var(--blue)]"
             />
             {/* Native datalist rather than a bespoke popover: it is a one-field type-ahead, and the
                 browser's own affordance beats a hand-rolled one here. */}

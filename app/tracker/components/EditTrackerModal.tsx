@@ -244,7 +244,7 @@ export default function EditTrackerModal({
                         <p
                           className={`mt-1.5 inline-flex items-center gap-1 text-[12px] font-semibold ${
                             conn.followedUp
-                              ? 'text-[#1D8A44]'
+                              ? 'text-[#166B35]'
                               : due
                                 ? 'text-[#C7362D]'
                                 : 'text-[#6E6E73]'
@@ -278,7 +278,7 @@ export default function EditTrackerModal({
                           aria-pressed={!!conn.followedUp}
                           className={`rounded-full px-2.5 py-1 text-[11.5px] font-semibold [touch-action:manipulation] ${
                             conn.followedUp
-                              ? 'bg-[#EBF7EF] text-[#1D8A44]'
+                              ? 'bg-[#EBF7EF] text-[#166B35]'
                               : 'bg-white text-[#1D1D1F] shadow-[inset_0_0_0_1px_var(--hairline-strong)] hover:bg-[#F0F0F2]'
                           }`}
                         >

@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { dayKeyIST, istDaysSpanned, locationLabel, stripMarkdown } from '@/lib/format';
+import {
+  dateBlockIST,
+  dayKeyIST,
+  istDaysSpanned,
+  locationLabel,
+  shortDateIST,
+  stripMarkdown,
+} from '@/lib/format';
 
 /**
  * `istDaysSpanned` decides whether the time rail prints an end time or a `+Nd` badge, so getting
@@ -68,6 +75,65 @@ describe('istDaysSpanned', () => {
 
   it('handles a span across a month boundary', () => {
     expect(istDaysSpanned('2026-09-30T15:00:00Z', '2026-10-02T15:00:00Z')).toBe(2);
+  });
+});
+
+/**
+ * `dateBlockIST` is what a coverless event's card shows INSTEAD of a two-letter monogram, and 40%
+ * of the first twenty ranked rows have no cover — so this is the feed's most visible type, not an
+ * edge case. It is pinned here for two reasons, both silent failures:
+ *
+ *   1. A component that reached for `new Date().getDate()` would use the BROWSER's zone. A 00:30
+ *      IST event would then render the previous day's number on a UTC server, which looks like a
+ *      plausible date rather than like a bug.
+ *   2. The month abbreviation has to MATCH `shortDateIST`, which the time rail prints one gutter
+ *      away on the same row. `en-IN` says "Sept" where `en-US` says "Sep"; two spellings of one
+ *      month, 40px apart, read as a rendering fault.
+ */
+describe('dateBlockIST', () => {
+  it('splits an evening event into day, month and weekday', () => {
+    // 19:00 IST on Tuesday 15 September 2026.
+    expect(dateBlockIST('2026-09-15T13:30:00Z')).toEqual({
+      day: '15',
+      month: 'Sept',
+      weekday: 'Tue',
+    });
+  });
+
+  it('agrees with the rail gutter about how the month is spelled', () => {
+    // The tile and `shortDateIST` sit on the same row. If these ever disagree, one of them has
+    // been given a different locale.
+    const d = '2026-09-15T13:30:00Z';
+    const { day, month } = dateBlockIST(d);
+    expect(shortDateIST(d)).toBe(`${day} ${month}`);
+    // And the four-character form really is what en-IN produces — not an accident of this fixture.
+    expect(month).toBe('Sept');
+  });
+
+  it('uses the IST day, not the UTC one, across midnight', () => {
+    // 21:30 UTC on 15 Sept is 03:00 IST on 16 Sept. The tile must say 16.
+    const late = '2026-09-15T21:30:00Z';
+    expect(dayKeyIST(late)).toBe('2026-09-16');
+    expect(dateBlockIST(late)).toEqual({ day: '16', month: 'Sept', weekday: 'Wed' });
+  });
+
+  it('has no leading zero on a single-digit day', () => {
+    // The tile is set at up to 72px; "07" would centre differently from "7" and read as a clock.
+    expect(dateBlockIST('2026-10-07T13:30:00Z').day).toBe('7');
+  });
+
+  it('keeps a date-only conference value on its published day', () => {
+    // Conference sources publish date-only values, which parse as UTC midnight = 05:30 IST. That
+    // is still the same calendar day, so the tile must not slip backwards.
+    expect(dateBlockIST('2026-10-02T00:00:00Z')).toEqual({
+      day: '2',
+      month: 'Oct',
+      weekday: 'Fri',
+    });
+  });
+
+  it('accepts a Date as well as an ISO string', () => {
+    expect(dateBlockIST(new Date('2026-09-15T13:30:00Z')).day).toBe('15');
   });
 });
 

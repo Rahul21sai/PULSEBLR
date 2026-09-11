@@ -71,6 +71,49 @@ export function shortDateIST(date: Date | string): string {
   return shortDateFormatter.format(new Date(date));
 }
 
+/*
+ * ── THE DATE, SPLIT INTO PARTS, FOR THE COVER FALLBACK ──────────────────────────────────────
+ *
+ * 40% of the first 20 rows of the ranked feed carry no `imageUrl` (29% corpus-wide), so
+ * `EventCover`'s fallback is not an edge case — it IS the feed's visual identity for two rows in
+ * five. It used to render a two-letter monogram, which carries no information at all.
+ *
+ * The parts are formatted HERE rather than in the component for the reason the file header gives:
+ * every date the UI shows must go through Asia/Kolkata, and a component that reaches for
+ * `new Date().getDate()` would silently use the browser's zone. A 00:30 IST event would then sit on
+ * the previous day's tile on a UTC server — the same class of bug the calendar's `dayKeyIST` note
+ * records, in a place nobody would think to look.
+ *
+ * `en-IN` rather than `en-US`, which is not cosmetic: en-IN abbreviates September as **Sept**, and
+ * the time rail's `shortDateIST` already prints "15 Sept" one gutter away. Two spellings of the
+ * same month on one row reads as a rendering bug.
+ */
+const dateBlockDayFormatter = new Intl.DateTimeFormat('en-IN', { timeZone: IST, day: 'numeric' });
+const dateBlockMonthFormatter = new Intl.DateTimeFormat('en-IN', { timeZone: IST, month: 'short' });
+const dateBlockWeekdayFormatter = new Intl.DateTimeFormat('en-IN', {
+  timeZone: IST,
+  weekday: 'short',
+});
+
+export interface DateBlock {
+  /** Day of the month, no leading zero: "5", "15". */
+  day: string;
+  /** Abbreviated month: "Aug", "Sept". */
+  month: string;
+  /** Abbreviated weekday: "Sat". */
+  weekday: string;
+}
+
+/** The IST date as separate parts, for the date tile a coverless event shows. */
+export function dateBlockIST(date: Date | string): DateBlock {
+  const d = new Date(date);
+  return {
+    day: dateBlockDayFormatter.format(d),
+    month: dateBlockMonthFormatter.format(d),
+    weekday: dateBlockWeekdayFormatter.format(d),
+  };
+}
+
 /**
  * How many IST calendar days later the end is than the start. 0 for a same-day event.
  *

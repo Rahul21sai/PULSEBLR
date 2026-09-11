@@ -42,9 +42,35 @@ const CHIP_BASE =
   "relative inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full px-3.5 text-[12.5px] font-semibold transition-colors [touch-action:manipulation] after:absolute after:inset-x-0 after:top-1/2 after:h-11 after:-translate-y-1/2 after:content-['']";
 
 const CHIP_IDLE =
-  'bg-white text-[#1D1D1F] shadow-[inset_0_0_0_1px_var(--hairline)] hover:bg-[#F7F7F9]';
+  'bg-white text-[color:var(--ink)] shadow-[inset_0_0_0_1px_var(--hairline)] hover:bg-[#F7F7F9]';
 /** Zero-count chips stay CLICKABLE and merely quiet — see `FacetRail`'s note on empty buckets. */
-const CHIP_EMPTY = 'bg-white text-[#A1A1A6] shadow-[inset_0_0_0_1px_var(--hairline)]';
+const CHIP_EMPTY = 'bg-white text-[color:var(--ink-3)] shadow-[inset_0_0_0_1px_var(--hairline)]';
+
+/**
+ * TWO KINDS OF FACT NEED TWO KINDS OF CHIP, and the axis is STRUCTURE rather than hue.
+ *
+ * `/people` shows a registry-resolved employer beside a label the user typed, and CLAUDE.md is explicit
+ * that one rail for both "would be less code and would destroy the distinction between *the registry
+ * recognised this employer* and *somebody typed this*". So `kind` picks the idle treatment:
+ *
+ *   · `registry` — BOUNDED: white, hairline ring, full-strength ink. An edge means "this came from a
+ *     defined list", which is exactly what `strength`-gated resolution guarantees.
+ *   · `own`      — FILLED and PREFIXED: soft grey, secondary ink, a leading `#`. Free text, softly held.
+ *
+ * Colour is deliberately not the axis. `--blue` means "you can act on this" and is rationed, so a rail
+ * of blue chips would spend the app's one accent on saying "employer". Blue stays for the ACTIVE chip,
+ * where it does mean something. The filled-grey treatment also matches how own-tags are already drawn in
+ * the person edit sheet, so the card, the rail and the editor agree instead of offering three looks.
+ *
+ * `registry` is the DEFAULT, so an existing caller that passes no `kind` keeps the treatment it had.
+ * (The idle greys did move onto `--ink` / `--ink-3` rather than the hexes they were pinned to, because
+ * the ramp was darkened in `globals.css` while this was being written and a hardcoded `#A1A1A6` would
+ * now render lighter than the rest of the app. `/people` is this component's only consumer.)
+ */
+export type FacetKind = 'registry' | 'own';
+
+const CHIP_OWN_IDLE = 'bg-[#F5F5F7] text-[color:var(--ink-2)] hover:bg-[#EEEEF0]';
+const CHIP_OWN_EMPTY = 'bg-[#F5F5F7] text-[color:var(--ink-3)]';
 
 /**
  * A boolean facet: "target companies", "follow-up due".
@@ -73,7 +99,7 @@ export function FacetToggle({
     >
       {label}
       {typeof count === 'number' && (
-        <span className={`tnum ${active ? 'text-white/60' : 'text-[#8E8E93]'}`}>{count}</span>
+        <span className={`tnum ${active ? 'text-white/60' : 'text-[color:var(--ink-3)]'}`}>{count}</span>
       )}
     </button>
   );
@@ -95,9 +121,12 @@ export default function FacetRail({
   extra = [],
   selected,
   onSelect,
+  kind = 'registry',
 }: {
   title: string;
   hint?: string;
+  /** Which kind of fact these chips carry — see `FacetKind`. Defaults to `registry`. */
+  kind?: FacetKind;
   buckets: FacetBucket[];
   /**
    * Buckets to append that the aggregate cannot produce — a tag created but not yet applied to
@@ -112,33 +141,64 @@ export default function FacetRail({
   const all = [...buckets, ...extra];
   if (!all.length) return null;
 
+  const own = kind === 'own';
+
   return (
     <div className="mb-3">
-      <div className="flex flex-wrap items-baseline gap-2">
-        <span className="t-label text-[#8E8E93]">{title}</span>
-        {hint && <span className="text-[12px] text-[#A1A1A6]">{hint}</span>}
+      {/*
+        THE TITLE STAYS, THE SHOUT DOES NOT.
+        `docs/design-direction.md` names the tracked-out ALL-CAPS eyebrow as a pattern to remove because
+        it announces content that needs no announcing — but this title genuinely does need announcing and
+        cannot be dropped: "Company" versus "Your tags" is the whole distinction the two rails exist to
+        keep, and a reader cannot infer it from the chips alone. `.t-label` was de-capsed in `globals.css`
+        while this was being written, so the class now IS the sentence-case small label and using it beats
+        a second definition of the same style here. It carries the ink colour rather than the usual grey
+        because it is the rail's heading, not a caption.
+      */}
+      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+        <span className="t-label text-[color:var(--ink)]">{title}</span>
+        {hint && <span className="text-[12px] text-[color:var(--ink-3)] tracking-[0]">{hint}</span>}
       </div>
       {/* `gap-y-2` is measured against the 44px overlay — see the file header. */}
-      <div className="mt-1.5 flex flex-wrap gap-x-1.5 gap-y-2">
+      <div className="mt-2 flex flex-wrap gap-x-1.5 gap-y-2">
         {all.map(bucket => {
           const active = selected === bucket.value;
+          const idle = own
+            ? bucket.count === 0
+              ? CHIP_OWN_EMPTY
+              : CHIP_OWN_IDLE
+            : bucket.count === 0
+              ? CHIP_EMPTY
+              : CHIP_IDLE;
           return (
             <button
               key={bucket.value}
               type="button"
               aria-pressed={active}
               onClick={() => onSelect(active ? null : bucket.value)}
-              className={`${CHIP_BASE} ${
-                active ? 'bg-[#0071E3] text-white' : bucket.count === 0 ? CHIP_EMPTY : CHIP_IDLE
-              }`}
+              className={`${CHIP_BASE} ${active ? 'bg-[#0071E3] text-white' : idle}`}
             >
-              {bucket.label ?? bucket.value}
+              {/*
+                ONE SPAN, because `CHIP_BASE` sets `gap-1.5` and the `#` must sit AGAINST its word —
+                as two children it renders "# hardware", which reads as a stray glyph rather than a
+                tag. The mark is quieter than the word so it says "kind of thing" instead of competing
+                as a character, and it is `aria-hidden` because "hash hardware" tells a screen-reader
+                user nothing the rail's own title has not already said.
+              */}
+              <span>
+                {own && (
+                  <span aria-hidden="true" className={active ? 'text-white/55' : 'text-[color:var(--ink-3)]'}>
+                    #
+                  </span>
+                )}
+                {bucket.label ?? bucket.value}
+              </span>
               {bucket.isTarget && !active && (
-                <span title="On your target list" aria-hidden="true" className="text-[#1D8A44]">
+                <span title="On your target list" aria-hidden="true" className="text-[color:var(--good)]">
                   ●
                 </span>
               )}
-              <span className={`tnum ${active ? 'text-white/60' : 'text-[#8E8E93]'}`}>
+              <span className={`tnum ${active ? 'text-white/60' : 'text-[color:var(--ink-3)]'}`}>
                 {bucket.count}
               </span>
             </button>

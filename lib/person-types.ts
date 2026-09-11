@@ -278,6 +278,43 @@ export function personSubtitle(person: {
   return [person.role || person.headline, person.company].filter(Boolean).join(' · ');
 }
 
+/**
+ * The identity line for a person CARD, where a registry company chip is rendered right below it.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────────────────────────
+ * WHY THIS IS NOT JUST `personSubtitle`. The card shows "Staff Engineer · Razorpay" and then, two
+ * lines down, a chip reading "Razorpay". That is the same word twice in one card — and the chip is not
+ * removable, because it is the filter affordance and the only thing that says the REGISTRY recognised
+ * that employer. So the duplicate has to come out of the prose instead.
+ *
+ * IT DROPS THE COMPANY ONLY ON AN EXACT (case- and space-insensitive) MATCH. `Person.company` is
+ * whatever the newest capture recorded — "Razorpay Software Private Limited" — while `companies[]`
+ * holds canonical registry names, so the two frequently differ and BOTH are then worth showing. A
+ * fuzzy match here would be the wrong kind of clever: it would delete a real employer string on the
+ * strength of a prefix, and the failure is silent, which is why this is pinned in
+ * `tests/people-api-shape.test.ts` rather than left inline in the component.
+ *
+ * A COMMA, NOT A MIDDLE DOT. `docs/design-direction.md` names middle-dot meta strings as a pattern to
+ * ration, and the rule it gives is "keep at most one per surface, where the sequence genuinely is a
+ * list of equals". A role and an employer are not equals — one modifies the other — so this is prose
+ * and takes prose punctuation. The card spends its one dot string on the encounter line, where place
+ * and date really are two facts of the same rank.
+ * ─────────────────────────────────────────────────────────────────────────────────────────────────
+ */
+export function personIdentityLine(
+  person: { role?: string | null; headline?: string | null; company?: string | null },
+  chippedCompanies: readonly string[] = []
+): string {
+  const fold = (value: string) => value.trim().toLowerCase().replace(/\s+/g, ' ');
+  const company = (person.company ?? '').trim();
+  const alreadyChipped =
+    Boolean(company) && chippedCompanies.some(name => fold(name) === fold(company));
+  return [person.role || person.headline, alreadyChipped ? '' : company]
+    .map(part => (part ?? '').trim())
+    .filter(Boolean)
+    .join(', ');
+}
+
 /* ══════════════════════════════════════════════════════════════════════════════════════════════
    REQUEST VALIDATION — pure, so `tests/` pins it with no database and no server
    ══════════════════════════════════════════════════════════════════════════════════════════════ */

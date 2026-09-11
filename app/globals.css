@@ -9,10 +9,46 @@
 
   /* ── Ink: three label levels, and only three ─────────────────────────────
      Apple ships label / secondaryLabel / tertiaryLabel and stops. A fourth grey is
-     how type hierarchy turns to mud, so there isn't one here. */
+     how type hierarchy turns to mud, so there isn't one here.
+
+     ── THE THIRD LEVEL FAILED CONTRAST AND HAS BEEN RETUNED. MEASURED, in the browser,
+     against all three surfaces this app paints on (--paper #F5F5F7, --card #FFFFFF,
+     --well #F7F7F9). Normal text needs 4.5:1 and every one of these is used at
+     10-12.5px, so no large-text exemption applies:
+
+       | value                    | on paper | on card | on well |
+       | ------------------------ | -------- | ------- | ------- |
+       | #1D1D1F  --ink           |    15.46 |   16.83 |   15.73 |
+       | #6E6E73  old --ink-2     |     4.66 |    5.07 |    4.74 |
+       | #8E8E93  old --ink-3     | **2.99** |  3.26   |  3.05   |
+       | #86868B  ad-hoc, 84 uses | **3.33** |  3.62   |  3.39   |
+       | #a1a1a6  ad-hoc, 15 uses | **2.36** |  2.57   |  2.40   |
+
+     So the old third level was failing by a wide margin, and TWO further greys had
+     already been invented at call sites to sit below it — the fourth grey this comment
+     warns about, 99 times over.
+
+     --ink-2 is darkened to #5C5C61 (6.11) to make room for a third level that passes:
+     #6F6F75 measures 4.58 / 4.99 / 4.67. That headroom is the whole reason ink-2 moved
+     — nothing lighter than roughly #6F6F75 passes 4.5:1 on #F5F5F7 at all, so keeping
+     ink-2 where it was would have left ink-3 either illegible or identical to it.
+
+     THE LIGHT GREY IS NOT DELETED, it is reclassified: --ink-disabled keeps #8E8E93 for
+     things that are not text — a disabled control, an icon on white. It is deliberately
+     NOT a text colour, and it is not a fourth label level.
+
+     A quieter THIRD level now comes from size and weight, not from a lighter grey.
+
+     THE TOKENS ARE BARELY THE POINT, THOUGH, AND WHOEVER ACTS ON THIS NEXT SHOULD KNOW IT:
+     measured across app/, `var(--ink-2)` is referenced 3 times and `var(--ink-3)` twice,
+     while the raw hexes appear 212 (#6E6E73, 53 files), 141 (#8E8E93, 39 files), 84
+     (#86868B) and 15 (#a1a1a6) times. Retuning these values therefore fixes almost
+     nothing on its own — the failing colour is pasted into ~240 call sites. The fix is
+     to replace a literal with `var(--ink-3)` as each file is touched. */
   --ink:   #1D1D1F;
-  --ink-2: #6E6E73;
-  --ink-3: #8E8E93;
+  --ink-2: #5C5C61;
+  --ink-3: #6F6F75;
+  --ink-disabled: #8E8E93;
 
   /* ── Hairlines are ALPHA, never solid grey ───────────────────────────────
      A solid #E5E5EA border reads as a light line on white and as a DARKER line on
@@ -33,7 +69,12 @@
   --live:      #FF3B30;
   --live-wash: #FFF1F0;
 
-  --good:      #1D8A44;
+  /* Darkened from #1D8A44, which measured 4.00:1 on --good-wash and therefore FAILED AA for
+     text under 18.66px — and `.pill-free` below is exactly that pairing at 11px, so every
+     "Free" pill in the public feed failed. #166B35 measures 5.98:1 on the wash and 6.59:1 on
+     white, so it passes in both places this green is actually used. Found by measuring the
+     resolved token rather than eyeballing it. */
+  --good:      #166B35;
   --good-wash: #EBF7EF;
 
   /* ── Motion: one curve ──────────────────────────────────────────────────
@@ -85,10 +126,28 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
-  /* Inter Tight sets noticeably tighter than Inter at display sizes, which is the
-     closest a web face gets to SF Pro Display's fit. Used for headings only. */
-  --font-display: var(--font-inter-tight), 'Inter Tight', system-ui, -apple-system, sans-serif;
+
+  /* ── `var(--font-inter)` FIRST, AND THAT WAS A REAL BUG, NOT TIDYING ─────────────────────
+     This said `'Inter', system-ui` — the literal family name — while `--font-inter` (declared
+     by next/font in app/layout.tsx) was referenced NOWHERE in this file.
+
+     next/font does not register a family called `Inter`. It emits a hashed one
+     (`__Inter_<hash>`) plus a metric-matched fallback, and exposes both through the CSS
+     variable; the bundled 16.3.4 docs give `--font-sans: var(--font-inter)` as the pattern.
+     So the literal name matched nothing the app had loaded, and the whole product's BODY type
+     silently resolved to whatever `Inter` happens to mean on the reader's machine — Segoe UI
+     on Windows, Roboto on Android — while the font it downloaded went unused. Every tracking
+     value in the scale below was calibrated for Inter and was being applied to a different
+     face. The display role never had this bug: it always put the variable first, which is the
+     evidence this was an oversight rather than a decision.
+
+     The literal names stay AFTER the variable, as a genuine fallback for anyone who has the
+     faces installed locally. */
+  --font-sans: var(--font-inter), 'Inter', system-ui, -apple-system, sans-serif;
+
+  /* Familjen Grotesk, headings and the date tile only — see the long note in app/layout.tsx for
+     the candidates, the measurements, and why Instrument Sans was rejected on width. */
+  --font-display: var(--font-display-face), 'Familjen Grotesk', system-ui, -apple-system, sans-serif;
 }
 
 /* ─── Base ────────────────────────────────────────────────────────────────── */
@@ -96,7 +155,9 @@ html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 body {
   background: #F5F5F7;
   color: #1D1D1F;
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  /* Same fix as --font-sans above: the variable first, or next/font's Inter is downloaded and
+     never used and every reader gets their system face instead. */
+  font-family: var(--font-inter), 'Inter', system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -182,7 +243,43 @@ body {
 .t-sub     { font-family: var(--font-display); font-size: 16px;   line-height: 1.32; letter-spacing: -0.016em; font-weight: 600; }
 .t-body    { font-size: 15px;   line-height: 1.47; letter-spacing: -0.008em; font-weight: 400; }
 .t-caption { font-size: 13px;   line-height: 1.38; letter-spacing: 0;        font-weight: 400; }
-.t-label   { font-size: 11px;   line-height: 1.1;  letter-spacing: 0.055em;  font-weight: 650; text-transform: uppercase; }
+
+/* Two genuine new steps in the ramp, requested by the feed-composition stream, which had
+   them as inline utilities in `shelves/SectionHeading.tsx`. They live here so the next
+   section heading is not reinvented at a third size: the feed tone and `RAIL_HEADING`
+   already differed by 0.5px for no reason. Tracking follows the same rule as everything
+   above — near-zero at 13px, zero at 12px, because the negative values belong to the
+   display sizes. */
+.t-section    { font-size: 13px; line-height: 1.25; letter-spacing: -0.006em; font-weight: 600; }
+.t-section-sm { font-size: 12px; line-height: 1.25; letter-spacing: 0;        font-weight: 600; }
+
+/* ── `.t-label` NO LONGER SHOUTS, and this was a layout defect as well as a style one ──
+   It baked `text-transform: uppercase` with +0.055em tracking into the class, so the
+   ~175 call sites across 42 files could not opt out of the caps without also abandoning
+   the tracking — while docs/design-direction.md instructs every agent to remove exactly
+   this pattern. A rule that forbids something the shared class enforces is not a rule.
+
+   The cost was measured, not aesthetic: the feed-composition stream found a shelf heading
+   setting **243px in uppercase +0.055em where 13px sentence case sets ~170px**, and with
+   `shrink-0` on the heading and its caption, 433px of content sat in a 358px column — the
+   home page scrolled sideways at 390px. Caps are wider, so this class was quietly
+   inflating every label in the app by ~40%.
+
+   SAFE TO CHANGE BECAUSE THE CALL SITES WERE ALREADY WRITTEN IN SENTENCE CASE. Checked
+   before touching it, not after: the text passed to `.t-label` reads "Add Event",
+   "Additional Details", "Anything worth noting", "Evenings that usually work", "How you
+   met", "Move to another folder", "In person, or on a screen". None of them relies on the
+   transform to look right, so removing it cannot make any label read as broken — and the
+   result is narrower, so it can only relieve overflow, never cause it.
+
+   Tracking drops with the caps because the two go together: +0.055em is what makes CAPS
+   legible and what makes sentence case look spaced out. Size goes 11px → 11.5px, because
+   lowercase at a given px reads smaller than caps at the same px.
+
+   `.t-label-caps` is the old definition, byte for byte, for anything that genuinely wants
+   caps. Nothing is forced to migrate; a surface that wanted the shout adds one word. */
+.t-label      { font-size: 11.5px; line-height: 1.2; letter-spacing: 0.01em;  font-weight: 650; }
+.t-label-caps { font-size: 11px;   line-height: 1.1; letter-spacing: 0.055em; font-weight: 650; text-transform: uppercase; }
 
 /* Aliases: the previous scale's names, kept so existing pages keep rendering while
    they migrate. Same sizes, corrected tracking and the display face where it helps. */
@@ -425,9 +522,27 @@ h1, h2, h3 { font-family: var(--font-display); }
 .meter i:nth-child(1) { height: 5px; }
 .meter i:nth-child(2) { height: 8px; }
 .meter i:nth-child(3) { height: 11px; }
-.meter[data-level='1'] i:nth-child(1),
 .meter[data-level='2'] i:nth-child(-n+2),
 .meter[data-level='3'] i { background: var(--blue); }
+
+/* ONE BAR IS NOT BLUE, and that is the accent rule doing its job rather than an
+   exception to it. --blue means "you can act on this". A single lit bar is the
+   scorer saying `Probably not` — a webinar, a course funnel, an online broadcast
+   — so painting it in the action colour recommends the one row the ranking is
+   arguing against. Grey states the level without endorsing it. Two bars up stay
+   blue: those the reader can act on. */
+.meter[data-level='1'] i:nth-child(1) { background: var(--ink-3); }
+
+/* The card footer's meter. Larger than the detail page's because there it sits
+   beside a 19px verdict word that carries the judgement, and on a card the bars
+   ARE the judgement — at 3×11px they read as a speck of punctuation. Still bars
+   and still three, because the score is a ranking signal: a track or a number
+   would imply a precision it does not have. */
+.meter-lg { height: 14px; gap: 2.5px; }
+.meter-lg i { width: 3.5px; border-radius: 1.75px; }
+.meter-lg i:nth-child(1) { height: 6px; }
+.meter-lg i:nth-child(2) { height: 10px; }
+.meter-lg i:nth-child(3) { height: 14px; }
 
 /* ─── Cover images ───────────────────────────────────────────────────────── */
 .cover {
@@ -446,6 +561,54 @@ h1, h2, h3 { font-family: var(--font-display); }
      the fallback is now a pale wash, so white type on it would be invisible. */
   color: var(--ink);
 }
+
+/* ─── The date tile: what a coverless event shows instead of a monogram ──────
+   40% of the first twenty ranked rows have no cover image, so this is on screen
+   constantly and a two-letter monogram was spending that space on nothing.
+
+   IT SIZES ITSELF FROM ITS BOX, via container query units, and that is the whole
+   reason there is no size prop. The same tile has to work at 76px square on a
+   phone row, 104px on a desktop row and across a 16:9 grid tile — four call
+   sites that would otherwise each carry a font-size to keep in step, which is
+   exactly how `monogramSize` ended up hand-tuned per caller.
+
+   The px declaration above each `min()` is a real fallback, not belt-and-braces:
+   an engine without container units drops the second declaration and keeps the
+   first, so the tile degrades to a fixed size rather than to unstyled text.
+   `container-type: size` is safe here because every caller gives this element a
+   definite width AND height (or an aspect-ratio parent). */
+.cover-date {
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  container-type: size;
+  overflow: hidden;
+  font-family: var(--font-display);
+  line-height: 1;
+  color: var(--ink);
+}
+.cover-date-day {
+  font-weight: 700;
+  /* Tracking is a function of size, and this is the largest type in the feed.
+     Capped at 72px so a 16:9 grid tile reads as a poster rather than as a crop. */
+  letter-spacing: -0.05em;
+  font-size: 30px;
+  font-size: min(42cqmin, 72px);
+}
+.cover-date-month {
+  font-weight: 600;
+  /* Positive tracking, because it is small: the same rule the type scale follows. */
+  letter-spacing: 0.02em;
+  opacity: 0.78;
+  font-size: 11px;
+  font-size: min(15cqmin, 22px);
+  margin-top: 1px;
+  margin-top: min(2cqmin, 5px);
+}
+
+/* A top hairline that composites correctly on white and on the page grey — the
+   separator the card footer uses. Alpha, never a solid grey; see --hairline. */
+.hairline-t { border-top: 1px solid var(--hairline); }
 
 /* ─── Skeleton shimmer ───────────────────────────────────────────────────── */
 @keyframes shimmer { 100% { transform: translateX(100%); } }
@@ -498,12 +661,19 @@ h1, h2, h3 { font-family: var(--font-display); }
 .kanban-card:active { cursor: grabbing; }
 .kanban-card[data-dragging='true'] { opacity: 0.4; }
 
-/* ─── Event card accent bars ─────────────────────────────────────────────── */
-.card-bar-ai         { background: linear-gradient(90deg, #0071E3 0%, #00C6FF 100%); }
-.card-bar-fintech     { background: linear-gradient(90deg, #34C759 0%, #30D158 100%); }
-.card-bar-networking  { background: linear-gradient(90deg, #FF9500 0%, #FFCC00 100%); }
-.card-bar-cyber       { background: linear-gradient(90deg, #FF3B30 0%, #FF6B6B 100%); }
-.card-bar-cloud       { background: linear-gradient(90deg, #5AC8FA 0%, #007AFF 100%); }
-.card-bar-data        { background: linear-gradient(90deg, #5856D6 0%, #AF52DE 100%); }
-.card-bar-hackathon   { background: linear-gradient(90deg, #FF2D55 0%, #FF6CAB 100%); }
-.card-bar-default     { background: linear-gradient(90deg, #8E8E93 0%, #636366 100%); }
+/* ─── Event card accent bars: DELETED ─────────────────────────────────────────
+   Eight per-category two-stop gradients (`.card-bar-ai`, `-fintech`, `-cyber` …).
+   Verified unreferenced: zero call sites across app/, lib/, scripts/, public/ and
+   tests/.
+
+   Worth recording rather than quietly dropping, because this file already claims
+   the job was done — the note above `.card-shadow` says "Eight category gradients,
+   a hero gradient and a `hover-lift` … All were verified unreferenced and removed".
+   These are a SECOND set of eight that the same sweep missed, and they sat here
+   contradicting that note for anyone who read the file top to bottom.
+
+   They are also the one thing the design direction rules out twice over: a category
+   colour may tint a date block or carry a thin spine, and may never become a fill or
+   a gradient; and a rainbow of gradient category tiles is the loudest "template"
+   signal a UI can send. On this product they would compete with the only element
+   allowed to carry colour — the cover image, which is real content. */

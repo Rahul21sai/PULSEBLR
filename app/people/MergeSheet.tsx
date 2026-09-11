@@ -4,7 +4,8 @@ import { useMemo, useState } from 'react';
 import Sheet from '../components/Sheet';
 import { Banner, Button } from '../components/ui';
 import { relativeTime } from '@/lib/format';
-import type { MergeCandidate, MergePair } from '@/lib/person-types';
+import { contactKeyTier } from '@/lib/scan/contact-key';
+import { personIdentityLine, type MergeCandidate, type MergePair } from '@/lib/person-types';
 
 /**
  * "Are these two the same person?" — side by side, one field at a time.
@@ -33,6 +34,42 @@ import type { MergeCandidate, MergePair } from '@/lib/person-types';
  *     Reversibility that you have to go and find is a claim; reversibility next to the button that
  *     needed it is a feature.
  */
+
+/**
+ * WHAT ACTUALLY MATCHED, IN WORDS, AND HOW MUCH IT IS WORTH.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────────────────────────
+ * The sheet used to print the raw key — `nm:asha rao` — inside a `<code>` and call it "the same
+ * identity key". That is evidence a reader cannot weigh, and weighing it is the entire decision being
+ * asked of them, because the four tiers are not the same claim:
+ *
+ *   li:  a LinkedIn vanity slug. Globally unique — two rows holding it ARE one human, near enough.
+ *   em:  an email address. Unique in practice.
+ *   ph:  a phone number. Unique, but typo-prone, and shared landlines exist (`contact-key.ts` says so).
+ *   nm:  a NAME, and nothing stronger. Two people called Rahul at one event is the exact failure that
+ *        made `contactKey` necessary in the first place.
+ *
+ * So the strong tiers get a plain statement and the name tier gets a warning, because a merge on a
+ * shared name is the one that can destroy the distinction between two real people. The tier is read
+ * through `contactKeyTier()` — the one definition of these prefixes — rather than by matching `li:`
+ * here, so a fifth tier cannot leave this copy quietly describing the wrong thing. The prose is local
+ * because prose is a UI concern; the prefix knowledge is not.
+ * ─────────────────────────────────────────────────────────────────────────────────────────────────
+ */
+export function sharedKeyEvidence(contactKey: string): { what: string; weak: boolean } {
+  switch (contactKeyTier(contactKey ?? '')) {
+    case 'linkedin':
+      return { what: 'the same LinkedIn profile', weak: false };
+    case 'email':
+      return { what: 'the same email address', weak: false };
+    case 'phone':
+      return { what: 'the same phone number', weak: false };
+    case 'name':
+      return { what: 'the same name — and nothing else', weak: true };
+    default:
+      return { what: 'the same identity key', weak: true };
+  }
+}
 
 /** The fields the user can be asked to choose between. `headline` is not one — nobody edits it. */
 const CHOICE_FIELDS = [
@@ -120,6 +157,9 @@ export default function MergeSheet({
       return a && b && a !== b;
     });
   }, [winner, loser]);
+
+  /** What matched, and whether it is worth much. Graded per key tier — see `sharedKeyEvidence`. */
+  const evidence = sharedKeyEvidence(pair?.contactKey ?? '');
 
   function reset() {
     setWinnerId(null);
@@ -210,7 +250,10 @@ export default function MergeSheet({
       open={open}
       onClose={onClose}
       labelledBy="merge-sheet-title"
-      title="Possible duplicate"
+      /* A QUESTION, not a verdict. The spine refuses to auto-join, so the machine's whole contribution
+         here is a question — and a heading that reads "Possible duplicate" is already most of the way
+         to answering it on the user's behalf. */
+      title="Is this one person?"
       subtitle={
         visible.length > 1
           ? `${Math.min(index + 1, visible.length)} of ${visible.length}`
@@ -219,7 +262,7 @@ export default function MergeSheet({
       footer={
         justMerged ? (
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <span className="text-[12.5px] text-[#6E6E73]">
+            <span className="text-[12.5px] text-[color:var(--ink-2)]">
               Nothing was deleted — this can be undone.
             </span>
             <div className="flex gap-2">
@@ -255,7 +298,7 @@ export default function MergeSheet({
       }
     >
       {!pair ? (
-        <p className="text-[13.5px] text-[#6E6E73]">No duplicates left to review.</p>
+        <p className="text-[13.5px] text-[color:var(--ink-2)]">No duplicates left to review.</p>
       ) : (
         <div className="flex flex-col gap-4">
           {error && <Banner tone="error">{error}</Banner>}
@@ -267,19 +310,33 @@ export default function MergeSheet({
             </Banner>
           ) : (
             <>
-              {/* THE EVIDENCE, shown rather than asserted. A suggestion you cannot argue with is
-                  one you either obey or ignore. */}
-              <div className="rounded-xl bg-[#F7F7F9] p-3.5 text-[12.5px] leading-relaxed text-[#3a3a3c]">
-                Both records point at the same identity key{' '}
-                <code className="rounded bg-white px-1.5 py-0.5 text-[11.5px] text-[#1D1D1F]">
-                  {pair.contactKey || 'unknown'}
-                </code>
-                . That usually means one person scanned twice — but a key can be shared by mistake, so
-                nothing was merged automatically.
+              {/*
+                THE EVIDENCE, IN WORDS, GRADED. A suggestion you cannot argue with is one you either
+                obey or ignore — and the raw key this used to print (`nm:asha rao`) is not something a
+                reader can weigh. The strength claim differs per tier, so the copy does too: see
+                `sharedKeyEvidence`. The key itself stays on screen underneath, because somebody
+                debugging their own data deserves the actual string.
+              */}
+              <div className="rounded-xl bg-[#F7F7F9] p-3.5 text-[12.5px] leading-relaxed text-[color:var(--ink-2)]">
+                <p>
+                  Both records carry{' '}
+                  <strong className="font-semibold text-[color:var(--ink)]">{evidence.what}</strong>.{' '}
+                  {evidence.weak
+                    ? 'Two different people can easily share a name, so this is a question rather than a finding — read both records before deciding.'
+                    : 'That usually means one person captured twice. Nothing was merged automatically, because a key can still be shared by mistake.'}
+                </p>
+                <p className="mt-2 text-[11.5px] text-[color:var(--ink-3)]">
+                  Matched on{' '}
+                  <code className="rounded bg-white px-1.5 py-0.5 text-[11px] text-[color:var(--ink-2)]">
+                    {pair.contactKey || 'an unrecognised key'}
+                  </code>
+                </p>
               </div>
 
               <fieldset>
-                <legend className="t-label mb-2 text-[#8E8E93]">Which record survives?</legend>
+                <legend className="t-label mb-2 block text-[color:var(--ink)]">
+                  Which record survives?
+                </legend>
                 <div className="grid gap-2 sm:grid-cols-2">
                   {[pair.a, pair.b].map(candidate => (
                     <CandidateCard
@@ -299,14 +356,16 @@ export default function MergeSheet({
 
               {contested.length > 0 && winner && loser && (
                 <div>
-                  <p className="t-label mb-2 text-[#8E8E93]">These disagree — pick one of each</p>
+                  <p className="t-label mb-2 block text-[color:var(--ink)]">
+                    These two disagree — pick one of each
+                  </p>
                   <div className="flex flex-col gap-3">
                     {contested.map(field => {
                       const options = [fieldValue(winner, field.key), fieldValue(loser, field.key)];
                       const chosen = choices[field.key] ?? options[0];
                       return (
                         <div key={field.key}>
-                          <p className="text-[12px] text-[#8E8E93]">{field.label}</p>
+                          <p className="text-[12px] text-[color:var(--ink-3)]">{field.label}</p>
                           <div className="mt-1 flex flex-wrap gap-x-1.5 gap-y-2">
                             {options.map(option => (
                               <button
@@ -319,7 +378,7 @@ export default function MergeSheet({
                                 className={`relative inline-flex h-9 items-center rounded-full px-3.5 text-[12.5px] font-semibold transition-colors [touch-action:manipulation] after:absolute after:inset-x-0 after:top-1/2 after:h-11 after:-translate-y-1/2 after:content-[''] ${
                                   chosen === option
                                     ? 'bg-[#0071E3] text-white'
-                                    : 'bg-white text-[#1D1D1F] shadow-[inset_0_0_0_1px_var(--hairline)] hover:bg-[#F7F7F9]'
+                                    : 'bg-white text-[color:var(--ink)] shadow-[inset_0_0_0_1px_var(--hairline)] hover:bg-[#F7F7F9]'
                                 }`}
                               >
                                 {option}
@@ -330,7 +389,7 @@ export default function MergeSheet({
                       );
                     })}
                   </div>
-                  <p className="mt-2 text-[12px] leading-relaxed text-[#A1A1A6]">
+                  <p className="mt-2 text-[12px] leading-relaxed text-[color:var(--ink-3)]">
                     Your pick is stored as a correction, so the next scan can’t quietly revert it.
                   </p>
                 </div>
@@ -363,21 +422,23 @@ function CandidateCard({
           : 'bg-white shadow-[inset_0_0_0_1px_var(--hairline)] hover:bg-[#F7F7F9]'
       }`}
     >
-      <p className="t-sub truncate text-[#1D1D1F]">{candidate.displayName}</p>
-      <p className="mt-0.5 truncate text-[12.5px] text-[#6E6E73]">
-        {[candidate.role || candidate.headline, candidate.company].filter(Boolean).join(' · ') ||
-          'No role or company recorded'}
+      <p className="t-sub truncate text-[color:var(--ink)]">{candidate.displayName}</p>
+      <p className="mt-0.5 truncate text-[12.5px] text-[color:var(--ink-2)]">
+        {personIdentityLine(candidate) || 'No role or company recorded'}
       </p>
-      <p className="mt-1.5 text-[12px] text-[#8E8E93]">
+      {/* The sheet's ONE middle-dot string, and it earns it: three counts of the same rank, which is
+          the condition `docs/design-direction.md` sets for keeping one. */}
+      <p className="mt-1.5 text-[12px] text-[color:var(--ink-3)]">
         <span className="tnum">{candidate.eventCount}</span>{' '}
         {candidate.eventCount === 1 ? 'event' : 'events'} ·{' '}
-        <span className="tnum">{candidate.interactionCount}</span> in the timeline
+        <span className="tnum">{candidate.interactionCount}</span>{' '}
+        {candidate.interactionCount === 1 ? 'entry' : 'entries'}
         {candidate.lastInteractionAt ? ` · last ${relativeTime(candidate.lastInteractionAt)}` : ''}
       </p>
+      {/* Sentence case. A tracked-out ALL-CAPS marker is the pattern `docs/design-direction.md` names
+          first, and it was shouting one word inside a card whose blue ring already says it is chosen. */}
       {selected && (
-        <p className="mt-1.5 text-[11.5px] font-bold uppercase tracking-[0.055em] text-[#0058B0]">
-          Survives
-        </p>
+        <p className="mt-1.5 text-[12px] font-semibold text-[#0058B0]">Keeps everything</p>
       )}
     </button>
   );

@@ -187,7 +187,7 @@ function AddEventForm() {
       <section className="bg-white rounded-[20px] card-shadow p-8 text-center">
         <span
           aria-hidden="true"
-          className="material-symbols-outlined text-[32px] text-[#1D8A44]"
+          className="material-symbols-outlined text-[32px] text-[#166B35]"
           style={{ fontVariationSettings: "'FILL' 1" }}
         >
           how_to_reg

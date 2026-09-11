@@ -224,11 +224,23 @@ export function ButtonLink({
   );
 }
 
-/** Segmented control / filter chip. `pressed` is the ARIA state, not just a look. */
+/**
+ * Segmented control / filter chip. `pressed` is the ARIA state, not just a look.
+ *
+ * `className` IS MERGED, NOT REPLACED — the identical latent defect `Button` above documents at
+ * length, in the same file. `className` is part of `ButtonHTMLAttributes`, so `...rest` captured it
+ * and spread AFTER the explicit `className`, which meant a passed class did not append, it replaced
+ * the height, the radius and the tone: an unstyled button that the type signature happily accepts.
+ * No caller passes one today (all nine call sites checked across `/admin` and `/onboarding`), so this
+ * was latent and the fix cannot change any existing render — `[cls, undefined].filter(Boolean)` is
+ * `cls`. It matters for the same reason it mattered on `Button`: at `h-9` a chip is 36px against the
+ * 44px tap floor, and until now a caller had no way to attach `TAP_44` to fix that.
+ */
 export function Chip({
   children,
   pressed,
   count,
+  className,
   ...rest
 }: {
   children: ReactNode;
@@ -239,11 +251,16 @@ export function Chip({
     <button
       type="button"
       aria-pressed={pressed}
-      className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-3.5 h-9 text-[12.5px] font-semibold transition-colors ${
-        pressed
-          ? 'bg-[#1D1D1F] text-white'
-          : 'bg-white text-[#1D1D1F] shadow-[inset_0_0_0_1px_var(--hairline)] hover:bg-[#F7F7F9]'
-      }`}
+      className={[
+        `inline-flex shrink-0 items-center gap-1.5 rounded-full px-3.5 h-9 text-[12.5px] font-semibold transition-colors ${
+          pressed
+            ? 'bg-[#1D1D1F] text-white'
+            : 'bg-white text-[#1D1D1F] shadow-[inset_0_0_0_1px_var(--hairline)] hover:bg-[#F7F7F9]'
+        }`,
+        className,
+      ]
+        .filter(Boolean)
+        .join(' ')}
       {...rest}
     >
       {children}
@@ -293,6 +310,17 @@ export function Field({ label, children }: { label: string; children: ReactNode 
   );
 }
 
+/**
+ * AN ERROR IS `role="alert"`, EVERYTHING ELSE IS `role="status"`, and the difference is not cosmetic.
+ *
+ * Every tone used to be `role="status"`, which maps to `aria-live="polite"` — announced only once the
+ * screen reader finishes whatever it is already saying, and dropped entirely if the user is mid-typing
+ * or navigating. That is correct for "Saved." and wrong for "Could not reach the server. Nothing was
+ * changed.": a failure a user does not hear is a failure they retype into. `alert` is assertive, which
+ * is the whole reason the role exists.
+ *
+ * Class output is untouched, so this changes nothing visually on any of the surfaces that consume it.
+ */
 export function Banner({
   tone = 'info',
   children,
@@ -302,12 +330,15 @@ export function Banner({
 }) {
   const cls = {
     info: 'bg-[#EBF4FE] text-[#0058B0]',
-    ok: 'bg-[#EBF7EF] text-[#1D8A44]',
+    ok: 'bg-[#EBF7EF] text-[#166B35]',
     warn: 'bg-amber-50 text-amber-900',
     error: 'bg-[#FFF1F0] text-[#C7362D]',
   }[tone];
   return (
-    <div className={`rounded-xl px-4 py-3 text-[12.5px] leading-relaxed ${cls}`} role="status">
+    <div
+      className={`rounded-xl px-4 py-3 text-[12.5px] leading-relaxed ${cls}`}
+      role={tone === 'error' ? 'alert' : 'status'}
+    >
       {children}
     </div>
   );

@@ -1114,7 +1114,7 @@ function PendingDot({ blocked = false, reason }: { blocked?: boolean; reason?: s
 
 function TargetBadge() {
   return (
-    <span className="mt-1 inline-block rounded-full bg-[#EBF7EF] px-2 py-0.5 text-[10.5px] font-bold text-[#1D8A44]">
+    <span className="mt-1 inline-block rounded-full bg-[#EBF7EF] px-2 py-0.5 text-[10.5px] font-bold text-[#166B35]">
       Target company
     </span>
   );

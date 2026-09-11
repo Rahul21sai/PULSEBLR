@@ -193,7 +193,7 @@ export function SeverityPill({ severity }: { severity: 'safe' | 'caution' | 'blo
       ? 'bg-[#FFF1F0] text-[#C7362D]'
       : severity === 'caution'
         ? 'bg-amber-50 text-amber-900'
-        : 'bg-[#EBF7EF] text-[#1D8A44]';
+        : 'bg-[#EBF7EF] text-[#166B35]';
   const text = severity === 'blocked' ? 'Someone acted on this' : severity === 'caution' ? 'Check first' : 'Unreferenced';
   return (
     <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide ${style}`}>

@@ -359,7 +359,7 @@ function Overview({ stats, onGo }: { stats: Stats; onGo: (tab: Tab) => void }) {
                     title="Connection score — how likely you are to leave with useful contacts"
                     className={`tnum shrink-0 rounded-full px-2 py-0.5 text-[11px] font-bold ${
                       e.connectionScore >= 70
-                        ? 'bg-[#EBF7EF] text-[#1D8A44]'
+                        ? 'bg-[#EBF7EF] text-[#166B35]'
                         : e.connectionScore >= 50
                           ? 'bg-amber-50 text-amber-900'
                           : 'bg-[#f3f3f5] text-[#6E6E73]'

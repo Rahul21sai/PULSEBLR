@@ -85,7 +85,7 @@ function Row({ row, actions }: { row: QRow; actions?: ReactNode }) {
         title="Connection score — where this sits in the default feed's sort"
         className={`tnum mt-0.5 w-9 shrink-0 rounded-full px-1.5 py-0.5 text-center text-[11px] font-bold ${
           (row.connectionScore ?? 0) >= 70
-            ? 'bg-[#EBF7EF] text-[#1D8A44]'
+            ? 'bg-[#EBF7EF] text-[#166B35]'
             : (row.connectionScore ?? 0) >= 50
               ? 'bg-amber-50 text-amber-900'
               : 'bg-[#f3f3f5] text-[#6E6E73]'

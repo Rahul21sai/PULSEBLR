@@ -129,9 +129,17 @@ Also: no numbered markers (01 / 02 / 03) unless the content really is a sequence
   title, time, venue, pills, meter and save button, which is why they read as a wall.
 - Line length under 80 characters.
 - 44px hit areas, painted size unchanged. `TAP_44` / `TAP_44_SQUARE` in
-  `app/components/scan/ContactFields.tsx` are the idiom — **and read its warning first**: a 44px
-  overlay on a smaller control overhangs `(44 − h) / 2` per side, so two neighbours contest the band
-  and the later one in the DOM wins the tap. Adjacent controls need `44 − h` between them, not half.
+  `app/components/scan/ContactFields.tsx` are the idiom for an **inline** control — **and read its
+  warning first**: a 44px overlay on a smaller control overhangs `(44 − h) / 2` per side, so two
+  neighbours contest the band and the later one in the DOM wins the tap. Adjacent controls need
+  `44 − h` between them, not half. Measured on `/people`: 25.3px chips inside a 44px band overhang
+  9.4px per side against `gap-y-2`'s 8px, so two chip rows genuinely stole each other's taps.
+
+  **THE OVERLAY IS THE WRONG TOOL FOR A FULL-WIDTH BLOCK, and this document said otherwise.** A band
+  on a 100%-width row can only grow vertically, so it overhangs into the rows above and below with no
+  horizontal escape — it converts one small target into three overlapping ones. For those, **paint the
+  height** (`min-h-11`). Found on a thin person card — a LinkedIn QR with no role or employer, which
+  is the commonest capture — painting 40px.
 - Skeletons, never spinners. `.skeleton` and `Skeleton` already exist.
 - Reserve image space with a fixed aspect-ratio box so the feed does not reflow as covers land.
 
@@ -153,7 +161,19 @@ A stream this session built a **static harness** and it caught a bug that comput
 the technique: serve a plain HTML file on a high port with `python -m http.server`, containing the
 **verbatim class strings** from the real components, styled by **this project's own `globals.css`
 compiled through the installed `@tailwindcss/postcss`** — swap its `@import` line, never copy the
-file — with the same Inter faces. Probe it in a browser at 390×844 and 1440×900.
+file. Probe it in a browser at 390×844 and 1440×900.
+
+**DO NOT HARDCODE A TYPEFACE OR A HEX IN THE HARNESS. THIS DOCUMENT USED TO SAY "with the same Inter
+faces" AND THAT INSTRUCTION BROKE A MEASUREMENT MID-SESSION.** The display face changed to Familjen
+Grotesk behind `--font-display-face` while agents were running, so a harness naming Inter silently
+fell back to `system-ui` and then reported that as the app's typography. A face or a colour written
+into a probe is the same trap as a dated `npm audit` claim in a document: it is a snapshot presented
+as a fact. **Read the resolved value off the page instead** — `getComputedStyle` for a token, and
+compute contrast from the resolved colour rather than from a hex you typed.
+
+One more parser trap, found the same way: Chrome resolves `color-mix()` to
+`color(srgb r g b)` with 0–1 floats, **not** `rgb()` 0–255. A contrast probe that assumes `rgb()`
+returns exactly `1.00` for every pair — a parser bug that reads as a clean result.
 
 It measures **components in isolation, not the assembled page.** Say which of your numbers are
 measured in the harness and which are computed from the source. Never present a computed figure as a

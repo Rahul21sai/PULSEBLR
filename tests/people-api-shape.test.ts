@@ -9,6 +9,7 @@ import {
   MAX_OWN_TAGS,
   isObjectIdLike,
   linkedinUrlFromKeys,
+  personIdentityLine,
   personSubtitle,
   personToDTO,
   personToMergeCandidate,
@@ -675,6 +676,74 @@ describe('personSubtitle', () => {
     // own under a name reads as a rendering bug.
     expect(personSubtitle({})).toBe('');
     expect(personSubtitle({ company: null, role: null, headline: null })).toBe('');
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════════════════════════
+   personIdentityLine — the card's version, where a company chip is rendered right below it
+   ══════════════════════════════════════════════════════════════════════════════════════════════ */
+
+describe('personIdentityLine', () => {
+  /**
+   * WHY THIS IS PINNED AND `personSubtitle` WAS ENOUGH BEFORE. The person card shows the identity line
+   * and then, two rows down, a registry chip. With both saying "Razorpay" that is the same word twice in
+   * one card — and the chip is not the removable one, because it is the filter affordance AND the only
+   * thing on screen that says the REGISTRY recognised that employer. So the duplicate comes out of the
+   * prose, and the failure mode of getting it wrong is SILENT: the employer simply stops being rendered.
+   */
+  it('drops the company when a registry chip already carries it', () => {
+    expect(
+      personIdentityLine({ role: 'Staff Engineer', company: 'Razorpay' }, ['Razorpay'])
+    ).toBe('Staff Engineer');
+  });
+
+  it('matches case- and whitespace-insensitively, because the two strings have different origins', () => {
+    // `Person.company` is whatever the newest capture recorded; `companies[]` holds canonical registry
+    // names. They agree often enough to need folding, and differ often enough to need the test below.
+    expect(personIdentityLine({ role: 'SRE', company: '  razorpay ' }, ['Razorpay'])).toBe('SRE');
+    expect(personIdentityLine({ role: 'SRE', company: 'Fold  Money' }, ['fold money'])).toBe('SRE');
+  });
+
+  /**
+   * THE CASE THAT STOPS THIS BECOMING FUZZY. A prefix or substring match here would delete a real,
+   * more-specific employer string on the strength of a shorter registry name — so it is exact-only, and
+   * both facts are shown when they genuinely differ.
+   */
+  it('keeps a company the chip does not actually equal', () => {
+    expect(
+      personIdentityLine({ role: 'Staff Engineer', company: 'Razorpay Software Private Limited' }, [
+        'Razorpay',
+      ])
+    ).toBe('Staff Engineer, Razorpay Software Private Limited');
+  });
+
+  it('keeps the company when there are no chips at all', () => {
+    expect(personIdentityLine({ role: 'Staff Engineer', company: 'Razorpay' })).toBe(
+      'Staff Engineer, Razorpay'
+    );
+  });
+
+  /**
+   * A COMMA, NOT A MIDDLE DOT — pinned because it is a design rule, not a taste. `docs/design-direction
+   * .md` rations middle-dot meta strings to one per surface "where the sequence genuinely is a list of
+   * equals". A role and an employer are not equals; the card spends its one dot string on the encounter
+   * line, where place and date really are two facts of the same rank.
+   */
+  it('joins with a comma, leaving the middle dot for the encounter line', () => {
+    const line = personIdentityLine({ role: 'Staff Engineer', company: 'Postman' });
+    expect(line).toBe('Staff Engineer, Postman');
+    expect(line).not.toContain('·');
+  });
+
+  it('falls back to the headline, and stays honestly blank when nothing is known', () => {
+    expect(personIdentityLine({ headline: 'Building payments infra' })).toBe(
+      'Building payments infra'
+    );
+    // A LinkedIn QR carries a vanity slug and nothing else, so an empty result is the COMMON case.
+    expect(personIdentityLine({})).toBe('');
+    expect(personIdentityLine({ role: null, headline: null, company: null }, ['Razorpay'])).toBe('');
+    // Company only, unchipped: no leading separator.
+    expect(personIdentityLine({ company: 'Postman' })).toBe('Postman');
   });
 });
 
