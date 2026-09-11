@@ -67,6 +67,7 @@ import { scrapeUrlUniversal, COMPANY_EVENT_PAGES } from './adapters/universal';
 import {
   scrapeMicrosites,
   candidateToRawEvent,
+  candidateToExtraction,
   fingerprintSourceEventId,
   fingerprintFromSourceEventId,
   FINGERPRINT_PREFIX,
@@ -713,6 +714,15 @@ async function loadRenderer(enabled: boolean): Promise<RendererHandle> {
 // default, and not derived from anything — it is a literal, in one function, and everything below
 // is about making sure nothing else can undo it.
 //
+// ── AND IT WRITES ITS OWN EVIDENCE (`Event.extraction`) ──────────────────────────────────────
+//
+// Review is only a real safeguard if the reviewer can check the claim. A fabricated event and a
+// correct one arrive with the SAME status and the same fields, so the row carries the page text the
+// model read, the verbatim reply, the fingerprint and the model name — enough to judge the parse by
+// eye (`scripts/diag-microsite-audit.ts`) or re-run it against a better model with no second fetch.
+// The field is `select: false`, so it cannot follow an approved row into a public response; see its
+// docblock in `lib/models/Event.ts`.
+//
 // ── WHY THE DEDUP KEYS ARE NAMESPACED, WHICH IS THE PART THAT LOOKS LIKE OVER-ENGINEERING ────
 //
 // `clusterKey` is normalised title + IST day with no source in it, and `ingestEvents`' three
@@ -903,6 +913,18 @@ async function landMicrositeCandidates(
         if (doc.endDateTime) existing.endDateTime = doc.endDateTime;
         if (doc.venue) existing.venue = doc.venue;
         if (doc.address) existing.address = doc.address;
+        /*
+         * REPLACED IN THE SAME BREATH AS THE FINGERPRINT, and the pairing is the correctness point.
+         * `sourceEventId` above is the fingerprint of the text THIS run read; if the retained text
+         * were left at the previous night's version the row would claim a fingerprint whose input it
+         * does not hold, and the audit script's drift check exists precisely because that mismatch
+         * is otherwise undetectable.
+         *
+         * `existing` was loaded WITHOUT this path (`select: false`), which is safe: mongoose only
+         * `$set`s modified paths, so a document fetched without it cannot blank it — and here it is
+         * assigned outright, so the write is explicit either way.
+         */
+        existing.extraction = candidateToExtraction(candidate);
         await existing.save();
         report.refreshed++;
         continue;
@@ -913,6 +935,16 @@ async function landMicrositeCandidates(
         dedupHash,
         clusterKey,
         sourceEventId: fingerprintSourceEventId(candidate.fingerprint),
+        /*
+         * THE AUDIT TRAIL. The page text this event was invented from, plus the verbatim reply —
+         * see `EventExtraction` in `lib/models/Event.ts`. `select: false` there means no read path
+         * returns it without asking, so a row that later gets approved and joins the public corpus
+         * does not start carrying 20 KB of somebody's marketing copy into the feed.
+         *
+         * This is the only writer. A candidate with no retained text would be a row a reviewer
+         * cannot check, so it is attached unconditionally rather than behind a flag.
+         */
+        extraction: candidateToExtraction(candidate),
         // THE LITERAL. Not a variable, not a default, not derived. An extracted event may only
         // ever exist as something awaiting review.
         visibility: 'pending',

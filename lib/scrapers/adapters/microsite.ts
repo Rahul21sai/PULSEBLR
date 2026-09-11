@@ -64,6 +64,14 @@ import {
   type ExtractionResult,
   type ExtractionProvider,
 } from '../../llm/extract-event';
+/*
+ * TYPE-ONLY, SO PROPERTIES 1 AND 2 ABOVE STILL HOLD. `import type` is erased at compile time by
+ * both tsc and esbuild, so no mongoose enters this module's runtime graph, nothing is bundled for
+ * Vercel, and `tests/extract-event.test.ts` still imports this file with no database behind it.
+ * The alternative — re-declaring the record's shape here — would be a second definition of a stored
+ * field, which is the thing this codebase keeps paying for.
+ */
+import type { EventExtraction } from '../../models/Event';
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 // THE WATCHLIST
@@ -407,7 +415,11 @@ export interface MicrositeCandidate {
   event: ExtractedEvent;
   /** Fingerprint of the text the model read. Becomes `Event.sourceEventId`. */
   fingerprint: string;
-  /** The text itself, for the audit trail. Not stored on the Event — see the pipeline note. */
+  /**
+   * The FULL rendered text, for the audit trail. Longer than what the model was shown: the prompt
+   * is capped at `TEXT_BUDGET` while grounding is checked against all of this. Retained on the
+   * stored row via `candidateToExtraction` → `Event.extraction`.
+   */
   sourceText: string;
   /** Verbatim model response. */
   rawResponse?: string;
@@ -829,5 +841,82 @@ export function candidateToRawEvent(candidate: MicrositeCandidate): RawEvent {
      * index, so the landing path zips its candidates against the normalised rows.
      */
   };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// CANDIDATE → `Event.extraction`
+//
+// The audit record. `Event.extraction` is `select: false`, so nothing but a deliberate
+// `.select('+extraction')` ever sees it — see the field's docblock in `lib/models/Event.ts` for why
+// that is the leak defence rather than a nicety.
+//
+// ONE BUILDER, ON PURPOSE. Nothing in the schema is `required` (a required subfield would turn an
+// incomplete audit record into a ValidationError that deletes the candidate it documents), so the
+// "complete or absent" invariant lives here instead — in a pure function with a test, rather than
+// as a rule each future call site has to remember.
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Characters of rendered page text retained.
+ *
+ * ABOVE `TEXT_BUDGET` (12k), and the gap is the whole point. Two consumers read the text at
+ * different lengths: `buildExtractionPrompt` truncates to `TEXT_BUDGET`, while `parseExtraction`
+ * checks GROUNDING against the untruncated string. Retaining only the prompt slice would leave a
+ * title legitimately quoted from beyond character 12,000 looking like a hallucination to any
+ * re-check — a false alarm in the one tool built to be trusted. 20,000 clears the measured range
+ * (4.5k-15k), so in practice the whole page is kept and both consumers are reproducible: the prompt
+ * is `text.slice(0, TEXT_BUDGET)`, the haystack is all of it.
+ */
+export const EXTRACTION_TEXT_KEEP = 20000;
+
+/**
+ * Characters of the verbatim model reply retained.
+ *
+ * Sized so it should never bite: the request sets `max_tokens: 4000`, which is roughly 16,000
+ * characters of compact JSON, so a real reply fits. It is a guard against a future model or a
+ * higher token ceiling, not an expected truncation — and it matters that a stored reply is normally
+ * WHOLE, because a truncated one can no longer be fed back through `parseExtraction`.
+ */
+export const EXTRACTION_RESPONSE_KEEP = 20000;
+
+/**
+ * Build the audit record for one candidate.
+ *
+ * `sourceUrl` is the WATCHLIST page, never `event.registrationUrl` — the two differ whenever the
+ * model found a register link, and the page is the thing that has to be re-fetchable. Note the
+ * contrast with `candidateToRawEvent`, which deliberately prefers the registration link for the
+ * event's own `sourceUrl`: that one is where a reader should go, this one is where the text came
+ * from, and conflating them would make the audit trail point at a ticketing form.
+ */
+export function candidateToExtraction(
+  candidate: MicrositeCandidate,
+  extractedAt: Date = new Date()
+): EventExtraction {
+  return {
+    text: candidate.sourceText.slice(0, EXTRACTION_TEXT_KEEP),
+    // The length BEFORE any cap. The only signal that the retained copy is partial, and therefore
+    // the only way to tell "the model never saw this" from "the model missed it".
+    textLength: candidate.sourceText.length,
+    fingerprint: candidate.fingerprint,
+    ...(candidate.rawResponse
+      ? { response: candidate.rawResponse.slice(0, EXTRACTION_RESPONSE_KEEP) }
+      : {}),
+    ...(candidate.model ? { model: candidate.model } : {}),
+    sourceUrl: candidate.url,
+    extractedAt,
+  };
+}
+
+/**
+ * Was the retained text long enough to reproduce what the model was shown?
+ *
+ * `false` means the page was longer than `EXTRACTION_TEXT_KEEP`, so any check run against the
+ * retained copy is inconclusive rather than negative. Exported because the audit script must say
+ * "cannot verify" rather than "not on the page" in that case — the difference between a finding and
+ * a false accusation.
+ */
+export function extractionTextIsComplete(record: EventExtraction | undefined): boolean {
+  if (!record || record.text === undefined || record.textLength === undefined) return false;
+  return record.textLength <= record.text.length;
 }
 

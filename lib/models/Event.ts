@@ -109,6 +109,105 @@ export const EVENT_SOURCES = [
   'other',
 ] as const;
 
+/**
+ * The audit trail for an event a language model extracted from a page.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════════════════════════
+ * WHY IT IS ON THE DOCUMENT AND NOT IN A LOG.
+ *
+ * `lib/llm/extract-event.ts` has no keyword floor and never returns a partial event, so every row
+ * that reaches the submissions queue is either right or a fabrication — and the two arrive with
+ * IDENTICAL status. The reviewer sees a title, a date and a venue, and nothing at all about where
+ * they came from. A scrape log would answer that question for whoever reads the log on the night;
+ * the row is read weeks later, by a human deciding whether to publish it, and it is the row that
+ * has to carry its own evidence. Storing it here also makes the parse RE-RUNNABLE: the same text
+ * can go back through `extractEventsFromText` against a better model, with no browser and no
+ * second fetch of a page that has since changed.
+ *
+ * ── WHY IT MUST BE DECLARED HERE AND COULD NOT BE BOLTED ON FROM THE ADAPTER ──────────────────
+ *
+ * Mongoose is strict by default: a write to an undeclared path is DROPPED, with no error, and the
+ * in-memory document even shows the value — the exact failure CLAUDE.md records costing twenty
+ * minutes on `User.card`. So this could not be added by the stream that built the extractor, and
+ * "just pass it to `Event.create`" would have looked like it worked.
+ *
+ * ── `select: false`, WHICH IS THE WHOLE LEAK DEFENCE ──────────────────────────────────────────
+ *
+ * This field is for review. It holds up to 20 KB of somebody else's marketing page plus a verbatim
+ * model reply, and once a candidate is approved the row becomes an ORDINARY PUBLIC EVENT — so
+ * "only pending rows have it" is not a containment argument, it is a description of today.
+ *
+ * `FEED_FIELDS` in `lib/events/query.ts` is an inclusion allowlist, so the feed and the digest are
+ * already safe and need no edit. Several other read paths return whole documents with no
+ * projection at all, and those are the ones a new field silently joins. `select: false` closes
+ * that at the schema, which is the only layer every one of them passes through: the path is
+ * omitted from every `find` / `findOne` / `lean` result unless a caller explicitly asks with
+ * `.select('+extraction')`. Two things it does NOT cover, stated rather than assumed:
+ *
+ *   · `Event.aggregate` bypasses schema-level select entirely. Any pipeline that returns whole
+ *     documents must project. (`buildForYouPipeline` projects through `feedProjection()`.)
+ *   · A `save()` on a document loaded WITHOUT the path does not unset it — mongoose only `$set`s
+ *     modified paths — so the refresh path in `landMicrositeCandidates` cannot blank it by
+ *     accident. It assigns it explicitly instead, because the retained text must move in step with
+ *     the fingerprint on `sourceEventId` or the row claims a version it does not hold.
+ *
+ * ── NOT IN `mergeInto`'s ALLOWLIST, DELIBERATELY ──────────────────────────────────────────────
+ *
+ * `lib/scrapers/ingestion.ts#mergeInto` names the scraped fields a later sighting may fill. This
+ * one is left out and must stay out: a Luma sighting of the same conference has no page text to
+ * contribute, so the only thing merging could do is let a DIFFERENT source's row inherit an
+ * extraction record that did not produce it — provenance pointing at the wrong parent, which is
+ * worse than no provenance. (The namespaced `clusterKey` already stops a scrape reaching a pending
+ * microsite row at all; this is the second layer, for the same reason `mergeInto` has an explicit
+ * refusal for owned documents.)
+ *
+ * ── IT SURVIVES APPROVAL ──────────────────────────────────────────────────────────────────────
+ *
+ * On merit, not by omission. Approval `$unset`s `visibility` and the row joins the corpus, and the
+ * approved rows are the ones most worth auditing later — "the date on this public event is wrong"
+ * is answerable only while the text that produced it is still attached. `select: false` is what
+ * makes that safe to keep.
+ * ═══════════════════════════════════════════════════════════════════════════════════════════════
+ */
+export interface EventExtraction {
+  /**
+   * The rendered page text, up to `EXTRACTION_TEXT_KEEP`.
+   *
+   * NOT the same string as the prompt: `buildExtractionPrompt` truncates to `TEXT_BUDGET` (12k)
+   * while `parseExtraction` checks GROUNDING against the full text, so the two consumers see
+   * different amounts and only the longer one makes both reproducible. The prompt input is
+   * recoverable as `text.slice(0, TEXT_BUDGET)`; the grounding haystack is the whole of it. Storing
+   * only the prompt slice would have made a re-grounding check report false hallucinations for any
+   * title quoted from the tail — and a checker that cries wolf is a checker somebody switches off.
+   */
+  text?: string;
+  /**
+   * Length of the rendered text BEFORE either cap. `textLength > text.length` is the only way to
+   * know the retained copy is partial, and therefore the only way a reader can tell "the model
+   * never saw this event" from "the model missed it".
+   */
+  textLength?: number;
+  /**
+   * Content fingerprint of the full rendered text — the same 16 hex chars carried by
+   * `sourceEventId` as `microsite:<fingerprint>`.
+   *
+   * DENORMALISED ON PURPOSE, and it is not redundant: `sourceEventId` is refreshed on a later run,
+   * so if the two ever disagree the retained text is stale relative to the row. That disagreement
+   * is a defect the audit script looks for and nothing else could detect.
+   */
+  fingerprint?: string;
+  /** The model's verbatim reply, pre-validation. What it CLAIMED, against what the row now says. */
+  response?: string;
+  provider?: string;
+  model?: string;
+  /**
+   * The WATCHLIST page this was read from — never the event's own registration link. Those differ
+   * whenever the model found a "register" URL, and it is the page that has to be re-fetchable.
+   */
+  sourceUrl?: string;
+  extractedAt?: Date;
+}
+
 export interface IEvent extends Document {
   title: string;
   description: string;
@@ -184,6 +283,17 @@ export interface IEvent extends Document {
   }>;
   /** Named speakers. Sparse. NEVER used to create a `Person`. */
   speakers?: Array<{ name: string; title?: string; company?: string; linkedin?: string }>;
+  /**
+   * The page text a model read to produce this event, kept so a wrong parse is auditable.
+   *
+   * Present ONLY on company-microsite candidates (`lib/scrapers/adapters/microsite.ts` step 3,
+   * landed by `landMicrositeCandidates` in `lib/scrapers/pipeline.ts`). Absent on the ~1600
+   * scraped documents, on everything hand-entered, and on every row the cheap JSON-LD path
+   * produced — which is the asymmetry that matters: only rows a MODEL invented carry it.
+   *
+   * See `EventExtraction` for the field-by-field argument and the `select: false` note.
+   */
+  extraction?: EventExtraction;
   /**
    * When an admin removed this event from the corpus. Absent = present in the corpus. See the
    * schema field below for why this is a date and why nothing reads it with `$exists`.
@@ -391,6 +501,45 @@ const EventSchema = new Schema<IEvent>(
      * the whole product depends on. Review is what makes "contribute to everyone" safe to offer.
      */
     visibility: { type: String, enum: ['private', 'pending', 'public'] },
+
+    /**
+     * LLM EXTRACTION PROVENANCE. See `EventExtraction` above for the full argument.
+     *
+     * `select: false` — omitted from every query result unless a caller asks for `+extraction`.
+     * That is the leak defence, and it is at the schema because that is the one layer the read
+     * paths with no projection also pass through.
+     *
+     * `default: undefined` — the key is ABSENT rather than an empty object on the ~1600 documents
+     * that predate it, matching `agenda` / `speakers` and for the reason `spotlightAt` gives.
+     *
+     * NOTHING INSIDE IS `required`, WHICH IS A DELIBERATE INVERSION OF THE USUAL RULE. A required
+     * subfield would make an incomplete audit record a ValidationError, and the only writer wraps
+     * each row in its own try/catch — so a missing `model` string would DELETE the candidate event
+     * it exists to document. An audit field must never be able to destroy the thing it audits. The
+     * "complete or absent" invariant is held by having exactly one builder
+     * (`candidateToExtraction`) and by `diag-microsite-audit.ts` naming any row that breaks it.
+     *
+     * NO INDEX. Nothing queries it — the audit script selects on `source` + the `sourceEventId`
+     * prefix, which the existing `source: 1` index already leads. Adding an index for a field with
+     * no query is what the `deletedAt` index comment below has to apologise for.
+     */
+    extraction: {
+      type: new mongoose.Schema<EventExtraction>(
+        {
+          text: { type: String },
+          textLength: { type: Number, min: 0 },
+          fingerprint: { type: String, trim: true },
+          response: { type: String },
+          provider: { type: String, trim: true },
+          model: { type: String, trim: true },
+          sourceUrl: { type: String, trim: true },
+          extractedAt: { type: Date },
+        },
+        { _id: false }
+      ),
+      default: undefined,
+      select: false,
+    },
 
     tagConfidence: { type: Number, default: 0.6, min: 0, max: 1 },
     isTargetCompany: { type: Boolean, default: false },

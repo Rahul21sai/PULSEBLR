@@ -11,6 +11,10 @@ import {
   parseContentSignal,
   isBengaluruCandidate,
   candidateToRawEvent,
+  candidateToExtraction,
+  extractionTextIsComplete,
+  EXTRACTION_TEXT_KEEP,
+  EXTRACTION_RESPONSE_KEEP,
   fingerprintSourceEventId,
   fingerprintFromSourceEventId,
   type MicrositeCandidate,
@@ -574,5 +578,116 @@ describe('candidateToRawEvent', () => {
       event: { ...candidate.event, registrationUrl: 'https://developersummit.com/register' },
     });
     expect(raw.sourceUrl).toBe('https://developersummit.com/register');
+  });
+});
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════════════════
+ * `candidateToExtraction` — the audit record, and it has exactly one job: be COMPLETE.
+ *
+ * `Event.extraction`'s subfields are deliberately not `required` in the schema, because a required
+ * subfield would turn an incomplete audit record into a ValidationError that deletes the candidate
+ * event it exists to document. That moves the "complete or absent" invariant out of mongoose and
+ * into this one builder — so it has to be pinned here, or nothing enforces it anywhere.
+ * ═══════════════════════════════════════════════════════════════════════════════════════════
+ */
+describe('candidateToExtraction — a wrong parse has to be auditable', () => {
+  const base: MicrositeCandidate = {
+    url: 'https://developersummit.com/',
+    organizer: 'GIDS',
+    fingerprint: 'deadbeefcafe0123',
+    sourceText: PAGE_TEXT,
+    rawResponse: '[{"title":"Great International Developer Summit 2026"}]',
+    model: 'claude-sonnet-5',
+    event: {
+      title: 'Great International Developer Summit 2026',
+      description: 'A summit.',
+      startsAt: new Date('2026-05-12T09:00:00+05:30'),
+      assumedIst: true,
+      timeAssumed: false,
+      isOnline: false,
+      venue: 'Radisson Blu Atria',
+      registrationUrl: 'https://developersummit.com/register',
+    },
+  };
+
+  it('carries every field a reviewer needs to judge the parse', () => {
+    const at = new Date('2026-03-01T04:05:06.000Z');
+    const record = candidateToExtraction(base, at);
+    expect(record.text).toBe(PAGE_TEXT);
+    expect(record.textLength).toBe(PAGE_TEXT.length);
+    expect(record.fingerprint).toBe('deadbeefcafe0123');
+    expect(record.response).toBe(base.rawResponse);
+    expect(record.model).toBe('claude-sonnet-5');
+    expect(record.extractedAt).toBe(at);
+  });
+
+  it('records the WATCHLIST page, not the registration link the model found', () => {
+    // `candidateToRawEvent` deliberately prefers the registration URL for the event's own
+    // `sourceUrl` — that is where a reader should go. The audit trail needs the opposite: the page
+    // whose text produced the row, and the only URL that can be re-fetched to reproduce it.
+    const record = candidateToExtraction(base);
+    expect(record.sourceUrl).toBe('https://developersummit.com/');
+    expect(record.sourceUrl).not.toBe(base.event.registrationUrl);
+  });
+
+  it('retains MORE than the model was shown, because grounding is checked against more', () => {
+    // The gap between the two caps is the whole reason `EXTRACTION_TEXT_KEEP` is not `TEXT_BUDGET`:
+    // `buildExtractionPrompt` truncates at `TEXT_BUDGET`, `parseExtraction` grounds against the
+    // untruncated string. Retaining only the prompt slice would make a re-grounding check accuse a
+    // title quoted from the tail of being a hallucination.
+    expect(EXTRACTION_TEXT_KEEP).toBeGreaterThan(TEXT_BUDGET);
+  });
+
+  it('caps the retained text, and says how much there was', () => {
+    const long = 'Bengaluru Tech Summit 2026. '.repeat(4000);
+    expect(long.length).toBeGreaterThan(EXTRACTION_TEXT_KEEP);
+    const record = candidateToExtraction({ ...base, sourceText: long });
+    expect(record.text).toHaveLength(EXTRACTION_TEXT_KEEP);
+    // The pre-cap length is the ONLY way a reader can tell the retained copy is partial.
+    expect(record.textLength).toBe(long.length);
+    expect(extractionTextIsComplete(record)).toBe(false);
+  });
+
+  it('reports a whole page as complete, so the audit can make a finding rather than a guess', () => {
+    expect(extractionTextIsComplete(candidateToExtraction(base))).toBe(true);
+  });
+
+  it('treats a missing record as not-verifiable rather than as complete', () => {
+    // Fails CLOSED. Every row that predates this field has no record at all, and reporting those as
+    // "text complete" would let the audit run its grounding check against nothing and pass.
+    expect(extractionTextIsComplete(undefined)).toBe(false);
+    expect(extractionTextIsComplete({ fingerprint: 'abc' })).toBe(false);
+    expect(extractionTextIsComplete({ text: 'short' })).toBe(false);
+  });
+
+  it('caps the verbatim reply too', () => {
+    const record = candidateToExtraction({ ...base, rawResponse: 'x'.repeat(50000) });
+    expect(record.response).toHaveLength(EXTRACTION_RESPONSE_KEEP);
+  });
+
+  it('omits response and model rather than storing empty strings for them', () => {
+    // A model that answered nothing and a run that recorded nothing must be distinguishable, and
+    // `''` reads as the latter. The candidate's own types make both optional.
+    const record = candidateToExtraction({
+      ...base,
+      rawResponse: undefined,
+      model: undefined,
+    });
+    expect(record.response).toBeUndefined();
+    expect(record.model).toBeUndefined();
+    // The fields that make the row auditable at all are still there.
+    expect(record.text).toBe(PAGE_TEXT);
+    expect(record.fingerprint).toBe('deadbeefcafe0123');
+  });
+
+  it('retains the text the fingerprint was computed over, so drift is detectable', () => {
+    // `sourceEventId` is refreshed on a later run; this copy is not, unless the landing path
+    // replaces both together. The two agreeing is what says the retained text produced this row.
+    const record = candidateToExtraction({
+      ...base,
+      fingerprint: contentFingerprint(PAGE_TEXT),
+    });
+    expect(record.fingerprint).toBe(contentFingerprint(record.text!));
   });
 });

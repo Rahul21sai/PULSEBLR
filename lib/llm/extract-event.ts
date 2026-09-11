@@ -262,8 +262,12 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  * "AI Summit 26 Bengaluru" is the same claim. Anything shorter than four comparable characters is
  * accepted rather than tested: at that length the check is noise, and the length floor on `title`
  * already rejects the degenerate cases.
+ *
+ * EXPORTED so `scripts/diag-microsite-audit.ts` re-checks a stored row with THIS predicate rather
+ * than a copy of it. The same reason `cleanup-non-bengaluru.ts` imports `offCityReason` instead of
+ * mirroring it: an audit that drifts from the gate it audits reports on a rule nothing enforces.
  */
-function isGrounded(value: string, haystack: string): boolean {
+export function isGrounded(value: string, haystack: string): boolean {
   const flatten = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '');
   const needle = flatten(value);
   if (needle.length < 4) return true;

@@ -10,6 +10,8 @@
  *   npx tsx scripts/scrape.ts --only=district,hasgeek   run just those sources
  *   npx tsx scripts/scrape.ts --no-second-pass  skip the Meetup /events/ follow-up
  *   npx tsx scripts/scrape.ts --render          allow a headless browser as the LAST-RESORT
+ *   npx tsx scripts/scrape.ts --microsites-llm  arm LLM extraction on the microsite watchlist;
+ *                                              lands rows as visibility:'pending' for review
  *                                               fallback for a Meetup group page (Actions only)
  *
  * `--only` exists to verify ONE adapter end-to-end without paying for a full run
@@ -63,6 +65,24 @@ function parseArgs(): PipelineOptions {
     // is ~74 plain requests that roughly double the largest source in the corpus.
     meetupSecondPass: !argv.includes('--no-second-pass'),
     renderCappedGroups: argv.includes('--render'),
+    /*
+     * ARM THE MICROSITE LLM EXTRACTION. Off unless asked, and this flag had to exist for the
+     * pipeline's own log line to be true — it tells the operator to "pass --microsites-llm" and
+     * nothing parsed it, so the LLM half was unreachable even with intent.
+     *
+     * The JSON-LD and platform-detection halves of that stage need no flag and run on every scrape:
+     * they cost one HTTP request per watchlist page and deliver Bengaluru Tech Summit and GIDS
+     * directly from the organisers' own schema.org markup. Only the render + model step is gated,
+     * because it launches a browser, spends frontier-model budget, and lands rows as
+     * `visibility: 'pending'` — a queue a human then has to empty.
+     *
+     * DO NOT PUT THIS IN `daily-scrape.yml` UNTIL THE REVIEW QUEUE CAN EDIT. The submissions panel
+     * approves or rejects; it cannot correct a field. The one live extraction so far took the page's
+     * `<title>`, so approving it unedited would publish "Open Source India | India's #1 Open Source
+     * Event" as an event name. That is a UI gap, not an extraction one, and it is the reason this is
+     * a manual flag rather than a nightly default.
+     */
+    micrositeCandidates: argv.includes('--microsites-llm'),
     onlySources,
     ...(fast ? { lumaEnrichBudget: 20, meetupEnrichBudget: 20 } : {}),
   };
