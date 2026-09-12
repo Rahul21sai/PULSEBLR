@@ -50,7 +50,30 @@ export const metadata: Metadata = {
 };
 
 export default async function TopicsIndexPage() {
-  const published = await publishedTopics();
+  /*
+   * ── A DATABASE FAILURE MUST NOT FAIL THE BUILD, AND MUST NOT CLAIM THERE ARE NO TOPICS ──────
+   *
+   * This is a single statically-rendered page, so unlike `/topics/[slug]` it cannot opt out of
+   * prerendering by returning no params — it renders at build time or not at all. Unguarded,
+   * `publishedTopics()` calls `connectDB()` and an unreachable Atlas takes the whole deployment
+   * down over a page that lists links. Same reasoning `app/sitemap.ts` records: a stale page costs
+   * a day of freshness, a failed build costs the release.
+   *
+   * `loadFailed` IS TRACKED SEPARATELY FROM AN EMPTY LIST, and that distinction is the point. Both
+   * produce zero rows, and they mean opposite things — "no topic has cleared the 3-event floor yet"
+   * versus "we could not ask". Collapsing them is the defect this repo has already shipped twice:
+   * the calendar rendered "No events this month" for a 500, and the home page printed "0 upcoming"
+   * whenever its request was in flight. The most alarming failure must not read as the most
+   * reassuring answer.
+   */
+  let published: Awaited<ReturnType<typeof publishedTopics>> = [];
+  let loadFailed = false;
+  try {
+    published = await publishedTopics();
+  } catch (error) {
+    loadFailed = true;
+    console.error('topics index: could not load the published set', error);
+  }
   const categories = published.filter(entry => entry.topic.kind === 'category');
   const areas = published.filter(entry => entry.topic.kind === 'area');
 
@@ -68,7 +91,26 @@ export default async function TopicsIndexPage() {
           }
         />
 
-        {published.length === 0 ? (
+        {/*
+          TWO ZERO-ROW STATES, AND THEY SAY OPPOSITE THINGS. The reassurance below — "the calendar is
+          between busy weeks rather than anything being wrong" — is true when the floor genuinely
+          admitted nothing, and a lie when the query never returned. Rendering it for a failure is
+          the calendar's "No events this month" for a 500, on a different page.
+        */}
+        {loadFailed ? (
+          <div className="rounded-[18px] bg-white card-shadow p-6">
+            <p className="text-[14px] text-[#3a3a3c]">
+              We could not load the topic list just now. The events themselves are unaffected — this
+              page groups them, so only the grouping is missing.
+            </p>
+            <Link
+              href="/"
+              className="inline-block mt-4 px-5 py-2.5 rounded-full bg-[#1D1D1F] text-white text-label-md font-semibold hover:bg-black transition-colors"
+            >
+              Browse everything upcoming
+            </Link>
+          </div>
+        ) : published.length === 0 ? (
           <div className="rounded-[18px] bg-white card-shadow p-6">
             <p className="text-[14px] text-[#3a3a3c]">
               Nothing clears the {MIN_TOPIC_EVENTS}-event floor at the moment, which usually means

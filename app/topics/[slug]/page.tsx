@@ -61,7 +61,38 @@ export const revalidate = 3600;
 /** How many rows the page renders. The rhythm sentence still reads the whole matched set. */
 const LIST_LIMIT = 24;
 
+/*
+ * ── PURE, AND IT RETURNS NOTHING WHEN THERE IS NO DATABASE TO RENDER AGAINST ─────────────────
+ *
+ * `generateStaticParams` touching no database is the right property and is kept. It was not
+ * sufficient, and that gap broke CI on `main`: deciding WHICH pages exist needs no Atlas, but
+ * PRERENDERING each of them does — the page body queries Mongo for its events — so a build with
+ * no reachable database died on the first slug:
+ *
+ *     Error occurred prerendering page "/topics/hackathon"
+ *     MongooseServerSelectionError: connect ECONNREFUSED
+ *     Export encountered an error on /topics/[slug]/page, exiting the build.
+ *
+ * It passed locally and failed on CI for one reason: `.env.local` supplies `MONGODB_URI` here and
+ * the workflow deliberately supplies no secrets. `.github/workflows/ci.yml` predicted exactly this
+ * — "the build needs no secrets… if that ever changes this step is where it will surface."
+ *
+ * So the presence of `MONGODB_URI` is the signal, and it is the honest one: without it `connectDB`
+ * falls back to `mongodb://localhost:27017`, which on a CI runner is nothing at all. Returning `[]`
+ * prerenders no slugs, `dynamicParams` (true by default) then serves every one on demand, and the
+ * first request after deploy populates the ISR cache exactly as a revalidation would. Nothing is
+ * lost in production, where the variable is always set.
+ *
+ * CHECKING THE VARIABLE RATHER THAN ATTEMPTING A CONNECTION is deliberate: a connection attempt
+ * here would make the build's page set depend on Atlas being up at that moment, which is the
+ * fragility the "deliberately pure" note above exists to prevent. This keys off configuration.
+ *
+ * `app/sitemap.ts` reaches the same conclusion by a different route — it wraps its query and
+ * degrades to static entries, because "a short sitemap costs a day of crawl freshness; a failed
+ * build costs the release."
+ */
 export function generateStaticParams(): Array<{ slug: string }> {
+  if (!process.env.MONGODB_URI) return [];
   return topicStaticParams();
 }
 
@@ -74,9 +105,35 @@ interface LoadedTopic {
   siblings: Array<{ topic: Topic; count: number }>;
 }
 
+/*
+ * ── A DATABASE OUTAGE AT BUILD TIME RETURNS null, IT DOES NOT THROW ─────────────────────────
+ *
+ * The `MONGODB_URI` check on `generateStaticParams` above stops a build with NO database
+ * configured from prerendering these pages at all, which is what CI needed. It does nothing for
+ * the other case: a real deployment where the variable IS set and Atlas is briefly unreachable.
+ * There the page set is still enumerated, prerendering still runs, and an unguarded throw here
+ * takes down the release — the precise fragility `app/sitemap.ts` wraps its own query to avoid.
+ *
+ * Returning null makes the caller `notFound()`, so the slug is prerendered as a 404 rather than
+ * killing the build. That is a real cost and worth naming: with `revalidate = 3600` the page is a
+ * 404 for at most an hour and then becomes itself. The header above already accepts this exact
+ * trade for a different reason — a slug below the event floor is "prerendered as a 404 and becomes
+ * a real page on a later revalidation" — so an outage lands in a lane the design already has.
+ *
+ * A failed release, by contrast, is not self-healing.
+ */
 const loadTopic = cache(async (slug: string): Promise<LoadedTopic | null> => {
   const topic = findTopic(slug);
   if (!topic) return null;
+  try {
+    return await readTopic(topic);
+  } catch (error) {
+    console.error(`topics: could not load "${slug}" — prerendering it as not-found`, error);
+    return null;
+  }
+});
+
+const readTopic = async (topic: Topic): Promise<LoadedTopic | null> => {
 
   await connectDB();
 
@@ -119,7 +176,7 @@ const loadTopic = cache(async (slug: string): Promise<LoadedTopic | null> => {
     rhythm,
     siblings: published.filter(entry => entry.topic.kind === topic.kind && entry.topic.slug !== topic.slug).slice(0, 8),
   };
-});
+};
 
 export async function generateMetadata({
   params,
