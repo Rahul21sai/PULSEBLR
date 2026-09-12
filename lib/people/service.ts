@@ -733,14 +733,46 @@ export async function mergePersons(
       winner.notSamePersonAs.push(id);
     }
   }
+  /*
+   * THE KEY UNION IS SAVED FIRST ON PURPOSE — see the comment above — AND IT IS ROLLED BACK IF THE
+   * REPOINT FAILS. Both halves are needed and the second was missing.
+   *
+   * Measured: when the repoint threw, this `save()` had already committed, so the winner held the
+   * loser's keys while the loser was still LIVE (`mergedInto` is set below). Two live persons
+   * sharing a `contactKey` is precisely what `diag-people-spine.ts` check 3 reports as corruption —
+   * manufactured by a merge whose caller was told it had failed, which is the worst of both.
+   *
+   * Reordering is not the fix: unioning first is what lets a capture racing this merge and carrying
+   * a loser key find the winner. So the order stands and the failure is undone instead. A rollback
+   * can itself fail, which is why the thrown error names that possibility rather than implying the
+   * row is clean.
+   */
+  const addedKeys = [...loser.contactKeys];
   await winner.save();
 
-  const [contactsMoved, interactionsMoved] = await Promise.all([
-    Contact.updateMany({ userId, personId: loser._id }, { $set: { personId: winner._id } }),
-    // The ONE legitimate update to an append-only collection. `Interaction`'s middleware allows
-    // `personId` and refuses every other path, so this is the only shape that can get through.
-    Interaction.updateMany({ userId, personId: loser._id }, { $set: { personId: winner._id } }),
-  ]);
+  let contactsMoved: { modifiedCount?: number };
+  let interactionsMoved: { modifiedCount?: number };
+  try {
+    [contactsMoved, interactionsMoved] = await Promise.all([
+      Contact.updateMany({ userId, personId: loser._id }, { $set: { personId: winner._id } }),
+      // The ONE legitimate update to an append-only collection. `Interaction`'s middleware allows
+      // `personId` and refuses every other path, so this is the only shape that can get through.
+      Interaction.updateMany({ userId, personId: loser._id }, { $set: { personId: winner._id } }),
+    ]);
+  } catch (error) {
+    winner.contactKeys = winner.contactKeys.filter(key => !addedKeys.includes(key));
+    try {
+      await winner.save();
+    } catch (rollbackError) {
+      console.error(
+        `mergePersons: repoint failed AND the key rollback failed for person ${String(winner._id)} — ` +
+          `it may still hold ${addedKeys.join(', ')} while ${String(loser._id)} is live. ` +
+          'Run scripts/diag-people-spine.ts.',
+        rollbackError
+      );
+    }
+    throw error;
+  }
 
   loser.mergedInto = winner._id as mongoose.Types.ObjectId;
   await loser.save();

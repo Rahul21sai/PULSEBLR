@@ -156,6 +156,31 @@ function assertOnlyRepointing(this: mongoose.Query<unknown, IInteraction>) {
   const touched = new Set<string>();
 
   for (const [operator, payload] of Object.entries(update)) {
+    /*
+     * `$setOnInsert` IS SKIPPED, AND THAT IS WHAT MADE MERGE WORK AT ALL.
+     *
+     * This guard refused every merge in the app's history, and nothing noticed because 0 tombstones
+     * were ever written. Mechanism: `InteractionSchema` declares `timestamps: { createdAt: true }`,
+     * so mongoose's `_setTimestampsOnUpdate` adds `$setOnInsert: { createdAt }` to EVERY update
+     * unconditionally — the caller never writes it. This loop then found `createdAt` outside
+     * `MUTABLE_PATHS` and threw `Interaction is append-only: cannot update createdAt` on the one
+     * update the guard's own docblock calls legitimate.
+     *
+     * Proven to be the query shape rather than the data: the same repoint-only `updateMany` throws
+     * on a filter matching ZERO rows, and the identical call with `{ timestamps: false }` succeeds.
+     *
+     * WHY SKIPPING IT IS SAFE RATHER THAN A LOOPHOLE. `$setOnInsert` applies only when a document is
+     * INSERTED, so for a non-upsert update it never executes at all, and on an upsert the row it
+     * writes is brand new. Either way it is categorically incapable of the harm this guard exists to
+     * prevent — rewriting the history of a STORED interaction. Nothing is weakened: `$set`, `$unset`,
+     * `$inc`, `$push` and a bare replacement document are all still walked.
+     *
+     * Fixed here rather than by passing `{ timestamps: false }` at the two call sites, deliberately.
+     * This file's own docblock says append-only "is a CONVENTION until something enforces it"; a rule
+     * that every future caller must remember to disarm is the same class of fragility, and it would
+     * have to be remembered in a file that does not contain the guard.
+     */
+    if (operator === '$setOnInsert') continue;
     if (operator.startsWith('$')) {
       if (payload && typeof payload === 'object') {
         for (const path of Object.keys(payload as Record<string, unknown>)) touched.add(path);

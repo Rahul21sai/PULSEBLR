@@ -863,6 +863,34 @@ export async function updateOwnedContact(
   const contact = await Contact.findOne({ _id: id, userId });
   if (!contact) return null;
 
+  /*
+   * ── THE KEY BEFORE THE EDIT, BECAUSE AN EDIT CAN SHARPEN IT AND THE PERSON MUST FOLLOW ────────
+   *
+   * `contactKey` is a POINTER, not an identity: unlike `Event.clusterKey` it is recomputed by the
+   * `pre('validate')` hook when a source field changes, because a person's identity sharpens as you
+   * learn their LinkedIn. Adding somebody's profile after the fact is the documented reason that
+   * design exists.
+   *
+   * Nothing carried that upgrade to the Person. `recomputePerson()` never touches
+   * `Person.contactKeys` — only `resolvePerson()` appends — so editing a contact to add a LinkedIn
+   * left the CONTACT on `li:…` while its PERSON stayed on `nm:…`, and the next QR scan of the same
+   * human created a SECOND Person.
+   *
+   * It is silent in both directions that would normally catch it: the two rows share no key, so
+   * `diag-people-spine.ts` check 3 passes (it looks for one key held by two persons) and
+   * `mergeSuggestionsFor()` returns nothing (it needs a shared key). There is a pair in the live
+   * database right now — the same human under `li:naga-sai-rahul-vudumula-93419524b` and
+   * `nm:naga sai rahul vudumula` — which had been described as a merge suggestion and measures as
+   * **zero** suggestions. This is why.
+   *
+   * FIXED HERE RATHER THAN IN `PATCH /api/contacts/[id]`, which is where it was found. That route is
+   * one caller; the bulk path and the offline drain are others, and a future one would have to
+   * remember. Putting it beside the assignment that moves the key makes every caller correct by
+   * construction — the same argument as fixing `Interaction`'s guard at the guard rather than passing
+   * `{ timestamps: false }` at each call site.
+   */
+  const keyBefore = contact.contactKey;
+
   const fields = pickWritable(body);
   for (const [key, value] of Object.entries(fields)) {
     // `followUpAt: null` and `followedUp: false` must be able to clear a value, so null is
@@ -883,5 +911,32 @@ export async function updateOwnedContact(
   }
 
   await contact.save();
+
+  /*
+   * The hook has now recomputed `contactKey`. If it MOVED, the Person needs the new key appended —
+   * see the note where `keyBefore` is captured. `resolvePerson` is the only append path.
+   *
+   * Called only when the key actually changed: it is a round trip, and this is the app's most-used
+   * write, so running it on every unrelated tag edit would be waste. Non-fatal, matching the delete
+   * path — the edit the user asked for has committed, so a failure here is a consistency problem to
+   * log and repair with `backfill-person-spine.ts`, not a reason to report their edit as failed.
+   *
+   * Lazily imported: `lib/people/service.ts` imports from this module, so a static edge back would
+   * be a cycle. The architecture spec settles the direction — a static edge one way, a lazy import
+   * the other.
+   */
+  if (contact.contactKey && keyBefore !== contact.contactKey) {
+    try {
+      const { resolvePerson } = await import('../people/service');
+      await resolvePerson(userId, contact);
+    } catch (err) {
+      console.error(
+        `contact ${String(contact._id)} upgraded its key to ${contact.contactKey} but the person ` +
+          'did not gain it — run scripts/backfill-person-spine.ts',
+        err
+      );
+    }
+  }
+
   return contact;
 }
