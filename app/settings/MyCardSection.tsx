@@ -17,7 +17,7 @@ import type { MyCardDTO } from '@/lib/contacts/types';
  */
 
 const FIELD_CLASS =
-  'mt-1.5 h-11 w-full rounded-xl bg-[#F7F7F9] px-3.5 text-[15px] text-[#1D1D1F] outline-none focus:shadow-[inset_0_0_0_2px_var(--blue)]';
+  'mt-1.5 h-11 w-full rounded-[var(--r-touch)] bg-[var(--paper)] px-3.5 text-[15px] text-[var(--ink)] outline-none focus:shadow-[inset_0_0_0_2px_var(--blue)]';
 
 export default function MyCardSection() {
   const [card, setCard] = useState<MyCardDTO | null>(null);
@@ -71,7 +71,7 @@ export default function MyCardSection() {
   function field(key: keyof MyCardDTO, label: string, placeholder?: string, type = 'text') {
     return (
       <label className="block">
-        <span className="t-label text-[#8E8E93]">{label}</span>
+        <span className="t-label text-[var(--ink-2)]">{label}</span>
         <input
           type={type}
           defaultValue={(card?.[key] as string) ?? ''}
@@ -90,19 +90,19 @@ export default function MyCardSection() {
 
   if (loading) {
     return (
-      <section id="my-card" className="rounded-2xl bg-white p-5 card-shadow">
-        <div className="h-4 w-1/3 rounded bg-[#EEEEF0]" />
-        <div className="mt-3 h-3 w-1/2 rounded bg-[#F3F3F5]" />
+      <section id="my-card" className="rounded-[var(--r-flat)] border border-[var(--rule)] p-5">
+        <div className="h-4 w-1/3 rounded bg-[var(--paper)]" />
+        <div className="mt-3 h-3 w-1/2 rounded bg-[var(--paper)]" />
       </section>
     );
   }
 
   return (
-    <section id="my-card" className="rounded-2xl bg-white p-5 card-shadow">
+    <section id="my-card" className="rounded-[var(--r-flat)] border border-[var(--rule)] p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <h2 className="text-[16px] font-bold text-[#1D1D1F]">My card</h2>
-          <p className="mt-0.5 text-[13px] text-[#6E6E73]">
+          <h2 className="text-[16px] font-bold text-[var(--ink)]">My card</h2>
+          <p className="mt-0.5 text-[13px] text-[var(--ink-2)]">
             The QR you show somebody so they can save your details. Works with any phone camera —
             they don&apos;t need this app.
           </p>
@@ -118,36 +118,36 @@ export default function MyCardSection() {
       </div>
 
       {status && (
-        <p className="mt-3 rounded-xl bg-[#EBF4FE] px-4 py-2.5 text-[12.5px] text-[#0058B0]" role="status">
+        <p className="mt-3 rounded-xl border-l-2 border-l-[var(--accent)] bg-[var(--paper)] px-4 py-2.5 text-[12.5px] text-[var(--accent)]" role="status">
           {status}
         </p>
       )}
 
       {!card?.enabled ? (
-        <p className="mt-4 rounded-xl bg-[#F7F7F9] p-4 text-[12.5px] leading-relaxed text-[#3a3a3c]">
+        <p className="mt-4 rounded-xl bg-[var(--paper)] p-4 text-[12.5px] leading-relaxed text-[var(--ink-2)]">
           Your card is off, so the link returns nothing. Fill in whatever you want to share below,
           then switch it on.
         </p>
       ) : (
         card.url && (
-          <div className="mt-4 flex flex-col items-center gap-3 rounded-xl bg-[#F7F7F9] p-4 sm:flex-row sm:items-start">
+          <div className="mt-4 flex flex-col items-center gap-3 rounded-xl bg-[var(--paper)] p-4 sm:flex-row sm:items-start">
             <QrCode value={card.url} size={132} ariaLabel="Your card as a QR code" />
             <div className="min-w-0 flex-1 text-center sm:text-left">
-              <p className="text-[13px] font-semibold text-[#1D1D1F]">
+              <p className="text-[13px] font-semibold text-[var(--ink)]">
                 {card.displayName || 'Your card'}
               </p>
-              <code className="mt-1 block break-all text-[11px] text-[#6E6E73]">{card.url}</code>
+              <code className="mt-1 block break-all text-[11px] text-[var(--ink-2)]">{card.url}</code>
               <div className="mt-3 flex flex-wrap justify-center gap-2 sm:justify-start">
                 <Link
                   href="/card"
-                  className="inline-flex h-8 items-center rounded-full bg-[#1D1D1F] px-3.5 text-[12px] font-semibold text-white"
+                  className="inline-flex h-8 items-center rounded-full bg-[var(--ink)] px-3.5 text-[12px] font-semibold text-[var(--accent-ink)]"
                 >
                   Show full screen
                 </Link>
                 <button
                   type="button"
                   onClick={() => void downloadQrPng(card.url!, 'pulseblr-card.png')}
-                  className="inline-flex h-8 items-center rounded-full bg-white px-3.5 text-[12px] font-semibold text-[#1D1D1F] shadow-[inset_0_0_0_1px_var(--hairline-strong)]"
+                  className="inline-flex h-8 items-center rounded-full bg-[var(--surface)] px-3.5 text-[12px] font-semibold text-[var(--ink)] shadow-[inset_0_0_0_1px_var(--hairline-strong)]"
                 >
                   Save as image
                 </button>
@@ -173,12 +173,12 @@ export default function MyCardSection() {
         {field('email', 'Email to share', 'you@example.com', 'email')}
         {field('phone', 'Phone', '+91 98765 43210', 'tel')}
 
-        <label className="flex items-start justify-between gap-4 rounded-xl bg-[#F7F7F9] p-4">
+        <label className="flex items-start justify-between gap-4 rounded-xl bg-[var(--paper)] p-4">
           <span className="min-w-0">
-            <span className="block text-[13.5px] font-semibold text-[#1D1D1F]">
+            <span className="block text-[13.5px] font-semibold text-[var(--ink)]">
               Show my phone number
             </span>
-            <span className="mt-0.5 block text-[12px] leading-relaxed text-[#6E6E73]">
+            <span className="mt-0.5 block text-[12px] leading-relaxed text-[var(--ink-2)]">
               Off by default. A card is a link, and links get forwarded.
             </span>
           </span>
@@ -196,7 +196,7 @@ export default function MyCardSection() {
       <div className="mt-5 border-t border-[color:var(--hairline)] pt-4">
         {confirmRotate ? (
           <div className="flex flex-wrap items-center gap-2">
-            <p className="min-w-0 flex-1 text-[12.5px] leading-relaxed text-[#C7362D]">
+            <p className="min-w-0 flex-1 text-[12.5px] leading-relaxed text-[var(--live)]">
               This gives you a new link. Any code you have already shown, printed or screenshotted
               stops working.
             </p>
@@ -204,14 +204,14 @@ export default function MyCardSection() {
               type="button"
               disabled={saving}
               onClick={() => void patch({ rotate: true }, 'New link created.')}
-              className="h-9 shrink-0 rounded-full bg-[#FFF1F0] px-4 text-[12.5px] font-semibold text-[#FF3B30]"
+              className="h-9 shrink-0 rounded-full bg-[var(--paper)] px-4 text-[12.5px] font-semibold text-[var(--live)]"
             >
               Replace it
             </button>
             <button
               type="button"
               onClick={() => setConfirmRotate(false)}
-              className="h-9 shrink-0 rounded-full px-3 text-[12.5px] font-semibold text-[#6E6E73]"
+              className="h-9 shrink-0 rounded-full px-3 text-[12.5px] font-semibold text-[var(--ink-2)]"
             >
               Cancel
             </button>
@@ -220,7 +220,7 @@ export default function MyCardSection() {
           <button
             type="button"
             onClick={() => setConfirmRotate(true)}
-            className="text-[12.5px] font-semibold text-[#0071E3] hover:underline"
+            className="text-[12.5px] font-semibold text-[var(--accent)] hover:underline"
           >
             Replace my card link
           </button>

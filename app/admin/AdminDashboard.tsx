@@ -148,27 +148,35 @@ export default function AdminDashboard({
   }, []);
 
   return (
-    <div className="min-h-screen bg-[#F5F5F7]">
+    <div className="min-h-screen bg-[var(--paper)]">
       <DesktopNav />
 
-      <header className="md:hidden fixed top-0 w-full h-14 bg-white/96 glass-nav z-50 border-b border-black/5 flex items-center justify-between px-5">
-        <Link href="/" className="text-lg font-bold tracking-tight text-[#1D1D1F]">
+      <header className="md:hidden fixed top-0 w-full h-14 bg-[var(--surface)]/96 glass-nav z-50 border-b border-[var(--rule)] flex items-center justify-between px-5">
+        <Link href="/" className="text-lg font-bold tracking-tight text-[var(--ink)]">
           PulseBLR
         </Link>
-        <span className="text-[#86868B] text-label-md font-semibold">Admin</span>
+        <span className="text-[var(--ink-2)] text-label-md font-semibold">Admin</span>
       </header>
 
       <main className="pt-14 pb-24 md:pb-10">
         <div className="max-w-[1100px] mx-auto px-4 md:px-8 pt-6 space-y-5">
-          <div className="flex flex-wrap items-start justify-between gap-3">
+          {/*
+            The console's own ruled header, matching every other surface.
+
+            `Admin` was `.t-title`, which is 24px in `--font-display` — and `--font-display` now
+            resolves to the SERIF. So the operator console announced itself in the same editorial face
+            the feed uses for event titles, which is the wrong side of the split: an event is a thing
+            in the world, "Admin" is the app naming its own screen. Sans, with the rule under it.
+          */}
+          <div className="rule-b flex flex-wrap items-start justify-between gap-3 pb-[var(--s-4)]">
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="t-title text-[#1D1D1F]">Admin</h1>
-                <span className="rounded-full bg-[#1D1D1F] px-2.5 py-1 text-[10.5px] font-bold uppercase tracking-wider text-white">
+                <h1 className="ty-section text-[var(--ink)]">Admin</h1>
+                <span className="rounded-[var(--r-flat)] bg-[var(--ink)] px-2.5 py-1 text-[10.5px] font-bold uppercase tracking-wider text-[var(--accent-ink)]">
                   Operator
                 </span>
               </div>
-              <p className="text-[13.5px] text-[#6E6E73] mt-0.5">
+              <p className="text-[13.5px] text-[var(--ink-2)] mt-0.5">
                 {adminName} · <span className="font-mono text-[12.5px]">{adminEmail}</span> — every
                 action here is re-checked on the server against{' '}
                 <code className="font-mono text-[12px]">ADMIN_EMAILS</code>, and every change is
@@ -184,7 +192,7 @@ export default function AdminDashboard({
               */}
               <Link
                 href="/companies"
-                className="pressable inline-flex items-center gap-1.5 rounded-full bg-white px-4 py-2 text-[12.5px] font-semibold text-[#1D1D1F] shadow-[inset_0_0_0_1px_var(--hairline-strong)] hover:bg-[#F7F7F9]"
+                className="pressable inline-flex items-center gap-1.5 rounded-full bg-[var(--surface)] px-4 py-2 text-[12.5px] font-semibold text-[var(--ink)] shadow-[inset_0_0_0_1px_var(--hairline-strong)] hover:bg-[var(--paper)]"
               >
                 <span aria-hidden="true" className="material-symbols-outlined text-[15px]">
                   domain
@@ -226,8 +234,8 @@ export default function AdminDashboard({
                 aria-pressed={tab === id}
                 className={`pressable flex shrink-0 items-center gap-1.5 rounded-full px-4 h-9 text-[13px] font-semibold transition-colors ${
                   tab === id
-                    ? 'bg-[#1D1D1F] text-white'
-                    : 'bg-white text-[#1D1D1F] shadow-[inset_0_0_0_1px_var(--hairline)] hover:bg-[#F7F7F9]'
+                    ? 'bg-[var(--ink)] text-[var(--accent-ink)]'
+                    : 'bg-[var(--surface)] text-[var(--ink)] shadow-[inset_0_0_0_1px_var(--hairline)] hover:bg-[var(--paper)]'
                 }`}
               >
                 <span aria-hidden="true" className="material-symbols-outlined text-[16px]">
@@ -296,11 +304,11 @@ function Overview({ stats, onGo }: { stats: Stats; onGo: (tab: Tab) => void }) {
         ].map(([label, count, target, sub]) => (
           <Card key={String(label)} padding="tight">
             <button type="button" onClick={() => onGo(target as Tab)} className="w-full text-left">
-              <p className="t-label text-[#8E8E93]">{String(label)}</p>
-              <p className="tnum mt-1 text-[22px] font-bold leading-none text-[#1D1D1F]">
+              <p className="t-label text-[var(--ink-2)]">{String(label)}</p>
+              <p className="tnum mt-1 text-[22px] font-bold leading-none text-[var(--ink)]">
                 {num(Number(count))}
               </p>
-              <p className="mt-1 text-[12px] text-[#0071E3]">{String(sub)} →</p>
+              <p className="mt-1 text-[12px] text-[var(--accent)]">{String(sub)} →</p>
             </button>
           </Card>
         ))}
@@ -324,7 +332,7 @@ function Overview({ stats, onGo }: { stats: Stats; onGo: (tab: Tab) => void }) {
         title="Next up"
         subtitle="The soonest tech events a user will see"
         action={
-          <Link href="/" className="text-[12.5px] font-semibold text-[#0071E3] hover:underline">
+          <Link href="/" className="text-[12.5px] font-semibold text-[var(--accent)] hover:underline">
             Open feed
           </Link>
         }
@@ -336,21 +344,21 @@ function Overview({ stats, onGo }: { stats: Stats; onGo: (tab: Tab) => void }) {
             body="The corpus has no upcoming tech events. Run the scraper, or check whether the sources went quiet."
           />
         ) : (
-          <ul className="divide-y divide-[#f0f0f2]">
+          <ul className="divide-y divide-[var(--rule)]">
             {stats.nextUp.map(e => (
               <li key={e.id} className="flex items-center gap-3 py-2.5">
                 <div className="w-[62px] shrink-0 text-center">
-                  <p className="t-label text-[#8E8E93]">{dayLabelIST(e.startDateTime)}</p>
-                  <p className="tnum text-[12.5px] font-bold text-[#1D1D1F]">{timeIST(e.startDateTime)}</p>
+                  <p className="t-label text-[var(--ink-2)]">{dayLabelIST(e.startDateTime)}</p>
+                  <p className="tnum text-[12.5px] font-bold text-[var(--ink)]">{timeIST(e.startDateTime)}</p>
                 </div>
                 <div className="min-w-0 flex-1">
                   <Link
                     href={`/events/${e.id}`}
-                    className="block truncate text-[13.5px] font-semibold text-[#1D1D1F] hover:text-[#0071E3]"
+                    className="block truncate text-[13.5px] font-semibold text-[var(--ink)] hover:text-[var(--accent)]"
                   >
                     {e.title}
                   </Link>
-                  <p className="truncate text-[12px] text-[#6E6E73]">
+                  <p className="truncate text-[12px] text-[var(--ink-2)]">
                     {[e.organizer, e.venue].filter(Boolean).join(' · ') || 'Venue not set'}
                   </p>
                 </div>
@@ -359,10 +367,10 @@ function Overview({ stats, onGo }: { stats: Stats; onGo: (tab: Tab) => void }) {
                     title="Connection score — how likely you are to leave with useful contacts"
                     className={`tnum shrink-0 rounded-full px-2 py-0.5 text-[11px] font-bold ${
                       e.connectionScore >= 70
-                        ? 'bg-[#EBF7EF] text-[#166B35]'
+                        ? 'bg-[var(--paper)] text-[var(--accent)]'
                         : e.connectionScore >= 50
-                          ? 'bg-amber-50 text-amber-900'
-                          : 'bg-[#f3f3f5] text-[#6E6E73]'
+                          ? 'bg-[var(--paper)] text-[var(--ink-2)]'
+                          : 'bg-[var(--paper)] text-[var(--ink-2)]'
                     }`}
                   >
                     {e.connectionScore}
@@ -381,7 +389,7 @@ function Overview({ stats, onGo }: { stats: Stats; onGo: (tab: Tab) => void }) {
           <button
             type="button"
             onClick={() => onGo('users')}
-            className="text-[12.5px] font-semibold text-[#0071E3] hover:underline"
+            className="text-[12.5px] font-semibold text-[var(--accent)] hover:underline"
           >
             Open Users
           </button>
@@ -454,7 +462,7 @@ function ScraperPanel({ stats, onDone }: { stats: Stats | null; onDone: () => vo
           </Button>
         </div>
 
-        <p className="mt-3 text-[12.5px] leading-relaxed text-[#6E6E73]">
+        <p className="mt-3 text-[12.5px] leading-relaxed text-[var(--ink-2)]">
           <strong>Fast</strong> skips Eventbrite and the company-page sweep and shrinks the enrichment
           budgets — about a minute. <strong>Full</strong> fans out to roughly 700 upstream requests
           with LLM tagging and takes 15–30 minutes, which is longer than a serverless request is
@@ -477,12 +485,12 @@ function ScraperPanel({ stats, onDone }: { stats: Stats | null; onDone: () => vo
           <Field label="Producing">{num(stats?.sources.producing)}</Field>
           <Field label="Quiet">{num(stats?.sources.quiet)}</Field>
           <Field label="Dead (6+ empty)">
-            <span className={stats && stats.sources.dead > 0 ? 'text-[#C7362D]' : undefined}>
+            <span className={stats && stats.sources.dead > 0 ? 'text-[var(--live)]' : undefined}>
               {num(stats?.sources.dead)}
             </span>
           </Field>
         </dl>
-        <p className="mt-3 text-[12.5px] text-[#6E6E73]">
+        <p className="mt-3 text-[12.5px] text-[var(--ink-2)]">
           A source counts as dead after six consecutive empty scrapes. Nothing retires them
           automatically yet, so they are still requested every run — the Sources tab can disable them
           in bulk, and that is reversible.
@@ -640,7 +648,7 @@ function EventsPanel({ onChanged }: { onChanged: () => void }) {
             : `${total} matches · fix a mis-tagged event or remove junk`
       }
       action={
-        <Link href="/add-event" className="text-[12.5px] font-semibold text-[#0071E3] hover:underline">
+        <Link href="/add-event" className="text-[12.5px] font-semibold text-[var(--accent)] hover:underline">
           Add manually
         </Link>
       }
@@ -660,8 +668,8 @@ function EventsPanel({ onChanged }: { onChanged: () => void }) {
             aria-pressed={scope === id}
             className={`pressable h-8 rounded-full px-3.5 text-[12.5px] font-semibold transition-colors ${
               scope === id
-                ? 'bg-[#1D1D1F] text-white'
-                : 'bg-white text-[#1D1D1F] shadow-[inset_0_0_0_1px_var(--hairline)] hover:bg-[#F7F7F9]'
+                ? 'bg-[var(--ink)] text-[var(--accent-ink)]'
+                : 'bg-[var(--surface)] text-[var(--ink)] shadow-[inset_0_0_0_1px_var(--hairline)] hover:bg-[var(--paper)]'
             }`}
           >
             {label}
@@ -673,7 +681,7 @@ function EventsPanel({ onChanged }: { onChanged: () => void }) {
         <span className="sr-only">Search events</span>
         <span
           aria-hidden="true"
-          className="material-symbols-outlined absolute left-3 top-[18px] -translate-y-1/2 text-[18px] text-[#a1a1a6]"
+          className="material-symbols-outlined absolute left-3 top-[18px] -translate-y-1/2 text-[18px] text-[var(--ink-3)]"
         >
           search
         </span>
@@ -681,7 +689,7 @@ function EventsPanel({ onChanged }: { onChanged: () => void }) {
           value={q}
           onChange={e => setQ(e.target.value)}
           placeholder="Search by title, organiser or venue"
-          className="h-10 w-full rounded-full bg-white pl-10 pr-4 text-[13px] text-[#1D1D1F] shadow-[inset_0_0_0_1px_var(--hairline-strong)] focus:outline-none focus:shadow-[inset_0_0_0_2px_#0071E3]"
+          className="h-10 w-full rounded-full bg-[var(--surface)] pl-10 pr-4 text-[13px] text-[var(--ink)] shadow-[inset_0_0_0_1px_var(--hairline-strong)] focus:outline-none focus:shadow-[inset_0_0_0_2px_var(--accent)]"
         />
       </label>
 
@@ -712,20 +720,20 @@ function EventsPanel({ onChanged }: { onChanged: () => void }) {
         </NoRows>
       ) : (
         <div className="max-h-[560px] overflow-y-auto">
-          <ul className="divide-y divide-[#f0f0f2]">
+          <ul className="divide-y divide-[var(--rule)]">
             {visible.map(e => (
               <li key={e._id} className="flex items-center gap-3 py-2.5">
                 <div className="w-[58px] shrink-0 text-center">
-                  <p className="t-label text-[#8E8E93]">{dayLabelIST(e.startDateTime)}</p>
+                  <p className="t-label text-[var(--ink-2)]">{dayLabelIST(e.startDateTime)}</p>
                 </div>
                 <div className="min-w-0 flex-1">
                   <Link
                     href={`/events/${e._id}`}
-                    className="block truncate text-[13.5px] font-semibold text-[#1D1D1F] hover:text-[#0071E3]"
+                    className="block truncate text-[13.5px] font-semibold text-[var(--ink)] hover:text-[var(--accent)]"
                   >
                     {e.title}
                   </Link>
-                  <p className="truncate text-[12px] text-[#6E6E73]">
+                  <p className="truncate text-[12px] text-[var(--ink-2)]">
                     {[e.source, e.organizer, (e.category || []).join(', ')].filter(Boolean).join(' · ')}
                   </p>
                 </div>
@@ -756,8 +764,8 @@ function EventsPanel({ onChanged }: { onChanged: () => void }) {
                   }
                   className={`pressable shrink-0 rounded-full px-2.5 py-1.5 text-[12px] font-semibold disabled:opacity-45 ${
                     e.spotlightAt
-                      ? 'bg-[#1D1D1F] text-white hover:bg-black'
-                      : 'bg-white text-[#8E8E93] shadow-[inset_0_0_0_1px_var(--hairline-strong)] hover:bg-[#F7F7F9]'
+                      ? 'bg-[var(--ink)] text-[var(--accent-ink)] hover:bg-[var(--ink)]'
+                      : 'bg-[var(--surface)] text-[var(--ink-2)] shadow-[inset_0_0_0_1px_var(--hairline-strong)] hover:bg-[var(--paper)]'
                   }`}
                 >
                   <span aria-hidden="true" className="material-symbols-outlined text-[15px] leading-none align-[-2px]">

@@ -189,20 +189,20 @@ export default function OnboardingFlow() {
           <span
             key={i}
             className={`h-[3px] flex-1 rounded-full transition-colors ${
-              i <= step ? 'bg-[#1D1D1F]' : 'bg-[color:var(--hairline-strong)]'
+              i <= step ? 'bg-[var(--ink)]' : 'bg-[color:var(--hairline-strong)]'
             }`}
           />
         ))}
       </div>
 
-      <p className="t-label mt-5 text-[#8E8E93]">
+      <p className="t-label mt-5 text-[var(--ink-2)]">
         {fromSettings ? 'Your preferences' : meta.eyebrow}
       </p>
-      <h1 className="t-display mt-2 text-[#1D1D1F]">{meta.title}</h1>
-      <p className="mt-3 max-w-[52ch] text-[14px] leading-[1.55] text-[#3a3a3c]">{meta.body}</p>
+      <h1 className="t-display mt-2 text-[var(--ink)]">{meta.title}</h1>
+      <p className="mt-3 max-w-[52ch] text-[14px] leading-[1.55] text-[var(--ink-2)]">{meta.body}</p>
 
       {loadError && (
-        <p className="mt-4 rounded-xl bg-[#FFF8E6] px-4 py-3 text-[13px] text-[#8a6100]">
+        <p className="mt-4 rounded-xl border-l-2 border-l-[var(--ink-2)] bg-[var(--paper)] px-4 py-3 text-[13px] text-[var(--ink-2)]">
           {loadError}. You can still set them now.
         </p>
       )}
@@ -219,7 +219,7 @@ export default function OnboardingFlow() {
         ) : step === 0 ? (
           <Card>
             <fieldset>
-              <legend className="t-label mb-3 text-[#8E8E93]">Tech topics</legend>
+              <legend className="t-label mb-3 text-[var(--ink-2)]">Tech topics</legend>
               <div className="flex flex-wrap gap-2">
                 {TOPIC_CHOICES.filter(t => (TECH_CATEGORY_NAMES as readonly string[]).includes(t)).map(
                   topic => (
@@ -238,7 +238,7 @@ export default function OnboardingFlow() {
                 — "what will I learn" versus "will I meet anyone" — which is the same split the
                 filter rail makes. One flat list of sixteen chips hides that. */}
             <fieldset className="mt-6">
-              <legend className="t-label mb-3 text-[#8E8E93]">Kinds of gathering</legend>
+              <legend className="t-label mb-3 text-[var(--ink-2)]">Kinds of gathering</legend>
               <div className="flex flex-wrap gap-2">
                 {TOPIC_CHOICES.filter(t => !(TECH_CATEGORY_NAMES as readonly string[]).includes(t)).map(
                   topic => (
@@ -258,7 +258,7 @@ export default function OnboardingFlow() {
           <>
             <Card>
               <fieldset>
-                <legend className="t-label mb-3 text-[#8E8E93]">
+                <legend className="t-label mb-3 text-[var(--ink-2)]">
                   Areas you can reach on a weekday evening
                 </legend>
                 <div className="flex flex-wrap gap-2">
@@ -275,7 +275,7 @@ export default function OnboardingFlow() {
                 {/* Stated plainly, because it is the thing a reader will worry about and the thing
                     that makes the feature trustworthy. Half the corpus has no resolved area, so
                     this is also literally true of the data. */}
-                <p className="mt-3 text-[12.5px] leading-relaxed text-[#6E6E73]">
+                <p className="mt-3 text-[12.5px] leading-relaxed text-[var(--ink-2)]">
                   Events with no known neighbourhood are never pushed down for it — about half the
                   listings do not say where they are, and that is our gap, not yours.
                 </p>
@@ -283,7 +283,7 @@ export default function OnboardingFlow() {
             </Card>
             <Card>
               <fieldset>
-                <legend className="t-label mb-3 text-[#8E8E93]">In person, or on a screen</legend>
+                <legend className="t-label mb-3 text-[var(--ink-2)]">In person, or on a screen</legend>
                 <div className="flex flex-col gap-1">
                   {FORMAT_OPTIONS.map(option => (
                     <RadioRow
@@ -303,7 +303,7 @@ export default function OnboardingFlow() {
           <>
             <Card>
               <fieldset>
-                <legend className="t-label mb-3 text-[#8E8E93]">Evenings that usually work</legend>
+                <legend className="t-label mb-3 text-[var(--ink-2)]">Evenings that usually work</legend>
                 <div className="flex flex-wrap gap-2">
                   {DAY_ORDER.map(day => (
                     <Chip
@@ -318,7 +318,7 @@ export default function OnboardingFlow() {
                 {/* Says so out loud, because a user who selects all seven and expects a stronger
                     result would otherwise be quietly wrong: seven days and none are the same
                     statement, and the score treats them identically. */}
-                <p className="mt-3 text-[12.5px] leading-relaxed text-[#6E6E73]">
+                <p className="mt-3 text-[12.5px] leading-relaxed text-[var(--ink-2)]">
                   Pick none — or all seven — and the day stops counting either way.
                 </p>
               </fieldset>
@@ -328,25 +328,25 @@ export default function OnboardingFlow() {
                   are asked here because it is the one moment the user is already answering
                   questions, and burying them in settings is how nobody ever finds them. */}
               <fieldset>
-                <legend className="t-label mb-3 text-[#8E8E93]">Email</legend>
+                <legend className="t-label mb-3 text-[var(--ink-2)]">Email</legend>
                 <label className="flex items-start gap-3 rounded-xl px-1 py-2">
                   <input
                     type="checkbox"
                     checked={draft.remindersEnabled}
                     onChange={e => setDraft(d => ({ ...d, remindersEnabled: e.target.checked }))}
-                    className="mt-0.5 h-[18px] w-[18px] shrink-0 accent-[#0071E3]"
+                    className="mt-0.5 h-[18px] w-[18px] shrink-0 accent-[var(--accent)]"
                   />
                   <span>
-                    <span className="block text-[14px] font-semibold text-[#1D1D1F]">
+                    <span className="block text-[14px] font-semibold text-[var(--ink)]">
                       Remind me about events I save
                     </span>
-                    <span className="block text-[12.5px] text-[#6E6E73]">
+                    <span className="block text-[12.5px] text-[var(--ink-2)]">
                       One email before an event you put in your tracker.
                     </span>
                   </span>
                 </label>
                 <div className="mt-4 flex flex-col gap-1">
-                  <span className="t-label mb-1 block text-[#8E8E93]">Digest</span>
+                  <span className="t-label mb-1 block text-[var(--ink-2)]">Digest</span>
                   {DIGEST_FREQUENCIES.map(value => (
                     <RadioRow
                       key={value}
@@ -365,13 +365,13 @@ export default function OnboardingFlow() {
       </div>
 
       {summary && (
-        <p className="mt-5 text-[12.5px] text-[#6E6E73]">
-          Ranking so far: <span className="font-semibold text-[#1D1D1F]">{summary}</span>
+        <p className="mt-5 text-[12.5px] text-[var(--ink-2)]">
+          Ranking so far: <span className="font-semibold text-[var(--ink)]">{summary}</span>
         </p>
       )}
 
       {error && (
-        <p role="alert" className="mt-4 rounded-xl bg-[#FFF1F0] px-4 py-3 text-[13px] text-[#C7362D]">
+        <p role="alert" className="mt-4 rounded-xl border-l-2 border-l-[var(--live)] bg-[var(--paper)] px-4 py-3 text-[13px] text-[var(--live)]">
           {error}
         </p>
       )}
@@ -379,7 +379,7 @@ export default function OnboardingFlow() {
       {/* Sticky footer, with the safe-area inset honoured — `viewportFit: 'cover'` is global, so
           without the `max()` this sits under the iOS home indicator. */}
       <div
-        className="fixed inset-x-0 bottom-0 border-t border-black/5 bg-[#F5F5F7]/97 glass-nav px-4 pt-3"
+        className="fixed inset-x-0 bottom-0 border-t border-[var(--rule)] bg-[var(--paper)]/97 glass-nav px-4 pt-3"
         style={{ paddingBottom: 'max(12px, env(safe-area-inset-bottom))' }}
       >
         <div className="mx-auto flex max-w-[640px] items-center gap-3">
@@ -407,15 +407,15 @@ export default function OnboardingFlow() {
             type="button"
             onClick={() => finish('skip')}
             disabled={saving}
-            className="shrink-0 rounded-full px-3 py-2 text-[13px] font-semibold text-[#8E8E93] hover:text-[#1D1D1F] disabled:opacity-45"
+            className="shrink-0 rounded-full px-3 py-2 text-[13px] font-semibold text-[var(--ink-2)] hover:text-[var(--ink)] disabled:opacity-45"
           >
             {fromSettings ? 'Cancel' : 'Skip for now'}
           </button>
         </div>
         {!fromSettings && (
-          <p className="mx-auto mt-2 max-w-[640px] text-center text-[11.5px] text-[#a1a1a6]">
+          <p className="mx-auto mt-2 max-w-[640px] text-center text-[11.5px] text-[var(--ink-2)]">
             You can change all of this later in{' '}
-            <Link href="/settings" className="font-semibold text-[#0071E3] hover:underline">
+            <Link href="/settings" className="font-semibold text-[var(--accent)] hover:underline">
               Settings
             </Link>
             .
@@ -447,17 +447,17 @@ function RadioRow({
   onChange: () => void;
 }) {
   return (
-    <label className="flex cursor-pointer items-start gap-3 rounded-xl px-1 py-2 hover:bg-[#F7F7F9]">
+    <label className="flex cursor-pointer items-start gap-3 rounded-xl px-1 py-2 hover:bg-[var(--paper)]">
       <input
         type="radio"
         name={name}
         checked={checked}
         onChange={onChange}
-        className="mt-0.5 h-[18px] w-[18px] shrink-0 accent-[#0071E3]"
+        className="mt-0.5 h-[18px] w-[18px] shrink-0 accent-[var(--accent)]"
       />
       <span>
-        <span className="block text-[14px] font-semibold text-[#1D1D1F]">{label}</span>
-        <span className="block text-[12.5px] text-[#6E6E73]">{hint}</span>
+        <span className="block text-[14px] font-semibold text-[var(--ink)]">{label}</span>
+        <span className="block text-[12.5px] text-[var(--ink-2)]">{hint}</span>
       </span>
     </label>
   );

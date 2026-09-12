@@ -109,12 +109,12 @@ function draftFrom(row: Submission): Draft {
 
 function statusOf(row: Submission): { label: string; className: string } {
   if (row.visibility === 'pending') {
-    return { label: 'Waiting', className: 'bg-white text-[#6E6E73]' };
+    return { label: 'Waiting', className: 'bg-[var(--surface)] text-[var(--ink-2)]' };
   }
   if (row.visibility === 'private') {
-    return { label: 'Kept private', className: 'bg-white text-[#6E6E73]' };
+    return { label: 'Kept private', className: 'bg-[var(--surface)] text-[var(--ink-2)]' };
   }
-  return { label: 'In the feed', className: 'bg-[#EBF7EF] text-[#166B35]' };
+  return { label: 'In the feed', className: 'bg-[var(--paper)] text-[var(--accent)]' };
 }
 
 export default function SubmissionsPanel() {
@@ -293,9 +293,9 @@ export default function SubmissionsPanel() {
     return (
       <div className="grid gap-3 sm:grid-cols-2">
         {[0, 1].map(i => (
-          <div key={i} className="rounded-[20px] bg-white p-6 card-shadow">
-            <div className="h-4 w-1/2 rounded bg-[#EEEEF0]" />
-            <div className="mt-3 h-3 w-1/3 rounded bg-[#F3F3F5]" />
+          <div key={i} className="rounded-[var(--r-flat)] border border-[var(--rule)] p-6">
+            <div className="h-4 w-1/2 rounded bg-[var(--paper)]" />
+            <div className="mt-3 h-3 w-1/3 rounded bg-[var(--paper)]" />
           </div>
         ))}
       </div>
@@ -305,29 +305,29 @@ export default function SubmissionsPanel() {
   return (
     <div className="space-y-3">
       {error && (
-        <div className="rounded-xl bg-[#FFF1F0] px-4 py-3 text-[12.5px] text-[#C7362D]" role="status">
+        <div className="rounded-xl border-l-2 border-l-[var(--live)] bg-[var(--paper)] px-4 py-3 text-[12.5px] text-[var(--live)]" role="status">
           {error}
         </div>
       )}
       {note && (
-        <div className="rounded-xl bg-[#EBF7EF] px-4 py-3 text-[12.5px] text-[#166B35]" role="status">
+        <div className="rounded-xl border-l-2 border-l-[var(--accent)] bg-[var(--paper)] px-4 py-3 text-[12.5px] text-[var(--accent)]" role="status">
           {note}
         </div>
       )}
 
-      <section className="rounded-[20px] bg-white p-6 card-shadow">
+      <section className="rounded-[var(--r-flat)] border border-[var(--rule)] p-6">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h2 className="text-label-md font-semibold text-[#1D1D1F]">
+            <h2 className="text-label-md font-semibold text-[var(--ink)]">
               {view === 'pending' ? 'Waiting for review' : 'All submissions'}
             </h2>
-            <p className="mt-1 text-label-sm text-[#86868B]">
+            <p className="mt-1 text-label-sm text-[var(--ink-2)]">
               {view === 'pending'
                 ? 'Events asked into everyone’s feed, and candidates read off company pages. Approving publishes the link to every visitor — read it, or correct it, before you do.'
                 : 'Everything ever submitted, with the decision that was made. Anything still waiting can be corrected or decided here.'}
             </p>
           </div>
-          <div className="flex shrink-0 gap-1 rounded-full bg-[#f3f3f5] p-1">
+          <div className="flex shrink-0 gap-1 rounded-full bg-[var(--paper)] p-1">
             {(['pending', 'all'] as const).map(key => (
               <button
                 key={key}
@@ -339,8 +339,8 @@ export default function SubmissionsPanel() {
                 aria-pressed={view === key}
                 className={`h-8 rounded-full px-3.5 text-[12.5px] font-semibold transition-colors ${
                   view === key
-                    ? 'bg-white text-[#1D1D1F] shadow-[inset_0_0_0_1px_var(--hairline)]'
-                    : 'text-[#6E6E73] hover:text-[#1D1D1F]'
+                    ? 'bg-[var(--surface)] text-[var(--ink)] shadow-[inset_0_0_0_1px_var(--hairline)]'
+                    : 'text-[var(--ink-2)] hover:text-[var(--ink)]'
                 }`}
               >
                 {key === 'pending' ? 'Waiting' : 'All'}
@@ -350,7 +350,7 @@ export default function SubmissionsPanel() {
         </div>
 
         {rows.length === 0 ? (
-          <p className="mt-4 rounded-xl bg-[#f9f9fb] px-4 py-6 text-center text-[13px] text-[#86868B]">
+          <p className="mt-4 rounded-xl bg-[var(--paper)] px-4 py-6 text-center text-[13px] text-[var(--ink-2)]">
             {view === 'pending'
               ? 'Nothing waiting. Submissions appear here when somebody picks “Add for everyone”.'
               : 'No submissions yet.'}
@@ -365,13 +365,13 @@ export default function SubmissionsPanel() {
               return (
                 <div
                   key={row._id}
-                  className="rounded-xl bg-[#f9f9fb] p-4 shadow-[inset_0_0_0_1px_var(--hairline)]"
+                  className="rounded-xl bg-[var(--paper)] p-4 shadow-[inset_0_0_0_1px_var(--hairline)]"
                 >
                   {isEditing && draft ? (
                     <div className="space-y-3.5">
                       <div className="flex items-center justify-between gap-3">
-                        <p className="t-label text-[#6E6E73]">Correcting this submission</p>
-                        <span className="text-[11.5px] text-[#8E8E93]">
+                        <p className="t-label text-[var(--ink-2)]">Correcting this submission</p>
+                        <span className="text-[11.5px] text-[var(--ink-2)]">
                           Nothing is published until you add it to the feed.
                         </span>
                       </div>
@@ -422,26 +422,26 @@ export default function SubmissionsPanel() {
                       />
 
                       <label className="block">
-                        <span className="t-label mb-1.5 block text-[#6E6E73]">Description</span>
+                        <span className="t-label mb-1.5 block text-[var(--ink-2)]">Description</span>
                         <textarea
                           value={draft.description}
                           onChange={e => set('description', e.target.value)}
                           rows={4}
-                          className={`w-full rounded-xl border bg-white px-3 py-2 text-[13px] leading-relaxed text-[#1D1D1F] focus:outline-none ${
+                          className={`w-full rounded-[var(--r-touch)] border bg-[var(--surface)] px-3 py-2 text-[13px] leading-relaxed text-[var(--ink)] focus:outline-none ${
                             fieldErrors.description
-                              ? 'border-[#C7362D]'
-                              : 'border-[#e5e5ea] focus:border-[#0071E3]'
+                              ? 'border-[var(--live)]'
+                              : 'border-[var(--rule)] focus:border-[var(--accent)]'
                           }`}
                         />
                         {fieldErrors.description && (
-                          <span className="mt-1 block text-[12px] text-[#C7362D]">
+                          <span className="mt-1 block text-[12px] text-[var(--live)]">
                             {fieldErrors.description}
                           </span>
                         )}
                       </label>
 
                       <div>
-                        <p className="t-label mb-2 text-[#6E6E73]">Categories</p>
+                        <p className="t-label mb-2 text-[var(--ink-2)]">Categories</p>
                         <div className="flex flex-wrap gap-1.5">
                           {EVENT_CATEGORIES.map(name => {
                             const on = draft.category.includes(name);
@@ -453,8 +453,8 @@ export default function SubmissionsPanel() {
                                 aria-pressed={on}
                                 className={`rounded-full px-3 py-1.5 text-[12px] font-semibold transition-colors ${
                                   on
-                                    ? 'bg-[#0071E3] text-white'
-                                    : 'border border-[#e5e5ea] bg-white text-[#6E6E73] hover:bg-[#f3f3f5]'
+                                    ? 'bg-[var(--accent)] text-[var(--accent-ink)]'
+                                    : 'border border-[var(--rule)] bg-[var(--surface)] text-[var(--ink-2)] hover:bg-[var(--paper)]'
                                 }`}
                               >
                                 {name}
@@ -463,9 +463,9 @@ export default function SubmissionsPanel() {
                           })}
                         </div>
                         {fieldErrors.category && (
-                          <p className="mt-1.5 text-[12px] text-[#C7362D]">{fieldErrors.category}</p>
+                          <p className="mt-1.5 text-[12px] text-[var(--live)]">{fieldErrors.category}</p>
                         )}
-                        <p className="mt-2 text-[11.5px] text-[#8E8E93]">
+                        <p className="mt-2 text-[11.5px] text-[var(--ink-2)]">
                           {/* Stated, because it is derived and the reviewer cannot set it here. */}
                           Whether this counts as a tech event follows from these categories.
                         </p>
@@ -476,14 +476,14 @@ export default function SubmissionsPanel() {
                           type="button"
                           disabled={busy === row._id}
                           onClick={() => void saveEdit(row._id)}
-                          className="pressable h-9 rounded-full bg-[#0071E3] px-4 text-[12.5px] font-semibold text-white hover:bg-blue-600 disabled:opacity-50"
+                          className="pressable h-9 rounded-full bg-[var(--accent)] px-4 text-[12.5px] font-semibold text-[var(--accent-ink)] hover:bg-[var(--accent)] disabled:opacity-50"
                         >
                           {busy === row._id ? 'Saving…' : 'Save corrections'}
                         </button>
                         <button
                           type="button"
                           onClick={closeEditor}
-                          className="pressable h-9 rounded-full px-4 text-[12.5px] font-semibold text-[#6E6E73] hover:bg-[#f3f3f5]"
+                          className="pressable h-9 rounded-full px-4 text-[12.5px] font-semibold text-[var(--ink-2)] hover:bg-[var(--paper)]"
                         >
                           Cancel
                         </button>
@@ -492,14 +492,14 @@ export default function SubmissionsPanel() {
                   ) : (
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div className="min-w-0 flex-1">
-                        <p className="text-[14px] font-semibold text-[#1D1D1F]">{row.title}</p>
-                        <p className="mt-0.5 text-[12.5px] text-[#6E6E73]">
+                        <p className="text-[14px] font-semibold text-[var(--ink)]">{row.title}</p>
+                        <p className="mt-0.5 text-[12.5px] text-[var(--ink-2)]">
                           {fullDateIST(row.startDateTime)}
                           {row.venue ? ` · ${row.venue}` : ''}
                           {row.area ? `, ${row.area}` : ''}
                           {row.format ? ` · ${row.format}` : ''}
                         </p>
-                        <p className="mt-0.5 text-[12px] text-[#8E8E93]">
+                        <p className="mt-0.5 text-[12px] text-[var(--ink-2)]">
                           {/* Who — or what — is asking is part of the judgement being made. */}
                           {row.origin === 'extracted'
                             ? 'read off a company page by the extractor'
@@ -509,13 +509,13 @@ export default function SubmissionsPanel() {
                         </p>
 
                         {row.description && (
-                          <p className="mt-2 line-clamp-3 text-[12.5px] leading-relaxed text-[#6E6E73]">
+                          <p className="mt-2 line-clamp-3 text-[12.5px] leading-relaxed text-[var(--ink-2)]">
                             {row.description}
                           </p>
                         )}
 
                         {(row.applyLink || row.sourceUrl) && (
-                          <p className="mt-2 break-all font-mono text-[11.5px] text-[#6E6E73]">
+                          <p className="mt-2 break-all font-mono text-[11.5px] text-[var(--ink-2)]">
                             {/* Deliberately NOT a link — see the header. */}
                             {row.applyLink || row.sourceUrl}
                           </p>
@@ -526,7 +526,7 @@ export default function SubmissionsPanel() {
                             {row.category.map(c => (
                               <span
                                 key={c}
-                                className="rounded-full bg-white px-2 py-0.5 text-[10.5px] font-bold text-[#6E6E73] shadow-[inset_0_0_0_1px_var(--hairline)]"
+                                className="rounded-full bg-[var(--surface)] px-2 py-0.5 text-[10.5px] font-bold text-[var(--ink-2)] shadow-[inset_0_0_0_1px_var(--hairline)]"
                               >
                                 {c}
                               </span>
@@ -549,7 +549,7 @@ export default function SubmissionsPanel() {
                               type="button"
                               disabled={busy === row._id}
                               onClick={() => void decide(row._id, 'approve')}
-                              className="pressable h-9 rounded-full bg-[#166B35] px-4 text-[12.5px] font-semibold text-white hover:bg-[#166F37] disabled:opacity-50"
+                              className="pressable h-9 rounded-full bg-[var(--accent)] px-4 text-[12.5px] font-semibold text-[var(--accent-ink)] disabled:opacity-50"
                             >
                               {busy === row._id ? '…' : 'Add to feed'}
                             </button>
@@ -557,7 +557,7 @@ export default function SubmissionsPanel() {
                               type="button"
                               disabled={busy === row._id}
                               onClick={() => openEditor(row)}
-                              className="pressable h-9 rounded-full bg-white px-4 text-[12.5px] font-semibold text-[#0071E3] shadow-[inset_0_0_0_1px_var(--hairline)] hover:bg-[#f3f3f5] disabled:opacity-50"
+                              className="pressable h-9 rounded-full bg-[var(--surface)] px-4 text-[12.5px] font-semibold text-[var(--accent)] shadow-[inset_0_0_0_1px_var(--hairline)] hover:bg-[var(--paper)] disabled:opacity-50"
                             >
                               Correct it
                             </button>
@@ -565,7 +565,7 @@ export default function SubmissionsPanel() {
                               type="button"
                               disabled={busy === row._id}
                               onClick={() => void decide(row._id, 'reject')}
-                              className="pressable h-9 rounded-full bg-white px-4 text-[12.5px] font-semibold text-[#1D1D1F] shadow-[inset_0_0_0_1px_var(--hairline)] hover:bg-[#f3f3f5] disabled:opacity-50"
+                              className="pressable h-9 rounded-full bg-[var(--surface)] px-4 text-[12.5px] font-semibold text-[var(--ink)] shadow-[inset_0_0_0_1px_var(--hairline)] hover:bg-[var(--paper)] disabled:opacity-50"
                             >
                               Keep private
                             </button>
@@ -601,16 +601,16 @@ function Text({
 }) {
   return (
     <label className="block">
-      <span className="t-label mb-1.5 block text-[#6E6E73]">{label}</span>
+      <span className="t-label mb-1.5 block text-[var(--ink-2)]">{label}</span>
       <input
         type={type}
         value={value}
         onChange={e => onChange(e.target.value)}
-        className={`h-10 w-full rounded-xl border bg-white px-3 text-[13px] text-[#1D1D1F] focus:outline-none ${
-          error ? 'border-[#C7362D]' : 'border-[#e5e5ea] focus:border-[#0071E3]'
+        className={`h-10 w-full rounded-[var(--r-touch)] border bg-[var(--surface)] px-3 text-[13px] text-[var(--ink)] focus:outline-none ${
+          error ? 'border-[var(--live)]' : 'border-[var(--rule)] focus:border-[var(--accent)]'
         }`}
       />
-      {error && <span className="mt-1 block text-[12px] text-[#C7362D]">{error}</span>}
+      {error && <span className="mt-1 block text-[12px] text-[var(--live)]">{error}</span>}
     </label>
   );
 }

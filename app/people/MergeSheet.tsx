@@ -317,7 +317,7 @@ export default function MergeSheet({
                 `sharedKeyEvidence`. The key itself stays on screen underneath, because somebody
                 debugging their own data deserves the actual string.
               */}
-              <div className="rounded-xl bg-[#F7F7F9] p-3.5 text-[12.5px] leading-relaxed text-[color:var(--ink-2)]">
+              <div className="border-l-2 border-[color:var(--rule)] bg-[var(--paper)] px-[var(--s-3)] py-[var(--s-3)] text-[12.5px] leading-relaxed text-[color:var(--ink-2)]">
                 <p>
                   Both records carry{' '}
                   <strong className="font-semibold text-[color:var(--ink)]">{evidence.what}</strong>.{' '}
@@ -327,7 +327,7 @@ export default function MergeSheet({
                 </p>
                 <p className="mt-2 text-[11.5px] text-[color:var(--ink-3)]">
                   Matched on{' '}
-                  <code className="rounded bg-white px-1.5 py-0.5 text-[11px] text-[color:var(--ink-2)]">
+                  <code className="r-touch bg-[var(--surface)] px-1.5 py-0.5 text-[11px] text-[color:var(--ink-2)] shadow-[inset_0_0_0_1px_var(--rule)]">
                     {pair.contactKey || 'an unrecognised key'}
                   </code>
                 </p>
@@ -375,10 +375,10 @@ export default function MergeSheet({
                                 onClick={() =>
                                   setChoices(current => ({ ...current, [field.key]: option }))
                                 }
-                                className={`relative inline-flex h-9 items-center rounded-full px-3.5 text-[12.5px] font-semibold transition-colors [touch-action:manipulation] after:absolute after:inset-x-0 after:top-1/2 after:h-11 after:-translate-y-1/2 after:content-[''] ${
+                                className={`relative inline-flex h-9 items-center r-touch px-3.5 text-[12.5px] font-semibold transition-colors [touch-action:manipulation] after:absolute after:inset-x-0 after:top-1/2 after:h-11 after:-translate-y-1/2 after:content-[''] ${
                                   chosen === option
-                                    ? 'bg-[#0071E3] text-white'
-                                    : 'bg-white text-[color:var(--ink)] shadow-[inset_0_0_0_1px_var(--hairline)] hover:bg-[#F7F7F9]'
+                                    ? 'bg-[var(--accent)] text-[var(--accent-ink)]'
+                                    : 'bg-[var(--surface)] text-[color:var(--ink)] shadow-[inset_0_0_0_1px_var(--rule)] hover:bg-[var(--paper)]'
                                 }`}
                               >
                                 {option}
@@ -416,14 +416,17 @@ function CandidateCard({
       type="button"
       onClick={onSelect}
       aria-pressed={selected}
-      className={`rounded-xl p-3.5 text-left transition-colors [touch-action:manipulation] ${
+      /* 4px, because this IS a touchable — the one thing radius is allowed to mean. The chosen
+         state is a 2px accent ring rather than a fill, so the name inside keeps full contrast. */
+      className={`r-touch p-3.5 text-left transition-colors [touch-action:manipulation] ${
         selected
-          ? 'bg-[#EBF4FE] shadow-[inset_0_0_0_2px_var(--blue)]'
-          : 'bg-white shadow-[inset_0_0_0_1px_var(--hairline)] hover:bg-[#F7F7F9]'
+          ? 'bg-[var(--paper)] shadow-[inset_0_0_0_2px_var(--accent)]'
+          : 'bg-[var(--surface)] shadow-[inset_0_0_0_1px_var(--rule)] hover:bg-[var(--paper)]'
       }`}
     >
-      <p className="t-sub truncate text-[color:var(--ink)]">{candidate.displayName}</p>
-      <p className="mt-0.5 truncate text-[12.5px] text-[color:var(--ink-2)]">
+      {/* SERIF: this is a person's name, the same face the row and the person page give it. */}
+      <p className="ty-row-title truncate text-[var(--ink)]">{candidate.displayName}</p>
+      <p className="ty-meta mt-[var(--s-1)] truncate">
         {personIdentityLine(candidate) || 'No role or company recorded'}
       </p>
       {/* The sheet's ONE middle-dot string, and it earns it: three counts of the same rank, which is
@@ -438,7 +441,7 @@ function CandidateCard({
       {/* Sentence case. A tracked-out ALL-CAPS marker is the pattern `docs/design-direction.md` names
           first, and it was shouting one word inside a card whose blue ring already says it is chosen. */}
       {selected && (
-        <p className="mt-1.5 text-[12px] font-semibold text-[#0058B0]">Keeps everything</p>
+        <p className="mt-1.5 text-[12px] font-semibold text-[var(--accent)]">Keeps everything</p>
       )}
     </button>
   );

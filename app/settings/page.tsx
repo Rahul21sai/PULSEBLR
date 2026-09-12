@@ -90,29 +90,29 @@ export default function SettingsPage() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-[#F5F5F7]">
+    <div className="min-h-screen bg-[var(--paper)]">
       <DesktopNav />
 
-      <header className="md:hidden fixed top-0 w-full h-14 bg-white/96 glass-nav z-50 border-b border-black/5 flex items-center justify-between px-5">
-        <Link href="/" className="text-lg font-bold tracking-tight text-[#1D1D1F]">
+      <header className="md:hidden fixed top-0 w-full h-14 bg-[var(--surface)]/96 glass-nav z-50 border-b border-[var(--rule)] flex items-center justify-between px-5">
+        <Link href="/" className="text-lg font-bold tracking-tight text-[var(--ink)]">
           PulseBLR
         </Link>
-        <span className="text-[#86868B] text-label-md font-semibold">Settings</span>
+        <span className="text-[var(--ink-2)] text-label-md font-semibold">Settings</span>
       </header>
 
       <main className="pt-14 pb-24 md:pb-10">
         <div className="max-w-[820px] mx-auto px-4 md:px-8 pt-6 space-y-5">
-          <div>
-            <h1 className="text-[24px] md:text-[30px] font-bold tracking-[-0.025em] text-[#1D1D1F]">
-              Settings
-            </h1>
-            <p className="text-[13.5px] text-[#6E6E73] mt-0.5">
-              Your account and how events reach you.
-            </p>
+          {/* The ruled header every surface now shares. Note the `<h1>` was NOT carrying a type
+              class and was still serif: globals.css sets `h1, h2, h3 { font-family: var(--font-display) }`
+              unlayered, so a Tailwind `font-*` utility cannot reach it. `.ty-section` can, because it
+              is unlayered too and more specific. */}
+          <div className="rule-b pb-[var(--s-4)]">
+            <h1 className="ty-section text-[var(--ink)]">Settings</h1>
+            <p className="ty-meta mt-[var(--s-1)]">Your account, and how events reach you.</p>
           </div>
 
           {/* ── Account ─────────────────────────────────────────────────── */}
-          <section className="bg-white rounded-2xl card-shadow p-5">
+          <section className="rounded-[var(--r-flat)] border border-[var(--rule)] p-5">
             <div className="flex items-center gap-4">
               {session?.user?.image ? (
                 // eslint-disable-next-line @next/next/no-img-element -- Google avatar CDN
@@ -122,27 +122,27 @@ export default function SettingsPage() {
                   className="w-12 h-12 rounded-full object-cover shrink-0"
                 />
               ) : (
-                <div className="w-12 h-12 rounded-full bg-[#f3f3f5] flex items-center justify-center shrink-0">
-                  <span aria-hidden="true" className="material-symbols-outlined text-[#86868B] text-[26px]">person</span>
+                <div className="w-12 h-12 rounded-full bg-[var(--paper)] flex items-center justify-center shrink-0">
+                  <span aria-hidden="true" className="material-symbols-outlined text-[var(--ink-3)] text-[26px]">person</span>
                 </div>
               )}
               <div className="flex-1 min-w-0">
                 {session?.user ? (
                   <>
-                    <p className="text-[15px] font-semibold text-[#1D1D1F] truncate flex items-center gap-2">
+                    <p className="text-[15px] font-semibold text-[var(--ink)] truncate flex items-center gap-2">
                       {session.user.name || 'Signed in'}
                       {isAdmin && (
-                        <span className="shrink-0 rounded-full bg-[#1D1D1F] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white">
+                        <span className="shrink-0 rounded-full bg-[var(--ink)] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[var(--accent-ink)]">
                           Admin
                         </span>
                       )}
                     </p>
-                    <p className="text-[13px] text-[#6E6E73] truncate">{session.user.email}</p>
+                    <p className="text-[13px] text-[var(--ink-2)] truncate">{session.user.email}</p>
                   </>
                 ) : (
                   <>
-                    <p className="text-[15px] font-semibold text-[#1D1D1F]">Not signed in</p>
-                    <p className="text-[13px] text-[#6E6E73]">
+                    <p className="text-[15px] font-semibold text-[var(--ink)]">Not signed in</p>
+                    <p className="text-[13px] text-[var(--ink-2)]">
                       Sign in to track events and log who you met.
                     </p>
                   </>
@@ -152,14 +152,14 @@ export default function SettingsPage() {
                 <button
                   type="button"
                   onClick={() => void signOutAfterPurgingCaches()}
-                  className="shrink-0 px-4 py-2 rounded-full text-[12.5px] font-semibold text-[#FF3B30] bg-red-50 hover:bg-red-100 transition-colors"
+                  className="shrink-0 px-4 py-2 rounded-full text-[12.5px] font-semibold text-[var(--live)] bg-[var(--paper)] hover:bg-[var(--paper)] transition-colors"
                 >
                   Sign out
                 </button>
               ) : (
                 <Link
                   href="/login"
-                  className="shrink-0 px-4 py-2 rounded-full text-[12.5px] font-semibold text-white bg-[#0071E3] hover:bg-blue-600 transition-colors"
+                  className="shrink-0 px-4 py-2 rounded-full text-[12.5px] font-semibold text-[var(--accent-ink)] bg-[var(--accent)] hover:bg-[var(--accent)] transition-colors"
                 >
                   Sign in
                 </Link>
@@ -179,21 +179,21 @@ export default function SettingsPage() {
               It is offered to signed-out visitors too, as a description rather than a control: it
               names something the product does, and the sign-in prompt is directly above. */}
           {session?.user && (
-            <section className="bg-white rounded-2xl card-shadow p-5">
+            <section className="rounded-[var(--r-flat)] border border-[var(--rule)] p-5">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <h2 className="text-[16px] font-bold text-[#1D1D1F]">Your feed</h2>
-                  <p className="mt-0.5 text-[13px] leading-relaxed text-[#6E6E73]">
+                  <h2 className="text-[16px] font-bold text-[var(--ink)]">Your feed</h2>
+                  <p className="mt-0.5 text-[13px] leading-relaxed text-[var(--ink-2)]">
                     Topics, the areas you can reach, which evenings work, and how often we email you.
-                    The <span className="font-semibold text-[#1D1D1F]">For you</span> tab on the feed
+                    The <span className="font-semibold text-[var(--ink)]">For you</span> tab on the feed
                     ranks by these — it never hides anything, and{' '}
-                    <span className="font-semibold text-[#1D1D1F]">Everything</span> is always one tap
+                    <span className="font-semibold text-[var(--ink)]">Everything</span> is always one tap
                     away.
                   </p>
                 </div>
                 <Link
                   href="/onboarding?from=settings"
-                  className="pressable inline-flex h-10 shrink-0 items-center rounded-full bg-[#1D1D1F] px-5 text-[13px] font-semibold text-white hover:bg-black"
+                  className="pressable inline-flex h-10 shrink-0 items-center rounded-full bg-[var(--ink)] px-5 text-[13px] font-semibold text-[var(--accent-ink)] hover:bg-[var(--ink)]"
                 >
                   Edit preferences
                 </Link>
@@ -208,9 +208,9 @@ export default function SettingsPage() {
           {session?.user && <McpTokensSection />}
 
           {/* ── What you can do ─────────────────────────────────────────── */}
-          <section className="bg-white rounded-2xl card-shadow p-5">
-            <h2 className="text-[16px] font-bold text-[#1D1D1F]">Your permissions</h2>
-            <p className="text-[13px] text-[#6E6E73] mt-0.5">
+          <section className="rounded-[var(--r-flat)] border border-[var(--rule)] p-5">
+            <h2 className="text-[16px] font-bold text-[var(--ink)]">Your permissions</h2>
+            <p className="text-[13px] text-[var(--ink-2)] mt-0.5">
               {isAdmin
                 ? 'You administer this deployment as well as using it.'
                 : 'Everything you need to find events and track the people you meet.'}
@@ -242,7 +242,7 @@ export default function SettingsPage() {
             {isAdmin && (
               <Link
                 href="/admin"
-                className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-[#1D1D1F] px-4 py-2 text-[12.5px] font-semibold text-white hover:bg-black transition-colors"
+                className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-[var(--ink)] px-4 py-2 text-[12.5px] font-semibold text-[var(--accent-ink)] hover:bg-[var(--ink)] transition-colors"
               >
                 <span aria-hidden="true" className="material-symbols-outlined text-[15px]">shield_person</span>
                 Open Admin
@@ -251,9 +251,9 @@ export default function SettingsPage() {
           </section>
 
           {/* ── Digest ──────────────────────────────────────────────────── */}
-          <section className="bg-white rounded-2xl card-shadow p-5">
-            <h2 className="text-[16px] font-bold text-[#1D1D1F]">Email digest</h2>
-            <p className="text-[13px] text-[#6E6E73] mt-1">
+          <section className="rounded-[var(--r-flat)] border border-[var(--rule)] p-5">
+            <h2 className="text-[16px] font-bold text-[var(--ink)]">Email digest</h2>
+            <p className="text-[13px] text-[var(--ink-2)] mt-1">
               A short list of events worth your time, sent Monday mornings at 8 AM IST. You can
               switch it to daily or turn it off.
             </p>
@@ -272,58 +272,58 @@ export default function SettingsPage() {
               The cadence control itself lives in the onboarding flow, which doubles as its editor,
               so this links there. A second copy of the radio group here is how the two would drift.
             */}
-            <div className="mt-3 bg-[#f9f9fb] rounded-xl p-4 text-[12.5px] text-[#3a3a3c] space-y-1.5">
+            <div className="mt-3 bg-[var(--paper)] rounded-xl p-4 text-[12.5px] text-[var(--ink-2)] space-y-1.5">
               <p>
                 Choose weekly, daily or off in{' '}
                 <Link
                   href="/onboarding?from=settings"
-                  className="font-semibold text-[#0071E3] hover:underline"
+                  className="font-semibold text-[var(--accent)] hover:underline"
                 >
                   your feed preferences
                 </Link>
                 . Every digest carries its own unsubscribe link, and this week&apos;s is public at{' '}
-                <Link href="/digest" className="font-semibold text-[#0071E3] hover:underline">
+                <Link href="/digest" className="font-semibold text-[var(--accent)] hover:underline">
                   /digest
                 </Link>
                 .
               </p>
               {session?.user ? (
-                <p className="text-[#86868B]">
+                <p className="text-[var(--ink-2)]">
                   Preview your own digest:{' '}
                   <a
                     href="/api/notifications/send-digest"
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="font-semibold text-[#0071E3] hover:underline"
+                    className="font-semibold text-[var(--accent)] hover:underline"
                   >
                     open preview
                   </a>{' '}
                   — it is scoped to your tracker, so it shows only your data.
                 </p>
               ) : (
-                <p className="text-[#86868B]">Sign in to preview your digest.</p>
+                <p className="text-[var(--ink-2)]">Sign in to preview your digest.</p>
               )}
             </div>
           </section>
 
           {/* ── About ───────────────────────────────────────────────────── */}
-          <section className="bg-white rounded-2xl card-shadow p-5">
-            <h2 className="text-[16px] font-bold text-[#1D1D1F]">About</h2>
-            <dl className="mt-3 text-[13px] text-[#3a3a3c] space-y-2">
+          <section className="rounded-[var(--r-flat)] border border-[var(--rule)] p-5">
+            <h2 className="text-[16px] font-bold text-[var(--ink)]">About</h2>
+            <dl className="mt-3 text-[13px] text-[var(--ink-2)] space-y-2">
               <div className="flex justify-between gap-4">
-                <dt className="text-[#86868B]">Upcoming events</dt>
+                <dt className="text-[var(--ink-2)]">Upcoming events</dt>
                 <dd className="tnum font-semibold">
                   {counts ? counts.upcoming.toLocaleString('en-IN') : '—'}
                 </dd>
               </div>
               <div className="flex justify-between gap-4">
-                <dt className="text-[#86868B]">Tech events</dt>
+                <dt className="text-[var(--ink-2)]">Tech events</dt>
                 <dd className="tnum font-semibold">
                   {counts ? counts.tech.toLocaleString('en-IN') : '—'}
                 </dd>
               </div>
               <div className="flex justify-between gap-4">
-                <dt className="text-[#86868B]">Stack</dt>
+                <dt className="text-[var(--ink-2)]">Stack</dt>
                 <dd className="font-semibold text-right">Next.js 16 · MongoDB · NVIDIA NIM</dd>
               </div>
             </dl>
@@ -459,15 +459,15 @@ function McpTokensSection() {
   const live = (tokens ?? []).filter(t => !t.expired).length;
 
   return (
-    <section className="bg-white rounded-2xl card-shadow p-5">
+    <section className="rounded-[var(--r-flat)] border border-[var(--rule)] p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <h2 className="text-[16px] font-bold text-[#1D1D1F]">Assistant access</h2>
-          <p className="mt-0.5 text-[13px] leading-relaxed text-[#6E6E73]">
-            Let Claude, Cursor or Copilot read <span className="font-semibold text-[#1D1D1F]">your</span>{' '}
+          <h2 className="text-[16px] font-bold text-[var(--ink)]">Assistant access</h2>
+          <p className="mt-0.5 text-[13px] leading-relaxed text-[var(--ink-2)]">
+            Let Claude, Cursor or Copilot read <span className="font-semibold text-[var(--ink)]">your</span>{' '}
             PulseBLR data — the people you have met, who you know at a company, what is on your tracker
             and which follow-ups are overdue. Read-only, and revocable here.{' '}
-            <Link href="/mcp" className="font-semibold text-[#0071E3] hover:underline">
+            <Link href="/mcp" className="font-semibold text-[var(--accent)] hover:underline">
               Setup instructions
             </Link>
             .
@@ -476,7 +476,7 @@ function McpTokensSection() {
         <button
           type="button"
           onClick={toggle}
-          className="pressable inline-flex h-10 shrink-0 items-center rounded-full bg-[#1D1D1F] px-5 text-[13px] font-semibold text-white hover:bg-black"
+          className="pressable inline-flex h-10 shrink-0 items-center rounded-full bg-[var(--ink)] px-5 text-[13px] font-semibold text-[var(--accent-ink)] hover:bg-[var(--ink)]"
           aria-expanded={open}
         >
           {open ? 'Hide' : 'Manage tokens'}
@@ -487,16 +487,16 @@ function McpTokensSection() {
         <div className="mt-4 border-t border-[color:var(--hairline)] pt-4">
           {/* The one-time reveal. Deliberately loud, and it does not disappear on its own. */}
           {fresh && (
-            <div className="mb-4 rounded-xl border border-[#0071E3]/30 bg-[#e8f3ff] p-4">
-              <p className="text-[13px] font-semibold text-[#1D1D1F]">
+            <div className="mb-4 rounded-xl border border-[var(--accent)]/30 bg-[var(--paper)] p-4">
+              <p className="text-[13px] font-semibold text-[var(--ink)]">
                 Copy this now — it cannot be shown again.
               </p>
-              <p className="mt-1 text-[12.5px] leading-relaxed text-[#3a3a3c]">
+              <p className="mt-1 text-[12.5px] leading-relaxed text-[var(--ink-2)]">
                 Only a hash is stored, so there is no way to look it up later. If you lose it, revoke it
                 and mint another.
               </p>
               <div className="mt-2.5 flex flex-wrap items-center gap-2">
-                <code className="min-w-0 flex-1 break-all rounded-lg bg-white px-3 py-2 font-mono text-[12px] text-[#1D1D1F]">
+                <code className="min-w-0 flex-1 break-all rounded-[var(--r-flat)] border border-[var(--rule)] bg-[var(--surface)] px-3 py-2 font-mono text-[12px] text-[var(--ink)]">
                   {fresh}
                 </code>
                 <button
@@ -507,14 +507,14 @@ function McpTokensSection() {
                       () => setError('Could not copy — select the token and copy it manually.')
                     );
                   }}
-                  className="pressable h-10 shrink-0 rounded-full bg-[#0071E3] px-4 text-[12.5px] font-semibold text-white hover:bg-blue-600"
+                  className="pressable h-10 shrink-0 rounded-full bg-[var(--accent)] px-4 text-[12.5px] font-semibold text-[var(--accent-ink)] hover:bg-[var(--accent)]"
                 >
                   {copied ? 'Copied' : 'Copy'}
                 </button>
                 <button
                   type="button"
                   onClick={() => setFresh(null)}
-                  className="pressable h-10 shrink-0 rounded-full bg-white px-4 text-[12.5px] font-semibold text-[#6E6E73] hover:bg-[#f3f3f5]"
+                  className="pressable h-10 shrink-0 rounded-full bg-[var(--surface)] px-4 text-[12.5px] font-semibold text-[var(--ink-2)] hover:bg-[var(--paper)]"
                 >
                   Done
                 </button>
@@ -523,7 +523,7 @@ function McpTokensSection() {
           )}
 
           {error && (
-            <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-[12.5px] font-medium text-[#FF3B30]">
+            <p className="mb-3 rounded-lg bg-[var(--paper)] px-3 py-2 text-[12.5px] font-medium text-[var(--live)]">
               {error}
             </p>
           )}
@@ -531,7 +531,7 @@ function McpTokensSection() {
           {/* ── Mint ─────────────────────────────────────────────────── */}
           <div className="flex flex-wrap items-end gap-2">
             <label className="min-w-[180px] flex-1">
-              <span className="block text-[11.5px] font-semibold uppercase tracking-wide text-[#8E8E93]">
+              <span className="block text-[11.5px] font-semibold uppercase tracking-wide text-[var(--ink-2)]">
                 Name
               </span>
               <input
@@ -540,17 +540,17 @@ function McpTokensSection() {
                 onChange={e => setName(e.target.value)}
                 maxLength={80}
                 placeholder="Claude Code on my laptop"
-                className="mt-1 h-10 w-full rounded-xl border border-[color:var(--hairline)] bg-[#f9f9fb] px-3 text-[13px] text-[#1D1D1F] outline-none focus:border-[#0071E3]"
+                className="mt-1 h-10 w-full rounded-[var(--r-touch)] border border-[color:var(--hairline)] bg-[var(--paper)] px-3 text-[13px] text-[var(--ink)] outline-none focus:border-[var(--accent)]"
               />
             </label>
             <label>
-              <span className="block text-[11.5px] font-semibold uppercase tracking-wide text-[#8E8E93]">
+              <span className="block text-[11.5px] font-semibold uppercase tracking-wide text-[var(--ink-2)]">
                 Expires
               </span>
               <select
                 value={days}
                 onChange={e => setDays(Number(e.target.value))}
-                className="mt-1 h-10 rounded-xl border border-[color:var(--hairline)] bg-[#f9f9fb] px-3 text-[13px] text-[#1D1D1F] outline-none focus:border-[#0071E3]"
+                className="mt-1 h-10 rounded-[var(--r-touch)] border border-[color:var(--hairline)] bg-[var(--paper)] px-3 text-[13px] text-[var(--ink)] outline-none focus:border-[var(--accent)]"
               >
                 {/* There is no "never" option on purpose — a credential with no end date is one you
                     forget you issued. The server clamps to 365 days regardless of what is sent. */}
@@ -563,13 +563,13 @@ function McpTokensSection() {
               type="button"
               onClick={() => void create()}
               disabled={creating || name.trim().length === 0 || live >= max}
-              className="pressable h-10 shrink-0 rounded-full bg-[#0071E3] px-5 text-[13px] font-semibold text-white hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-40"
+              className="pressable h-10 shrink-0 rounded-full bg-[var(--accent)] px-5 text-[13px] font-semibold text-[var(--accent-ink)] hover:bg-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-40"
             >
               {creating ? 'Creating…' : 'Create token'}
             </button>
           </div>
           {live >= max && (
-            <p className="mt-2 text-[12.5px] text-[#6E6E73]">
+            <p className="mt-2 text-[12.5px] text-[var(--ink-2)]">
               You have {max} active tokens, which is the limit. Revoke one you no longer use.
             </p>
           )}
@@ -577,9 +577,9 @@ function McpTokensSection() {
           {/* ── List ─────────────────────────────────────────────────── */}
           <div className="mt-4">
             {tokens === null ? (
-              <p className="text-[12.5px] text-[#8E8E93]">Loading…</p>
+              <p className="text-[12.5px] text-[var(--ink-2)]">Loading…</p>
             ) : tokens.length === 0 ? (
-              <p className="text-[12.5px] leading-relaxed text-[#6E6E73]">
+              <p className="text-[12.5px] leading-relaxed text-[var(--ink-2)]">
                 No tokens yet. Without one, an assistant connected to PulseBLR can still search public
                 events — it just cannot see anything of yours.
               </p>
@@ -591,18 +591,18 @@ function McpTokensSection() {
                     className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-[color:var(--hairline)] py-2.5 first:border-0 first:pt-0"
                   >
                     <div className="min-w-0 flex-1">
-                      <p className="flex flex-wrap items-center gap-2 text-[13.5px] font-semibold text-[#1D1D1F]">
+                      <p className="flex flex-wrap items-center gap-2 text-[13.5px] font-semibold text-[var(--ink)]">
                         <span className="truncate">{token.name}</span>
-                        <code className="font-mono text-[11.5px] font-normal text-[#8E8E93]">
+                        <code className="font-mono text-[11.5px] font-normal text-[var(--ink-2)]">
                           pblr_…{token.hint}
                         </code>
                         {token.expired && (
-                          <span className="rounded bg-[#f3f3f5] px-1.5 py-0.5 text-[10.5px] font-bold uppercase tracking-wide text-[#86868B]">
+                          <span className="rounded bg-[var(--paper)] px-1.5 py-0.5 text-[10.5px] font-bold uppercase tracking-wide text-[var(--ink-2)]">
                             expired
                           </span>
                         )}
                       </p>
-                      <p className="text-[12px] text-[#8E8E93]">
+                      <p className="text-[12px] text-[var(--ink-2)]">
                         {token.scope} ·{' '}
                         {token.expired
                           ? `expired ${shortDate(token.expiresAt)}`
@@ -616,7 +616,7 @@ function McpTokensSection() {
                     <button
                       type="button"
                       onClick={() => void revoke(token)}
-                      className="pressable shrink-0 rounded-full bg-red-50 px-4 py-2 text-[12.5px] font-semibold text-[#FF3B30] hover:bg-red-100"
+                      className="pressable shrink-0 rounded-full bg-[var(--paper)] px-4 py-2 text-[12.5px] font-semibold text-[var(--live)] hover:bg-[var(--paper)]"
                     >
                       Revoke
                     </button>
@@ -626,7 +626,7 @@ function McpTokensSection() {
             )}
           </div>
 
-          <p className="mt-3 text-[12px] leading-relaxed text-[#8E8E93]">
+          <p className="mt-3 text-[12px] leading-relaxed text-[var(--ink-2)]">
             A token is a password, not a share link. It can only read, never write — nothing with one
             can save an event, record a person or complete a follow-up. It cannot mint or revoke another
             token either; that needs this page.
@@ -669,21 +669,21 @@ function Permission({
       <span
         aria-hidden="true"
         className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${
-          granted ? 'bg-[#e8f3ff] text-[#0071E3]' : 'bg-[#f3f3f5] text-[#a1a1a6]'
+          granted ? 'bg-[var(--paper)] text-[var(--accent)]' : 'bg-[var(--paper)] text-[var(--ink-3)]'
         }`}
       >
         <span aria-hidden="true" className="material-symbols-outlined text-[16px]">{icon}</span>
       </span>
       <div className="min-w-0">
-        <p className={`text-[13.5px] font-semibold ${granted ? 'text-[#1D1D1F]' : 'text-[#86868B]'}`}>
+        <p className={`text-[13.5px] font-semibold ${granted ? 'text-[var(--ink)]' : 'text-[var(--ink-2)]'}`}>
           {title}
           {!granted && (
-            <span className="ml-2 rounded bg-[#f3f3f5] px-1.5 py-0.5 text-[10.5px] font-bold uppercase tracking-wide text-[#86868B]">
+            <span className="ml-2 rounded bg-[var(--paper)] px-1.5 py-0.5 text-[10.5px] font-bold uppercase tracking-wide text-[var(--ink-2)]">
               admin only
             </span>
           )}
         </p>
-        <p className="text-[12.5px] text-[#6E6E73]">{detail}</p>
+        <p className="text-[12.5px] text-[var(--ink-2)]">{detail}</p>
       </div>
     </li>
   );

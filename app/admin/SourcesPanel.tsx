@@ -114,18 +114,18 @@ function NewSourceForm({ onCreated }: { onCreated: (name: string) => void }) {
         value={form[key]}
         onChange={e => setForm(prev => ({ ...prev, [key]: e.target.value }))}
         placeholder={placeholder}
-        className={`h-10 w-full rounded-xl bg-white px-3 text-[13px] text-[#1D1D1F] focus:outline-none ${
+        className={`h-10 w-full rounded-[var(--r-touch)] bg-[var(--surface)] px-3 text-[13px] text-[var(--ink)] focus:outline-none ${
           fieldErrors[key]
-            ? 'shadow-[inset_0_0_0_1px_#C7362D]'
-            : 'shadow-[inset_0_0_0_1px_var(--hairline-strong)] focus:shadow-[inset_0_0_0_2px_#0071E3]'
+            ? 'shadow-[inset_0_0_0_1px_var(--live)]'
+            : 'shadow-[inset_0_0_0_1px_var(--hairline-strong)] focus:shadow-[inset_0_0_0_2px_var(--accent)]'
         }`}
       />
-      {fieldErrors[key] && <span className="mt-1 block text-[12px] text-[#C7362D]">{fieldErrors[key]}</span>}
+      {fieldErrors[key] && <span className="mt-1 block text-[12px] text-[var(--live)]">{fieldErrors[key]}</span>}
     </label>
   );
 
   return (
-    <div className="mb-3 rounded-2xl bg-[#fbfbfd] p-4 shadow-[inset_0_0_0_1px_var(--hairline)]">
+    <div className="mb-3 rounded-[var(--r-flat)] bg-[var(--paper)] p-4 shadow-[inset_0_0_0_1px_var(--hairline)]">
       <div className="grid gap-3 sm:grid-cols-2">
         {input('name', 'Name, e.g. Bengaluru Python User Group')}
         <label className="block">
@@ -133,7 +133,7 @@ function NewSourceForm({ onCreated }: { onCreated: (name: string) => void }) {
           <select
             value={form.type}
             onChange={e => setForm(prev => ({ ...prev, type: e.target.value }))}
-            className="h-10 w-full rounded-xl bg-white px-3 text-[13px] text-[#1D1D1F] shadow-[inset_0_0_0_1px_var(--hairline-strong)] focus:outline-none"
+            className="h-10 w-full rounded-[var(--r-touch)] bg-[var(--surface)] px-3 text-[13px] text-[var(--ink)] shadow-[inset_0_0_0_1px_var(--hairline-strong)] focus:outline-none"
           >
             {SOURCE_TYPES.map(t => (
               <option key={t} value={t}>
@@ -148,12 +148,12 @@ function NewSourceForm({ onCreated }: { onCreated: (name: string) => void }) {
         {input('kind', 'Kind (optional), e.g. meetup')}
         {input('handle', 'Handle (optional), e.g. blr-python')}
       </div>
-      <p className="mt-2 text-[11.5px] leading-relaxed text-[#8E8E93]">
+      <p className="mt-2 text-[11.5px] leading-relaxed text-[var(--ink-2)]">
         Kind and handle are the dedup identity and must be given together, or not at all. The scraper
         will fetch this URL on its next run, so http(s) only.
       </p>
       {error && (
-        <p role="alert" className="mt-2 rounded-xl bg-[#FFF1F0] px-3 py-2 text-[12.5px] text-[#C7362D]">
+        <p role="alert" className="mt-2 rounded-xl border-l-2 border-l-[var(--live)] bg-[var(--paper)] px-3 py-2 text-[12.5px] text-[var(--live)]">
           {error}
         </p>
       )}
@@ -349,7 +349,7 @@ export default function SourcesPanel({
             <thead>
               <tr className="border-b border-[color:var(--hairline)] text-left">
                 {['Kind', 'Total', 'Producing', 'Quiet', 'Never', 'Dead', 'Off', 'Events'].map(h => (
-                  <th key={h} className="t-label whitespace-nowrap py-2 pr-3 text-[#8E8E93]">
+                  <th key={h} className="t-label whitespace-nowrap py-2 pr-3 text-[var(--ink-2)]">
                     {h}
                   </th>
                 ))}
@@ -357,33 +357,33 @@ export default function SourcesPanel({
             </thead>
             <tbody>
               {sources.byKind.map(k => (
-                <tr key={k.kind} className="border-b border-[#f0f0f2] last:border-0">
+                <tr key={k.kind} className="border-b border-[var(--rule)] last:border-0">
                   <td className="py-2.5 pr-3">
                     <button
                       type="button"
                       onClick={() => setKind(kind === k.kind ? 'all' : k.kind)}
                       className={`font-mono text-[12px] font-semibold hover:underline ${
-                        kind === k.kind ? 'text-[#0071E3]' : 'text-[#1D1D1F]'
+                        kind === k.kind ? 'text-[var(--accent)]' : 'text-[var(--ink)]'
                       }`}
                     >
                       {k.kind}
                     </button>
                   </td>
                   <td className="tnum py-2.5 pr-3 font-semibold">{k.total}</td>
-                  <td className="tnum py-2.5 pr-3 text-[#166B35]">{k.producing}</td>
-                  <td className="tnum py-2.5 pr-3 text-[#6E6E73]">{k.quiet}</td>
-                  <td className="tnum py-2.5 pr-3 text-[#6E6E73]">{k.never}</td>
-                  <td className={`tnum py-2.5 pr-3 ${k.dead > 0 ? 'font-semibold text-[#C7362D]' : 'text-[#6E6E73]'}`}>
+                  <td className="tnum py-2.5 pr-3 text-[var(--accent)]">{k.producing}</td>
+                  <td className="tnum py-2.5 pr-3 text-[var(--ink-2)]">{k.quiet}</td>
+                  <td className="tnum py-2.5 pr-3 text-[var(--ink-2)]">{k.never}</td>
+                  <td className={`tnum py-2.5 pr-3 ${k.dead > 0 ? 'font-semibold text-[var(--live)]' : 'text-[var(--ink-2)]'}`}>
                     {k.dead}
                   </td>
-                  <td className="tnum py-2.5 pr-3 text-[#6E6E73]">{k.disabled}</td>
+                  <td className="tnum py-2.5 pr-3 text-[var(--ink-2)]">{k.disabled}</td>
                   <td className="tnum py-2.5 pr-3">{k.events}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
-        <p className="mt-3 text-[12px] leading-relaxed text-[#6E6E73]">
+        <p className="mt-3 text-[12px] leading-relaxed text-[var(--ink-2)]">
           Nothing retires a dead source automatically yet, so all of them are still requested on every
           run. Disabling one is reversible and frees requests — which is what pays for a second pass
           over the sources that do produce.
@@ -404,7 +404,7 @@ export default function SourcesPanel({
             <span className="sr-only">Filter sources</span>
             <span
               aria-hidden="true"
-              className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-[18px] text-[#a1a1a6]"
+              className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-[18px] text-[var(--ink-3)]"
             >
               search
             </span>
@@ -412,7 +412,7 @@ export default function SourcesPanel({
               value={filter}
               onChange={e => setFilter(e.target.value)}
               placeholder="Filter by name, handle or kind"
-              className="h-10 w-full rounded-full bg-white pl-10 pr-4 text-[13px] text-[#1D1D1F] shadow-[inset_0_0_0_1px_var(--hairline-strong)] focus:outline-none focus:shadow-[inset_0_0_0_2px_#0071E3]"
+              className="h-10 w-full rounded-full bg-[var(--surface)] pl-10 pr-4 text-[13px] text-[var(--ink)] shadow-[inset_0_0_0_1px_var(--hairline-strong)] focus:outline-none focus:shadow-[inset_0_0_0_2px_var(--accent)]"
             />
           </label>
           {(
@@ -460,8 +460,8 @@ export default function SourcesPanel({
           not.
         */}
         {selected.size > 0 && (
-          <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl bg-[#1D1D1F] px-4 py-3">
-            <span className="text-[12.5px] font-semibold text-white">{selected.size} selected</span>
+          <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl bg-[var(--ink)] px-4 py-3">
+            <span className="text-[12.5px] font-semibold text-[var(--accent-ink)]">{selected.size} selected</span>
             <span className="flex-1" />
             <Button size="sm" tone="quiet" disabled={busy === 'bulk'} onClick={() => bulk(false)}>
               Disable {selected.size}
@@ -479,14 +479,14 @@ export default function SourcesPanel({
           <NoRows>No sources match.</NoRows>
         ) : (
           <>
-            <div className="flex items-center justify-between py-2 text-[12px] text-[#6E6E73]">
-              <button type="button" onClick={selectVisible} className="font-semibold text-[#0071E3] hover:underline">
+            <div className="flex items-center justify-between py-2 text-[12px] text-[var(--ink-2)]">
+              <button type="button" onClick={selectVisible} className="font-semibold text-[var(--accent)] hover:underline">
                 Select all {rows.length} shown
               </button>
               <span>events on the last run</span>
             </div>
             <div className="max-h-[560px] overflow-y-auto">
-              <ul className="divide-y divide-[#f0f0f2]">
+              <ul className="divide-y divide-[var(--rule)]">
                 {rows.map(row => {
                   const dead = row.consecutiveEmptyScrapes >= 6;
                   return (
@@ -496,41 +496,78 @@ export default function SourcesPanel({
                         checked={selected.has(row.id)}
                         onChange={() => toggleSelected(row.id)}
                         aria-label={`Select ${row.name}`}
-                        className="h-4 w-4 shrink-0 accent-[#0071E3]"
+                        className="h-4 w-4 shrink-0 accent-[var(--accent)]"
                       />
+                      {/*
+                        FOUR STATES FROM THREE COLOURS, using FILL as the fourth signal.
+
+                        The palette is nine values and cannot carry a four-state scale in hue alone;
+                        `#30D158`/`#FF9F0A` became `--accent`/`--live`, and `dead` was already
+                        `--live`, so this collapsed into a literal `dead ? --live : --live` — a live
+                        ternary whose branches were byte-identical, meaning a source empty ONCE was
+                        drawn exactly as loud as one empty six times running.
+
+                        The distinction comes back as shape rather than as a tenth token: FILLED means
+                        settled, HOLLOW means provisional. So `producing` is a filled accent dot and
+                        `dead` a filled live dot — both verdicts — while `quiet` is a hollow live ring
+                        (empty, but not yet six runs) and `off` a hollow grey ring (a human's choice,
+                        not a health reading). Two axes, four unambiguous states, no new colour.
+
+                        It also stops being `aria-hidden` with nothing in its place. A colour-only
+                        status carries nothing to a screen reader, and a dot that is now doing MORE
+                        work visually would carry even less — so the state is named in text.
+                      */}
                       <span
-                        aria-hidden="true"
+                        role="img"
+                        aria-label={
+                          !row.enabled
+                            ? 'Disabled'
+                            : row.lastEventCount > 0
+                              ? 'Producing'
+                              : dead
+                                ? 'Dead — six or more empty runs'
+                                : 'Quiet — last run was empty'
+                        }
+                        title={
+                          !row.enabled
+                            ? 'Disabled'
+                            : row.lastEventCount > 0
+                              ? 'Producing'
+                              : dead
+                                ? 'Dead — six or more empty runs'
+                                : 'Quiet — last run was empty'
+                        }
                         className={`h-2 w-2 shrink-0 rounded-full ${
                           !row.enabled
-                            ? 'bg-[#c7c7cc]'
+                            ? 'shadow-[inset_0_0_0_1.5px_var(--ink-3)]'
                             : row.lastEventCount > 0
-                              ? 'bg-[#30D158]'
+                              ? 'bg-[var(--accent)]'
                               : dead
-                                ? 'bg-[#FF3B30]'
-                                : 'bg-[#FF9F0A]'
+                                ? 'bg-[var(--live)]'
+                                : 'shadow-[inset_0_0_0_1.5px_var(--live)]'
                         }`}
                       />
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-[13.5px] font-semibold text-[#1D1D1F]">
+                        <p className="truncate text-[13.5px] font-semibold text-[var(--ink)]">
                           {row.name}
                           {!row.enabled && (
-                            <span className="ml-2 rounded bg-[#f3f3f5] px-1.5 py-0.5 text-[10.5px] font-bold uppercase tracking-wide text-[#8E8E93]">
+                            <span className="ml-2 rounded bg-[var(--paper)] px-1.5 py-0.5 text-[10.5px] font-bold uppercase tracking-wide text-[var(--ink-2)]">
                               off
                             </span>
                           )}
                         </p>
-                        <p className="truncate text-[12px] text-[#6E6E73]">
+                        <p className="truncate text-[12px] text-[var(--ink-2)]">
                           {row.kind ?? 'built-in'} ·{' '}
                           {row.lastScrapedAt ? `scraped ${relativeTime(row.lastScrapedAt)}` : 'never scraped'}
                           {dead && (
-                            <span className="font-semibold text-[#C7362D]">
+                            <span className="font-semibold text-[var(--live)]">
                               {' '}
                               · {row.consecutiveEmptyScrapes} empty runs
                             </span>
                           )}
                         </p>
                       </div>
-                      <span className="tnum shrink-0 text-[12.5px] font-semibold text-[#1D1D1F]">
+                      <span className="tnum shrink-0 text-[12.5px] font-semibold text-[var(--ink)]">
                         {row.lastEventCount}
                       </span>
                       <Button

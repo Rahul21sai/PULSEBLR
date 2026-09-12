@@ -180,7 +180,7 @@ export default function EngagementPanel() {
               <thead>
                 <tr className="border-b border-[color:var(--hairline)] text-left">
                   {['Account', 'Signed up', 'Last active', 'Saved', 'People', 'Folders', 'Added'].map(h => (
-                    <th key={h} className="t-label whitespace-nowrap py-2 pr-3 text-[#8E8E93]">
+                    <th key={h} className="t-label whitespace-nowrap py-2 pr-3 text-[var(--ink-2)]">
                       {h}
                     </th>
                   ))}
@@ -188,25 +188,25 @@ export default function EngagementPanel() {
               </thead>
               <tbody>
                 {data.perUser.map(u => (
-                  <tr key={u.email} className="border-b border-[#f0f0f2] last:border-0">
+                  <tr key={u.email} className="border-b border-[var(--rule)] last:border-0">
                     <td className="max-w-[220px] py-2.5 pr-3">
-                      <span className="block truncate font-semibold text-[#1D1D1F]">{u.name}</span>
-                      <span className="block truncate font-mono text-[11.5px] text-[#8E8E93]">{u.email}</span>
+                      <span className="block truncate font-semibold text-[var(--ink)]">{u.name}</span>
+                      <span className="block truncate font-mono text-[11.5px] text-[var(--ink-2)]">{u.email}</span>
                     </td>
-                    <td className="whitespace-nowrap py-2.5 pr-3 text-[#6E6E73]">
+                    <td className="whitespace-nowrap py-2.5 pr-3 text-[var(--ink-2)]">
                       {shortDateIST(u.signedUpAt)}
                     </td>
                     <td className="whitespace-nowrap py-2.5 pr-3">
                       {u.lastActiveAt ? (
-                        <span className="text-[#6E6E73]">{relativeTime(u.lastActiveAt)}</span>
+                        <span className="text-[var(--ink-2)]">{relativeTime(u.lastActiveAt)}</span>
                       ) : (
                         // Named rather than left blank: an account that signed up and never acted is
                         // the most actionable row on this table.
-                        <span className="font-semibold text-[#C7362D]">never</span>
+                        <span className="font-semibold text-[var(--live)]">never</span>
                       )}
                     </td>
                     {[u.tracked, u.contacts, u.folders, u.added].map((n, i) => (
-                      <td key={i} className="tnum py-2.5 pr-3 text-[#1D1D1F]">
+                      <td key={i} className="tnum py-2.5 pr-3 text-[var(--ink)]">
                         {n}
                       </td>
                     ))}

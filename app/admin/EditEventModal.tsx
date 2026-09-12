@@ -250,25 +250,25 @@ export default function EditEventModal({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="w-full max-w-[680px] rounded-[22px] bg-white card-shadow-lg">
+      <div className="w-full max-w-[680px] rounded-[var(--r-flat)] bg-[var(--surface)]">
         <div className="flex items-center justify-between border-b border-[color:var(--hairline)] px-6 py-4">
-          <h2 className="t-head text-[#1D1D1F]">Edit event</h2>
+          <h2 className="t-head text-[var(--ink)]">Edit event</h2>
           <button
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="grid h-9 w-9 place-items-center rounded-full text-[#86868B] hover:bg-[#f3f3f5]"
+            className="grid h-9 w-9 place-items-center rounded-full text-[var(--ink-2)] hover:bg-[var(--paper)]"
           >
             <span aria-hidden="true" className="material-symbols-outlined text-[20px]">close</span>
           </button>
         </div>
 
         {loading ? (
-          <p className="px-6 py-10 text-center text-[13px] text-[#86868B]">Loading…</p>
+          <p className="px-6 py-10 text-center text-[13px] text-[var(--ink-2)]">Loading…</p>
         ) : (
           <div className="space-y-4 px-6 py-5">
             {error && (
-              <p role="alert" className="rounded-xl bg-[#FFF1F0] px-3.5 py-2.5 text-[12.5px] text-[#C7362D]">
+              <p role="alert" className="rounded-xl border-l-2 border-l-[var(--live)] bg-[var(--paper)] px-3.5 py-2.5 text-[12.5px] text-[var(--live)]">
                 {error}
               </p>
             )}
@@ -309,7 +309,7 @@ export default function EditEventModal({
             <Text label="Source URL" value={draft.sourceUrl} onChange={v => set('sourceUrl', v)} error={fieldErrors.sourceUrl} />
 
             <div>
-              <p className="t-label mb-2 text-[#6E6E73]">Categories</p>
+              <p className="t-label mb-2 text-[var(--ink-2)]">Categories</p>
               <div className="flex flex-wrap gap-1.5">
                 {EVENT_CATEGORIES.map(name => {
                   const on = draft.category.includes(name);
@@ -321,8 +321,8 @@ export default function EditEventModal({
                       aria-pressed={on}
                       className={`rounded-full px-3 py-1.5 text-[12px] font-semibold transition-colors ${
                         on
-                          ? 'bg-[#0071E3] text-white'
-                          : 'border border-[#e5e5ea] bg-white text-[#6E6E73] hover:bg-[#f3f3f5]'
+                          ? 'bg-[var(--accent)] text-[var(--accent-ink)]'
+                          : 'border border-[var(--rule)] bg-[var(--surface)] text-[var(--ink-2)] hover:bg-[var(--paper)]'
                       }`}
                     >
                       {name}
@@ -331,7 +331,7 @@ export default function EditEventModal({
                 })}
               </div>
               {fieldErrors.category && (
-                <p className="mt-1.5 text-[12px] text-[#C7362D]">{fieldErrors.category}</p>
+                <p className="mt-1.5 text-[12px] text-[var(--live)]">{fieldErrors.category}</p>
               )}
             </div>
 
@@ -346,7 +346,7 @@ export default function EditEventModal({
           <button
             type="button"
             onClick={onClose}
-            className="pressable h-10 rounded-full px-5 text-[13px] font-semibold text-[#6E6E73] hover:bg-[#f3f3f5]"
+            className="pressable h-10 rounded-full px-5 text-[13px] font-semibold text-[var(--ink-2)] hover:bg-[var(--paper)]"
           >
             Cancel
           </button>
@@ -354,7 +354,7 @@ export default function EditEventModal({
             type="button"
             onClick={save}
             disabled={saving || loading}
-            className="pressable h-10 rounded-full bg-[#0071E3] px-6 text-[13px] font-semibold text-white hover:bg-blue-600 disabled:opacity-50"
+            className="pressable h-10 rounded-full bg-[var(--accent)] px-6 text-[13px] font-semibold text-[var(--accent-ink)] hover:bg-[var(--accent)] disabled:opacity-50"
           >
             {saving ? 'Saving…' : 'Save changes'}
           </button>
@@ -367,8 +367,8 @@ export default function EditEventModal({
 /* ────────────────────────────── field primitives ────────────────────────────── */
 
 function fieldClass(error?: string) {
-  return `h-10 w-full rounded-xl border bg-white px-3 text-[13px] text-[#1D1D1F] focus:outline-none ${
-    error ? 'border-[#C7362D]' : 'border-[#e5e5ea] focus:border-[#0071E3]'
+  return `h-10 w-full rounded-[var(--r-touch)] border bg-[var(--surface)] px-3 text-[13px] text-[var(--ink)] focus:outline-none ${
+    error ? 'border-[var(--live)]' : 'border-[var(--rule)] focus:border-[var(--accent)]'
   }`;
 }
 
@@ -387,9 +387,9 @@ function Text({
 }) {
   return (
     <label className="block">
-      <span className="t-label mb-1.5 block text-[#6E6E73]">{label}</span>
+      <span className="t-label mb-1.5 block text-[var(--ink-2)]">{label}</span>
       <input type={type} value={value} onChange={e => onChange(e.target.value)} className={fieldClass(error)} />
-      {error && <span className="mt-1 block text-[12px] text-[#C7362D]">{error}</span>}
+      {error && <span className="mt-1 block text-[12px] text-[var(--live)]">{error}</span>}
     </label>
   );
 }
@@ -407,16 +407,16 @@ function Area({
 }) {
   return (
     <label className="block">
-      <span className="t-label mb-1.5 block text-[#6E6E73]">{label}</span>
+      <span className="t-label mb-1.5 block text-[var(--ink-2)]">{label}</span>
       <textarea
         value={value}
         onChange={e => onChange(e.target.value)}
         rows={5}
-        className={`w-full rounded-xl border bg-white px-3 py-2 text-[13px] leading-relaxed text-[#1D1D1F] focus:outline-none ${
-          error ? 'border-[#C7362D]' : 'border-[#e5e5ea] focus:border-[#0071E3]'
+        className={`w-full rounded-[var(--r-touch)] border bg-[var(--surface)] px-3 py-2 text-[13px] leading-relaxed text-[var(--ink)] focus:outline-none ${
+          error ? 'border-[var(--live)]' : 'border-[var(--rule)] focus:border-[var(--accent)]'
         }`}
       />
-      {error && <span className="mt-1 block text-[12px] text-[#C7362D]">{error}</span>}
+      {error && <span className="mt-1 block text-[12px] text-[var(--live)]">{error}</span>}
     </label>
   );
 }
@@ -436,7 +436,7 @@ function Select({
 }) {
   return (
     <label className="block">
-      <span className="t-label mb-1.5 block text-[#6E6E73]">{label}</span>
+      <span className="t-label mb-1.5 block text-[var(--ink-2)]">{label}</span>
       <select value={value} onChange={e => onChange(e.target.value)} className={fieldClass(error)}>
         {options.map(o => (
           <option key={o} value={o}>
@@ -444,7 +444,7 @@ function Select({
           </option>
         ))}
       </select>
-      {error && <span className="mt-1 block text-[12px] text-[#C7362D]">{error}</span>}
+      {error && <span className="mt-1 block text-[12px] text-[var(--live)]">{error}</span>}
     </label>
   );
 }
@@ -464,9 +464,9 @@ function Toggle({
         type="checkbox"
         checked={checked}
         onChange={e => onChange(e.target.checked)}
-        className="h-4 w-4 rounded border-[#c7c7cc] text-[#0071E3] focus:ring-[#0071E3]"
+        className="h-4 w-4 rounded border-[var(--rule)] text-[var(--accent)] focus:ring-[var(--accent)]"
       />
-      <span className="text-[13px] text-[#1D1D1F]">{label}</span>
+      <span className="text-[13px] text-[var(--ink)]">{label}</span>
     </label>
   );
 }

@@ -60,6 +60,9 @@ export default function QrCode({
           // Pure black on pure white. A tinted QR looks designed and scans worse; contrast
           // is the entire job here, and this is the one surface where the design system's
           // "one accent, rationed" rule means no accent at all.
+          // NOT `--surface`, and not a hex the palette sweep missed: the `qrcode` encoder
+          // writes these straight into the SVG/PNG and parses no CSS, and a decoder needs
+          // true #FFF/#000. This one stays literal even if --surface ever stops being white.
           color: { dark: '#000000', light: '#FFFFFF' },
         })
       )
@@ -85,7 +88,7 @@ export default function QrCode({
   if (failed) {
     return (
       <div
-        className={`grid place-items-center rounded-2xl bg-[#F5F5F7] p-4 text-center text-[12.5px] text-[#6E6E73] ${className}`}
+        className={`grid place-items-center rounded-2xl bg-[var(--paper)] p-4 text-center text-[12.5px] text-[var(--ink-2)] ${className}`}
         style={{ width: size, height: size }}
       >
         Could not draw the code. The link below still works.
@@ -95,7 +98,7 @@ export default function QrCode({
 
   return (
     <div
-      className={`overflow-hidden rounded-2xl bg-white ${className}`}
+      className={`overflow-hidden rounded-2xl bg-[var(--surface)] ${className}`}
       style={{ width: size, height: size }}
       role="img"
       aria-label={ariaLabel}
@@ -105,7 +108,7 @@ export default function QrCode({
       ) : (
         // A plain placeholder, not a pulse: `prefers-reduced-motion` disables animation
         // globally, so a loading state that is only an animation reads as broken.
-        <div className="h-full w-full bg-[#F5F5F7]" />
+        <div className="h-full w-full bg-[var(--paper)]" />
       )}
     </div>
   );

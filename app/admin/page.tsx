@@ -43,15 +43,15 @@ export default async function AdminPage() {
 /** Shown by AdminDashboard when a fetch fails; kept here so the import stays server-side. */
 export function AdminUnavailable() {
   return (
-    <div className="min-h-screen bg-[#F5F5F7] flex items-center justify-center p-6">
-      <div className="bg-white rounded-2xl card-shadow p-6 max-w-md text-center">
-        <h1 className="text-[18px] font-bold text-[#1D1D1F]">Admin is unavailable</h1>
-        <p className="text-[13.5px] text-[#6E6E73] mt-1">
+    <div className="min-h-screen bg-[var(--paper)] flex items-center justify-center p-6">
+      <div className="rounded-[var(--r-flat)] border border-[var(--rule)] p-6 max-w-md text-center">
+        <h1 className="text-[18px] font-bold text-[var(--ink)]">Admin is unavailable</h1>
+        <p className="text-[13.5px] text-[var(--ink-2)] mt-1">
           Set <code className="font-mono">ADMIN_EMAILS</code> to enable it.
         </p>
         <Link
           href="/"
-          className="inline-block mt-4 px-4 py-2 rounded-full bg-[#0071E3] text-white text-[13px] font-semibold"
+          className="inline-block mt-4 px-4 py-2 rounded-full bg-[var(--accent)] text-[var(--accent-ink)] text-[13px] font-semibold"
         >
           Back to events
         </Link>

@@ -11,7 +11,7 @@ import { useState } from 'react';
  */
 
 const FIELD_CLASS =
-  'mt-1.5 h-12 w-full rounded-xl bg-[#F7F7F9] px-3.5 text-[16px] text-[#1D1D1F] outline-none focus:shadow-[inset_0_0_0_2px_var(--blue)]';
+  'mt-1.5 h-12 w-full r-touch bg-[var(--paper)] px-3.5 text-[16px] text-[var(--ink)] shadow-[inset_0_0_0_1px_var(--rule)] outline-none focus:shadow-[inset_0_0_0_2px_var(--accent)]';
 
 export default function IntakeForm({
   token,
@@ -67,10 +67,10 @@ export default function IntakeForm({
 
   if (state === 'done') {
     return (
-      <section className="rounded-[22px] bg-white p-6 text-center card-shadow">
-        <span aria-hidden="true" className="material-symbols-outlined text-[34px] text-[#166B35]">check_circle</span>
-        <h2 className="t-sub mt-2 text-[#1D1D1F]">You&apos;re in</h2>
-        <p className="mt-1.5 text-[13.5px] leading-relaxed text-[#6E6E73]">
+      <section className="bg-[var(--surface)] p-6 text-center shadow-[inset_0_0_0_1px_var(--rule)]">
+        <span aria-hidden="true" className="material-symbols-outlined text-[34px] text-[var(--accent)]">check_circle</span>
+        <h2 className="ty-section mt-2 text-[var(--ink)]">You&apos;re in</h2>
+        <p className="mt-1.5 text-[13.5px] leading-relaxed text-[var(--ink-2)]">
           Added to {folderName}. Nothing else to do — enjoy the event.
         </p>
       </section>
@@ -78,10 +78,10 @@ export default function IntakeForm({
   }
 
   return (
-    <form onSubmit={submit} className="rounded-[22px] bg-white p-5 card-shadow">
+    <form onSubmit={submit} className="bg-[var(--surface)] p-5 shadow-[inset_0_0_0_1px_var(--rule)]">
       {error && (
         <p
-          className="mb-4 rounded-xl bg-[#FFF1F0] px-4 py-3 text-[12.5px] text-[#C7362D]"
+          className="mb-4 border-l-2 border-l-[var(--live)] bg-[var(--paper)] px-4 py-3 text-[12.5px] text-[var(--live)]"
           role="alert"
         >
           {error}
@@ -89,7 +89,7 @@ export default function IntakeForm({
       )}
 
       <label className="block">
-        <span className="t-label text-[#8E8E93]">Your name</span>
+        <span className="t-label text-[var(--ink-2)]">Your name</span>
         <input
           value={name}
           onChange={e => setName(e.target.value)}
@@ -100,7 +100,7 @@ export default function IntakeForm({
 
       <div className="mt-4 grid grid-cols-2 gap-3">
         <label className="block">
-          <span className="t-label text-[#8E8E93]">Company</span>
+          <span className="t-label text-[var(--ink-2)]">Company</span>
           <input
             value={company}
             onChange={e => setCompany(e.target.value)}
@@ -109,7 +109,7 @@ export default function IntakeForm({
           />
         </label>
         <label className="block">
-          <span className="t-label text-[#8E8E93]">Role</span>
+          <span className="t-label text-[var(--ink-2)]">Role</span>
           <input
             value={role}
             onChange={e => setRole(e.target.value)}
@@ -120,7 +120,7 @@ export default function IntakeForm({
       </div>
 
       <label className="mt-4 block">
-        <span className="t-label text-[#8E8E93]">LinkedIn</span>
+        <span className="t-label text-[var(--ink-2)]">LinkedIn</span>
         <input
           value={linkedin}
           onChange={e => setLinkedin(e.target.value)}
@@ -134,7 +134,7 @@ export default function IntakeForm({
         <button
           type="button"
           onClick={() => setShowMore(true)}
-          className="mt-4 text-[13px] font-semibold text-[#0071E3] hover:underline"
+          className="mt-4 text-[13px] font-semibold text-[var(--accent)] hover:underline"
         >
           Add phone or email
         </button>
@@ -143,7 +143,7 @@ export default function IntakeForm({
       {showMore && (
         <>
           <label className="mt-4 block">
-            <span className="t-label text-[#8E8E93]">Phone</span>
+            <span className="t-label text-[var(--ink-2)]">Phone</span>
             <input
               value={phone}
               onChange={e => setPhone(e.target.value)}
@@ -154,7 +154,7 @@ export default function IntakeForm({
             />
           </label>
           <label className="mt-4 block">
-            <span className="t-label text-[#8E8E93]">Email</span>
+            <span className="t-label text-[var(--ink-2)]">Email</span>
             <input
               value={email}
               onChange={e => setEmail(e.target.value)}
@@ -165,12 +165,12 @@ export default function IntakeForm({
             />
           </label>
           <label className="mt-4 block">
-            <span className="t-label text-[#8E8E93]">Anything worth noting</span>
+            <span className="t-label text-[var(--ink-2)]">Anything worth noting</span>
             <textarea
               value={note}
               onChange={e => setNote(e.target.value)}
               rows={2}
-              className="mt-1.5 w-full resize-none rounded-xl bg-[#F7F7F9] px-3.5 py-2.5 text-[16px] leading-relaxed text-[#1D1D1F] outline-none focus:shadow-[inset_0_0_0_2px_var(--blue)]"
+              className="mt-1.5 w-full resize-none r-touch bg-[var(--paper)] px-3.5 py-2.5 text-[16px] leading-relaxed text-[var(--ink)] shadow-[inset_0_0_0_1px_var(--rule)] outline-none focus:shadow-[inset_0_0_0_2px_var(--accent)]"
             />
           </label>
         </>
@@ -179,7 +179,7 @@ export default function IntakeForm({
       <button
         type="submit"
         disabled={state === 'saving'}
-        className="mt-5 flex h-12 w-full items-center justify-center rounded-full bg-[#1D1D1F] text-[15px] font-semibold text-white hover:bg-black disabled:opacity-45 pressable"
+        className="mt-5 flex h-12 w-full items-center justify-center r-touch bg-[var(--ink)] text-[15px] font-semibold text-[var(--accent-ink)] disabled:opacity-45 pressable"
       >
         {state === 'saving' ? 'Sending…' : 'Add me'}
       </button>

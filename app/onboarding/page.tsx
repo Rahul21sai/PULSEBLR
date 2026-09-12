@@ -30,7 +30,7 @@ export const metadata: Metadata = {
 
 export default function OnboardingPage() {
   return (
-    <div className="min-h-screen bg-[#F5F5F7]">
+    <div className="min-h-screen bg-[var(--paper)]">
       <Suspense fallback={<OnboardingSkeleton />}>
         <OnboardingFlow />
       </Suspense>
@@ -46,7 +46,7 @@ function OnboardingSkeleton() {
           <span
             key={i}
             className={`h-[3px] flex-1 rounded-full ${
-              i === 0 ? 'bg-[#1D1D1F]' : 'bg-[color:var(--hairline-strong)]'
+              i === 0 ? 'bg-[var(--ink)]' : 'bg-[color:var(--hairline-strong)]'
             }`}
           />
         ))}
@@ -55,7 +55,7 @@ function OnboardingSkeleton() {
       <div className="skeleton mt-3 h-8 w-3/4 rounded" />
       <div className="skeleton mt-3 h-4 w-full rounded" />
       <div className="skeleton mt-1.5 h-4 w-2/3 rounded" />
-      <div className="mt-6 rounded-[18px] bg-white card-shadow p-5">
+      <div className="mt-6 rounded-[var(--r-flat)] border border-[var(--rule)] p-5">
         <div className="flex flex-wrap gap-2">
           {Array.from({ length: 10 }, (_, i) => (
             <span key={i} className="skeleton h-9 w-24 rounded-full" />

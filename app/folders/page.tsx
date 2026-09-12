@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState } from 'react';
 import AppShell from '../components/AppShell';
 import Sheet from '../components/Sheet';
 import { TAP_44 } from '../components/scan/ContactFields';
-import { Button, ButtonLink, Card, EmptyState, PageHeader, Banner } from '../components/ui';
+import { Button, ButtonLink, Banner } from '../components/ui';
 import { dayHeading } from '@/lib/format';
 import {
   blockedCaptures,
@@ -46,9 +46,9 @@ import type { FolderDTO } from '@/lib/contacts/types';
  */
 const SMALL_QUIET =
   TAP_44 +
-  ' inline-flex h-8 items-center justify-center gap-1 rounded-full bg-white px-3.5 text-[12.5px]' +
-  ' font-semibold tracking-[-0.006em] text-[#1D1D1F] shadow-[inset_0_0_0_1px_var(--hairline-strong)]' +
-  ' pressable hover:bg-[#F7F7F9] disabled:pointer-events-none disabled:opacity-45';
+  ' inline-flex h-8 items-center justify-center gap-1 r-touch bg-[var(--surface)] px-3.5 text-[12.5px]' +
+  ' font-semibold tracking-[-0.006em] text-[var(--ink)] shadow-[inset_0_0_0_1px_var(--rule)]' +
+  ' pressable hover:bg-[var(--paper)] disabled:pointer-events-none disabled:opacity-45';
 
 export default function FoldersPage() {
   const [folders, setFolders] = useState<FolderDTO[]>([]);
@@ -206,11 +206,20 @@ export default function FoldersPage() {
   return (
     <AppShell title="People">
       <div className="mx-auto max-w-[1100px] px-4 pt-4 md:px-8">
-        <PageHeader
-          title="People you've met"
-          subtitle="One folder per event. Scan a LinkedIn QR and it lands in the folder you're pointing at."
-          action={
-            <div className="flex items-center gap-2">
+        {/* SANS heading: the app naming its own surface. The FOLDER names below are serif, because
+            each one is an event that happened in the city. Hand-rolled rather than `PageHeader` for
+            that reason — it sets one face for every page — and so the action group can WRAP at 390
+            instead of pushing the document sideways. */}
+        <div className="mb-[var(--s-6)] flex flex-wrap items-start justify-between gap-[var(--s-4)]">
+          <div className="min-w-0 basis-full md:max-w-[62ch] md:basis-auto">
+            <h1 className="ty-section text-[var(--ink)]">People you&apos;ve met</h1>
+            <p className="mt-[var(--s-2)] ty-body text-[color:var(--ink-2)]">
+              One folder per event. Scan a LinkedIn QR and it lands in the folder you&apos;re pointing
+              at.
+            </p>
+          </div>
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
               <Button tone="quiet" icon="create_new_folder" onClick={() => setCreating(true)}>
                 New folder
               </Button>
@@ -218,8 +227,8 @@ export default function FoldersPage() {
                 Scan
               </ButtonLink>
             </div>
-          }
-        />
+          </div>
+        </div>
 
         {/*
           TWO BANNERS, NOT ONE COUNT.
@@ -305,18 +314,18 @@ export default function FoldersPage() {
 
             <div className="mt-2 flex flex-col gap-2">
               {stuck.map(item => (
-                <Card key={`${item.kind}:${item.clientId}`} padding="tight">
+                <div key={`${item.kind}:${item.clientId}`} className="rule-b py-[var(--s-3)]">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="truncate text-[13.5px] font-semibold text-[#1D1D1F]">
+                      <p className="truncate text-[13.5px] font-semibold text-[var(--ink)]">
                         {item.label}
+                        {/* Sentence case. A tracked-out ALL-CAPS marker is the pattern
+                            `docs/design-direction.md` names first — and it was shouting one word. */}
                         {item.kind === 'folder' && (
-                          <span className="ml-2 rounded-full bg-[#F5F5F7] px-2 py-0.5 text-[10.5px] font-bold uppercase tracking-[0.05em] text-[#6E6E73]">
-                            folder
-                          </span>
+                          <span className="pill pill-quiet ml-2">folder</span>
                         )}
                       </p>
-                      <p className="mt-0.5 text-[12.5px] leading-relaxed text-[#6E6E73]">
+                      <p className="mt-0.5 text-[12.5px] leading-relaxed text-[var(--ink-2)]">
                         {item.reason}
                       </p>
                     </div>
@@ -341,14 +350,14 @@ export default function FoldersPage() {
                           is unchanged, the hit area is a full 44px, and the 6px it overflows each way
                           costs nothing because the wrapper still sets the layout height.
                         */
-                        <span className="inline-flex h-8 items-center rounded-full bg-[#F7F7F9]">
+                        <span className="inline-flex h-8 items-center r-touch bg-[var(--paper)]">
                           <select
                             aria-label={`Move ${item.label} to another folder`}
                             defaultValue=""
                             onChange={e => {
                               if (e.target.value) void moveTo(item, e.target.value);
                             }}
-                            className="h-11 rounded-full bg-transparent px-3 text-[12px] font-semibold text-[#1D1D1F] outline-none focus:shadow-[inset_0_0_0_2px_var(--blue)] [touch-action:manipulation]"
+                            className="h-11 r-touch bg-transparent px-3 text-[12px] font-semibold text-[var(--ink)] outline-none focus:shadow-[inset_0_0_0_2px_var(--accent)] [touch-action:manipulation]"
                           >
                             <option value="">Move to…</option>
                             {folders.map(f => (
@@ -378,7 +387,7 @@ export default function FoldersPage() {
                       </button>
                     </div>
                   </div>
-                </Card>
+                </div>
               ))}
             </div>
           </div>
@@ -397,69 +406,74 @@ export default function FoldersPage() {
         )}
 
         {loading ? (
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="rule-t">
             {[0, 1, 2, 3].map(i => (
-              <Card key={i}>
-                <div className="h-4 w-1/2 rounded bg-[#EEEEF0]" />
-                <div className="mt-3 h-3 w-1/3 rounded bg-[#F3F3F5]" />
-              </Card>
+              <div key={i} className="rule-b py-[var(--s-4)]">
+                <div className="h-5 w-1/2 bg-[var(--paper)]" />
+                <div className="mt-3 h-3 w-1/3 bg-[var(--paper)]" />
+              </div>
             ))}
           </div>
         ) : folders.length === 0 && queuedFolders.length === 0 ? (
-          <EmptyState
-            icon="groups"
-            title="No folders yet"
-            body="Make one named after the event you're going to — “I/O Connect”, “GDG DevFest” — then scan people into it."
-            action={
+          /* Flat and ruled, left-aligned: the centred icon-over-two-lines block is the generated
+             default, and a radius here would be the only one on a page of hairlines. */
+          <div className="rule-y py-[var(--s-8)]">
+            <h2 className="ty-section text-[var(--ink)]">No folders yet</h2>
+            <p className="mt-[var(--s-3)] ty-body max-w-[52ch] text-[color:var(--ink-2)]">
+              Make one named after the event you&apos;re going to — “I/O Connect”, “GDG DevFest” —
+              then scan people into it.
+            </p>
+            <div className="mt-[var(--s-4)]">
               <Button tone="primary" icon="create_new_folder" onClick={() => setCreating(true)}>
                 Create your first folder
               </Button>
-            }
-          />
+            </div>
+          </div>
         ) : (
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="rule-t">
             {/*
-              Device-only folders FIRST and as real cards. They used to render nowhere — the grid
+              Device-only folders FIRST and as real rows. They used to render nowhere — the list
               shows server folders only — so a folder made offline existed solely as +1 on a count
               that called it a "capture". Not links: there is no server id to open yet.
             */}
             {queuedFolders.map(folder => (
-              <Card key={`local:${folder.clientId}`}>
+              <div key={`local:${folder.clientId}`} className="rule-b py-[var(--s-4)]">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <h2 className="t-sub truncate text-[#1D1D1F]">{folder.name}</h2>
-                    <p className="mt-1 text-[12.5px] text-[#6E6E73]">
+                    {/* SERIF: a folder is named after an event, which is a thing in the city. */}
+                    <h2 className="ty-row-title truncate text-[var(--ink)]">{folder.name}</h2>
+                    <p className="ty-meta mt-[var(--s-1)]">
                       {folder.eventDate ? dayHeading(folder.eventDate) : 'No date'}
                       {folder.venue ? ` · ${folder.venue}` : ''}
                     </p>
                   </div>
-                  <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-[#F5F5F7] px-2 py-0.5 text-[10.5px] font-bold text-[#6E6E73]">
+                  <span className="pill pill-quiet shrink-0">
                     <span aria-hidden="true" className="material-symbols-outlined text-[12px]">
                       cloud_off
                     </span>
                     local
                   </span>
                 </div>
-                <p className="mt-3 text-[12px] text-[#8E8E93]">
+                <p className="ty-meta mt-[var(--s-2)]">
                   On this device only. It will upload on its own, and you can open it then.
                 </p>
-              </Card>
+              </div>
             ))}
             {folders.map(folder => (
-              <FolderCard key={folder._id} folder={folder} />
+              <div key={folder._id} className="rule-b">
+                <FolderCard folder={folder} />
+              </div>
             ))}
           </div>
         )}
 
-        <div className="mt-8 mb-4">
-          <Card padding="tight">
-            <p className="text-[12.5px] leading-relaxed text-[#6E6E73]">
-              <strong className="text-[#1D1D1F]">A note on badges.</strong>{' '}
+        <div className="mt-[var(--s-12)] mb-[var(--s-4)] rule-t pt-[var(--s-4)]">
+            <p className="max-w-[68ch] text-[13px] leading-relaxed text-[color:var(--ink-2)]">
+              <strong className="text-[var(--ink)]">A note on badges.</strong>{' '}
               Scanning somebody&apos;s conference badge or ticket does not give you their details —
               those codes are opaque ids only the organiser can resolve, on every platform. What
               works is their LinkedIn QR, your own card, or typing the name in.
             </p>
-          </Card>
         </div>
       </div>
 
@@ -479,43 +493,42 @@ export default function FoldersPage() {
 
 function FolderCard({ folder }: { folder: FolderDTO }) {
   return (
-    <Link href={`/folders/${folder._id}`} className="block">
-      <Card interactive>
+    /* A ROW, hairline-separated from its neighbours, with 4px of radius on the target itself — the
+       one thing radius is allowed to mean. The count is SANS: it is the app counting, not a name. */
+    <Link
+      href={`/folders/${folder._id}`}
+      className="pressable r-touch block py-[var(--s-4)] outline-none focus-visible:shadow-[0_0_0_2px_var(--accent)]"
+    >
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <h2 className="t-sub truncate text-[#1D1D1F]">{folder.name}</h2>
-            <p className="mt-1 text-[12.5px] text-[#6E6E73]">
+            {/* SERIF: a folder is named after an event, which is a thing in the city. */}
+            <h2 className="ty-row-title truncate text-[var(--ink)]">{folder.name}</h2>
+            <p className="ty-meta mt-[var(--s-1)]">
               {/* Formatted through lib/format.ts, which is pinned to Asia/Kolkata. */}
               {folder.eventDate ? dayHeading(folder.eventDate) : 'No date'}
               {folder.venue ? ` · ${folder.venue}` : ''}
             </p>
           </div>
-          <span className="shrink-0 text-right">
-            <span
-              className="tnum block text-[22px] font-bold leading-none tracking-[-0.03em] text-[#1D1D1F]"
-              style={{ fontFamily: 'var(--font-display)' }}
-            >
+          <span className="ty-meta shrink-0 text-right">
+            <span className="tnum block text-[20px] font-semibold leading-none text-[var(--ink)]">
               {folder.contactCount ?? 0}
             </span>
-            <span className="t-label text-[#8E8E93]">
+            <span className="mt-[var(--s-1)] block">
               {folder.contactCount === 1 ? 'person' : 'people'}
             </span>
           </span>
         </div>
 
-        <div className="mt-3 flex flex-wrap items-center gap-2">
+        <div className="mt-[var(--s-2)] flex flex-wrap items-center gap-x-2 gap-y-1">
           {(folder.pendingFollowUps ?? 0) > 0 && (
-            <span className="rounded-full bg-[#FFF4E5] px-2.5 py-1 text-[11px] font-bold text-[#A85B00]">
+            <span className="pill pill-quiet">
               {folder.pendingFollowUps} follow-up{folder.pendingFollowUps === 1 ? '' : 's'} due
             </span>
           )}
           {folder.intakeEnabled && (
-            <span className="rounded-full bg-[#EBF4FE] px-2.5 py-1 text-[11px] font-bold text-[#0058B0]">
-              Sign-up link live
-            </span>
+            <span className="pill pill-quiet text-[color:var(--accent)]">Sign-up link live</span>
           )}
         </div>
-      </Card>
     </Link>
   );
 }
@@ -600,32 +613,32 @@ function NewFolderSheet({ onClose, onCreated }: { onClose: () => void; onCreated
       )}
 
       <label className="block">
-        <span className="t-label text-[#8E8E93]">Name</span>
+        <span className="t-label text-[var(--ink-2)]">Name</span>
         <input
           value={name}
           onChange={e => setName(e.target.value)}
           placeholder="I/O Connect"
-          className="mt-1.5 h-11 w-full rounded-xl bg-[#F7F7F9] px-3.5 text-[15px] text-[#1D1D1F] outline-none focus:shadow-[inset_0_0_0_2px_var(--blue)]"
+          className="mt-1.5 h-11 w-full r-touch bg-[var(--paper)] px-3.5 text-[15px] text-[var(--ink)] shadow-[inset_0_0_0_1px_var(--rule)] outline-none focus:shadow-[inset_0_0_0_2px_var(--accent)]"
         />
       </label>
 
       <label className="mt-4 block">
-        <span className="t-label text-[#8E8E93]">Date</span>
+        <span className="t-label text-[var(--ink-2)]">Date</span>
         <input
           type="date"
           value={eventDate}
           onChange={e => setEventDate(e.target.value)}
-          className="mt-1.5 h-11 w-full rounded-xl bg-[#F7F7F9] px-3.5 text-[15px] text-[#1D1D1F] outline-none focus:shadow-[inset_0_0_0_2px_var(--blue)]"
+          className="mt-1.5 h-11 w-full r-touch bg-[var(--paper)] px-3.5 text-[15px] text-[var(--ink)] shadow-[inset_0_0_0_1px_var(--rule)] outline-none focus:shadow-[inset_0_0_0_2px_var(--accent)]"
         />
       </label>
 
       <label className="mt-4 block">
-        <span className="t-label text-[#8E8E93]">Venue (optional)</span>
+        <span className="t-label text-[var(--ink-2)]">Venue (optional)</span>
         <input
           value={venue}
           onChange={e => setVenue(e.target.value)}
           placeholder="Bangalore International Exhibition Centre"
-          className="mt-1.5 h-11 w-full rounded-xl bg-[#F7F7F9] px-3.5 text-[15px] text-[#1D1D1F] outline-none focus:shadow-[inset_0_0_0_2px_var(--blue)]"
+          className="mt-1.5 h-11 w-full r-touch bg-[var(--paper)] px-3.5 text-[15px] text-[var(--ink)] shadow-[inset_0_0_0_1px_var(--rule)] outline-none focus:shadow-[inset_0_0_0_2px_var(--accent)]"
         />
       </label>
 

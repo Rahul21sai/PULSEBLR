@@ -181,6 +181,32 @@ const LIVE_PREVIEW = 2;
  */
 const WEEK_STRIP_LIMIT = 100;
 
+/**
+ * ONE FEED SECTION: a heading and its rows — stacked on a phone, TWO COLUMNS FROM `lg`.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────────────────────
+ * This is the structural half of the change that makes the feed read as an editorial list rather
+ * than as a card grid. Every `feed`-tone heading below passes `railed`, which is `SectionHeading`'s
+ * signal to stop drawing a full-width bar and become the left column here; the rows go in a sibling
+ * `<div className="min-w-0">`, which is why each section has exactly TWO grid children. Map the rows
+ * directly into the section instead and every row becomes its own grid item, which silently lays a
+ * schedule out in two columns.
+ *
+ * 128px holds `Sat, 12 Sep` at 13px with room to spare, and `Saturday, 12 September 2026` wraps to
+ * two lines under it, which is what a diary date should do. The gap is `--s-8`.
+ *
+ * `min-w-0` on the rows column is load-bearing twice over: a `1fr` track floors at min-content, so
+ * without it a long unbroken title would widen the column past the viewport — and `truncate` and
+ * `line-clamp` would never clamp.
+ *
+ * The section rhythm is `--s-8` (32px) between groups rather than the `.rhythm` class's 64/96. That
+ * class is for a page of unlike sections; consecutive day groups are one list, and 64px of air
+ * between them would read as four separate lists rather than as one schedule crossing midnight.
+ * ─────────────────────────────────────────────────────────────────────────────────────────────
+ */
+const FEED_SECTION =
+  'mb-[var(--s-8)] lg:grid lg:grid-cols-[128px_minmax(0,1fr)] lg:gap-x-[var(--s-8)]';
+
 /** Same members in the same order. Used to keep `filters` identity stable — see below. */
 function sameList(a: string[], b: string[]): boolean {
   return a.length === b.length && a.every((v, i) => v === b[i]);
@@ -355,7 +381,8 @@ export default function Home() {
    * The time-window chip scroller, so the ACTIVE chip can be brought into view.
    *
    * Needed because the row is wider than a phone: `?when=week` arriving from a shared link, or the
-   * default landing on `All upcoming`, must not leave the highlighted chip off the right edge —   * which is precisely the state that made the row look like it had only two options.
+   * default landing on `All upcoming`, must not leave the highlighted chip off the right edge —
+   * which is precisely the state that made the row look like it had only two options.
    *
    * `scrollLeft` is assigned directly rather than calling `scrollIntoView()`, for two reasons.
    * `scrollIntoView` walks every scrollable ancestor, so it can scroll the PAGE as well as the row;
@@ -1252,15 +1279,20 @@ export default function Home() {
   );
 
   return (
-    <div className="min-h-screen bg-[#F5F5F7]">
+    <div className="min-h-screen bg-[var(--paper)]">
       <DesktopNav />
 
-      <header className="md:hidden fixed top-0 w-full h-14 bg-white/96 glass-nav z-50 border-b border-black/5 flex items-center justify-between px-5">
-        <span className="text-lg font-bold tracking-tight text-[#1D1D1F]">PulseBLR</span>
+      {/* `border-[var(--rule)]`, three times on this page (here, the command bar, and both edges of
+          the filter sheet), replacing `border-black/5`. A Tailwind palette alpha-black is not one of
+          the nine, and a hairline has exactly one value in this system — the whole point of `--rule`
+          being solid and warm is that alpha black composites differently on `--surface` than on
+          `--paper`, so the same class was drawing two different lines. */}
+      <header className="md:hidden fixed top-0 w-full h-14 bg-[var(--surface)]/96 glass-nav z-50 border-b border-[var(--rule)] flex items-center justify-between px-5">
+        <span className="text-lg font-bold tracking-tight text-[var(--ink)]">PulseBLR</span>
         <Link
           href="/tracker"
           aria-label="Open your tracker"
-          className="text-[#86868B] hover:text-[#0071E3] transition-colors"
+          className="text-[var(--ink-2)] hover:text-[var(--accent)] transition-colors"
         >
           <span aria-hidden="true" className="material-symbols-outlined text-[24px]">bookmarks</span>
         </Link>
@@ -1270,7 +1302,7 @@ export default function Home() {
       {/* Height is pinned to --commandbar-h rather than left to content, so the
           measured offset the rest of the layout depends on stays true. */}
       <div
-        className="fixed top-14 left-0 right-0 z-40 bg-[#F5F5F7]/97 glass-nav border-b border-black/5 overflow-hidden"
+        className="fixed top-14 left-0 right-0 z-40 bg-[var(--paper)]/97 glass-nav border-b border-[var(--rule)] overflow-hidden"
         style={{ height: 'var(--commandbar-h)' }}
       >
         <div className="max-w-[1240px] mx-auto px-4 md:px-8">
@@ -1286,7 +1318,7 @@ export default function Home() {
               would leave 12px of dead space at the bottom of the bar between 640px and 767px. */}
           <div className="flex items-center gap-2 py-1.5 sm:py-2.5">
             <div className="relative flex-1 min-w-0">
-              <span aria-hidden="true" className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-[19px] text-[#86868B] pointer-events-none">
+              <span aria-hidden="true" className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-[19px] text-[var(--ink-3)] pointer-events-none">
                 search
               </span>
               <input
@@ -1301,19 +1333,20 @@ export default function Home() {
                 autoComplete="off"
                 spellCheck={false}
                 enterKeyHint="search"
-                /* `placeholder:text-[#6E6E73]`, was `#a1a1a6` — 2.58:1 on white, the worst contrast in
-                   the command bar and on the one string that teaches a reader what this box accepts
+                /* `placeholder:text-[var(--ink-2)]`, was a decorative grey at 2.58:1 on white — the
+                   worst contrast in the command bar, and on the one string that teaches a reader
+                   what this box accepts
                    ("Kubernetes, Razorpay, Koramangala"). A placeholder is text and is not exempt from
                    the floor. Height and padding are untouched: `--commandbar-h` is a single source of
                    truth in globals.css that this file may not edit. */
-                className="w-full h-10 pl-10 pr-9 rounded-full bg-white text-[14px] text-[#1D1D1F] placeholder:text-[#6E6E73] shadow-[inset_0_0_0_1px_var(--hairline-strong)] transition-[box-shadow,background-color] focus:outline-none focus-visible:shadow-[inset_0_0_0_2px_#0071E3] [touch-action:manipulation]"
+                className="w-full h-10 pl-10 pr-9 r-touch bg-[var(--surface)] text-[14px] text-[var(--ink)] placeholder:text-[var(--ink-2)] shadow-[inset_0_0_0_1px_var(--rule)] transition-[box-shadow,background-color] focus:outline-none focus-visible:shadow-[inset_0_0_0_2px_var(--accent)] [touch-action:manipulation]"
               />
               {searchInput && (
                 <button
                   type="button"
                   onClick={() => setSearchInput('')}
                   aria-label="Clear search"
-                  className="absolute right-2.5 top-1/2 grid h-6 w-6 -translate-y-1/2 place-items-center rounded-full text-[#86868B] hover:bg-[#F0F0F2] hover:text-[#1D1D1F] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0071E3] [touch-action:manipulation]"
+                  className="absolute right-2.5 top-1/2 grid h-6 w-6 -translate-y-1/2 place-items-center r-touch text-[var(--ink-2)] hover:bg-[var(--paper)] hover:text-[var(--ink)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] [touch-action:manipulation]"
                 >
                   <span aria-hidden="true" className="material-symbols-outlined text-[18px]">close</span>
                 </button>
@@ -1324,12 +1357,12 @@ export default function Home() {
             <button
               type="button"
               onClick={() => setSheetOpen(true)}
-              className="lg:hidden shrink-0 h-10 px-4 rounded-full bg-white border border-[#e5e5ea] text-[13px] font-semibold text-[#1D1D1F] flex items-center gap-1.5 hover:bg-[#f3f3f5] transition-colors"
+              className="lg:hidden shrink-0 h-10 px-4 r-touch bg-[var(--surface)] border border-[var(--rule)] text-[13px] font-semibold text-[var(--ink)] flex items-center gap-1.5 hover:bg-[var(--paper)] transition-colors"
             >
               <span aria-hidden="true" className="material-symbols-outlined text-[18px]">tune</span>
               Filters
               {activeCount > 0 && (
-                <span className="bg-[#0071E3] text-white text-[10px] font-bold rounded-full min-w-4 h-4 px-1 flex items-center justify-center tnum">
+                <span className="bg-[var(--accent)] text-[var(--accent-ink)] text-[10px] font-bold r-touch min-w-4 h-4 px-1 flex items-center justify-center tnum">
                   {activeCount}
                 </span>
               )}
@@ -1340,7 +1373,7 @@ export default function Home() {
                 control should be contiguous anyway. Height reaches the 44px floor; WIDTH STAYS
                 32px, because widening the painted pill would push it past row 1's 40px content
                 height and out of the fixed command bar. */}
-            <div className="hidden sm:flex shrink-0 items-center gap-0 bg-white border border-[#e5e5ea] rounded-full p-0.5">
+            <div className="hidden sm:flex shrink-0 items-center gap-0 bg-[var(--surface)] border border-[var(--rule)] r-touch p-0.5">
               {(['rail', 'grid'] as const).map(mode => (
                 <button
                   key={mode}
@@ -1348,8 +1381,8 @@ export default function Home() {
                   onClick={() => setView(mode)}
                   aria-pressed={view === mode}
                   aria-label={mode === 'rail' ? 'Schedule view' : 'Grid view'}
-                  className={`relative w-8 h-8 rounded-full flex items-center justify-center transition-colors after:absolute after:inset-x-0 after:-inset-y-1.5 after:content-[''] ${
-                    view === mode ? 'bg-[#f3f3f5] text-[#1D1D1F]' : 'text-[#86868B] hover:text-[#1D1D1F]'
+                  className={`relative w-8 h-8 r-touch flex items-center justify-center transition-colors after:absolute after:inset-x-0 after:-inset-y-1.5 after:content-[''] ${
+                    view === mode ? 'bg-[var(--paper)] text-[var(--ink)]' : 'text-[var(--ink-2)] hover:text-[var(--ink)]'
                   }`}
                 >
                   <span aria-hidden="true" className="material-symbols-outlined text-[18px]">
@@ -1405,10 +1438,10 @@ export default function Home() {
                      command bar is a fixed `--commandbar-h` with `overflow-hidden`: an overlay
                      taller than the row's band would be clipped, and a clipped overlay is a dead
                      strip that MEASURES as a hit area without being one. */
-                  className={`relative shrink-0 snap-start rounded-full px-3.5 py-1.5 text-[13px] font-semibold transition-colors after:absolute after:inset-x-0 after:-inset-y-1.5 after:content-[''] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0071E3] [touch-action:manipulation] ${
+                  className={`relative shrink-0 snap-start r-touch px-3.5 py-1.5 text-[13px] font-semibold transition-colors after:absolute after:inset-x-0 after:-inset-y-1.5 after:content-[''] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] [touch-action:manipulation] ${
                     !day && when === tab.id
-                      ? 'bg-[#1D1D1F] text-white'
-                      : 'text-[#6E6E73] hover:bg-white hover:text-[#1D1D1F]'
+                      ? 'bg-[var(--ink)] text-[var(--accent-ink)]'
+                      : 'text-[var(--ink-2)] hover:bg-[var(--surface)] hover:text-[var(--ink)]'
                   }`}
                 >
                   {tab.label}
@@ -1445,8 +1478,8 @@ export default function Home() {
               is the only question `soonest` was ever really for.
             */}
             {feed === 'for-you' ? (
-              <span className="flex h-11 w-11 shrink-0 items-center justify-center gap-1.5 text-[12.5px] font-semibold text-[#1D1D1F] sm:h-auto sm:w-auto">
-                <span aria-hidden="true" className="material-symbols-outlined text-[19px] text-[#0071E3]">
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center gap-1.5 text-[13px] font-semibold text-[var(--ink)] sm:h-auto sm:w-auto">
+                <span aria-hidden="true" className="material-symbols-outlined text-[19px] text-[var(--accent)]">
                   auto_awesome
                 </span>
                 <span className="hidden sm:inline">Ranked for you</span>
@@ -1454,7 +1487,7 @@ export default function Home() {
             ) : (
             <label
               htmlFor="event-sort"
-              className="relative flex h-11 w-11 shrink-0 items-center justify-center gap-1.5 rounded-full text-[12.5px] text-[#6E6E73] focus-within:ring-2 focus-within:ring-[#0071E3] sm:h-auto sm:w-auto sm:justify-start sm:rounded-none sm:focus-within:ring-0"
+              className="relative flex h-11 w-11 shrink-0 items-center justify-center gap-1.5 r-touch ty-meta focus-within:ring-2 focus-within:ring-[var(--accent)] sm:h-auto sm:w-auto sm:justify-start sm:focus-within:ring-0"
             >
               <span className="hidden sm:inline">Sort</span>
               <span className="material-symbols-outlined sm:hidden text-[19px]" aria-hidden="true">
@@ -1466,7 +1499,7 @@ export default function Home() {
                 aria-label="Sort events by"
                 value={sort}
                 onChange={e => setSort(e.target.value)}
-                className="absolute inset-0 h-full w-full cursor-pointer opacity-0 [touch-action:manipulation] sm:static sm:h-auto sm:w-auto sm:rounded-md sm:bg-transparent sm:py-0.5 sm:pr-1 sm:font-semibold sm:text-[#1D1D1F] sm:opacity-100 sm:focus:outline-none sm:focus-visible:ring-2 sm:focus-visible:ring-[#0071E3]"
+                className="absolute inset-0 h-full w-full cursor-pointer opacity-0 [touch-action:manipulation] sm:static sm:h-auto sm:w-auto sm:rounded-md sm:bg-transparent sm:py-0.5 sm:pr-1 sm:font-semibold sm:text-[var(--ink)] sm:opacity-100 sm:focus:outline-none sm:focus-visible:ring-2 sm:focus-visible:ring-[var(--accent)]"
               >
                 {SORTS.map(option => (
                   <option key={option.id} value={option.id}>
@@ -1520,7 +1553,7 @@ export default function Home() {
               Opening on the headline is the strongest thing the hero has. 26px back at `sm` and up
               (the label plus the `sm:mt-3.5` that only existed to clear it), 0 on a phone, where it
               was already hidden. Measured in the harness: hero 309px -> 283px at 1440x900. */}
-          <h1 className="t-hero max-w-[22ch] text-[#1D1D1F]">
+          <h1 className="ty-h1 max-w-[24ch] text-[var(--ink)]">
             Bengaluru tech events, ranked by who you’ll meet
           </h1>
 
@@ -1543,9 +1576,9 @@ export default function Home() {
               a card a phone does not draw is gone from the phone — that rule is why the shelves are
               scrollers rather than shorter lists. It does not reach a sentence: nothing is
               subtracted, nothing becomes unreachable, and the full text is one breakpoint away. */}
-          <p className="mt-4 max-w-[64ch] text-[15px] leading-[1.55] text-[#3a3a3c]">
+          <p className="ty-body mt-[var(--s-4)] text-[var(--ink-2)]">
             Every{' '}
-            <strong className="font-semibold text-[#1D1D1F]">
+            <strong className="font-semibold text-[var(--ink)]">
               developer meetup, conference, hackathon and workshop
             </strong>{' '}
             in the city, in one place
@@ -1556,7 +1589,7 @@ export default function Home() {
               Scan a badge and keep the people you met.
             </span>
           </p>
-          <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[12.5px] text-[#6E6E73]">
+          <div className="ty-meta mt-[var(--s-4)] flex flex-wrap items-center gap-x-4 gap-y-1.5">
             {/* ── THIS PRINTED "0 upcoming" ON A FAILED FETCH, IN SEMIBOLD INK, AT THE TOP OF THE
                 PAGE. ─────────────────────────────────────────────────────────────────────────────
                 `total` is `pagination?.total ?? 0`, and `load()` sets `setPagination(null)` before
@@ -1578,21 +1611,21 @@ export default function Home() {
               />
             ) : (
               <span>
-                <span className="tnum font-semibold text-[#1D1D1F]">
+                <span className="tnum font-semibold text-[var(--ink)]">
                   {total.toLocaleString('en-IN')}
                 </span>{' '}
                 upcoming
               </span>
             )}
             {liveNow.length > 0 && (
-              <span className="inline-flex items-center gap-1.5 font-semibold text-[#FF3B30]">
-                <span className="live-dot h-1.5 w-1.5 rounded-full bg-[#FF3B30]" />
+              <span className="inline-flex items-center gap-1.5 font-semibold text-[var(--live)]">
+                <span className="live-dot h-1.5 w-1.5 rounded-full bg-[var(--live)]" />
                 <span className="tnum">{liveNow.length}</span> happening now
               </span>
             )}
             {/* No trailing `→`. A link says what happens; the arrow is decoration, and it is on
                 `docs/design-direction.md`'s list of patterns to remove. */}
-            <Link href="/folders" className="font-semibold text-[#0071E3] hover:underline">
+            <Link href="/folders" className="font-semibold text-[var(--accent)] hover:underline">
               Keep the people you meet
             </Link>
           </div>
@@ -1614,7 +1647,7 @@ export default function Home() {
             <div
               role="group"
               aria-label="Choose how the feed is ranked"
-              className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-white p-1 shadow-[inset_0_0_0_1px_var(--hairline-strong)]"
+              className="inline-flex shrink-0 items-center gap-0.5 r-touch bg-[var(--surface)] p-1 shadow-[inset_0_0_0_1px_var(--rule)]"
             >
               {FEED_TABS.map(tab => (
                 <button
@@ -1625,10 +1658,10 @@ export default function Home() {
                   /* 36px painted inside a 44px row (`p-1` on the container plus this height), so the
                      WCAG 2.5.5 floor is met without an `::after` overlay — unlike the chips in the
                      command bar, nothing clips here. */
-                  className={`pressable relative h-9 rounded-full px-4 text-[13px] font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0071E3] [touch-action:manipulation] ${
+                  className={`pressable relative h-9 r-touch px-4 text-[13px] font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] [touch-action:manipulation] ${
                     feed === tab.id
-                      ? 'bg-[#1D1D1F] text-white'
-                      : 'text-[#6E6E73] hover:bg-[#F0F0F2] hover:text-[#1D1D1F]'
+                      ? 'bg-[var(--ink)] text-[var(--accent-ink)]'
+                      : 'text-[var(--ink-2)] hover:bg-[var(--paper)] hover:text-[var(--ink)]'
                   }`}
                 >
                   {tab.label}
@@ -1643,13 +1676,13 @@ export default function Home() {
                 two-tab arrangement exists to avoid. Nothing is drawn while the session or the fetch
                 is still settling, so no state flashes the wrong claim. */}
             {feed === 'for-you' && (
-              <p className="min-w-0 text-[12.5px] leading-relaxed text-[#6E6E73]">
+              <p className="ty-meta min-w-0">
                 {status === 'unauthenticated' ? (
                   <>
                     Showing the usual ranking —{' '}
                     <Link
                       href="/login?callbackUrl=%2Fonboarding"
-                      className="font-semibold text-[#0071E3] hover:underline"
+                      className="font-semibold text-[var(--accent)] hover:underline"
                     >
                       sign in
                     </Link>{' '}
@@ -1657,11 +1690,11 @@ export default function Home() {
                   </>
                 ) : activePreferences === null ? null : personalised ? (
                   <>
-                    Ranked by who you’ll meet <span className="text-[#6E6E73]">×</span> what fits you
+                    Ranked by who you’ll meet <span className="text-[var(--ink-2)]">×</span> what fits you
                     {preferenceSummary(activePreferences) && (
                       <>
                         {' · '}
-                        <span className="font-semibold text-[#1D1D1F]">
+                        <span className="font-semibold text-[var(--ink)]">
                           {preferenceSummary(activePreferences)}
                         </span>
                       </>
@@ -1669,7 +1702,7 @@ export default function Home() {
                     {' · '}
                     <Link
                       href="/onboarding?from=settings"
-                      className="font-semibold text-[#0071E3] hover:underline"
+                      className="font-semibold text-[var(--accent)] hover:underline"
                     >
                       Edit
                     </Link>
@@ -1677,7 +1710,7 @@ export default function Home() {
                 ) : (
                   <>
                     Showing the usual ranking —{' '}
-                    <Link href="/onboarding" className="font-semibold text-[#0071E3] hover:underline">
+                    <Link href="/onboarding" className="font-semibold text-[var(--accent)] hover:underline">
                       tell us what you’re into
                     </Link>{' '}
                     and this becomes yours.
@@ -1708,12 +1741,12 @@ export default function Home() {
               hidden either way" is the sentence worth keeping and it is kept, because it is the
               answer to the objection a reader actually has. */}
           {showFeedSetupPrompt && (
-            <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2.5 sm:gap-x-4 sm:gap-y-2 rounded-[14px] bg-white px-4 py-3 shadow-[inset_0_0_0_1px_var(--hairline)]">
-              <span aria-hidden="true" className="material-symbols-outlined shrink-0 text-[20px] text-[#0071E3]">
+            <div className="mt-[var(--s-4)] flex flex-wrap items-center gap-x-3 gap-y-2.5 border-l-2 border-l-[var(--accent)] bg-[var(--paper)] px-4 py-3 sm:gap-x-4 sm:gap-y-2">
+              <span aria-hidden="true" className="material-symbols-outlined shrink-0 text-[20px] text-[var(--accent)]">
                 tune
               </span>
-              <p className="min-w-[11rem] flex-1 text-[13px] leading-relaxed text-[#3a3a3c]">
-                <span className="font-semibold text-[#1D1D1F]">Make this feed yours.</span> Three
+              <p className="ty-meta min-w-[11rem] flex-1">
+                <span className="font-semibold text-[var(--ink)]">Make this feed yours.</span> Three
                 questions
                 <span className="hidden sm:inline">
                   {' '}
@@ -1724,14 +1757,17 @@ export default function Home() {
               <div className="flex shrink-0 items-center gap-2">
                 <Link
                   href="/onboarding"
-                  className="pressable inline-flex h-9 items-center rounded-full bg-[#1D1D1F] px-4 text-[12.5px] font-semibold text-white hover:bg-black"
+                  /* `r-touch` and no hover recolour — see `EmptyState`'s button for why
+                     `hover:bg-black` had to go, and `SaveButton` for the radius rule: 4px means "you
+                     can touch this", and a capsule says nothing this does not. */
+                  className="pressable r-touch inline-flex h-9 items-center bg-[var(--ink)] px-4 text-[13px] font-semibold text-[var(--accent-ink)] hover:bg-[var(--ink)]"
                 >
                   Set it up
                 </Link>
                 <button
                   type="button"
                   onClick={dismissPrompt}
-                  className="h-9 rounded-full px-3 text-[12.5px] font-semibold text-[#6E6E73] hover:text-[#1D1D1F]"
+                  className="h-9 r-touch px-3 text-[13px] font-semibold text-[var(--ink-2)] hover:text-[var(--ink)]"
                 >
                   Not now
                 </button>
@@ -1867,7 +1903,7 @@ export default function Home() {
             character-for-character what `EventShelf`'s `cover` variant already renders. Two copies of
             a layout decision drift, and the drift is invisible: each looks right on its own. The swap
             is exact — same heading device, same caption slot, same `sm:hidden` scroller and
-            `hidden rail sm:block` fallback.
+            `hidden sm:block` row fallback.
 
             ── `compactOnMobile`: THE BIGGEST SINGLE SAVING ON THE PHONE. ───────────────────────────
             Measured in a static harness at 390×844, worst-case content, the same six events:
@@ -1890,9 +1926,17 @@ export default function Home() {
         {/* ── HEADING AND CAPTION SAID THE SAME THING, SO ONE OF THEM WENT. ──────────────────────
             It was `Curated by us` + `Added by hand · 6`. "Curated by us" is the vaguer of the two and
             says nothing a reader can check; "Added by hand" is the actual provenance and the entire
-            claim the section makes — and on mobile it is the ONLY place that claim appears, since the
-            compact card has no pill row and it was `EventPills` that drew the "Curated" pill. So the
-            provenance became the heading and the caption went with it.
+            claim the section makes — and on mobile it was the ONLY place that claim appeared, since
+            the compact card has no pill row and it was `EventPills` that drew the "Curated" pill. So
+            the provenance became the heading and the caption went with it.
+
+            `EventPills` NO LONGER EXISTS; `EventFactsLine` states the same provenance as the last
+            element of the facts line, so it now travels with the row into grid view and into the
+            ranked feed, where a hand-added event previously carried no marker a phone could see. The
+            cost is a visible echo on THIS shelf: six rows reading "… · Added by hand" under a heading
+            of the same words. Accepted rather than special-cased — suppressing it would need a prop
+            threaded from the shelf through `EventRow` to decide a cosmetic repeat, and the row is
+            right in the two places where it is not under this heading.
 
             The `· 6` went too, and not only for the middle dot: it counted a row of cards the reader
             is looking at. A count earns its place when the section is capped and the reader cannot see
@@ -1962,9 +2006,14 @@ export default function Home() {
 
                 On the browsing view the H1 has already said it, so what remains here is a COUNT, and
                 a count is a caption. On a SEARCH the string the reader typed genuinely is the page's
-                subject and nothing above states it, so there the heading returns — at `.t-title`
-                (24px), below the hero and above every section heading, which is where a result title
-                belongs. Two modes, two weights, one element.
+                subject and nothing above states it, so there the heading returns — at `.ty-section`
+                (26px SANS), below the hero and above every section heading, which is where a result
+                title belongs. Two modes, two weights, one element.
+
+                SANS, THOUGH IT HOLDS THE READER'S OWN WORDS, and that is the semantic rule read
+                carefully rather than mechanically: what is set here is not an event, a venue or a
+                person — it is the app echoing a query back to say what it has done. The serif on this
+                page belongs to the H1 and to the event titles in the list below.
 
                 The wrapper keeps `aria-live`, because the count is a readout that has to announce
                 when it changes, and keeps `id="search-hint"` on the paragraph, which the search input
@@ -1975,8 +2024,8 @@ export default function Home() {
             <div className="mb-3 sm:mb-4" aria-live="polite" aria-atomic="true">
               {/* No `Tech events in Bengaluru` branch: the feed is unconditionally tech-only, and the
                   hero states it. */}
-              {query && <h2 className="t-title mb-1 text-[#1D1D1F]">“{query}”</h2>}
-              <p id="search-hint" className="text-[13px] text-[#6E6E73] tracking-[0]">
+              {query && <h2 className="ty-section mb-[var(--s-2)] text-[var(--ink)]">“{query}”</h2>}
+              <p id="search-hint" className="ty-meta">
                 {/* ── `error` IS CHECKED FIRST, AND THAT ORDER IS THE WHOLE FIX. ─────────────────
                     `total` is `pagination?.total ?? 0` and `load()` nulls `pagination` before every
                     request, so on a failed fetch this fell straight through to `total === 0` and
@@ -1998,14 +2047,14 @@ export default function Home() {
                   query ? (
                     <>
                       Nothing matches{' '}
-                      <span className="font-semibold text-[#1D1D1F]">“{query}”</span>
+                      <span className="font-semibold text-[var(--ink)]">“{query}”</span>
                     </>
                   ) : (
                     'No events match these filters.'
                   )
                 ) : (
                   <>
-                    <span className="tnum font-semibold text-[#1D1D1F]">
+                    <span className="tnum font-semibold text-[var(--ink)]">
                       {total.toLocaleString('en-IN')}
                     </span>{' '}
                     {query ? (
@@ -2048,14 +2097,12 @@ export default function Home() {
                  reader who has just narrowed six filters wants to know whether retrying costs them
                  that — and one button. */
               <EmptyState
-                icon="cloud_off"
                 title="Couldn’t load events"
                 body="The request didn’t come back. Your search and filters are still set, so this is safe to retry."
                 action={{ label: 'Try again', onClick: load }}
               />
             ) : events.length === 0 ? (
               <EmptyState
-                icon="event_busy"
                 title={activeCount > 0 || query ? 'Nothing matches that' : 'Nothing scheduled yet'}
                 body={
                   activeCount > 0 || query
@@ -2104,14 +2151,15 @@ export default function Home() {
                  Headings are the same `day-heading` device the grouped view uses, so this reads as
                  one component with two modes rather than two designs. They are also the page's only
                  <h2>s, which is what gives the feed a real H1 -> H2 -> H3 outline. */
-              <div className="rail">
+              <div>
                 {liveNow.length > 0 && (
-                  <section className="mb-2">
+                  <section className={FEED_SECTION}>
                     {/* `feed` tone: the ONLY tone that stays sticky and keeps the hairline rule,
                         because only here is a heading doing a grouped-list job. `live` spends the
                         second hue — the one thing on the page more urgent than the ranking. */}
                     <SectionHeading
                       tone="feed"
+                      railed
                       live
                       title="Happening now"
                       trailing={liveNow.length}
@@ -2136,47 +2184,51 @@ export default function Home() {
                         would delete the third live event from the phone with nothing anywhere to
                         reach it. `splitForPreview` exists so that guarantee is a tested property
                         rather than a promise — see tests/shelves.test.ts. */}
-                    {livePreview.shown.map(event => (
-                      <EventRow key={event._id} event={event} showDate />
-                    ))}
-                    {livePreview.deferred.map(event => (
-                      <div key={event._id} className={liveExpanded ? undefined : 'hidden sm:block'}>
-                        <EventRow event={event} showDate />
-                      </div>
-                    ))}
-                    {livePreview.deferred.length > 0 && !liveExpanded && (
-                      /* `pl-[75px]` lines the control up with the CARDS rather than the section
-                         edge, so it reads as belonging to the list instead of to the rail: 42px time
-                         column + 12px gap + 9px node column + 12px gap. No `md:` variant is needed —
-                         the whole control is `sm:hidden`.
+                    <div className="min-w-0">
+                      {livePreview.shown.map(event => (
+                        <EventRow key={event._id} event={event} showDate />
+                      ))}
+                      {livePreview.deferred.map(event => (
+                        <div key={event._id} className={liveExpanded ? undefined : 'hidden sm:block'}>
+                          <EventRow event={event} showDate />
+                        </div>
+                      ))}
+                      {livePreview.deferred.length > 0 && !liveExpanded && (
+                        /* Lines up with the TITLES rather than the section edge, so it reads as
+                           belonging to the list: 54px clock gutter + 12px gap. It was `pl-[75px]`
+                           against the old 42px gutter, a 12px gap, a 9px rail-node column and
+                           another 12px gap — two of those four are gone with the spine and the node.
+                           No `md:` variant is needed; the whole control is `sm:hidden`.
 
-                         A plain action button with no `aria-expanded`, matching "Load more" further
-                         down this file. `aria-expanded` would be a lie here: the control does not
-                         toggle, it reveals and then goes, because collapsing what is on RIGHT NOW
-                         back out of view is not something a reader wants twice.
+                           A plain action button with no `aria-expanded`, matching "Load more" further
+                           down this file. `aria-expanded` would be a lie here: the control does not
+                           toggle, it reveals and then goes, because collapsing what is on RIGHT NOW
+                           back out of view is not something a reader wants twice.
 
-                         `min-h-11` for the 44px floor. It stands alone with 12px of clearance either
-                         side, so it needs no `::after` overlay and contests no neighbour's band —
-                         which is the failure the scan-sheet note warns about when two overhangs meet. */
-                      <div className="mb-3 pl-[75px] sm:hidden">
-                        <button
-                          type="button"
-                          onClick={() => setLiveExpanded(true)}
-                          className="pressable inline-flex min-h-11 items-center gap-1.5 rounded-full bg-white px-4 text-[12.5px] font-semibold text-[#1D1D1F] shadow-[inset_0_0_0_1px_var(--hairline-strong)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0071E3] [touch-action:manipulation]"
-                        >
-                          <span className="tnum">{livePreview.deferred.length}</span> more happening
-                          now
-                          <span aria-hidden="true" className="material-symbols-outlined text-[18px]">
-                            expand_more
-                          </span>
-                        </button>
-                      </div>
-                    )}
+                           `min-h-11` for the 44px floor. It stands alone with 12px of clearance
+                           either side, so it needs no `::after` overlay and contests no neighbour's
+                           band — the failure the scan-sheet note warns about when two overhangs
+                           meet. */
+                        <div className="pt-[var(--s-3)] pl-[66px] sm:hidden">
+                          <button
+                            type="button"
+                            onClick={() => setLiveExpanded(true)}
+                            className="pressable r-touch inline-flex min-h-11 items-center gap-1.5 bg-[var(--surface)] px-4 text-[13px] font-semibold text-[var(--ink)] shadow-[inset_0_0_0_1px_var(--rule)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] [touch-action:manipulation]"
+                          >
+                            <span className="tnum">{livePreview.deferred.length}</span> more
+                            happening now
+                            <span aria-hidden="true" className="material-symbols-outlined text-[18px]">
+                              expand_more
+                            </span>
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </section>
                 )}
 
                 {comingUp.length > 0 && (
-                  <section className="mb-2">
+                  <section className={FEED_SECTION}>
                     {/* Rendered even when nothing is live. Two reasons, and the first was learned
                         the hard way: suppressing it made the whole two-part structure vanish
                         whenever the city happened to be quiet, which is most of a working day —
@@ -2200,23 +2252,26 @@ export default function Home() {
                         rows on a phone, so its count is how many the reader has not been shown. */}
                     <SectionHeading
                       tone="feed"
+                      railed
                       title={
                         query ? 'Top matches' : liveNow.length > 0 ? 'Coming up' : 'Top events'
                       }
                     />
-                    {comingUp.map(event => (
-                      /* showDate is REQUIRED here. Neither section carries day headings, so without
-                         it the rail shows a bare "18:30" and the date appears nowhere on the row —
-                         measured at 375px, a reader could not tell tonight from three weeks away. */
-                      <EventRow key={event._id} event={event} showDate />
-                    ))}
+                    <div className="min-w-0">
+                      {comingUp.map(event => (
+                        /* showDate is REQUIRED here. Neither section carries day headings, so without
+                           it the gutter shows a bare "18:30" and the date appears nowhere on the row
+                           — measured at 375px, a reader could not tell tonight from three weeks. */
+                        <EventRow key={event._id} event={event} showDate />
+                      ))}
+                    </div>
                   </section>
                 )}
               </div>
             ) : (
-              <div className="rail">
+              <div>
                 {days.map(([dayKey, dayEvents]) => (
-                  <section key={dayKey} className="mb-2">
+                  <section key={dayKey} className={FEED_SECTION}>
                     {/* Grouped-list header, Apple's sectioned-table treatment: a small label with a
                         hairline that runs to the edge. The day boundary is real structure — it is the
                         one thing the reader navigates by — so it earns the rule and the stickiness,
@@ -2229,6 +2284,7 @@ export default function Home() {
                         SEP` — a tracked-out abbreviation of an abbreviation. */}
                     <SectionHeading
                       tone="feed"
+                      railed
                       live={dayKey === NOW_GROUP_KEY}
                       title={
                         dayKey === NOW_GROUP_KEY
@@ -2242,9 +2298,11 @@ export default function Home() {
                       }
                       trailing={dayEvents.length}
                     />
-                    {dayEvents.map(event => (
-                      <EventRow key={event._id} event={event} />
-                    ))}
+                    <div className="min-w-0">
+                      {dayEvents.map(event => (
+                        <EventRow key={event._id} event={event} />
+                      ))}
+                    </div>
                   </section>
                 ))}
               </div>
@@ -2259,23 +2317,27 @@ export default function Home() {
                  spinner was least defensible: the thing being loaded is MORE OF THE SAME LIST, whose
                  shape is already on screen directly above.
 
-                 Wrapped in `.rail` for the rail view so the spine continues through the placeholder
-                 rather than breaking and resuming — outside it, `.rail::before` draws nothing and the
-                 skeleton rows float free of the timeline they belong to. */
-              <div ref={sentinelRef} className={loadingMore ? 'pt-1' : 'py-8 flex justify-center'}>
+                 IT USED TO BE WRAPPED IN `.rail`, "so the spine continues through the placeholder".
+                 There is no spine: `.rail::before`'s 1px vertical line and the `.rail-node` dot that
+                 met it were both part of the card row, and both are gone. Left in place the class would
+                 draw a stray vertical rule down the placeholder and nowhere else — worse than the
+                 broken-spine problem it was there to solve. Hairlines separate the rows now, so the
+                 placeholder needs nothing beyond the same `rule-b` rows.
+
+                 `py-8` alone, not `py-8 flex justify-center`: nothing on this surface is centred, and
+                 the Load more button lines up with the rows it extends. */
+              <div ref={sentinelRef} className={loadingMore ? 'pt-1' : 'py-8'}>
                 {loadingMore ? (
                   view === 'grid' ? (
                     <FeedSkeleton view="grid" rows={2} />
                   ) : (
-                    <div className="rail">
-                      <FeedSkeleton view="rail" rows={2} bare />
-                    </div>
+                    <FeedSkeleton view="rail" rows={2} bare />
                   )
                 ) : (
                   <button
                     type="button"
                     onClick={loadMore}
-                    className="px-6 py-2.5 rounded-full bg-white border border-[#e5e5ea] text-label-md font-semibold text-[#1D1D1F] hover:bg-[#f3f3f5] transition-colors"
+                    className="pressable r-touch px-6 py-2.5 bg-[var(--surface)] border border-[var(--rule)] text-[14px] font-semibold text-[var(--ink)] hover:bg-[var(--paper)] transition-colors"
                   >
                     Load more
                   </button>
@@ -2284,9 +2346,9 @@ export default function Home() {
             )}
 
             {!loading && events.length > 0 && !pagination?.hasMore && (
-              /* `#a1a1a6` measures 2.35:1 against the page grey — this is 12.5px text making a
-                 factual statement, so it has to clear 4.5:1. `#6E6E73` is 4.6:1. */
-              <p className="py-8 text-center text-[12.5px] text-[#6E6E73]">
+              /* The grey this used to carry measured 2.35:1 against the page grey — this is 12.5px
+                 text making a factual statement, so it has to clear 4.5:1. `--ink-2` does. */
+              <p className="ty-meta py-8">
                 That’s everything we have for now.
               </p>
             )}
@@ -2301,7 +2363,11 @@ export default function Home() {
             type="button"
             aria-label="Close filters"
             onClick={() => setSheetOpen(false)}
-            className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+            /* `bg-[var(--ink)]/45`, was `bg-black/40`. A scrim's job is to darken whatever is behind
+               it, so it genuinely needs a near-black — but the nine already contain one, and `--ink`
+               is warm where Tailwind's `black` is neutral, which is visible against this paper. 45%
+               rather than 40% because `--ink` is #121417 and not #000. */
+            className="absolute inset-0 bg-[var(--ink)]/45 backdrop-blur-sm"
           />
           {/* Three-row flex column, and ONLY the middle row scrolls.
               The header and footer used to be `sticky` inside a single scrolling
@@ -2310,13 +2376,13 @@ export default function Home() {
               the "Event type" group heading sat 100% underneath it. A sticky
               element still occupies its place in flow, so no amount of bottom
               padding fixes that; the footer has to leave the scrollport. */}
-          <div className="relative flex w-full max-h-[85vh] flex-col rounded-t-3xl bg-[#F5F5F7]">
-            <div className="shrink-0 bg-[#F5F5F7]/97 glass-nav px-5 pt-3 pb-3 flex items-center justify-between border-b border-black/5 rounded-t-3xl">
-              <span className="text-[17px] font-bold text-[#1D1D1F]">Filters</span>
+          <div className="relative flex w-full max-h-[85vh] flex-col bg-[var(--paper)]">
+            <div className="shrink-0 bg-[var(--paper)]/97 glass-nav px-5 pt-3 pb-3 flex items-center justify-between border-b border-[var(--rule)]">
+              <span className="ty-body font-semibold text-[var(--ink)]">Filters</span>
               <button
                 type="button"
                 onClick={() => setSheetOpen(false)}
-                className="w-8 h-8 rounded-full bg-white flex items-center justify-center"
+                className="w-8 h-8 r-touch bg-[var(--surface)] flex items-center justify-center"
                 aria-label="Close filters"
               >
                 <span aria-hidden="true" className="material-symbols-outlined text-[18px]">close</span>
@@ -2334,11 +2400,11 @@ export default function Home() {
                 onRetry={load}
               />
             </div>
-            <div className="shrink-0 bg-[#F5F5F7]/97 glass-nav p-4 border-t border-black/5">
+            <div className="shrink-0 bg-[var(--paper)]/97 glass-nav p-4 border-t border-[var(--rule)]">
               <button
                 type="button"
                 onClick={() => setSheetOpen(false)}
-                className="w-full py-3 rounded-full bg-[#1D1D1F] text-white text-label-md font-semibold"
+                className="pressable r-touch w-full py-3 bg-[var(--ink)] text-[var(--accent-ink)] text-[14px] font-semibold"
               >
                 Show {total.toLocaleString('en-IN')} event{total === 1 ? '' : 's'}
               </button>
@@ -2370,39 +2436,45 @@ function FeedSkeleton({
 }) {
   if (view === 'grid') {
     return (
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5">
+      <div className="grid grid-cols-1 gap-x-[var(--s-6)] sm:grid-cols-2 xl:grid-cols-3">
         {Array.from({ length: rows }, (_, i) => (
-          <div key={i} className="bg-white rounded-2xl overflow-hidden card-shadow">
+          <div key={i} className="rule-b">
             <div className="skeleton aspect-[16/9]" />
-            <div className="p-4 flex flex-col gap-2">
-              <div className="skeleton h-3 w-24 rounded" />
-              <div className="skeleton h-4 w-full rounded" />
-              <div className="skeleton h-4 w-2/3 rounded" />
+            <div className="flex flex-col gap-[var(--s-2)] pt-[var(--s-3)] pb-[var(--s-4)]">
+              <div className="skeleton h-3 w-24" />
+              <div className="skeleton h-5 w-full" />
+              <div className="skeleton h-3 w-2/3" />
             </div>
           </div>
         ))}
       </div>
     );
   }
+  /*
+   * IN THE SHAPE OF THE ROW IT IS RESERVING SPACE FOR, which is the only thing a skeleton is for.
+   * The old one drew a card with a 76px thumbnail and a rounded pill, none of which exists now — a
+   * placeholder that promises a different layout than the one that arrives makes the page jump at
+   * exactly the moment it was meant to stop jumping. Two lines of title at `.ty-row-title`'s
+   * measure, one of facts, in a `rule-b` row on the 54px gutter.
+   *
+   * `bare` no longer differs from the wrapped form, since there is no `.rail` spine to continue
+   * through; the prop stays because the infinite-scroll call site passes it and its meaning ("the
+   * caller owns the container") is still true.
+   */
   const railRows = Array.from({ length: rows }, (_, i) => (
-        <div key={i} className="flex items-stretch gap-3 md:gap-4">
-          <div className="w-[42px] md:w-[58px] shrink-0 pt-4 flex justify-end">
-            <div className="skeleton h-3.5 w-9 rounded" />
-          </div>
-          <div className="w-[9px] shrink-0 flex justify-center pt-[22px]">
-            <span className="rail-node" />
-          </div>
-          <div className="flex-1 mb-3 bg-white rounded-2xl card-shadow p-3 md:p-4 flex gap-4">
-            <div className="skeleton w-[76px] h-[76px] md:w-[104px] md:h-[104px] rounded-xl shrink-0" />
-            <div className="flex-1 flex flex-col gap-2 py-1">
-              <div className="skeleton h-4 w-3/4 rounded" />
-              <div className="skeleton h-3 w-1/2 rounded" />
-              <div className="skeleton h-5 w-40 rounded-full mt-auto" />
-            </div>
-          </div>
+    <div key={i} className="rule-b">
+      <div className="flex items-start gap-[var(--s-3)] py-[var(--s-4)] md:gap-[var(--s-4)]">
+        <div className="w-[54px] shrink-0 md:w-[68px]">
+          <div className="skeleton h-3.5 w-10" />
         </div>
-      ));
-  return bare ? <>{railRows}</> : <div className="rail">{railRows}</div>;
+        <div className="flex flex-1 flex-col gap-[var(--s-2)]">
+          <div className="skeleton h-5 w-4/5" />
+          <div className="skeleton h-3.5 w-1/2" />
+        </div>
+      </div>
+    </div>
+  ));
+  return bare ? <>{railRows}</> : <div>{railRows}</div>;
 }
 
 /**
@@ -2414,29 +2486,44 @@ function FeedSkeleton({
  * the defect `docs/design-direction.md` records.
  */
 function EmptyState({
-  icon,
   title,
   body,
   action,
 }: {
-  icon: string;
   title: string;
   body: string;
   action?: { label: string; onClick?: () => void; href?: string };
 }) {
   /* `py-16` -> `py-12 sm:py-16`: 32px of a phone screen spent on air around four words, in the one
-     state where the reader has the least reason to keep scrolling. */
+     state where the reader has the least reason to keep scrolling.
+
+     `hover:bg-[var(--ink)]` — i.e. no hover colour change at all, which is what `ui.tsx`'s `primary`
+     tone does, and `.pressable` carries the feedback instead. It was `hover:bg-black`: a Tailwind
+     palette value, and the nine hold nothing darker than `--ink` to darken TOWARD, so the hover was
+     reaching outside the palette to express a state the press already expresses. */
   const button =
-    'mt-6 inline-flex min-h-11 items-center rounded-full bg-[#1D1D1F] px-6 text-label-md font-semibold text-white transition-colors hover:bg-black focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0071E3]';
+    'pressable r-touch mt-[var(--s-6)] inline-flex min-h-11 items-center bg-[var(--ink)] px-6 text-[14px] font-semibold text-[var(--accent-ink)] transition-colors hover:bg-[var(--ink)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]';
   return (
-    <div className="bg-white rounded-2xl card-shadow py-12 sm:py-16 px-6 text-center">
-      <span aria-hidden="true" className="material-symbols-outlined text-[44px] text-[#d5d5da] block mb-3">{icon}</span>
-      <p className="text-[17px] font-semibold text-[#1D1D1F]">{title}</p>
-      {/* `max-w-[46ch]`, not `max-w-sm`. `docs/design-direction.md` sets the line length in
-          characters, and 24rem at 14px is ~62 characters of a font whose measure should be under 46
-          when centred — centred text is harder to track back, so it wants a shorter line, not the
-          same one. */}
-      <p className="text-[14px] leading-[1.5] text-[#6E6E73] mt-1.5 max-w-[46ch] mx-auto">{body}</p>
+    /* A RULED BAND ON THE PAGE GROUND, not a card. `card-shadow` composited to nothing, so this was
+       a white rounded rectangle with no edge — and it is the one element on the page that appears
+       exactly where thirty flat rows would have been, so a surface here would have been the only
+       raised object in the feed, for its emptiest state. `rule-y` gives it the same top and bottom
+       edges the rows have.
+
+       LEFT-ALIGNED, and that is the direction's rule rather than a preference: no centred body text
+       at any width. It also lines the copy up with the rows and the heading above it, which is what
+       stops an empty feed reading as a different page. The `max-w` goes UP to 60ch with the centring
+       gone — 46 was chosen because centred text is harder to track back to.
+
+       THE 44px MATERIAL GLYPH IS GONE, and the `icon` prop with it. `cloud_off` above "Couldn't load
+       events" and `event_busy` above "Nothing scheduled yet" were both restating their own headings
+       in a picture, which is the same rule that removed five glyphs from the event page's facts list
+       and the eyebrow from the hero: delete the element that says what the content below it says. It
+       was also the largest single mark in the column, in `--ink-3`, above the two sentences that
+       actually tell the reader what happened. */
+    <div className="rule-y py-12 sm:py-16">
+      <p className="ty-section text-[var(--ink)]">{title}</p>
+      <p className="ty-body mt-[var(--s-2)] max-w-[60ch] text-[var(--ink-2)]">{body}</p>
       {/* ── ONE COLOUR FOR THE PRIMARY ACTION, WHICHEVER ELEMENT IT IS. ──────────────────────────
           The `href` branch was ink and the `onClick` branch was `--blue`, so the SAME slot in the
           SAME component rendered two different buttons depending on an implementation detail the

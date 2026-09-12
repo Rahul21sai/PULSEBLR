@@ -71,14 +71,22 @@ export default function EventCover({
      *
      * At 50% the worst case is 4.59:1 and all 22 pass 4.5:1 at any size. The tile reads as ink with
      * a category cast rather than as a coloured object, which is also the right answer to a second
-     * problem: `categoryAccent('AI/ML')` is `#0071E3`, byte-identical to `--blue`, and AI/ML is the
-     * largest category in the corpus. At 78% the commonest tile in the feed was painted in the one
-     * colour reserved for "you can act on this".
+     * problem: `categoryAccent('AI/ML')` was byte-identical to the accent of the retired palette, and
+     * AI/ML is the largest category in the corpus. At 78% the commonest tile in the feed was painted
+     * in the one colour reserved for "you can act on this".
+     *
+     * NOTE: the accent has since moved to a deep green while `CATEGORY_ACCENTS` in `lib/format.ts`
+     * still holds the old Apple hues, so the collision is gone but the two scales no longer belong to
+     * one palette. That scale is a categorical set and was deliberately left out of the token sweep.
      */
     const tint = {
-      background: `color-mix(in srgb, ${accent} 12%, #FFFFFF)`,
-      color: `color-mix(in srgb, ${accent} 50%, #1D1D1F)`,
-      boxShadow: 'inset 0 0 0 1px rgba(0,0,0,0.05)',
+      background: `color-mix(in srgb, ${accent} 12%, var(--surface))`,
+      color: `color-mix(in srgb, ${accent} 50%, var(--ink))`,
+      // `var(--rule)`, not the `rgba(0,0,0,0.05)` this used to be. It is a HAIRLINE — the edge that
+      // stops a pale tinted tile dissolving into the paper — and hairlines have exactly one value in
+      // this system. The alpha black was also the last raw colour in this file, invisible to the hex
+      // sweep because it is inline style rather than a class.
+      boxShadow: 'inset 0 0 0 1px var(--rule)',
     };
 
     if (date) {

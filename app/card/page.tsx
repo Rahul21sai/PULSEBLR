@@ -102,7 +102,7 @@ export default function CardPage() {
   }
 
   return (
-    <div className="fixed inset-0 flex flex-col bg-white">
+    <div className="fixed inset-0 flex flex-col bg-[var(--surface)]">
       <div
         className="flex items-center justify-between px-3 pb-1"
         style={{ paddingTop: 'max(12px, env(safe-area-inset-top))' }}
@@ -110,7 +110,7 @@ export default function CardPage() {
         <Link
           href="/folders"
           aria-label="Close"
-          className="grid h-10 w-10 place-items-center rounded-full bg-[#F5F5F7] text-[#1D1D1F] [touch-action:manipulation]"
+          className="grid h-10 w-10 place-items-center r-touch bg-[var(--paper)] text-[var(--ink)] [touch-action:manipulation]"
         >
           <span aria-hidden="true" className="material-symbols-outlined text-[20px]">close</span>
         </Link>
@@ -121,14 +121,14 @@ export default function CardPage() {
 
       <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-6 text-center">
         {loading ? (
-          <div className="h-[280px] w-[280px] rounded-2xl bg-[#F5F5F7]" />
+          <div className="h-[280px] w-[280px] bg-[var(--paper)]" />
         ) : error ? (
           <Banner tone="error">{error}</Banner>
         ) : !card?.enabled ? (
           <div className="max-w-[360px]">
-            <span aria-hidden="true" className="material-symbols-outlined text-[40px] text-[#8E8E93]">qr_code_2</span>
-            <h1 className="t-title mt-3 text-[#1D1D1F]">Your card is off</h1>
-            <p className="mt-2 text-[13.5px] leading-relaxed text-[#6E6E73]">
+            <span aria-hidden="true" className="material-symbols-outlined text-[40px] text-[var(--ink-3)]">qr_code_2</span>
+            <h1 className="ty-section mt-3 text-[var(--ink)]">Your card is off</h1>
+            <p className="mt-2 text-[13.5px] leading-relaxed text-[var(--ink-2)]">
               Turn it on and anyone can scan your code with an ordinary phone camera — no app
               needed — and save your details. You choose what it shows.
             </p>
@@ -148,28 +148,25 @@ export default function CardPage() {
                 value={card.url}
                 size={288}
                 ariaLabel="Your PulseBLR card, as a QR code"
-                className="shadow-[var(--lift-1)]"
               />
             )}
 
-            <h1
-              className="mt-6 text-[26px] font-bold leading-tight tracking-[-0.03em] text-[#1D1D1F]"
-              style={{ fontFamily: 'var(--font-display)' }}
-            >
-              {card.displayName || 'You'}
-            </h1>
+            {/* `.ty-h1` — YOUR OWN NAME, so serif, at the scale the system gives a thing in the
+                world. It was a hand-set 26px bold on the `--font-display` alias; naming the class
+                means it tracks the scale instead of freezing one moment of it. */}
+            <h1 className="ty-h1 mt-6 text-[var(--ink)]">{card.displayName || 'You'}</h1>
             {(card.role || card.company) && (
-              <p className="mt-1 text-[14px] text-[#6E6E73]">
+              <p className="ty-meta mt-[var(--s-2)]">
                 {[card.role, card.company].filter(Boolean).join(' · ')}
               </p>
             )}
             {card.headline && (
-              <p className="mt-1.5 max-w-[38ch] text-[13px] leading-relaxed text-[#8E8E93]">
+              <p className="mt-1.5 max-w-[38ch] text-[13px] leading-relaxed text-[var(--ink-2)]">
                 {card.headline}
               </p>
             )}
 
-            <p className="mt-6 max-w-[34ch] text-[12.5px] leading-relaxed text-[#8E8E93]">
+            <p className="mt-6 max-w-[34ch] text-[12.5px] leading-relaxed text-[var(--ink-2)]">
               Any phone camera can scan this. Turn your screen brightness up if the room is dark.
             </p>
           </>

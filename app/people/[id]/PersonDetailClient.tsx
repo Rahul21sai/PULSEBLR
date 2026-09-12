@@ -6,17 +6,7 @@ import AppShell from '../../components/AppShell';
 import Sheet from '../../components/Sheet';
 import MergeSheet, { sharedKeyEvidence } from '../MergeSheet';
 import { TAP_44, useTagVocabulary } from '../../components/scan/ContactFields';
-import {
-  Banner,
-  Button,
-  ButtonLink,
-  Card,
-  EmptyState,
-  PageHeader,
-  SectionTitle,
-  Skeleton,
-  Well,
-} from '../../components/ui';
+import { Banner, Button, ButtonLink, Skeleton } from '../../components/ui';
 import { dayHeading, fullDateIST, relativeTime, shortDateIST } from '@/lib/format';
 import {
   INTERACTION_ICON,
@@ -89,6 +79,49 @@ const NOTE_FIELD_ID = 'person-note-draft';
  * explicit because these are ink labels, not the grey the class is usually paired with.
  */
 const SHEET_LABEL = 't-label text-[color:var(--ink)]';
+
+/**
+ * A NOTE THE USER WROTE, SHOWN BACK TO THEM. A left rule on the paper ground, which is how the
+ * `/people` row already quotes one — so the same content is quoted the same way on both surfaces.
+ * It replaces `Well`, whose `rounded-xl` would be the only radius inside a sheet of flat fields.
+ */
+const QUOTED_NOTE =
+  'border-l-2 border-[color:var(--rule)] bg-[var(--paper)] py-[var(--s-2)] pl-[var(--s-3)] pr-[var(--s-3)] text-[12.5px] leading-relaxed text-[color:var(--ink-2)]';
+
+/**
+ * A RULED SECTION — the events page's own idiom (`<section className="rule-t pt-…">` plus a
+ * `.ty-section` heading), which replaces the rounded `Card` + `SectionTitle` pair this page was
+ * built from. Six stacked cards on the page ground read as six objects competing for the same
+ * attention; a hairline and a heading read as one document with six parts.
+ *
+ * It lives here rather than in `ui.tsx` because `ui.tsx` is not this session's to change, and one
+ * local definition used six times cannot drift the way six inline copies do.
+ */
+function Section({
+  title,
+  subtitle,
+  action,
+  children,
+}: {
+  title: React.ReactNode;
+  subtitle?: React.ReactNode;
+  action?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="rule-t mb-[var(--s-8)] pt-[var(--s-6)]">
+      <div className="mb-[var(--s-4)] flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          {/* SANS. A section is a grouping the PRODUCT made, not a thing in the city. */}
+          <h2 className="ty-section text-[var(--ink)]">{title}</h2>
+          {subtitle && <p className="ty-meta mt-[var(--s-1)]">{subtitle}</p>}
+        </div>
+        {action && <div className="min-w-0">{action}</div>}
+      </div>
+      {children}
+    </section>
+  );
+}
 
 /** Follow-up offsets. Deliberately few — the point is one tap, not a date picker. */
 const SNOOZE_CHOICES: Array<{ label: string; days: number }> = [
@@ -256,11 +289,11 @@ export default function PersonDetailClient({ id }: { id: string }) {
     return (
       <AppShell title="Person">
         <div className="mx-auto max-w-[860px] px-4 pt-4 md:px-8">
-          <Card>
-            <Skeleton className="h-6 w-1/2" />
-            <Skeleton className="mt-3 h-4 w-1/3" />
-            <Skeleton className="mt-6 h-24 w-full" />
-          </Card>
+          {/* Shaped like the real header — a 34px serif name, a meta line, then the first section —
+              so the page does not reflow when the person lands. */}
+          <Skeleton className="h-9 w-1/2" />
+          <Skeleton className="mt-[var(--s-3)] h-4 w-1/3" />
+          <Skeleton className="mt-[var(--s-8)] h-24 w-full" />
         </div>
       </AppShell>
     );
@@ -270,18 +303,21 @@ export default function PersonDetailClient({ id }: { id: string }) {
     return (
       <AppShell title="Person">
         <div className="mx-auto max-w-[860px] px-4 pt-4 md:px-8">
-          <EmptyState
-            icon="person_off"
-            title="We don’t have that person"
-            /* Same message for "not yours" as for "never existed" — the API answers 404 for both, so
-               that ownership is not observable, and the page must not undo that by guessing. */
-            body="The link may be old, or the last time you met them may have been deleted."
-            action={
+          {/* Flat and ruled rather than `EmptyState`'s rounded card, which would be the only radius
+              on a page of hairlines. Same message for "not yours" as for "never existed" — the API
+              answers 404 for both, so ownership is not observable, and the page must not undo that
+              by guessing. */}
+          <div className="rule-y py-[var(--s-8)]">
+            <h1 className="ty-section text-[var(--ink)]">We don’t have that person</h1>
+            <p className="mt-[var(--s-3)] ty-body max-w-[52ch] text-[color:var(--ink-2)]">
+              The link may be old, or the last time you met them may have been deleted.
+            </p>
+            <div className="mt-[var(--s-4)]">
               <ButtonLink href="/people" tone="primary" icon="groups">
                 Back to everyone
               </ButtonLink>
-            }
-          />
+            </div>
+          </div>
         </div>
       </AppShell>
     );
@@ -294,7 +330,7 @@ export default function PersonDetailClient({ id }: { id: string }) {
       <div className="mx-auto max-w-[860px] px-4 pt-4 pb-6 md:px-8">
         <Link
           href="/people"
-          className="mb-3 inline-flex h-11 items-center gap-1 text-[13px] font-semibold text-[color:var(--blue)] hover:underline"
+          className="pressable mb-[var(--s-3)] inline-flex h-11 items-center gap-1 ty-meta font-semibold text-[color:var(--ink-2)] transition-colors hover:text-[var(--ink)]"
         >
           <span aria-hidden="true" className="material-symbols-outlined text-[18px]">
             arrow_back
@@ -336,14 +372,23 @@ export default function PersonDetailClient({ id }: { id: string }) {
           beside the name says, in the loudest available voice. The pills below follow the card's rule:
           a FILL means act on this, an OUTLINE means it is simply true.
         */}
-        <PageHeader
-          title={
-            <span className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
+        {/*
+          HAND-ROLLED RATHER THAN `PageHeader`, because the person's name is the one element on this
+          page that must be SERIF at `.ty-h1`: a person is a thing in the world, which is the same
+          reason an event title and a venue name take that face. `PageHeader` sets `.t-title` (24px)
+          for every page in the app, so there was no way to say that through it.
+        */}
+        <div className="mb-[var(--s-8)] flex flex-wrap items-start justify-between gap-[var(--s-4)]">
+          {/* No `shrink-0` on the actions: LinkedIn + Message + Correct measured 373px against a
+              358px content box at 390, which put the page 15px into a horizontal scroll. */}
+          <div className="min-w-0 basis-full md:max-w-[62ch] md:basis-auto">
+            <h1 className="ty-h1 flex flex-wrap items-baseline gap-x-3 gap-y-1 text-[var(--ink)]">
               {person.displayName}
               {/* Bounded with a `--good` marker, matching the card and the rail. The filled version was
                   `--good` on `--good-wash`, measured at 4.00:1 — a WCAG AA failure at 11px. */}
+              {/* `globals.css`'s own pill classes, not a fourth local reimplementation of them. */}
               {person.isTargetCompany && (
-                <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold leading-[1.45] text-[color:var(--ink-2)] shadow-[inset_0_0_0_1px_var(--hairline-strong)]">
+                <span className="pill pill-quiet shrink-0">
                   <span aria-hidden="true" className="text-[color:var(--good)]">
                     ●
                   </span>
@@ -351,25 +396,23 @@ export default function PersonDetailClient({ id }: { id: string }) {
                 </span>
               )}
               {person.eventCount > 1 && (
-                <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold leading-[1.45] text-[color:var(--ink-2)] shadow-[inset_0_0_0_1px_var(--hairline-strong)]">
+                <span className="pill pill-quiet shrink-0">
                   <span>met <span className="tnum">{person.eventCount}</span>×</span>
                 </span>
               )}
-            </span>
-          }
-          subtitle={
-            <>
+            </h1>
+            <p className="ty-meta mt-[var(--s-2)]">
               {personIdentityLine(person) || 'No role or company recorded'}
               {person.lastInteractionAt && (
                 /* Its own line rather than appended after a middle dot: "who have I gone quiet on" is
                    the question this half of the product exists to answer, not a trailing detail. */
-                <span className="mt-0.5 block text-[color:var(--ink-3)]">
+                <span className="mt-[var(--s-1)] block">
                   Last spoke {relativeTime(person.lastInteractionAt)}
                 </span>
               )}
-            </>
-          }
-          action={
+            </p>
+          </div>
+          <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               {details.linkedin && (
                 <ButtonLink href={details.linkedin} tone="quiet" icon="open_in_new" external>
@@ -401,20 +444,21 @@ export default function PersonDetailClient({ id }: { id: string }) {
                 Correct
               </Button>
             </div>
-          }
-        />
+          </div>
+        </div>
 
         {/* ── Duplicate suggestion ──────────────────────────────────────── */}
         {data?.suggestions && data.suggestions.length > 0 && !person.mergedInto && (
-          <div className="mb-4">
-            <Card padding="tight">
+          /* `Banner`'s tone treatment — ink plus a left rule on the paper ground — hand-rolled
+             because this one carries a button and `Banner` takes only text children. */
+          <div className="mb-[var(--s-6)] border-l-2 border-[var(--accent)] bg-[var(--paper)] px-[var(--s-4)] py-[var(--s-3)]">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="min-w-0">
                   <p className="text-[13.5px] font-semibold text-[color:var(--ink)]">
                     Is this the same person as{' '}
                     <Link
                       href={`/people/${data.suggestions[0].personId}`}
-                      className="text-[color:var(--blue)] hover:underline"
+                      className="text-[color:var(--accent)] hover:underline"
                     >
                       {data.suggestions[0].displayName}
                     </Link>
@@ -433,14 +477,11 @@ export default function PersonDetailClient({ id }: { id: string }) {
                   Compare
                 </Button>
               </div>
-            </Card>
           </div>
         )}
 
         {/* ── Follow-up ─────────────────────────────────────────────────── */}
-        <div className="mb-4">
-          <Card>
-            <SectionTitle
+        <Section
               title="Next action"
               subtitle={
                 person.nextActionAt
@@ -465,7 +506,7 @@ export default function PersonDetailClient({ id }: { id: string }) {
                   Draft a follow-up
                 </Button>
               }
-            />
+            >
             {/*
               FOLLOW-UPS ARE STORED PER ENCOUNTER AND SHOWN PER PERSON, so the controls have to
               collapse them: "Done" closes every outstanding reminder, and setting a date replaces
@@ -503,16 +544,13 @@ export default function PersonDetailClient({ id }: { id: string }) {
                 </Button>
               ))}
             </div>
-          </Card>
-        </div>
+        </Section>
 
         {/* ── Add a note ────────────────────────────────────────────────── */}
-        <div className="mb-4">
-          <Card>
-            <SectionTitle
+        <Section
               title="Add a note"
               subtitle="Appended to the timeline. Nothing you wrote before is overwritten."
-            />
+            >
             <textarea
               /* Addressed by the draft sheet's "Add a note" button, which has to land the user in
                  this field rather than merely closing itself and claiming to have helped. */
@@ -523,9 +561,9 @@ export default function PersonDetailClient({ id }: { id: string }) {
               maxLength={4000}
               placeholder="What did you talk about? What did you promise them?"
               aria-label="New note"
-              className="w-full rounded-xl bg-[#F7F7F9] p-3.5 text-[14.5px] leading-relaxed text-[color:var(--ink)] outline-none focus:shadow-[inset_0_0_0_2px_var(--blue)]"
+              className="w-full r-touch bg-[var(--paper)] p-3.5 text-[14.5px] leading-relaxed text-[color:var(--ink)] shadow-[inset_0_0_0_1px_var(--rule)] outline-none focus:shadow-[inset_0_0_0_2px_var(--accent)]"
             />
-            <div className="mt-2 flex justify-end">
+            <div className="mt-[var(--s-3)] flex justify-end">
               <Button
                 tone="primary"
                 icon="add"
@@ -539,30 +577,41 @@ export default function PersonDetailClient({ id }: { id: string }) {
                 Add note
               </Button>
             </div>
-          </Card>
-        </div>
+        </Section>
 
         {/* ── Timeline ──────────────────────────────────────────────────── */}
-        <div className="mb-4">
-          <Card>
-            <SectionTitle
+        <Section
               title="History"
               subtitle={
                 interactions.length === 0
                   ? 'Nothing recorded yet.'
                   : `${interactions.length} ${interactions.length === 1 ? 'entry' : 'entries'}, newest first, grouped by where it happened.`
               }
-            />
+            >
             {interactions.length === 0 ? (
-              <p className="text-[13px] text-[color:var(--ink-2)]">
+              <p className="ty-meta">
                 Captures made before this page existed have no timeline until the backfill runs.
               </p>
             ) : (
-              <div className="flex flex-col gap-5">
+              <div className="flex flex-col gap-[var(--s-6)]">
                 {groups.map(group => (
                   <div key={group.key}>
-                    <div className="flex flex-wrap items-baseline gap-2 border-b border-[color:var(--hairline)] pb-1.5">
-                      <h3 className="text-[13.5px] font-semibold text-[color:var(--ink)]">
+                    {/* The event's own name, so SERIF at `.ty-row-title` — the same treatment the
+                        event page gives a venue. The date beside it is the app talking: sans. */}
+                    <div className="rule-b flex flex-wrap items-baseline gap-x-3 gap-y-1 pb-[var(--s-2)]">
+                      {/*
+                        THE FACE FOLLOWS WHO IS SPEAKING, WHICH MATTERS MOST IN THE FALLBACK. A real
+                        event title is serif — a thing in the city. "Not at an event" and "An event we
+                        no longer have" are the APP explaining an absence, so they are sans: setting
+                        them in Newsreader would dress our own apology up as the name of something.
+                      */}
+                      <h3
+                        className={
+                          group.eventId && group.title
+                            ? 'ty-row-title text-[var(--ink)]'
+                            : 'ty-meta font-semibold text-[var(--ink-2)]'
+                        }
+                      >
                         {group.eventId ? (
                           // A dangling `eventId` is NORMAL: `pruneStale()` deletes events 7 days
                           // past without touching their references. Say so rather than render blank.
@@ -571,16 +620,14 @@ export default function PersonDetailClient({ id }: { id: string }) {
                               {group.title}
                             </Link>
                           ) : (
-                            <span className="text-[color:var(--ink-3)]">An event we no longer have</span>
+                            'An event we no longer have'
                           )
                         ) : (
                           'Not at an event'
                         )}
                       </h3>
                       {group.startAt && (
-                        <span className="text-[12px] text-[color:var(--ink-3)]">
-                          {shortDateIST(group.startAt)}
-                        </span>
+                        <span className="ty-meta">{shortDateIST(group.startAt)}</span>
                       )}
                     </div>
                     <ul className="mt-2 flex flex-col gap-2.5">
@@ -593,9 +640,9 @@ export default function PersonDetailClient({ id }: { id: string }) {
                             {INTERACTION_ICON[item.kind]}
                           </span>
                           <div className="min-w-0">
-                            <p className="text-[13px] text-[color:var(--ink)]">
+                            <p className="ty-meta text-[var(--ink)]">
                               <span className="font-semibold">{INTERACTION_LABEL[item.kind]}</span>
-                              <span className="text-[color:var(--ink-3)]">
+                              <span className="text-[color:var(--ink-2)]">
                                 {' · '}
                                 {fullDateIST(item.at)}
                               </span>
@@ -612,19 +659,15 @@ export default function PersonDetailClient({ id }: { id: string }) {
                   </div>
                 ))}
                 {data?.timelineTruncated && (
-                  <p className="text-[12px] text-[color:var(--ink-3)]">
-                    Showing the most recent entries only.
-                  </p>
+                  <p className="ty-meta">Showing the most recent entries only.</p>
                 )}
               </div>
             )}
-          </Card>
-        </div>
+        </Section>
 
         {/* ── Contact details + captures ────────────────────────────────── */}
-        <div className="mb-4 grid gap-4 md:grid-cols-2">
-          <Card>
-            <SectionTitle title="How to reach them" subtitle="Newest value we have for each." />
+        <div className="grid gap-x-[var(--s-8)] md:grid-cols-2">
+          <Section title="How to reach them" subtitle="Newest value we have for each.">
             <dl className="flex flex-col">
               <DetailRow label="Email" value={details.email} href={details.email ? `mailto:${details.email}` : null} />
               <DetailRow label="Phone" value={details.phone} href={details.phone ? `tel:${details.phone}` : null} />
@@ -633,15 +676,14 @@ export default function PersonDetailClient({ id }: { id: string }) {
               <DetailRow label="X" value={details.x} href={details.x} external />
               <DetailRow label="Website" value={details.website} href={details.website} external />
             </dl>
-          </Card>
+          </Section>
 
-          <Card>
-            <SectionTitle
+          <Section
               title={`${contacts.length} ${contacts.length === 1 ? 'capture' : 'captures'}`}
               subtitle="Each time you scanned or recorded them. These are what the fields above are derived from."
-            />
+            >
             {contacts.length === 0 ? (
-              <p className="text-[13px] text-[color:var(--ink-2)]">No captures left — this record is empty.</p>
+              <p className="ty-meta">No captures left — this record is empty.</p>
             ) : (
               <ul className="flex flex-col gap-2.5">
                 {contacts.map(contact => (
@@ -674,7 +716,7 @@ export default function PersonDetailClient({ id }: { id: string }) {
                 ))}
               </ul>
             )}
-          </Card>
+          </Section>
         </div>
       </div>
 
@@ -746,14 +788,14 @@ function DetailRow({
 }) {
   if (!value) return null;
   return (
-    <div className="flex items-start justify-between gap-4 border-b border-[color:var(--hairline)] py-2.5 last:border-0">
-      <dt className="shrink-0 text-[13px] text-[color:var(--ink-3)]">{label}</dt>
+    <div className="rule-b flex items-start justify-between gap-4 py-2.5 last:border-0">
+      <dt className="ty-meta shrink-0">{label}</dt>
       <dd className="min-w-0 break-words text-right text-[13px] font-medium text-[color:var(--ink)]">
         {href ? (
           <a
             href={href}
             {...(external ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
-            className="text-[color:var(--blue)] hover:underline"
+            className="text-[color:var(--accent)] hover:underline"
           >
             {value}
           </a>
@@ -1038,9 +1080,9 @@ function DraftFollowupSheet({
               </p>
               <div className="mt-2 flex flex-col gap-2">
                 {notes.map((note, index) => (
-                  <Well key={index}>
+                  <div key={index} className={QUOTED_NOTE}>
                     <span className="whitespace-pre-wrap">{note}</span>
-                  </Well>
+                  </div>
                 ))}
               </div>
             </div>
@@ -1051,7 +1093,7 @@ function DraftFollowupSheet({
               `lib/llm/draft-followup.ts` ever gains a second tier, this sentence is what changes with
               it.
             */}
-            <div className="flex items-start gap-2.5 border-t border-[color:var(--hairline)] pt-4">
+            <div className="rule-t flex items-start gap-2.5 pt-4">
               <span
                 aria-hidden="true"
                 className="material-symbols-outlined mt-[1px] text-[18px] text-[color:var(--ink-3)]"
@@ -1087,20 +1129,20 @@ function DraftFollowupSheet({
                 onChange={e => setDraft(e.target.value)}
                 rows={8}
                 maxLength={4000}
-                className="mt-2 w-full rounded-xl bg-[#F7F7F9] p-3.5 text-[14.5px] leading-relaxed text-[color:var(--ink)] outline-none focus:shadow-[inset_0_0_0_2px_var(--blue)]"
+                className="mt-2 w-full r-touch bg-[var(--paper)] p-3.5 text-[14.5px] leading-relaxed text-[color:var(--ink)] shadow-[inset_0_0_0_1px_var(--rule)] outline-none focus:shadow-[inset_0_0_0_2px_var(--accent)]"
               />
             </div>
 
             {/* Provenance, kept on screen: the claim "written from your note" is checkable rather
                 than asserted, and it is also what you fall back to if the draft is wrong. */}
             {notes.length > 0 && (
-              <div className="border-t border-[color:var(--hairline)] pt-4">
+              <div className="rule-t pt-4">
                 <p className={SHEET_LABEL}>Written from</p>
                 <div className="mt-2 flex flex-col gap-2">
                   {notes.map((note, index) => (
-                    <Well key={index}>
+                    <div key={index} className={QUOTED_NOTE}>
                       <span className="whitespace-pre-wrap">{note}</span>
-                    </Well>
+                    </div>
                   ))}
                 </div>
               </div>
@@ -1120,9 +1162,9 @@ function DraftFollowupSheet({
                 <p className={SHEET_LABEL}>Your note, to send yourself</p>
                 <div className="mt-2 flex flex-col gap-2">
                   {notes.map((note, index) => (
-                    <Well key={index}>
+                    <div key={index} className={QUOTED_NOTE}>
                       <span className="whitespace-pre-wrap">{note}</span>
-                    </Well>
+                    </div>
                   ))}
                 </div>
               </div>
@@ -1216,7 +1258,7 @@ function EditPersonSheet({
   }
 
   const FIELD =
-    'mt-1.5 h-11 w-full rounded-xl bg-[#F7F7F9] px-3.5 text-[15px] text-[color:var(--ink)] outline-none focus:shadow-[inset_0_0_0_2px_var(--blue)]';
+    'mt-1.5 h-11 w-full r-touch bg-[var(--paper)] px-3.5 text-[15px] text-[color:var(--ink)] shadow-[inset_0_0_0_1px_var(--rule)] outline-none focus:shadow-[inset_0_0_0_2px_var(--accent)]';
 
   return (
     <Sheet
@@ -1292,14 +1334,14 @@ function EditPersonSheet({
               {ownTags.map(tag => (
                 <span
                   key={tag}
-                  className="inline-flex h-9 items-center gap-1 rounded-full bg-[#F5F5F7] pl-3 pr-1.5 text-[12.5px] font-semibold text-[color:var(--ink-2)]"
+                  className="inline-flex h-9 items-center gap-1 r-touch bg-[var(--paper)] pl-3 pr-1.5 text-[12.5px] font-semibold text-[color:var(--ink-2)]"
                 >
                   {tag}
                   <button
                     type="button"
                     onClick={() => setOwnTags(current => current.filter(t => t !== tag))}
                     aria-label={`Remove tag ${tag}`}
-                    className="grid h-8 w-8 place-items-center rounded-full text-[color:var(--ink-3)] hover:bg-[#E5E5EA] [touch-action:manipulation]"
+                    className="grid h-8 w-8 place-items-center r-touch text-[color:var(--ink-3)] hover:bg-[var(--rule)] [touch-action:manipulation]"
                   >
                     <span aria-hidden="true" className="material-symbols-outlined text-[16px]">
                       close
@@ -1325,7 +1367,7 @@ function EditPersonSheet({
               maxLength={40}
               placeholder="Add a tag…"
               aria-label="Add a tag"
-              className="h-11 min-w-0 flex-1 rounded-xl bg-[#F7F7F9] px-3.5 text-[15px] text-[color:var(--ink)] outline-none focus:shadow-[inset_0_0_0_2px_var(--blue)]"
+              className="h-11 min-w-0 flex-1 r-touch bg-[var(--paper)] px-3.5 text-[15px] text-[color:var(--ink)] shadow-[inset_0_0_0_1px_var(--rule)] outline-none focus:shadow-[inset_0_0_0_2px_var(--accent)]"
             />
             {/* Native datalist rather than a bespoke popover: it is a one-field type-ahead, and the
                 browser's own affordance beats a hand-rolled one here. */}

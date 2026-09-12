@@ -83,17 +83,17 @@ export default function SaveToFolder({ card }: { card: PublicCardDTO }) {
 
   if (savedTo) {
     return (
-      <section className="mt-4 rounded-[22px] bg-white p-5 text-center card-shadow">
-        <span aria-hidden="true" className="material-symbols-outlined text-[28px] text-[#166B35]">check_circle</span>
-        <p className="mt-1.5 text-[14px] font-semibold text-[#1D1D1F]">
+      <section className="mt-4 bg-[var(--surface)] p-5 text-center shadow-[inset_0_0_0_1px_var(--rule)]">
+        <span aria-hidden="true" className="material-symbols-outlined text-[28px] text-[var(--accent)]">check_circle</span>
+        <p className="mt-1.5 text-[14px] font-semibold text-[var(--ink)]">
           Saved to {savedTo}
         </p>
-        <p className="mt-1 text-[12.5px] text-[#6E6E73]">
+        <p className="mt-1 text-[12.5px] text-[var(--ink-2)]">
           Now let them scan yours, so you are in their list too.
         </p>
         <Link
           href="/card"
-          className="mt-4 inline-flex h-11 items-center justify-center gap-2 rounded-full bg-[#0071E3] px-6 text-[14px] font-semibold text-white hover:bg-[#0061C3] pressable"
+          className="mt-4 inline-flex h-11 items-center justify-center gap-2 r-touch bg-[var(--accent)] px-6 text-[14px] font-semibold text-[var(--accent-ink)] pressable"
         >
           <span aria-hidden="true" className="material-symbols-outlined text-[18px]">qr_code_2</span>
           Show them my code
@@ -103,19 +103,19 @@ export default function SaveToFolder({ card }: { card: PublicCardDTO }) {
   }
 
   return (
-    <section className="mt-4 rounded-[22px] bg-white p-5 card-shadow">
-      <h2 className="t-label text-[#8E8E93]">Save them to</h2>
+    <section className="mt-4 bg-[var(--surface)] p-5 shadow-[inset_0_0_0_1px_var(--rule)]">
+      <h2 className="t-label text-[var(--ink-2)]">Save them to</h2>
 
       {error && (
-        <p className="mt-2 rounded-xl bg-[#FFF1F0] px-3 py-2 text-[12.5px] text-[#C7362D]" role="alert">
+        <p className="mt-2 border-l-2 border-l-[var(--live)] bg-[var(--paper)] px-3 py-2 text-[12.5px] text-[var(--live)]" role="alert">
           {error}
         </p>
       )}
 
       {folders.length === 0 ? (
-        <p className="mt-2 text-[13px] leading-relaxed text-[#6E6E73]">
+        <p className="mt-2 text-[13px] leading-relaxed text-[var(--ink-2)]">
           You have no folders yet.{' '}
-          <Link href="/folders" className="font-semibold text-[#0071E3] hover:underline">
+          <Link href="/folders" className="font-semibold text-[var(--accent)] hover:underline">
             Make one
           </Link>{' '}
           and come back to this link.
@@ -128,17 +128,17 @@ export default function SaveToFolder({ card }: { card: PublicCardDTO }) {
               type="button"
               disabled={saving}
               onClick={() => save(folder)}
-              className="flex items-center justify-between gap-3 rounded-xl bg-[#F7F7F9] px-4 py-3 text-left hover:bg-[#EEEEF0] disabled:opacity-50 pressable"
+              className="flex items-center justify-between gap-3 r-touch bg-[var(--paper)] px-4 py-3 text-left disabled:opacity-50 pressable"
             >
               <span className="min-w-0">
-                <span className="block truncate text-[13.5px] font-semibold text-[#1D1D1F]">
+                <span className="block truncate text-[13.5px] font-semibold text-[var(--ink)]">
                   {folder.name}
                 </span>
-                <span className="block text-[12px] text-[#6E6E73]">
+                <span className="block text-[12px] text-[var(--ink-2)]">
                   {folder.contactCount ?? 0} {folder.contactCount === 1 ? 'person' : 'people'}
                 </span>
               </span>
-              <span aria-hidden="true" className="material-symbols-outlined shrink-0 text-[18px] text-[#0071E3]">
+              <span aria-hidden="true" className="material-symbols-outlined shrink-0 text-[18px] text-[var(--accent)]">
                 add_circle
               </span>
             </button>
@@ -148,7 +148,7 @@ export default function SaveToFolder({ card }: { card: PublicCardDTO }) {
 
       <Link
         href="/card"
-        className="mt-3 flex h-11 items-center justify-center gap-2 rounded-full bg-[#F5F5F7] text-[13.5px] font-semibold text-[#1D1D1F] hover:bg-[#EEEEF0] pressable"
+        className="mt-3 flex h-11 items-center justify-center gap-2 r-touch bg-[var(--paper)] text-[13.5px] font-semibold text-[var(--ink)] shadow-[inset_0_0_0_1px_var(--rule)] pressable"
       >
         <span aria-hidden="true" className="material-symbols-outlined text-[18px]">qr_code_2</span>
         Show them my code instead

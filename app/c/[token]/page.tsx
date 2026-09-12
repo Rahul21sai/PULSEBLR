@@ -70,17 +70,17 @@ export default async function PublicCardPage({ params }: { params: Promise<{ tok
 
   if (!card) {
     return (
-      <main className="grid min-h-screen place-items-center bg-[#F5F5F7] px-6">
+      <main className="grid min-h-screen place-items-center bg-[var(--paper)] px-6">
         <div className="max-w-[360px] text-center">
-          <span aria-hidden="true" className="material-symbols-outlined text-[40px] text-[#8E8E93]">link_off</span>
-          <h1 className="t-title mt-3 text-[#1D1D1F]">That card is not available</h1>
-          <p className="mt-2 text-[13.5px] leading-relaxed text-[#6E6E73]">
+          <span aria-hidden="true" className="material-symbols-outlined text-[40px] text-[var(--ink-3)]">link_off</span>
+          <h1 className="ty-section mt-3 text-[var(--ink)]">That card is not available</h1>
+          <p className="mt-2 text-[13.5px] leading-relaxed text-[var(--ink-2)]">
             The link may have been replaced, or its owner turned the card off. Ask them to show
             you their code again.
           </p>
           <Link
             href="/"
-            className="mt-5 inline-flex h-10 items-center rounded-full bg-[#1D1D1F] px-5 text-[13.5px] font-semibold text-white"
+            className="pressable mt-5 inline-flex h-10 items-center r-touch bg-[var(--ink)] px-5 text-[13.5px] font-semibold text-[var(--accent-ink)]"
           >
             About PulseBLR
           </Link>
@@ -104,22 +104,20 @@ export default async function PublicCardPage({ params }: { params: Promise<{ tok
   ].filter(Boolean) as Array<{ href: string; icon: string; label: string; external: boolean }>;
 
   return (
-    <main className="min-h-screen bg-[#F5F5F7] px-4 py-10">
+    <main className="min-h-screen bg-[var(--paper)] px-4 py-10">
       <div className="mx-auto max-w-[420px]">
-        <section className="rounded-[22px] bg-white p-6 text-center card-shadow">
-          <h1
-            className="text-[28px] font-bold leading-tight tracking-[-0.032em] text-[#1D1D1F]"
-            style={{ fontFamily: 'var(--font-display)' }}
-          >
-            {card.displayName}
-          </h1>
+        {/* ELEVATION IS A RING, NOT A BLUR — `card-shadow` resolves to `--lift-1: none`, so this
+            panel had a 22px radius around nothing. A hairline gives it the edge the fog never did.
+            The NAME is `.ty-h1` serif: a person, which is what this whole page is. */}
+        <section className="bg-[var(--surface)] p-6 text-center shadow-[inset_0_0_0_1px_var(--rule)]">
+          <h1 className="ty-h1 text-[var(--ink)]">{card.displayName}</h1>
           {(card.role || card.company) && (
-            <p className="mt-1.5 text-[14.5px] text-[#3a3a3c]">
+            <p className="ty-meta mt-[var(--s-2)]">
               {[card.role, card.company].filter(Boolean).join(' · ')}
             </p>
           )}
           {card.headline && (
-            <p className="mt-2 text-[13.5px] leading-relaxed text-[#6E6E73]">{card.headline}</p>
+            <p className="mt-2 text-[13.5px] leading-relaxed text-[var(--ink-2)]">{card.headline}</p>
           )}
 
           {links.length > 0 && (
@@ -130,9 +128,9 @@ export default async function PublicCardPage({ params }: { params: Promise<{ tok
                   href={link.href}
                   target={link.external ? '_blank' : undefined}
                   rel={link.external ? 'noopener noreferrer' : undefined}
-                  className="flex items-center gap-3 rounded-xl bg-[#F7F7F9] px-4 py-3 text-left text-[13.5px] font-medium text-[#1D1D1F] hover:bg-[#EEEEF0] pressable"
+                  className="flex items-center gap-3 r-touch bg-[var(--paper)] px-4 py-3 text-left text-[13.5px] font-medium text-[var(--ink)] pressable"
                 >
-                  <span aria-hidden="true" className="material-symbols-outlined text-[19px] text-[#6E6E73]">
+                  <span aria-hidden="true" className="material-symbols-outlined text-[19px] text-[var(--ink-2)]">
                     {link.icon}
                   </span>
                   <span className="min-w-0 truncate">{link.label}</span>
@@ -147,7 +145,7 @@ export default async function PublicCardPage({ params }: { params: Promise<{ tok
            */}
           <a
             href={`/api/card/${token}?format=vcf`}
-            className="mt-4 inline-flex h-11 w-full items-center justify-center gap-2 rounded-full bg-[#1D1D1F] text-[14px] font-semibold text-white hover:bg-black pressable"
+            className="mt-4 inline-flex h-11 w-full items-center justify-center gap-2 r-touch bg-[var(--ink)] text-[14px] font-semibold text-[var(--accent-ink)] pressable"
           >
             <span aria-hidden="true" className="material-symbols-outlined text-[18px]">person_add</span>
             Save to contacts
@@ -166,14 +164,14 @@ export default async function PublicCardPage({ params }: { params: Promise<{ tok
         {session?.user?.id ? (
           <SaveToFolder card={card} />
         ) : (
-          <section className="mt-4 rounded-[22px] bg-white p-5 text-center card-shadow">
-            <p className="text-[13px] leading-relaxed text-[#6E6E73]">
+          <section className="mt-4 bg-[var(--surface)] p-5 text-center shadow-[inset_0_0_0_1px_var(--rule)]">
+            <p className="text-[13px] leading-relaxed text-[var(--ink-2)]">
               PulseBLR finds Bengaluru engineering events worth going to, and keeps track of who
               you met at them.
             </p>
             <Link
               href="/"
-              className="mt-3 inline-flex h-10 items-center rounded-full bg-[#F5F5F7] px-5 text-[13px] font-semibold text-[#1D1D1F] hover:bg-[#EEEEF0]"
+              className="pressable mt-3 inline-flex h-10 items-center r-touch bg-[var(--paper)] px-5 text-[13px] font-semibold text-[var(--ink)] shadow-[inset_0_0_0_1px_var(--rule)]"
             >
               Have a look
             </Link>

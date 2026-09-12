@@ -217,7 +217,7 @@ export default function AuditPanel({ onChanged }: { onChanged: () => void }) {
         {loading && !data ? (
           <div className="space-y-2 py-3">
             {Array.from({ length: 4 }).map((_, i) => (
-              <div key={i} className="skeleton h-12 rounded-xl bg-[#EEEEF0]" />
+              <div key={i} className="skeleton h-12 rounded-xl bg-[var(--paper)]" />
             ))}
           </div>
         ) : !data || data.rows.length === 0 ? (
@@ -231,7 +231,7 @@ export default function AuditPanel({ onChanged }: { onChanged: () => void }) {
             }
           />
         ) : (
-          <ul className="divide-y divide-[#f0f0f2]">
+          <ul className="divide-y divide-[var(--rule)]">
             {data.rows.map(row => {
               const isOpen = expanded === row.id;
               const changedFields = row.after ? Object.keys(row.after) : [];
@@ -242,22 +242,22 @@ export default function AuditPanel({ onChanged }: { onChanged: () => void }) {
                       aria-hidden="true"
                       className={`mt-1 h-2 w-2 shrink-0 rounded-full ${
                         row.undoneAt
-                          ? 'bg-[#c7c7cc]'
+                          ? 'bg-[var(--ink-3)]'
                           : row.action.includes('delete')
-                            ? 'bg-[#FF3B30]'
-                            : 'bg-[#0071E3]'
+                            ? 'bg-[var(--live)]'
+                            : 'bg-[var(--accent)]'
                       }`}
                     />
                     <div className="min-w-0 flex-1">
-                      <p className="text-[13.5px] font-semibold text-[#1D1D1F]">
+                      <p className="text-[13.5px] font-semibold text-[var(--ink)]">
                         {row.summary}
                         {row.undoneAt && (
-                          <span className="ml-2 rounded bg-[#f3f3f5] px-1.5 py-0.5 text-[10.5px] font-bold uppercase tracking-wide text-[#8E8E93]">
+                          <span className="ml-2 rounded bg-[var(--paper)] px-1.5 py-0.5 text-[10.5px] font-bold uppercase tracking-wide text-[var(--ink-2)]">
                             undone
                           </span>
                         )}
                       </p>
-                      <p className="text-[12px] text-[#6E6E73]">
+                      <p className="text-[12px] text-[var(--ink-2)]">
                         <span title={fullDateIST(row.at)}>{relativeTime(row.at)}</span> ·{' '}
                         <span className="font-mono text-[11.5px]">{row.actorEmail}</span>
                         {row.undoneAt && (
@@ -275,7 +275,7 @@ export default function AuditPanel({ onChanged }: { onChanged: () => void }) {
                       {row.targetType === 'event' && row.targetId && !row.action.includes('delete') && (
                         <Link
                           href={`/events/${row.targetId}`}
-                          className="text-[12px] font-semibold text-[#0071E3] hover:underline"
+                          className="text-[12px] font-semibold text-[var(--accent)] hover:underline"
                         >
                           Open
                         </Link>
@@ -296,12 +296,12 @@ export default function AuditPanel({ onChanged }: { onChanged: () => void }) {
                   {isOpen && (
                     <div className="mt-2.5 ml-5 space-y-2">
                       {changedFields.length > 0 ? (
-                        <div className="overflow-x-auto rounded-xl bg-[#F7F7F9] p-3">
+                        <div className="overflow-x-auto rounded-xl bg-[var(--paper)] p-3">
                           <table className="w-full text-[12px]">
                             <thead>
                               <tr className="text-left">
                                 {['Field', 'Before', 'After'].map(h => (
-                                  <th key={h} className="t-label pb-1.5 pr-3 text-[#8E8E93]">
+                                  <th key={h} className="t-label pb-1.5 pr-3 text-[var(--ink-2)]">
                                     {h}
                                   </th>
                                 ))}
@@ -310,26 +310,26 @@ export default function AuditPanel({ onChanged }: { onChanged: () => void }) {
                             <tbody>
                               {changedFields.map(f => (
                                 <tr key={f} className="align-top">
-                                  <td className="py-1 pr-3 font-mono text-[11.5px] font-semibold text-[#1D1D1F]">
+                                  <td className="py-1 pr-3 font-mono text-[11.5px] font-semibold text-[var(--ink)]">
                                     {f}
                                   </td>
-                                  <td className="py-1 pr-3 text-[#C7362D]">{renderValue(row.before?.[f])}</td>
-                                  <td className="py-1 text-[#166B35]">{renderValue(row.after?.[f])}</td>
+                                  <td className="py-1 pr-3 text-[var(--live)]">{renderValue(row.before?.[f])}</td>
+                                  <td className="py-1 text-[var(--accent)]">{renderValue(row.after?.[f])}</td>
                                 </tr>
                               ))}
                             </tbody>
                           </table>
                         </div>
                       ) : (
-                        <div className="rounded-xl bg-[#F7F7F9] p-3">
-                          <p className="t-label text-[#8E8E93]">Snapshot kept for restore</p>
-                          <p className="mt-1 text-[12px] text-[#3a3a3c]">
+                        <div className="rounded-xl bg-[var(--paper)] p-3">
+                          <p className="t-label text-[var(--ink-2)]">Snapshot kept for restore</p>
+                          <p className="mt-1 text-[12px] text-[var(--ink-2)]">
                             {row.targetCount
                               ? `${row.targetCount} rows, restorable together in one undo.`
                               : 'The whole document was stored, so Undo re-creates it under its original id — which re-links anything that was pointing at it.'}
                           </p>
                           {row.snapshotTruncated && (
-                            <p className="mt-1 text-[12px] font-semibold text-amber-900">
+                            <p className="mt-1 text-[12px] font-semibold text-[var(--ink-2)]">
                               The description was too large to keep and was dropped from the snapshot.
                               Everything else restores exactly.
                             </p>
@@ -338,9 +338,9 @@ export default function AuditPanel({ onChanged }: { onChanged: () => void }) {
                       )}
 
                       {row.impact ? (
-                        <div className="rounded-xl bg-[#F7F7F9] p-3">
-                          <p className="t-label text-[#8E8E93]">What the preview said at the time</p>
-                          <pre className="mt-1 overflow-x-auto whitespace-pre-wrap break-words text-[11px] leading-relaxed text-[#3a3a3c]">
+                        <div className="rounded-xl bg-[var(--paper)] p-3">
+                          <p className="t-label text-[var(--ink-2)]">What the preview said at the time</p>
+                          <pre className="mt-1 overflow-x-auto whitespace-pre-wrap break-words text-[11px] leading-relaxed text-[var(--ink-2)]">
                             {JSON.stringify(row.impact, null, 2)}
                           </pre>
                         </div>
@@ -362,7 +362,7 @@ export default function AuditPanel({ onChanged }: { onChanged: () => void }) {
       </Panel>
 
       <Card padding="tight">
-        <p className="text-[12.5px] leading-relaxed text-[#6E6E73]">
+        <p className="text-[12.5px] leading-relaxed text-[var(--ink-2)]">
           <strong>What is not in here:</strong> anything a regular user does. Their tracked events and
           their contacts are their own data and belong in Users &amp; engagement as counts — an
           operator&apos;s change log that also recorded a stranger&apos;s private notes would be a

@@ -11,22 +11,39 @@
  * stops looking designed and starts looking assembled, and it is why the admin console did not feel
  * like the same product as the feed.
  *
- * So everything below is `ui.tsx` arranged, not re-drawn:
- *
- *   · `Panel`    = `Card` + `SectionTitle`. `ui.tsx` deliberately separates the surface from the
- *                  heading so a card can hold something other than a titled section; the console
- *                  always wants both, and this saves repeating the pair 30 times.
- *   · `StatCard` = `Card padding="tight"` + `Stat`. `Stat` on its own is the number; this is the
- *                  number on a surface, which is what a dashboard grid needs.
- *
  * `BarList` and `Sparkline` are genuinely new — `ui.tsx` has no data-display components — and they
  * live here rather than there because nothing outside the console has asked for them.
  *
  * No hooks, no `'use client'`: same property `ui.tsx` has, so a server component could render any of
  * it if one ever needed to.
+ *
+ * ── WHY `Panel` AND `StatCard` NO LONGER WRAP `Card` (Phase 3) ───────────────────────────────
+ *
+ * They used to be `Card + SectionTitle` and `Card padding="tight" + Stat`. Both now draw a ruled
+ * section on the page ground instead, and the reason is that the design system moved underneath
+ * `ui.tsx` rather than that a second card was wanted:
+ *
+ *   · **Radius.** The system is `--r-flat` (0) on containers, `--r-touch` (4px) on touchables.
+ *     `Card` is `rounded-[18px]`, and a caller cannot reliably override it: Tailwind emits radius
+ *     utilities ordered by VALUE, not by source order, so in one class attribute `rounded-[4px]`
+ *     loses to `rounded-full` and `rounded-none` wins only by alphabetical luck. Measured against
+ *     the served stylesheet, not assumed. Depending on that ordering is the same silent
+ *     class-composition failure that `lib/cn.ts` exists because of.
+ *   · **Elevation.** `Card` carries `card-shadow`, which composites to nothing now that `--lift-1`
+ *     is `none` — so its ground is a white plane with no edge on a warm page. The console gets a
+ *     hairline, which is what the recorded complaint about the old fog shadow actually asked for.
+ *   · **Face.** `SectionTitle` sets `.t-sub`, and `.t-*` resolves `--font-display` to the SERIF.
+ *     globals.css says outright that `.t-*` "is the previous scale and is not the target". A panel
+ *     heading is the app naming a group it invented, which is the sans side of the split; an event
+ *     title is the serif side. So a serif "Where events come from" is a migration artefact.
+ *   · **Numbers.** `Stat` renders its value in `--font-display` too. A count is the app speaking,
+ *     so it is sans with `tnum` — which is also what stops a dense column of figures shifting width
+ *     as it updates.
+ *
+ * NONE OF THAT IS A CRITICISM OF `ui.tsx`, and none of it is fixable from here: `app/components/**`
+ * is owned elsewhere. When those four move, this file should shrink back to composing them.
  */
 import type { ReactNode } from 'react';
-import { Card, SectionTitle, Stat } from '../components/ui';
 
 export function Panel({
   title,
@@ -42,10 +59,21 @@ export function Panel({
   className?: string;
 }) {
   return (
-    <Card className={className}>
-      <SectionTitle title={title} subtitle={subtitle} action={action} />
+    <section className={`rounded-[var(--r-flat)] border border-[var(--rule)] p-[var(--s-4)] md:p-[var(--s-6)] ${className}`}>
+      <div className="flex flex-wrap items-start justify-between gap-2 pb-[var(--s-3)]">
+        <div className="min-w-0">
+          {/* Sans, at console density. NOT `.ty-section` — that is 26px, and because globals.css is
+              UNLAYERED its font-size outranks any Tailwind size utility, so `ty-section text-[16px]`
+              silently renders 26px. A heading needing a different size gets plain utilities. */}
+          <h2 className="text-[16px] font-semibold leading-tight tracking-[-0.012em] text-[var(--ink)]">
+            {title}
+          </h2>
+          {subtitle && <p className="ty-meta mt-[var(--s-1)]">{subtitle}</p>}
+        </div>
+        {action}
+      </div>
       {children}
-    </Card>
+    </section>
   );
 }
 
@@ -58,12 +86,25 @@ export function StatCard({
   label: string;
   value: ReactNode;
   sub?: string;
+  /** `accent` = healthy or actionable, `warn` = wants attention. Nothing else has a colour. */
   tone?: 'accent' | 'warn';
 }) {
   return (
-    <Card padding="tight">
-      <Stat label={label} value={value} sub={sub} tone={tone} />
-    </Card>
+    <div className="rounded-[var(--r-flat)] border border-[var(--rule)] p-[var(--s-4)]">
+      <p className="ty-meta">{label}</p>
+      <p
+        className={`tnum mt-[var(--s-2)] text-[26px] font-semibold leading-none tracking-[-0.02em] ${
+          tone === 'accent'
+            ? 'text-[var(--accent)]'
+            : tone === 'warn'
+              ? 'text-[var(--live)]'
+              : 'text-[var(--ink)]'
+        }`}
+      >
+        {value}
+      </p>
+      {sub && <p className="mt-[var(--s-1)] text-[12px] leading-snug text-[var(--ink-2)]">{sub}</p>}
+    </div>
   );
 }
 
@@ -92,16 +133,16 @@ export function BarList({
     <ul className="space-y-1.5">
       {items.map(i => (
         <li key={i.name} className="flex items-center gap-2.5">
-          <span className={`${labelWidth} shrink-0 truncate text-[12.5px] text-[#3a3a3c]`} title={i.name}>
+          <span className={`${labelWidth} shrink-0 truncate text-[12.5px] text-[var(--ink-2)]`} title={i.name}>
             {i.name}
           </span>
-          <span className="h-2 flex-1 overflow-hidden rounded-full bg-[#f0f0f2]">
+          <span className="h-2 flex-1 overflow-hidden rounded-full bg-[var(--paper)]">
             <span
-              className="block h-full rounded-full bg-[#0071E3]"
+              className="block h-full rounded-full bg-[var(--accent)]"
               style={{ width: `${(i.count / max) * 100}%` }}
             />
           </span>
-          <span className="tnum w-10 shrink-0 text-right text-[12px] font-semibold text-[#1D1D1F]">
+          <span className="tnum w-10 shrink-0 text-right text-[12px] font-semibold text-[var(--ink)]">
             {i.count}
           </span>
         </li>
@@ -145,14 +186,14 @@ export function Sparkline({
             <span
               key={s.day}
               title={`${s.day}: ${s.count}`}
-              className={`flex-1 rounded-t-[2px] ${isLast ? 'bg-[#0071E3]' : 'bg-[#1D1D1F]/15'}`}
+              className={`flex-1 rounded-t-[2px] ${isLast ? 'bg-[var(--accent)]' : 'bg-[var(--ink)]/15'}`}
               // A zero day gets 1px so the axis is legible as an axis rather than a gap.
               style={{ height: `${Math.max(1, (s.count / max) * height)}px` }}
             />
           );
         })}
       </div>
-      <div className="mt-1.5 flex justify-between text-[11px] text-[#8E8E93]">
+      <div className="mt-1.5 flex justify-between text-[11px] text-[var(--ink-2)]">
         <span>{series[0]?.day ?? ''}</span>
         <span className="tnum">peak {max}</span>
         <span>today</span>
@@ -163,18 +204,24 @@ export function Sparkline({
 
 /** A quiet in-card line for "nothing here". Whole-panel empties use `EmptyState` from ui.tsx. */
 export function NoRows({ children }: { children: ReactNode }) {
-  return <p className="py-6 text-center text-[13px] text-[#8E8E93]">{children}</p>;
+  return <p className="py-6 text-center text-[13px] text-[var(--ink-2)]">{children}</p>;
 }
 
-/** Skeleton grid for the first paint, built on `ui.tsx`'s `Skeleton`. */
+/**
+ * Skeleton grid for the first paint.
+ *
+ * Deliberately the SAME box as `StatCard` — same border, same padding, same two line heights — so
+ * the grid does not resize when the numbers land. A skeleton that is a different shape from the
+ * thing it stands in for is a layout shift with extra steps.
+ */
 export function StatSkeletons({ count = 4 }: { count?: number }) {
   return (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
       {Array.from({ length: count }).map((_, i) => (
-        <Card key={i} padding="tight">
-          <div className="skeleton h-3 w-20 rounded bg-[#EEEEF0]" />
-          <div className="skeleton mt-2 h-7 w-16 rounded bg-[#EEEEF0]" />
-        </Card>
+        <div key={i} className="rounded-[var(--r-flat)] border border-[var(--rule)] p-[var(--s-4)]">
+          <div className="skeleton h-3 w-20 bg-[var(--rule)]" />
+          <div className="skeleton mt-[var(--s-2)] h-[26px] w-16 bg-[var(--rule)]" />
+        </div>
       ))}
     </div>
   );
@@ -190,13 +237,13 @@ export function StatSkeletons({ count = 4 }: { count?: number }) {
 export function SeverityPill({ severity }: { severity: 'safe' | 'caution' | 'blocked' }) {
   const style =
     severity === 'blocked'
-      ? 'bg-[#FFF1F0] text-[#C7362D]'
+      ? 'bg-[var(--paper)] text-[var(--live)]'
       : severity === 'caution'
-        ? 'bg-amber-50 text-amber-900'
-        : 'bg-[#EBF7EF] text-[#166B35]';
+        ? 'bg-[var(--paper)] text-[var(--ink-2)]'
+        : 'bg-[var(--paper)] text-[var(--accent)]';
   const text = severity === 'blocked' ? 'Someone acted on this' : severity === 'caution' ? 'Check first' : 'Unreferenced';
   return (
-    <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide ${style}`}>
+    <span className={`shrink-0 rounded-[var(--r-flat)] px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide ${style}`}>
       {text}
     </span>
   );

@@ -37,15 +37,41 @@ interface RepeatConnection {
   eventCount: number;
 }
 
+/**
+ * The eight figures, and what they LOST.
+ *
+ * Each row used to carry three colour fields — `cardBg`, `iconBg` and `textColor` — drawn from a
+ * different Tailwind hue per stat: blue, green, purple, orange, red, teal, pink. Eight tinted
+ * grounds, eight filled icon chips and eight coloured numbers, on one screen.
+ *
+ * That is a categorical scale used as DECORATION, which is the specific thing the direction rules
+ * out: there is one accent and it means "you can act on this", everything else is greyscale so that
+ * cover images are the only colour in the product. None of the seven hues carried information —
+ * "Connections" is not more purple than "Attended" is green — and the palette has no tint layer to
+ * express them in even if they had. The icon badges went with them: a filled glyph in a coloured
+ * square is the loudest element in a cell whose actual content is a number.
+ *
+ * What is left is the number, its label and one clause of context, which is all a figure ever said.
+ * The cells are hairline-separated on the page ground rather than eight floating cards, so the grid
+ * reads as one table — and `tnum` keeps the column of figures from shifting width as it updates.
+ */
 const STAT_CARDS = (stats: Stats) => [
-  { label: 'Total Events',     value: stats.totalEvents,    sub: 'In database',        iconBg: 'bg-[#1D1D1F]',  textColor: 'text-[#1D1D1F]', cardBg: 'bg-white',       icon: 'event' },
-  { label: 'This Month',       value: stats.eventsThisMonth, sub: 'New events',         iconBg: 'bg-[#0071E3]',  textColor: 'text-[#0071E3]', cardBg: 'bg-blue-50',     icon: 'calendar_today' },
-  { label: 'Attended',         value: stats.attendedEvents, sub: `of ${stats.trackedEvents} tracked`, iconBg: 'bg-green-500',  textColor: 'text-green-600', cardBg: 'bg-green-50',    icon: 'check_circle' },
-  { label: 'Connections',      value: stats.totalConnections, sub: 'Total contacts',    iconBg: 'bg-purple-500', textColor: 'text-purple-600', cardBg: 'bg-purple-50',   icon: 'group' },
-  { label: 'Follow-ups',       value: stats.pendingFollowUps, sub: 'Action required',   iconBg: 'bg-orange-500', textColor: 'text-orange-600', cardBg: 'bg-orange-50',   icon: 'schedule' },
-  { label: 'Target Cos',       value: stats.targetCompanyEvents, sub: 'From target list', iconBg: 'bg-red-500',  textColor: 'text-red-600',   cardBg: 'bg-red-50',      icon: 'target' },
-  { label: 'Attendance Rate',  value: `${stats.trackedEvents > 0 ? Math.round((stats.attendedEvents / stats.trackedEvents) * 100) : 0}%`, sub: 'Of tracked events', iconBg: 'bg-teal-500', textColor: 'text-teal-600', cardBg: 'bg-teal-50', icon: 'trending_up' },
-  { label: 'Avg Connections',  value: stats.attendedEvents > 0 ? (stats.totalConnections / stats.attendedEvents).toFixed(1) : '0', sub: 'Per event attended', iconBg: 'bg-pink-500', textColor: 'text-pink-600', cardBg: 'bg-pink-50', icon: 'people' },
+  { label: 'Total events', value: stats.totalEvents, sub: 'in the corpus' },
+  { label: 'This month', value: stats.eventsThisMonth, sub: 'newly scraped' },
+  { label: 'Attended', value: stats.attendedEvents, sub: `of ${stats.trackedEvents} tracked` },
+  { label: 'Connections', value: stats.totalConnections, sub: 'people recorded' },
+  { label: 'Follow-ups', value: stats.pendingFollowUps, sub: 'still owed' },
+  { label: 'Target companies', value: stats.targetCompanyEvents, sub: 'events on your list' },
+  {
+    label: 'Attendance rate',
+    value: `${stats.trackedEvents > 0 ? Math.round((stats.attendedEvents / stats.trackedEvents) * 100) : 0}%`,
+    sub: 'of what you tracked',
+  },
+  {
+    label: 'Connections per event',
+    value: stats.attendedEvents > 0 ? (stats.totalConnections / stats.attendedEvents).toFixed(1) : '0',
+    sub: 'averaged over attended',
+  },
 ];
 
 export default function DashboardPage() {
@@ -102,7 +128,7 @@ export default function DashboardPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#F5F5F7]">
+    <div className="min-h-screen bg-[var(--paper)]">
       {/* Material Symbols is loaded once in app/layout.tsx — a per-page <link>
           here duplicated the request on every dashboard visit. */}
 
@@ -127,35 +153,41 @@ export default function DashboardPage() {
           hero is the loudest possible element and it appeared on exactly one page, which is why
           this screen read as belonging to a different product.
         */}
-        <section className="px-5 md:px-8 pt-8 pb-2">
+        <header className="rule-b px-5 md:px-8 pt-[var(--s-8)] pb-[var(--s-4)]">
           <div className="max-w-[1200px] mx-auto">
-            <h1 className="t-display text-[#1D1D1F] mb-1">Dashboard</h1>
-            <p className="text-[#6E6E73] text-[15px]">Your networking &amp; event stats</p>
+            <h1 className="ty-section text-[var(--ink)]">Dashboard</h1>
+            <p className="ty-meta mt-[var(--s-1)]">Who you have met, and who you still owe a reply.</p>
           </div>
-        </section>
+        </header>
 
-        <div className="max-w-[1200px] mx-auto px-5 md:px-20 py-8">
+        <div className="max-w-[1200px] mx-auto px-5 md:px-8 py-[var(--s-8)]">
           {loading ? (
             <div className="flex justify-center items-center py-24">
               <div className="spinner" />
             </div>
           ) : (
             <>
-              {/* Stats grid */}
+              {/*
+                A RULED GRID, not eight cards. The cell borders are one hairline each, collapsed by
+                pulling the grid's own right/bottom edge off with a negative margin, so the block
+                reads as a table rather than as floating tiles with a shadow that composites to
+                nothing anyway (`--lift-1` is `none`).
+              */}
               {stats && (
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+                <div className="mb-[var(--s-8)] grid grid-cols-2 md:grid-cols-4 border-t border-l border-[var(--rule)]">
                   {STAT_CARDS(stats).map(card => (
-                    <div key={card.label} className={`${card.cardBg} rounded-[18px] p-5 card-shadow`}>
-                      {/* Icon badge */}
-                      <div className={`w-9 h-9 rounded-xl ${card.iconBg} flex items-center justify-center mb-3`}>
-                        <span aria-hidden="true" className="material-symbols-outlined text-white text-[18px]"
-                          style={{ fontVariationSettings: "'FILL' 1" }}>
-                          {card.icon}
-                        </span>
-                      </div>
-                      <p className={`text-[28px] font-bold leading-none ${card.textColor}`}>{card.value}</p>
-                      <p className="text-[11px] font-semibold text-[#86868B] mt-1">{card.label}</p>
-                      <p className="text-[10px] text-[#86868B] mt-0.5">{card.sub}</p>
+                    <div
+                      key={card.label}
+                      className="border-b border-r border-[var(--rule)] p-[var(--s-4)]"
+                    >
+                      <p className="ty-meta">{card.label}</p>
+                      <p className="tnum mt-[var(--s-2)] text-[28px] font-semibold leading-none tracking-[-0.02em] text-[var(--ink)]">
+                        {card.value}
+                      </p>
+                      {/* NOT `.ty-meta` plus a size utility. `globals.css` is UNLAYERED, so its
+                          classes outrank every Tailwind utility regardless of source order —
+                          `ty-meta text-[12px]` silently renders at 13px. Measured, not assumed. */}
+                      <p className="mt-[var(--s-1)] text-[12px] leading-snug text-[var(--ink-2)]">{card.sub}</p>
                     </div>
                   ))}
                 </div>
@@ -163,94 +195,115 @@ export default function DashboardPage() {
 
               {/* Two-column panels */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Pending follow-ups */}
-                <section className="bg-white rounded-[18px] card-shadow p-6">
-                  <div className="flex items-center gap-2 mb-5">
-                    <span aria-hidden="true" className="material-symbols-outlined text-orange-500" style={{ fontVariationSettings: "'FILL' 1" }}>schedule</span>
-                    <h2 className="text-[17px] font-bold text-[#1D1D1F]">Pending Follow-ups</h2>
+                {/*
+                  Pending follow-ups.
+
+                  The orange goes to `--accent`, which is the recorded decision for this exact signal:
+                  `#FF9500` on the tracker's follow-ups strip was taken to `--accent` rather than
+                  `--ink-2` (which erases the one thing the strip exists to say) or `--live` (which
+                  spends the loudest colour in the palette on a permanent fixture, and is how an
+                  accent stops meaning anything). `--accent` means "you can act on this", and a due
+                  follow-up is precisely that.
+
+                  The filled icon glyph is gone. A `'FILL' 1` symbol in a hue beside a heading that
+                  already says "Pending follow-ups" is decoration competing with the count.
+
+                  Person names take the SERIF (`.ty-row-title`) — a person is a thing in the world,
+                  the same side of the split as an event title or a venue. Everything the app is
+                  saying about them — the role line, the due date, the count — is sans.
+                */}
+                <section className="rounded-[var(--r-flat)] border border-[var(--rule)] p-6">
+                  <div className="flex items-baseline gap-2 mb-5">
+                    <h2 className="ty-section text-[var(--ink)]">Follow-ups</h2>
                     {followUps.length > 0 && (
-                      <span className="ml-auto bg-orange-100 text-orange-700 text-[11px] font-bold px-2 py-0.5 rounded-full">
-                        {followUps.length}
+                      <span className="tnum ml-auto text-[13px] font-semibold text-[var(--accent)]">
+                        {followUps.length} due
                       </span>
                     )}
                   </div>
 
                   {followUps.length === 0 ? (
-                    <div className="text-center py-8">
-                      <span aria-hidden="true" className="material-symbols-outlined text-[40px] text-[#e5e5e5]">check_circle</span>
-                      <p className="text-[#86868B] text-sm mt-2">All caught up!</p>
+                    <div className="py-8 text-center">
+                      <p className="ty-meta">Nobody is waiting on you.</p>
                     </div>
                   ) : (
-                    <div className="space-y-3">
+                    <ul className="divide-y divide-[var(--rule)]">
                       {followUps.map((fu, idx) => (
-                        <div key={idx} className="flex items-start justify-between p-4 rounded-xl bg-[#f7f7f7] hover:bg-orange-50/50 transition-colors">
-                          <div className="flex-1">
-                            <p className="text-[13px] font-semibold text-[#1D1D1F]">{fu.connection.name}</p>
+                        <li key={idx} className="flex items-start justify-between gap-4 py-[var(--s-3)]">
+                          <div className="min-w-0 flex-1">
+                            <p className="ty-row-title text-[var(--ink)]">{fu.connection.name}</p>
                             {fu.connection.role && (
-                              <p className="text-[12px] text-[#86868B]">
-                                {fu.connection.role}{fu.connection.company ? ` @ ${fu.connection.company}` : ''}
+                              <p className="ty-meta mt-[var(--s-1)]">
+                                {fu.connection.role}{fu.connection.company ? ` · ${fu.connection.company}` : ''}
                               </p>
                             )}
-                            <p className="text-[11px] text-[#86868B] mt-1">From: {fu.eventTitle}</p>
-                            <p className="text-[11px] text-orange-600 font-medium mt-0.5">
-                              Due: {format(new Date(fu.connection.followUpAt), 'MMM d, yyyy')}
+                            <p className="ty-meta">
+                              {fu.eventTitle} · due {format(new Date(fu.connection.followUpAt), 'd MMM yyyy')}
                             </p>
                           </div>
                           <button
+                            type="button"
                             onClick={() => markFollowUpComplete(fu)}
-                            className="ml-4 bg-green-500 text-white text-[11px] font-bold px-3 py-1.5 rounded-full hover:bg-green-600 transition-colors shrink-0"
+                            className="pressable shrink-0 rounded-[var(--r-touch)] bg-[var(--accent)] px-3 py-1.5 text-[11px] font-bold text-[var(--accent-ink)] transition-colors"
                           >
                             Done
                           </button>
-                        </div>
+                        </li>
                       ))}
-                    </div>
+                    </ul>
                   )}
                 </section>
 
-                {/* Repeat connections */}
-                <section className="bg-white rounded-[18px] card-shadow p-6">
-                  <div className="flex items-center gap-2 mb-5">
-                    <span aria-hidden="true" className="material-symbols-outlined text-purple-500" style={{ fontVariationSettings: "'FILL' 1" }}>group</span>
-                    <h2 className="text-[17px] font-bold text-[#1D1D1F]">Repeat Connections</h2>
+                {/*
+                  Repeat connections — the same treatment, so the two panels read as one system.
+
+                  Purple had no home in nine values and, unlike the orange above, was not even
+                  standing for a state: it was the panel's decorative hue. The count that matters
+                  ("met at 3 events") is the information, so it is `--ink` and tabular rather than a
+                  coloured chip — this is the app's one genuine repeat-connection signal, and a purple
+                  pill made it look like a category tag.
+                */}
+                <section className="rounded-[var(--r-flat)] border border-[var(--rule)] p-6">
+                  <div className="flex items-baseline gap-2 mb-5">
+                    <h2 className="ty-section text-[var(--ink)]">Met more than once</h2>
                     {repeatConnections.length > 0 && (
-                      <span className="ml-auto bg-purple-100 text-purple-700 text-[11px] font-bold px-2 py-0.5 rounded-full">
+                      <span className="tnum ml-auto text-[13px] font-semibold text-[var(--ink-2)]">
                         {repeatConnections.length}
                       </span>
                     )}
                   </div>
 
                   {repeatConnections.length === 0 ? (
-                    <div className="text-center py-8">
-                      <span aria-hidden="true" className="material-symbols-outlined text-[40px] text-[#e5e5e5]">group_add</span>
-                      <p className="text-[#86868B] text-sm mt-2">No repeat connections yet</p>
+                    <div className="py-8 text-center">
+                      <p className="ty-meta">Nobody yet — this fills in once you meet the same person twice.</p>
                     </div>
                   ) : (
-                    <div className="space-y-3">
+                    <ul className="divide-y divide-[var(--rule)]">
                       {repeatConnections.slice(0, 8).map((conn, idx) => (
-                        <div key={idx} className="flex items-center justify-between p-4 rounded-xl bg-[#f7f7f7]">
-                          <div>
-                            <p className="text-[13px] font-semibold text-[#1D1D1F]">{conn.name}</p>
+                        <li key={idx} className="flex items-center justify-between gap-4 py-[var(--s-3)]">
+                          <div className="min-w-0">
+                            <p className="ty-row-title text-[var(--ink)]">{conn.name}</p>
                             {conn.details.role && (
-                              <p className="text-[12px] text-[#86868B]">
-                                {conn.details.role}{conn.details.company ? ` @ ${conn.details.company}` : ''}
+                              <p className="ty-meta mt-[var(--s-1)]">
+                                {conn.details.role}{conn.details.company ? ` · ${conn.details.company}` : ''}
                               </p>
                             )}
-                            <p className="text-[11px] text-purple-600 font-medium mt-0.5">
-                              Met at {conn.eventCount} events
+                            <p className="ty-meta">
+                              <span className="font-semibold text-[var(--ink)]">{conn.eventCount}</span> events
                             </p>
                           </div>
                           {conn.details.linkedin && (
                             <a href={conn.details.linkedin} target="_blank" rel="noopener noreferrer"
-                              className="text-[#0071E3] hover:text-blue-700 ml-4">
+                              aria-label={`${conn.name} on LinkedIn`}
+                              className="shrink-0 text-[var(--accent)] ml-4">
                               <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
                                 <path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z" />
                               </svg>
                             </a>
                           )}
-                        </div>
+                        </li>
                       ))}
-                    </div>
+                    </ul>
                   )}
                 </section>
               </div>

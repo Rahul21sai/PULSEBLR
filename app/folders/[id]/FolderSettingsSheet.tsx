@@ -109,7 +109,7 @@ export default function FolderSettingsSheet({
   }
 
   const field =
-    'mt-1.5 h-11 w-full rounded-xl bg-[#F7F7F9] px-3.5 text-[15px] text-[#1D1D1F] outline-none focus:shadow-[inset_0_0_0_2px_var(--blue)]';
+    'mt-1.5 h-11 w-full r-touch bg-[var(--paper)] px-3.5 text-[15px] text-[var(--ink)] shadow-[inset_0_0_0_1px_var(--rule)] outline-none focus:shadow-[inset_0_0_0_2px_var(--accent)]';
 
   return (
     <Sheet
@@ -131,12 +131,12 @@ export default function FolderSettingsSheet({
       )}
 
       <label className="block">
-        <span className="t-label text-[#8E8E93]">Name</span>
+        <span className="t-label text-[var(--ink-2)]">Name</span>
         <input value={name} onChange={e => setName(e.target.value)} className={field} />
       </label>
 
       <label className="mt-4 block">
-        <span className="t-label text-[#8E8E93]">Date</span>
+        <span className="t-label text-[var(--ink-2)]">Date</span>
         <input
           type="date"
           value={eventDate}
@@ -146,27 +146,27 @@ export default function FolderSettingsSheet({
       </label>
 
       <label className="mt-4 block">
-        <span className="t-label text-[#8E8E93]">Venue</span>
+        <span className="t-label text-[var(--ink-2)]">Venue</span>
         <input value={venue} onChange={e => setVenue(e.target.value)} className={field} />
       </label>
 
       <label className="mt-4 block">
-        <span className="t-label text-[#8E8E93]">Note</span>
+        <span className="t-label text-[var(--ink-2)]">Note</span>
         <textarea
           value={note}
           onChange={e => setNote(e.target.value)}
           rows={2}
-          className="mt-1.5 w-full resize-none rounded-xl bg-[#F7F7F9] px-3.5 py-2.5 text-[15px] leading-relaxed text-[#1D1D1F] outline-none focus:shadow-[inset_0_0_0_2px_var(--blue)]"
+          className="mt-1.5 w-full resize-none r-touch bg-[var(--paper)] px-3.5 py-2.5 text-[15px] leading-relaxed text-[var(--ink)] shadow-[inset_0_0_0_1px_var(--rule)] outline-none focus:shadow-[inset_0_0_0_2px_var(--accent)]"
         />
       </label>
 
       {/* Archive before delete, deliberately: it does what "clear this off my list" means and
           destroys nothing. */}
-      <div className="mt-6 border-t border-[color:var(--hairline)] pt-4">
-        <p className="t-label text-[#8E8E93]">
+      <div className="rule-t mt-6 pt-4">
+        <p className="t-label text-[var(--ink-2)]">
           {archived ? 'Archived' : 'Tidy up'}
         </p>
-        <p className="mt-1 text-[12.5px] leading-relaxed text-[#6E6E73]">
+        <p className="mt-1 text-[12.5px] leading-relaxed text-[var(--ink-2)]">
           {archived
             ? 'This folder is hidden from your folder list. Its people are untouched.'
             : 'Archiving hides it from your folder list and keeps everybody in it. Reversible.'}
@@ -181,14 +181,14 @@ export default function FolderSettingsSheet({
         </Button>
       </div>
 
-      <div className="mt-6 border-t border-[color:var(--hairline)] pt-4">
-        <p className="t-label text-[#C7362D]">Delete</p>
-        <p className="mt-1 text-[12.5px] leading-relaxed text-[#6E6E73]">
+      <div className="rule-t mt-6 pt-4">
+        <p className="t-label text-[var(--live)]">Delete</p>
+        <p className="mt-1 text-[12.5px] leading-relaxed text-[var(--ink-2)]">
           {/* The number, before the confirm — not after. */}
           {contactCount > 0 ? (
             <>
               This also deletes the{' '}
-              <strong className="text-[#1D1D1F]">
+              <strong className="text-[var(--ink)]">
                 {contactCount} {contactCount === 1 ? 'person' : 'people'}
               </strong>{' '}
               in it, including their notes and follow-ups. It cannot be undone. Export the CSV first

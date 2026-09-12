@@ -29,14 +29,14 @@ export default function RetryButton() {
           setTries(count => count + 1);
           startTransition(() => router.refresh());
         }}
-        className="pressable inline-flex min-h-[44px] items-center rounded-full bg-[#1D1D1F] px-5 text-label-md font-semibold text-white transition-colors hover:bg-black disabled:opacity-60"
+        className="pressable inline-flex min-h-[44px] items-center rounded-full bg-[var(--ink)] px-5 text-label-md font-semibold text-[var(--accent-ink)] transition-colors hover:bg-[var(--ink)] disabled:opacity-60"
       >
         {pending ? 'Trying again…' : 'Try again'}
       </button>
       {/* Said only after a failed retry, because "still not working" is different information from
           the first failure and is what tells the reader to stop pressing. */}
       {tries > 1 && !pending && (
-        <p className="mt-2 text-[12.5px] text-[#6E6E73]">
+        <p className="mt-2 text-[12.5px] text-[var(--ink-2)]">
           Still not loading. This is our end, not yours — the events themselves are fine.
         </p>
       )}

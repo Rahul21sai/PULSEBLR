@@ -81,14 +81,22 @@ interface FeedQuality {
 function Row({ row, actions }: { row: QRow; actions?: ReactNode }) {
   return (
     <li className="flex items-start gap-3 py-2.5">
+      {/*
+        TWO STATES, TWO VALUES — collapsed from three branches on purpose.
+
+        This was a three-way: accent above 70, `bg-amber-50 text-amber-900` for 50-69, ink-2 below.
+        The amber pair had no home in nine values, and converting it to the `warn` tone (`--ink-2`,
+        the quietest of the four) made the middle branch byte-identical to the low one — a live
+        ternary testing a threshold that could no longer change the output. Rather than leave a
+        condition that reads as meaningful and is not, the pill says the one thing it can support:
+        this row ranks well enough to reach a reader, or it does not. The exact number is beside it.
+      */}
       <span
         title="Connection score — where this sits in the default feed's sort"
-        className={`tnum mt-0.5 w-9 shrink-0 rounded-full px-1.5 py-0.5 text-center text-[11px] font-bold ${
+        className={`tnum mt-0.5 w-9 shrink-0 rounded-[var(--r-flat)] px-1.5 py-0.5 text-center text-[11px] font-bold ${
           (row.connectionScore ?? 0) >= 70
-            ? 'bg-[#EBF7EF] text-[#166B35]'
-            : (row.connectionScore ?? 0) >= 50
-              ? 'bg-amber-50 text-amber-900'
-              : 'bg-[#f3f3f5] text-[#6E6E73]'
+            ? 'bg-[var(--paper)] text-[var(--accent)]'
+            : 'bg-[var(--paper)] text-[var(--ink-2)]'
         }`}
       >
         {row.connectionScore ?? '—'}
@@ -96,11 +104,11 @@ function Row({ row, actions }: { row: QRow; actions?: ReactNode }) {
       <div className="min-w-0 flex-1">
         <Link
           href={`/events/${row.id}`}
-          className="block truncate text-[13.5px] font-semibold text-[#1D1D1F] hover:text-[#0071E3]"
+          className="block truncate text-[13.5px] font-semibold text-[var(--ink)] hover:text-[var(--accent)]"
         >
           {row.title}
         </Link>
-        <p className="truncate text-[12px] text-[#6E6E73]">
+        <p className="truncate text-[12px] text-[var(--ink-2)]">
           {[
             row.startDateTime ? shortDateIST(row.startDateTime) : null,
             row.source,
@@ -111,13 +119,13 @@ function Row({ row, actions }: { row: QRow; actions?: ReactNode }) {
             .join(' · ')}
         </p>
         {row.offCityField && (
-          <p className="mt-0.5 text-[11.5px] text-[#C7362D]">
+          <p className="mt-0.5 text-[11.5px] text-[var(--live)]">
             {row.offCity} — matched on <strong>{row.offCityField}</strong>:{' '}
             <span className="font-mono">{row.offCityValue}</span>
           </p>
         )}
         {row.signals && row.signals.length > 0 && (
-          <p className="mt-0.5 truncate font-mono text-[11px] text-[#8E8E93]" title={row.signals.join('  ')}>
+          <p className="mt-0.5 truncate font-mono text-[11px] text-[var(--ink-2)]" title={row.signals.join('  ')}>
             {row.signals.length} advert signature{row.signals.length === 1 ? '' : 's'}: {row.signals[0]}
           </p>
         )}
@@ -344,7 +352,7 @@ export default function FeedQualityPanel({ onChanged }: { onChanged: () => void 
             {data.techDisagreement.hidden.rows.length === 0 ? (
               <NoRows>Nothing is hidden. Every event with tech categories is flagged tech.</NoRows>
             ) : (
-              <ul className="divide-y divide-[#f0f0f2]">
+              <ul className="divide-y divide-[var(--rule)]">
                 {data.techDisagreement.hidden.rows.map(r => (
                   <Row key={r.id} row={r} actions={techButton(r)} />
                 ))}
@@ -359,7 +367,7 @@ export default function FeedQualityPanel({ onChanged }: { onChanged: () => void 
             {data.techDisagreement.unbacked.rows.length === 0 ? (
               <NoRows>Every flagged event has a tech category behind it.</NoRows>
             ) : (
-              <ul className="divide-y divide-[#f0f0f2]">
+              <ul className="divide-y divide-[var(--rule)]">
                 {data.techDisagreement.unbacked.rows.map(r => (
                   <Row key={r.id} row={r} actions={<>{techButton(r)}{deleteButton(r)}</>} />
                 ))}
@@ -368,7 +376,7 @@ export default function FeedQualityPanel({ onChanged }: { onChanged: () => void 
           </Panel>
 
           <Card padding="tight">
-            <p className="text-[12.5px] leading-relaxed text-[#6E6E73]">
+            <p className="text-[12.5px] leading-relaxed text-[var(--ink-2)]">
               <strong>Fixing these in bulk is a script, not a button.</strong> Re-tagging replaces
               categories through the LLM and takes minutes — longer than a serverless request lives —
               and <code className="font-mono">--inconsistent</code> is almost always the right flag:
@@ -378,7 +386,7 @@ export default function FeedQualityPanel({ onChanged }: { onChanged: () => void 
             <Well className="mt-2">
               <code className="font-mono">{data.techDisagreement.fixWith}</code>
               <br />
-              <span className="text-[#8E8E93]">
+              <span className="text-[var(--ink-2)]">
                 Preview it first with{' '}
                 <code className="font-mono">npx tsx scripts/diag-retag-preview.ts</code> — it writes
                 nothing, and the controls matter more than the broken rows.
@@ -407,7 +415,7 @@ export default function FeedQualityPanel({ onChanged }: { onChanged: () => void 
                 sort puts them where readers actually look. Removing one is restorable; flipping it to
                 non-tech is the gentler correction and keeps the row for the record.
               </Banner>
-              <ul className="mt-3 divide-y divide-[#f0f0f2]">
+              <ul className="mt-3 divide-y divide-[var(--rule)]">
                 {data.courseAdverts.rows.map(r => (
                   <Row key={r.id} row={r} actions={<>{techButton(r)}{deleteButton(r)}</>} />
                 ))}
@@ -436,7 +444,7 @@ export default function FeedQualityPanel({ onChanged }: { onChanged: () => void 
                 legitimately be elsewhere, and nothing could re-create it. Anything a user tracked or
                 built a folder for will refuse to delete without an explicit override.
               </Banner>
-              <ul className="mt-3 divide-y divide-[#f0f0f2]">
+              <ul className="mt-3 divide-y divide-[var(--rule)]">
                 {data.offCity.rows.map(r => (
                   <Row key={r.id} row={r} actions={deleteButton(r)} />
                 ))}
@@ -477,9 +485,9 @@ export default function FeedQualityPanel({ onChanged }: { onChanged: () => void 
           ) : (
             <div className="mt-3 space-y-3">
               {data.duplicates.sample.map(g => (
-                <div key={g.clusterKey} className="rounded-xl bg-[#F7F7F9] p-3">
-                  <p className="truncate font-mono text-[11.5px] text-[#8E8E93]">{g.clusterKey}</p>
-                  <ul className="mt-1 divide-y divide-black/5">
+                <div key={g.clusterKey} className="rounded-xl bg-[var(--paper)] p-3">
+                  <p className="truncate font-mono text-[11.5px] text-[var(--ink-2)]">{g.clusterKey}</p>
+                  <ul className="mt-1 divide-y divide-[var(--rule)]">
                     {g.rows.map(r => (
                       <Row key={r.id} row={r} actions={deleteButton(r)} />
                     ))}
@@ -514,7 +522,7 @@ export default function FeedQualityPanel({ onChanged }: { onChanged: () => void 
                   are pinned and simply do not show.
                 </Banner>
               )}
-              <ul className="mt-3 divide-y divide-[#f0f0f2]">
+              <ul className="mt-3 divide-y divide-[var(--rule)]">
                 {data.spotlight.rows.map((r, i) => (
                   <Row
                     key={r.id}
@@ -522,7 +530,7 @@ export default function FeedQualityPanel({ onChanged }: { onChanged: () => void 
                     actions={
                       <>
                         {i < 2 && (
-                          <span className="rounded-full bg-[#1D1D1F] px-2 py-0.5 text-[10.5px] font-bold uppercase tracking-wide text-white">
+                          <span className="rounded-full bg-[var(--ink)] px-2 py-0.5 text-[10.5px] font-bold uppercase tracking-wide text-[var(--accent-ink)]">
                             live
                           </span>
                         )}

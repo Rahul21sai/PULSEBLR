@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import AppShell from '../components/AppShell';
 import FacetRail, { FacetToggle } from '../components/FacetRail';
 import MergeSheet, { sharedKeyEvidence } from './MergeSheet';
-import { Banner, Button, ButtonLink, Card, EmptyState, PageHeader, Skeleton } from '../components/ui';
+import { Banner, Button, ButtonLink, Skeleton } from '../components/ui';
 import { dayHeading, monogram, relativeTime, shortDateIST } from '@/lib/format';
 import {
   INTERACTION_ICON,
@@ -84,56 +84,6 @@ const SORT_OPTIONS: Array<{ value: Sort; label: string }> = [
 
 const DEFAULT_SORT: Sort = 'recent';
 
-/**
- * The card the empty state draws, built at MODULE LOAD rather than in render.
- *
- * `Date.now()` in a component body is refused by `react-hooks/purity`, and the rule is right: an
- * impure read during render produces values that change on any incidental re-render. Module scope is
- * not render, so the dates are computed once — the example then ages by however long the tab stays
- * open, which is nothing, and it never participates in hydration because this branch is unreachable
- * until a client fetch has resolved (`loading` starts true, so the first render is skeletons).
- *
- * Dates are RELATIVE so the example never ages into "36mo ago"; a hardcoded 2026 date would.
- */
-const EXAMPLE_PERSON: PersonDTO = (() => {
-  const daysAgo = (days: number) => new Date(Date.now() - days * 86400000).toISOString();
-  return {
-    _id: 'example',
-    displayName: 'Asha Rao',
-    company: 'Razorpay',
-    role: 'Staff Engineer, payments',
-    headline: null,
-    overrides: { displayName: null, company: null, role: null },
-    contactKeys: ['li:asha-rao-example'],
-    tags: ['hiring'],
-    ownTags: ['hiring'],
-    companies: ['Razorpay'],
-    isTargetCompany: true,
-    lastInteractionAt: daysAgo(5),
-    nextActionAt: null,
-    eventCount: 2,
-    interactionCount: 3,
-    createdAt: daysAgo(44),
-    updatedAt: daysAgo(5),
-    linkedin: null,
-    recent: [
-      {
-        _id: 'example-note',
-        kind: 'note',
-        at: daysAgo(5),
-        note: 'Wants an intro to whoever runs our payments platform — said to ping her after Diwali.',
-      },
-      {
-        _id: 'example-met',
-        kind: 'met',
-        at: daysAgo(44),
-        eventId: 'example-event',
-        eventTitle: 'IndiaFOSS 2026',
-        eventStartAt: daysAgo(44),
-      },
-    ],
-  };
-})();
 
 export default function PeoplePage() {
   const [people, setPeople] = useState<PersonDTO[]>([]);
@@ -165,7 +115,7 @@ export default function PeoplePage() {
 
   /**
    * SELECTION MODE. Off by default, because the common intent on this page is to open somebody.
-   * While it is on, a card is a selection target rather than a link — see the file header for why that
+   * While it is on, a row is a selection target rather than a link — see the file header for why that
    * has to be a mode and not an overlay.
    */
   const [selecting, setSelecting] = useState(false);
@@ -467,12 +417,30 @@ export default function PeoplePage() {
   return (
     <AppShell title="People">
       <div className="mx-auto max-w-[1100px] px-4 pt-4 md:px-8">
-        <PageHeader
-          title="Everyone you've met"
-          /* Names the three things a card now actually carries, rather than instructing the reader to
-             use filters that are visibly right there. */
-          subtitle="One card per person — where you met them, what you wrote down, and who still needs a reply."
-          action={
+        {/*
+          THE HEADING IS SANS, AND THAT IS THE SEMANTIC RULE RATHER THAN A PREFERENCE. "Everyone
+          you've met" is the PRODUCT naming one of its own surfaces, so it takes `.ty-section`;
+          the serif is reserved for things that exist in the city, which on this page means the
+          people's names in the rows below. A serif page title would put the app's voice and the
+          city's content in the same face and spend the distinction the whole system rests on.
+        */}
+        <div className="mb-[var(--s-6)] flex flex-wrap items-start justify-between gap-[var(--s-4)]">
+          {/* `max-w-[62ch]` on the text and NO `shrink-0` on the actions, measured rather than
+              guessed: with `shrink-0` the three buttons in selection mode kept their max-content
+              width and pushed the document to 419px in a 390px viewport — a sideways scroll on the
+              page's own header. Without it the group shrinks, its inner row wraps, and the cap keeps
+              the two halves on one line from 768 up so the actions still sit top-right. */}
+          <div className="min-w-0 basis-full md:max-w-[62ch] md:basis-auto">
+            <h1 className="ty-section text-[var(--ink)]">Everyone you&apos;ve met</h1>
+            {/* Names the three things a ROW now actually carries. It said "card" while the rows were
+                cards; they are hairline-ruled rows now, and copy that describes the old shape is the
+                cheapest kind of drift. */}
+            <p className="mt-[var(--s-2)] ty-body text-[color:var(--ink-2)] max-w-[62ch]">
+              One row per person — where you met them, what you wrote down, and who still needs a
+              reply.
+            </p>
+          </div>
+          <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               {/*
                 THE MODE SWITCH. Only offered when there is something to select — a "Select" button
@@ -496,8 +464,8 @@ export default function PeoplePage() {
                 Scan
               </ButtonLink>
             </div>
-          }
-        />
+          </div>
+        </div>
 
         {error && (
           <div className="mb-4">
@@ -515,10 +483,13 @@ export default function PeoplePage() {
           these — and there was no route, no UI and no service call to act on it, so the same human
           stayed three rows. Nothing is merged automatically: a wrong merge destroys the distinction
           between two real people and is hard to unwind, while an un-merged duplicate is untidy.
+
+          A TONE IS THE INK PLUS A LEFT RULE ON THE PAPER GROUND — `Banner` in `ui.tsx`, copied
+          rather than approximated, because there is no tint layer in nine values. It cannot BE a
+          `Banner`: this one carries an action, and `Banner` takes only text children.
         */}
         {pairs.length > 0 && (
-          <div className="mb-4">
-            <Card padding="tight">
+          <div className="mb-[var(--s-4)] border-l-2 border-[var(--accent)] bg-[var(--paper)] px-[var(--s-4)] py-[var(--s-3)]">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="min-w-0">
                   <p className="text-[13.5px] font-semibold text-[color:var(--ink)]">
@@ -545,7 +516,6 @@ export default function PeoplePage() {
                   Have a look
                 </Button>
               </div>
-            </Card>
           </div>
         )}
 
@@ -563,14 +533,14 @@ export default function PeoplePage() {
               onChange={e => setQ(e.target.value)}
               placeholder="Name, company, or role"
               aria-label="Search people"
-              className="h-11 w-full rounded-xl bg-white pl-10 pr-3 text-[14.5px] text-[color:var(--ink)] shadow-[inset_0_0_0_1px_var(--hairline)] outline-none focus:shadow-[inset_0_0_0_2px_var(--blue)]"
+              className="h-11 w-full r-touch bg-[var(--surface)] pl-10 pr-3 text-[14.5px] text-[color:var(--ink)] shadow-[inset_0_0_0_1px_var(--rule)] outline-none focus:shadow-[inset_0_0_0_2px_var(--accent)]"
             />
           </div>
           <select
             value={sort}
             onChange={e => pickSort(e.target.value as Sort)}
             aria-label="Sort people"
-            className="h-11 rounded-xl bg-white px-3 text-[13.5px] font-semibold text-[color:var(--ink)] shadow-[inset_0_0_0_1px_var(--hairline)] outline-none focus:shadow-[inset_0_0_0_2px_var(--blue)]"
+            className="h-11 r-touch bg-[var(--surface)] px-3 text-[13.5px] font-semibold text-[color:var(--ink)] shadow-[inset_0_0_0_1px_var(--rule)] outline-none focus:shadow-[inset_0_0_0_2px_var(--accent)]"
           >
             {SORT_OPTIONS.map(option => (
               <option key={option.value} value={option.value}>
@@ -604,7 +574,7 @@ export default function PeoplePage() {
             <button
               type="button"
               onClick={clearAll}
-              className="relative h-9 rounded-full px-3 text-[12.5px] font-semibold text-[color:var(--blue)] hover:underline [touch-action:manipulation] after:absolute after:inset-x-0 after:top-1/2 after:h-11 after:-translate-y-1/2 after:content-['']"
+              className="relative h-9 r-touch px-3 ty-meta font-semibold text-[color:var(--accent)] hover:underline [touch-action:manipulation] after:absolute after:inset-x-0 after:top-1/2 after:h-11 after:-translate-y-1/2 after:content-['']"
             >
               Clear filters
             </button>
@@ -638,9 +608,11 @@ export default function PeoplePage() {
 
         {/* ── Bulk bar — only in selection mode, and only with a selection ─ */}
         {selecting && selected.size > 0 && (
-          /* Sticky under the mobile header so it stays reachable while scrolling a long list. */
-          <div className="sticky top-16 z-20 mb-3">
-            <Card padding="tight">
+          /* Sticky under the mobile header (`--topbar-h`), so it stays reachable while scrolling a
+             long list. It does NOT take `.sticky-bar`: that class carries `--shadow-sticky`, whose
+             blur is thrown UPWARD for a bottom bar, so on a top-sticky element it is invisible and
+             still spends the codebase's one shadow. A hairline underneath does the same job. */
+          <div className="sticky top-[var(--topbar-h)] z-20 mb-[var(--s-3)] rule-b bg-[var(--surface)] px-[var(--s-4)] py-[var(--s-3)]">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-[13px] font-semibold text-[color:var(--ink)]">
                   <span className="tnum">{selected.size}</span> selected
@@ -655,7 +627,7 @@ export default function PeoplePage() {
                   maxLength={40}
                   placeholder="Tag them all…"
                   aria-label="Tag for the selected people"
-                  className="h-11 min-w-[160px] flex-1 rounded-full bg-[#F7F7F9] px-3.5 text-[13.5px] text-[color:var(--ink)] outline-none focus:shadow-[inset_0_0_0_2px_var(--blue)]"
+                  className="h-11 min-w-[160px] flex-1 r-touch bg-[var(--paper)] px-3.5 text-[13.5px] text-[color:var(--ink)] shadow-[inset_0_0_0_1px_var(--rule)] outline-none focus:shadow-[inset_0_0_0_2px_var(--accent)]"
                 />
                 {/* Native datalist rather than a bespoke popover: it is a one-field type-ahead, and
                     the browser's own affordance beats a hand-rolled one. */}
@@ -686,19 +658,18 @@ export default function PeoplePage() {
                   Cancel
                 </Button>
               </div>
-            </Card>
           </div>
         )}
 
         {/* ── Results ───────────────────────────────────────────────────── */}
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-          <p className="text-[12.5px] text-[color:var(--ink-2)]">
+          <p className="ty-meta">
             {loading ? (
               'Loading…'
             ) : selecting ? (
               <>
                 <strong className="tnum text-[color:var(--ink)]">{selected.size}</strong> of{' '}
-                <span className="tnum">{people.length}</span> selected — tap a card to pick it,
+                <span className="tnum">{people.length}</span> selected — tap a row to pick it,
                 Escape to stop
               </>
             ) : (
@@ -731,32 +702,37 @@ export default function PeoplePage() {
         {loading ? (
           /* Skeletons, never a spinner — and shaped like the real card (identity tile, name, meta)
              so the list does not reflow the moment the rows land. */
-          <div className="flex flex-col gap-2">
+          <div className="rule-t">
             {[0, 1, 2, 3, 4].map(i => (
-              <Card key={i} padding="tight">
+              <div key={i} className="rule-b py-[var(--s-4)]">
                 <div className="flex items-start gap-3">
-                  <Skeleton className="h-10 w-10 rounded-xl" />
+                  <Skeleton className="h-10 w-10 rounded-none" />
                   <div className="min-w-0 flex-1">
-                    <Skeleton className="h-4 w-1/3" />
+                    <Skeleton className="h-5 w-1/3" />
                     <Skeleton className="mt-2 h-3 w-1/2" />
                     <Skeleton className="mt-3 h-3 w-2/3" />
                   </div>
                 </div>
-              </Card>
+              </div>
             ))}
           </div>
         ) : people.length === 0 ? (
           activeFilters ? (
-            <EmptyState
-              icon="search_off"
-              title="Nobody matches that"
-              body="Everyone you have met is still here — this combination of filters just has nobody in it."
-              action={
+            /* Flat and ruled rather than a centred card: a radius here would be the only rounded
+               container on a page of hairline rows, and the icon-over-two-lines centred block is the
+               generated default this system replaces. */
+            <div className="rule-y py-[var(--s-8)]">
+              <h2 className="ty-row-title text-[var(--ink)]">Nobody matches that</h2>
+              <p className="mt-[var(--s-2)] ty-body max-w-[52ch] text-[color:var(--ink-2)]">
+                Everyone you have met is still here — this combination of filters just has nobody in
+                it.
+              </p>
+              <div className="mt-[var(--s-4)]">
                 <Button tone="quiet" onClick={clearAll}>
                   Clear filters
                 </Button>
-              }
-            />
+              </div>
+            </div>
           ) : (
             <NoPeopleYet />
           )
@@ -768,10 +744,13 @@ export default function PeoplePage() {
               (a button takes phrasing content only), which is also why the card below is built out of
               spans rather than headings.
             */}
-            <ul className="flex flex-col gap-2">
+            {/* THE RULED LIST. `rule-t` on the container plus `rule-b` on each row draws one
+                hairline between neighbours and closes the list at both ends; a gap and a card per row
+                is what this replaces. */}
+            <ul className="rule-t">
               {people.map(person => (
-                <li key={person._id}>
-                  <PersonCard
+                <li key={person._id} className="rule-b">
+                  <PersonRow
                     person={person}
                     selecting={selecting}
                     selected={selected.has(person._id)}
@@ -817,16 +796,14 @@ export default function PeoplePage() {
           screen to answer it).
         */}
         {!loading && people.length > 0 && facets.tags.length === 0 && facets.tagVocabulary.length === 0 && (
-          <div className="mt-8 mb-4">
-            <Card padding="tight">
-              <p className="text-[12.5px] leading-relaxed text-[color:var(--ink-2)]">
+          <div className="mt-[var(--s-12)] mb-[var(--s-4)] rule-t pt-[var(--s-4)]">
+              <p className="ty-body max-w-[68ch] text-[13px] leading-relaxed text-[color:var(--ink-2)]">
                 <strong className="text-[color:var(--ink)]">You can add your own tags.</strong> The company rail
                 only knows the 375 Bengaluru employers in our registry. When somebody works somewhere it
                 has never heard of — or you want to find &ldquo;the hardware people&rdquo; later — tag
                 them on their own page, or select several here and tag them together. Your tags stay
                 yours: they are never read back as employer evidence.
               </p>
-            </Card>
           </div>
         )}
       </div>
@@ -853,15 +830,20 @@ export default function PeoplePage() {
 }
 
 /* ══════════════════════════════════════════════════════════════════════════════════════════════
-   THE CARD, AND THE ONE QUESTION IT IS DESIGNED TO ANSWER
+   THE ROW, AND THE ONE QUESTION IT IS DESIGNED TO ANSWER
    ══════════════════════════════════════════════════════════════════════════════════════════════
 
    Not "display a contact record" — the question is: WHAT DOES A READER NEED TO RECALL SOMEBODY THEY
    MET ONCE, SIX WEEKS AGO, AT AN EVENT THEY HALF-REMEMBER? Three things, in this order:
 
      1. WHERE AND WHEN YOU MET THEM. This is the memory hook. It used to be hidden behind a disclosure
-        labelled "History — met at 2 events", so the single most recall-bearing fact on the card cost a
+        labelled "History — met at 2 events", so the single most recall-bearing fact on the row cost a
         tap and the visible line was a label describing content nobody could see.
+
+   IT IS A HAIRLINE-RULED ROW, NOT A CARD, and that is the Phase 3 change. Forty rounded surfaces
+   floating on the page ground made the list read as forty objects; one hairline between neighbours
+   reads as one list. The radius went with the shell: `--r-touch` (4px) now means "this responds",
+   which is a claim a whole row-shaped container was making forty times over falsely.
      2. WHAT YOU WROTE DOWN. `person.recent` has carried the notes all along and the card rendered none
         of them. This is also the thing no competitor has at any price: aggregated Luma and Meetup
         listings are free, and nobody else holds your note about the person you met at them.
@@ -908,7 +890,7 @@ function IdentityTile({
     return (
       <span
         aria-hidden="true"
-        className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[#0071E3] text-white"
+        className="grid h-10 w-10 shrink-0 place-items-center bg-[var(--accent)] text-[var(--accent-ink)]"
       >
         <span className="material-symbols-outlined text-[20px] leading-none">check</span>
       </span>
@@ -917,12 +899,15 @@ function IdentityTile({
   return (
     <span
       aria-hidden="true"
-      className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl text-[14px] font-semibold tracking-[-0.02em] ${
+      /* FLAT, because radius is the signal that says "this responds" and the tile is not the
+         target — the whole row is. `--font-serif` rather than the retired `--font-display` alias:
+         initials are a person's name, which is the serif's own side of the split. */
+      className={`grid h-10 w-10 shrink-0 place-items-center text-[15px] font-medium tracking-[-0.01em] ${
         selecting
-          ? 'bg-white text-[color:var(--ink-2)] shadow-[inset_0_0_0_1.5px_var(--hairline-strong)]'
-          : 'bg-[#F7F7F9] text-[color:var(--ink-2)]'
+          ? 'bg-[var(--surface)] text-[color:var(--ink-2)] shadow-[inset_0_0_0_1px_var(--rule)]'
+          : 'bg-[var(--paper)] text-[color:var(--ink-2)]'
       }`}
-      style={{ fontFamily: 'var(--font-display)' }}
+      style={{ fontFamily: 'var(--font-serif)' }}
     >
       {monogram(name)}
     </span>
@@ -952,11 +937,17 @@ function IdentityTile({
  * for a non-text graphic (WCAG 1.4.11) — which is what the dot is: `aria-hidden`, carrying no meaning
  * of its own, with the word "target" beside it in `--ink-2` at 6.65:1 doing the actual telling.
  */
-const PILL_BASE =
-  'inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold leading-[1.45]';
-const PILL_BOUND = `${PILL_BASE} text-[color:var(--ink-2)] shadow-[inset_0_0_0_1px_var(--hairline-strong)]`;
+/*
+ * PHASE 3: these are `globals.css`'s OWN pill classes now, not a third local definition of them.
+ * `.pill` + `.pill-quiet` is the bounded fact (transparent, one hairline, secondary ink) and
+ * `.pill-live` is the single alarm state (transparent, a `--live` ring, `--live` text). The local
+ * pair reimplemented both a shade off, which is how a product ends up with four greys for one idea.
+ * `shrink-0` is kept because `.pill` does not set it and these sit in a wrapping flex row.
+ */
+const PILL_BOUND = 'pill pill-quiet shrink-0';
+const PILL_URGENT = 'pill pill-live shrink-0';
 
-function PersonCard({
+function PersonRow({
   person,
   selecting,
   selected,
@@ -1000,7 +991,9 @@ function PersonCard({
       <IdentityTile name={person.displayName} selecting={selecting} selected={selected} />
       <span className="min-w-0 flex-1">
         <span className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-          <span className="t-sub truncate text-[color:var(--ink)]">{person.displayName}</span>
+          {/* SERIF. A person is a thing in the world — the same class the event page gives a venue
+              name. Everything else in this row is the app talking, and stays sans. */}
+          <span className="ty-row-title truncate text-[var(--ink)]">{person.displayName}</span>
           {/* Bounded, with the rail's own target marker. See `PILL_BOUND` for why it is not a fill. */}
           {person.isTargetCompany && (
             <span className={PILL_BOUND}>
@@ -1014,10 +1007,10 @@ function PersonCard({
             <span
               className={
                 overdue
-                  ? /* The app's single alarm wash, and the only place this card spends a fill on a
-                       warning. An amber "scheduled" pill used to sit here too — a fourth hue the token
-                       set does not have, for a fact that is not urgent. */
-                    `${PILL_BASE} bg-[#FFF1F0] text-[#C7362D]`
+                  ? /* The app's single alarm state, and the only place this row spends `--live`. An
+                       amber "scheduled" pill used to sit here too — a fourth hue the token set does
+                       not have, for a fact that is not urgent. */
+                    PILL_URGENT
                   : PILL_BOUND
               }
             >
@@ -1026,7 +1019,7 @@ function PersonCard({
           )}
         </span>
         {identity && (
-          <span className="mt-0.5 block truncate text-[12.5px] text-[color:var(--ink-2)]">{identity}</span>
+          <span className="ty-meta mt-[var(--s-1)] block truncate">{identity}</span>
         )}
       </span>
     </>
@@ -1043,14 +1036,20 @@ function PersonCard({
    * horizontally adjacent, itself painted 44, so there is no band to contest.
    */
   const summaryClass =
-    'flex min-h-11 min-w-0 flex-1 items-start gap-3 rounded-xl text-left outline-none [touch-action:manipulation] focus-visible:shadow-[0_0_0_2px_var(--blue)]';
+    'flex min-h-11 min-w-0 flex-1 items-start gap-3 r-touch text-left outline-none [touch-action:manipulation] focus-visible:shadow-[0_0_0_2px_var(--accent)]';
 
   return (
-    <Card
-      padding="tight"
-      className={
-        selected ? 'shadow-[inset_0_0_0_2px_var(--blue)]' : preview ? 'opacity-70' : undefined
-      }
+    /*
+      SELECTION IS A LEFT RULE, RESERVED AT ALL TIMES. It was a 2px inset ring on a rounded card;
+      with the shell gone there is nothing to ring, and the tone treatment this system already uses
+      for emphasis is `Banner`'s left rule on the paper ground. The border is present but
+      TRANSPARENT when unselected, so selecting a row cannot shift its text sideways — a 2px reflow
+      per tap is exactly the jitter a 40-row selection pass would show.
+    */
+    <div
+      className={`border-l-2 py-[var(--s-4)] pl-[var(--s-3)] ${
+        selected ? 'border-[var(--accent)]' : 'border-transparent'
+      }${preview ? ' opacity-70' : ''}`}
     >
       <div className="flex items-start gap-3">
         {preview ? (
@@ -1079,7 +1078,7 @@ function PersonCard({
             target="_blank"
             rel="noopener noreferrer"
             aria-label={`Open ${person.displayName} on LinkedIn`}
-            className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-[#F7F7F9] text-[color:var(--blue)] hover:bg-[#EEEEF0] [touch-action:manipulation]"
+            className="grid h-11 w-11 shrink-0 place-items-center r-touch bg-[var(--paper)] text-[color:var(--accent)] shadow-[inset_0_0_0_1px_var(--rule)] hover:bg-[var(--surface)] [touch-action:manipulation]"
           >
             <span aria-hidden="true" className="material-symbols-outlined text-[18px]">
               open_in_new
@@ -1100,16 +1099,18 @@ function PersonCard({
         is exactly why it only shows up when you look at the wide case.
       */}
       <div className="mt-2.5 flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
-        <p className="min-w-0 truncate text-[13px] text-[color:var(--ink)] tracking-[-0.006em]">
+        <p className="ty-meta min-w-0 truncate text-[var(--ink)]">
           {encounter.lead}
           {/*
             THE TOKEN, NOT A HEX — and the reason is a measurement that went stale inside this comment
-            while it was being written. It first read `#8E8E93`, which the harness put at **3.26:1** on
-            white: a WCAG AA failure at 12–13px. The fix was `#6E6E73` at 5.07:1. Then the owner of
-            `globals.css` darkened the whole ramp underneath — `--ink-2` is now `#5C5C61` (6.65:1) and
-            even `--ink-3` is `#6F6F75` (4.99:1), both passing — so BOTH hexes were suddenly lighter than
-            the app around them. Naming the token is what makes this line track the ramp instead of
-            freezing one moment of it. Re-measure rather than trusting these figures.
+            while it was being written. It first named a light grey the harness put at **3.26:1** on
+            white: a WCAG AA failure at 12–13px. The fix was a darker grey at 5.07:1. Then the owner of
+            `globals.css` darkened the whole ramp underneath, so BOTH hexes were suddenly lighter than
+            the app around them. The ramp has since moved a THIRD time, and this comment's original
+            figures had gone stale again by then — including its claim that `--ink-3` passes, which the
+            current palette explicitly denies (3.15:1, decorative only). Naming the token is what makes
+            this line track the ramp instead of freezing one moment of it. Re-measure rather than
+            trusting any figure written here.
           */}
           {encounter.when && <span className="text-[color:var(--ink-2)]"> · {encounter.when}</span>}
         </p>
@@ -1140,7 +1141,7 @@ function PersonCard({
       {/* `max-w-[72ch]` is the measure, not decoration: at 1036px this ran to roughly 160 characters a
           line, twice the under-80 limit `docs/design-direction.md` sets. It changes nothing at 390. */}
       {note && (
-        <p className="mt-2 line-clamp-2 max-w-[72ch] border-l-2 border-[color:var(--hairline-strong)] pl-2.5 text-[12.5px] leading-relaxed text-[color:var(--ink-2)]">
+        <p className="mt-[var(--s-2)] line-clamp-2 max-w-[72ch] border-l-2 border-[color:var(--rule)] pl-2.5 text-[13px] leading-[1.5] text-[color:var(--ink-2)]">
           {note}
         </p>
       )}
@@ -1170,7 +1171,7 @@ function PersonCard({
                 type="button"
                 onClick={() => onPickCompany(name)}
                 aria-label={`Show everyone at ${name}`}
-                className={`${CHIP_COMPANY} ${CHIP_TAP} hover:bg-[#F7F7F9]`}
+                className={`${CHIP_COMPANY} ${CHIP_TAP} hover:bg-[var(--paper)]`}
               >
                 {name}
               </button>
@@ -1190,7 +1191,7 @@ function PersonCard({
                 type="button"
                 onClick={() => onPickTag(t)}
                 aria-label={`Show everyone you tagged ${t}`}
-                className={`${CHIP_TAG} ${CHIP_TAP} hover:bg-[#EEEEF0]`}
+                className={`${CHIP_TAG} ${CHIP_TAP} hover:bg-[var(--paper)]`}
               >
                 <span aria-hidden="true" className="text-[color:var(--ink-3)]">
                   #
@@ -1214,7 +1215,7 @@ function PersonCard({
       {/* Left-grouped for the same measured reason as the encounter row: "Last spoke 5d ago" and the
           disclosure are two halves of one thought, and `justify-between` put a screen's width between
           them on desktop. */}
-      <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-[color:var(--hairline)] pt-1.5">
+      <div className="rule-t mt-[var(--s-3)] flex flex-wrap items-center gap-x-3 gap-y-1 pt-1.5">
         <span
           /* `--ink-2` for the reason spelled out on the encounter date above — and because this line is
              what explains the default "Last contacted" ordering on every row, so it is a fact, not a
@@ -1234,7 +1235,7 @@ function PersonCard({
             aria-expanded={open}
             aria-label={`${open ? 'Hide' : 'Show'} the history with ${person.displayName}`}
             onClick={onToggle}
-            className="relative flex h-9 shrink-0 items-center gap-1 rounded-lg pl-2 text-[12px] font-semibold text-[color:var(--blue)] [touch-action:manipulation] after:absolute after:inset-x-0 after:top-1/2 after:h-11 after:-translate-y-1/2 after:content-['']"
+            className="relative flex h-9 shrink-0 items-center gap-1 r-touch pl-2 text-[12px] font-semibold text-[color:var(--accent)] [touch-action:manipulation] after:absolute after:inset-x-0 after:top-1/2 after:h-11 after:-translate-y-1/2 after:content-['']"
           >
             {open ? 'Hide' : 'History'}
             <span
@@ -1273,7 +1274,7 @@ function PersonCard({
           ))}
         </ul>
       )}
-    </Card>
+    </div>
   );
 }
 
@@ -1291,9 +1292,9 @@ function PersonCard({
 /* NO `gap` HERE. The tag chip's `#` is a sibling flex child of its word, so any gap renders it as
    "# hiring" — a stray glyph rather than a tag. Caught in the harness screenshot, not in review. */
 const CHIP_BASE_STYLE =
-  'inline-flex h-8 items-center rounded-full px-2.5 text-[11.5px] font-semibold';
-const CHIP_COMPANY = `${CHIP_BASE_STYLE} bg-white text-[color:var(--ink)] shadow-[inset_0_0_0_1px_var(--hairline-strong)]`;
-const CHIP_TAG = `${CHIP_BASE_STYLE} bg-[#F5F5F7] text-[color:var(--ink-2)]`;
+  'inline-flex h-8 items-center r-touch px-2.5 text-[11.5px] font-semibold';
+const CHIP_COMPANY = `${CHIP_BASE_STYLE} bg-[var(--surface)] text-[color:var(--ink)] shadow-[inset_0_0_0_1px_var(--rule)]`;
+const CHIP_TAG = `${CHIP_BASE_STYLE} bg-[var(--paper)] text-[color:var(--ink-2)]`;
 /** The 44px band, grown with `::after` so the painted chip stays small. `gap-y-3` above matches it. */
 const CHIP_TAP =
   "relative [touch-action:manipulation] after:absolute after:inset-x-0 after:top-1/2 after:h-11 after:-translate-y-1/2 after:content-['']";
@@ -1358,7 +1359,7 @@ function latestNote(history: InteractionDTO[]): string | undefined {
  *
  *   · LEFT-ALIGNED, not centred. A centred icon-over-two-lines block is the generated default for
  *     every empty state in every app; this reads as a screen with something to say.
- *   · IT RENDERS A REAL `PersonCard` in `preview` mode. Describing a card in prose and drawing one are
+ *   · IT RENDERS A REAL `PersonRow` in `preview` mode. Describing a row in prose and drawing one are
  *     not the same promise, and a hand-built mock-up would drift from the component the moment either
  *     changed. This cannot: it IS the component.
  *   · THE EXAMPLE IS LABELLED AND INERT — dimmed, `aria-hidden`, no links, and captioned as an example
@@ -1367,12 +1368,12 @@ function latestNote(history: InteractionDTO[]): string | undefined {
  */
 function NoPeopleYet() {
   return (
-    <Card>
-      <h2 className="t-title text-[color:var(--ink)]">Nobody here yet</h2>
-      <p className="mt-2 max-w-[52ch] text-[14.5px] leading-relaxed text-[color:var(--ink-2)]">
-        Scan somebody&apos;s LinkedIn QR at your next event and they land here — one card, with the
+    <div className="rule-y py-[var(--s-8)]">
+      <h2 className="ty-section text-[var(--ink)]">Nobody here yet</h2>
+      <p className="mt-[var(--s-3)] ty-body max-w-[52ch] text-[color:var(--ink-2)]">
+        Scan somebody&apos;s LinkedIn QR at your next event and they land here — one row, with the
         event, the date and whatever you wrote down about them. Run into them again six months later and
-        it is the same card, not a second one.
+        it is the same row, not a second one.
       </p>
       <div className="mt-5 flex flex-wrap gap-2">
         <ButtonLink href="/scan" tone="primary" icon="qr_code_scanner">
@@ -1383,22 +1384,15 @@ function NoPeopleYet() {
         </ButtonLink>
       </div>
 
-      <div className="mt-7 border-t border-[color:var(--hairline)] pt-4">
-        <p className="text-[12px] text-[color:var(--ink-2)]">An example of what one card holds</p>
-        <div className="mt-2" aria-hidden="true">
-          <PersonCard
-            person={EXAMPLE_PERSON}
-            selecting={false}
-            selected={false}
-            onSelect={() => {}}
-            open={false}
-            onToggle={() => {}}
-            onPickCompany={() => {}}
-            onPickTag={() => {}}
-            preview
-          />
-        </div>
-      </div>
-    </Card>
+      {/* WHAT A ROW HOLDS, IN WORDS. This used to render a real `PersonRow` for a fabricated
+          "Asha Rao · Razorpay". It was dimmed and `aria-hidden`, and it still read as the first row
+          of somebody's actual list — a fabricated person at a real company is the one kind of
+          invented content that cannot be told apart from data. Saying it instead costs one sentence
+          and invents nobody. */}
+      <p className="rule-t mt-[var(--s-8)] pt-[var(--s-4)] ty-meta max-w-[62ch]">
+        Each person becomes one row: their name, where they work, every event you met them at, and
+        whatever you typed at the time.
+      </p>
+    </div>
   );
 }

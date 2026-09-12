@@ -91,33 +91,34 @@ export const EMPTY_FILTERS: FilterState = {
  * One class for every section heading in the rail.
  *
  * ─────────────────────────────────────────────────────────────────────────────────────────────
- * IT WAS `text-label-sm uppercase tracking-widest text-[#86868B]`, EIGHT TIMES, IN A 248px COLUMN.
+ * IT WAS `text-label-sm uppercase tracking-widest` IN A DECORATIVE GREY, EIGHT TIMES, IN A 248px
+ * COLUMN.
  *
  * `docs/design-direction.md` names tracked-out ALL-CAPS labels as a pattern to remove, and this file
  * held the densest concentration of them in the app. Two independent problems on top of the look:
  *
- *  · `#86868B` measures **3.30:1** against the page grey. At 11.5px that is under the 4.5:1 floor,
- *    so the labels that tell a reader what each control group IS were the least legible text in the
- *    rail. `#1D1D1F` is 15.9:1.
+ *  · That grey measured **3.30:1** against the page grey of the retired Apple-grey palette. At
+ *    11.5px that is under the 4.5:1 floor, so the labels that tell a reader what each control group
+ *    IS were the least legible text in the rail. `--ink` is 16.4:1 on paper.
  *  · `tracking-widest` is +0.1em, which is nearly double `.t-label`'s +0.055em. At 248px wide,
  *    `Kind of event` set in tracked caps is ~124px — half the rail — for three words that could be
  *    read at half that.
  *
  * Sentence case at 12px semibold in ink. The group labels inside Category dropped to `font-medium
- * text-[#3a3a3c]` in the same change, because a section heading has to outrank the groups nested
- * under it and previously both were `font-semibold text-[#1D1D1F]`.
+ * text-[var(--ink-2)]` in the same change, because a section heading has to outrank the groups nested
+ * under it and previously both were `font-semibold` in full ink.
  * ─────────────────────────────────────────────────────────────────────────────────────────────
  */
-const RAIL_HEADING = 'text-[12px] font-semibold tracking-[0] text-[#1D1D1F]';
+const RAIL_HEADING = 'text-[13px] leading-[1.4] font-semibold text-[var(--ink)]';
 
 /**
  * The count beside a row or a chip.
  *
- * `#a1a1a6` measured 2.58:1 on white and 2.35:1 on the page grey — the numbers that make this rail a
- * faceted rail rather than a list of guesses were the closest thing on it to invisible. `#6E6E73` is
- * 4.6:1 and still reads as secondary to the `#3a3a3c` label beside it.
+ * The grey this used to carry measured 2.58:1 on white and 2.35:1 on the page grey — the numbers that
+ * make this rail a faceted rail rather than a list of guesses were the closest thing on it to
+ * invisible. `--ink-2` clears the 4.5:1 floor and still reads as secondary to the label beside it.
  */
-const RAIL_COUNT = 'text-[#6E6E73]';
+const RAIL_COUNT = 'text-[color:var(--ink-2)]';
 
 /** Format options, in the order they matter for meeting people in person. */
 const FORMAT_OPTIONS: Array<{ value: '' | 'offline' | 'online' | 'hybrid'; label: string }> = [
@@ -286,17 +287,17 @@ export default function FilterRail({
                 disabled={empty}
                 aria-pressed={active}
                 onClick={() => onChange({ ...filters, format: value })}
-                className={`flex items-center justify-center gap-1.5 h-9 px-2 rounded-lg text-[12.5px] font-semibold border transition-colors ${
+                className={`pressable r-touch flex h-9 items-center justify-center gap-1.5 border px-2 text-[13px] font-semibold transition-colors ${
                   active
-                    ? 'bg-[#1D1D1F] text-white border-[#1D1D1F]'
+                    ? 'bg-[var(--ink)] text-[var(--accent-ink)] border-[var(--ink)]'
                     : empty
-                      ? 'bg-[#f7f7f9] text-[#c7c7cc] border-[#f0f0f2] cursor-not-allowed'
-                      : 'bg-white text-[#1D1D1F] border-[#e5e5ea] hover:bg-[#f3f3f5]'
+                      ? 'bg-[var(--paper)] text-[var(--ink-3)] border-[var(--rule)] cursor-not-allowed'
+                      : 'bg-[var(--surface)] text-[var(--ink)] border-[var(--rule)] hover:bg-[var(--paper)]'
                 }`}
               >
                 <span className="truncate">{label}</span>
                 {count !== undefined && (
-                  <span className={`tnum shrink-0 ${active ? 'text-white/60' : RAIL_COUNT}`}>
+                  <span className={`tnum shrink-0 ${active ? 'text-[var(--accent-ink)]/60' : RAIL_COUNT}`}>
                     {count}
                   </span>
                 )}
@@ -318,10 +319,10 @@ export default function FilterRail({
       {countsUnavailable && (
         <section
           aria-label="Filter counts"
-          className="rounded-[14px] bg-white px-3.5 py-3 shadow-[inset_0_0_0_1px_var(--hairline)]"
+          className="border-l-2 border-l-[var(--ink-2)] bg-[var(--paper)] px-3.5 py-3"
         >
-          <p className="text-[12.5px] font-semibold text-[#1D1D1F]">Filter counts didn’t load</p>
-          <p className="mt-1 text-[12px] leading-[1.45] text-[#6E6E73]">
+          <p className="text-[13px] leading-[1.4] font-semibold text-[var(--ink)]">Filter counts didn’t load</p>
+          <p className="ty-meta mt-1">
             Category, company and area need them. Format, free and food still work, and the events
             beside this are unaffected.
           </p>
@@ -329,7 +330,7 @@ export default function FilterRail({
             <button
               type="button"
               onClick={onRetry}
-              className="mt-2 text-[12px] font-semibold text-[#0071E3] hover:underline"
+              className="mt-2 text-[13px] leading-[1.4] font-semibold text-[color:var(--accent)] hover:underline"
             >
               Try again
             </button>
@@ -345,7 +346,7 @@ export default function FilterRail({
             <button
               type="button"
               onClick={() => onChange({ ...filters, categories: [] })}
-              className="text-[11px] font-semibold text-[#0071E3] hover:underline"
+              className="text-[13px] leading-[1.4] font-semibold text-[color:var(--accent)] hover:underline"
             >
               Clear {filters.categories.length}
             </button>
@@ -390,7 +391,7 @@ export default function FilterRail({
                     <svg
                       viewBox="0 0 12 12"
                       aria-hidden="true"
-                      className={`w-2.5 h-2.5 shrink-0 text-[#a1a1a6] transition-transform ${
+                      className={`w-2.5 h-2.5 shrink-0 text-[var(--ink-3)] transition-transform ${
                         open ? 'rotate-90' : ''
                       }`}
                     >
@@ -403,16 +404,16 @@ export default function FilterRail({
                         strokeLinejoin="round"
                       />
                     </svg>
-                    {/* `font-medium text-[#3a3a3c]`, not `font-semibold text-[#1D1D1F]`: a group
+                    {/* `font-medium text-[var(--ink-2)]`, not `font-semibold text-[var(--ink)]`: a group
                         nested inside the Category section cannot be set heavier and darker than the
                         section heading above it, which is what both being ink-semibold produced. */}
-                    <span className="text-[12px] font-medium text-[#3a3a3c]">{group.label}</span>
+                    <span className="ty-meta">{group.label}</span>
                     {selectedHere > 0 && (
-                      <span className="tnum rounded-full bg-[#0071E3] px-1.5 text-[10px] font-bold leading-[15px] text-white">
+                      <span className="tnum r-touch bg-[var(--accent)] px-1.5 text-[10px] font-bold leading-[15px] text-[var(--accent-ink)]">
                         {selectedHere}
                       </span>
                     )}
-                    <span className={`tnum ml-auto truncate pl-2 text-[11px] ${RAIL_COUNT}`}>
+                    <span className={`ty-meta ml-auto truncate pl-2 ${RAIL_COUNT}`}>
                       {open ? group.hint : groupTotal}
                     </span>
                   </button>
@@ -452,7 +453,7 @@ export default function FilterRail({
               <button
                 type="button"
                 onClick={() => onChange({ ...filters, companies: [] })}
-                className="text-[11px] font-semibold text-[#0071E3] hover:underline"
+                className="text-[13px] leading-[1.4] font-semibold text-[color:var(--accent)] hover:underline"
               >
                 Clear
               </button>
@@ -522,7 +523,7 @@ export default function FilterRail({
             <button
               type="button"
               onClick={() => onChange({ ...filters, areas: [] })}
-              className="text-[11px] font-semibold text-[#0071E3] hover:underline"
+              className="text-[13px] leading-[1.4] font-semibold text-[color:var(--accent)] hover:underline"
             >
               Clear
             </button>
@@ -550,7 +551,7 @@ export default function FilterRail({
         <button
           type="button"
           onClick={() => onChange(EMPTY_FILTERS)}
-          className="text-label-md font-semibold text-[#0071E3] hover:underline text-left"
+          className="text-left text-[13px] leading-[1.4] font-semibold text-[color:var(--accent)] hover:underline"
         >
           Reset all filters
         </button>
@@ -596,7 +597,7 @@ function VocabSection({
           <button
             type="button"
             onClick={onClear}
-            className="text-[11px] font-semibold text-[#0071E3] hover:underline"
+            className="text-[13px] leading-[1.4] font-semibold text-[color:var(--accent)] hover:underline"
           >
             Clear
           </button>
@@ -633,15 +634,15 @@ function Toggle({
       type="button"
       onClick={onClick}
       aria-pressed={active}
-      className={`px-3.5 py-1.5 rounded-full text-[12.5px] font-semibold border transition-colors ${
+      className={`pressable r-touch border px-3.5 py-1.5 text-[13px] font-semibold transition-colors ${
         active
-          ? 'bg-[#0071E3] text-white border-[#0071E3]'
-          : 'bg-white text-[#1D1D1F] border-[#e5e5ea] hover:bg-[#f3f3f5]'
+          ? 'bg-[var(--accent)] text-[var(--accent-ink)] border-[var(--accent)]'
+          : 'bg-[var(--surface)] text-[var(--ink)] border-[var(--rule)] hover:bg-[var(--paper)]'
       }`}
     >
       {label}
       {count !== undefined && (
-        <span className={`tnum ml-1.5 ${active ? 'text-white/70' : RAIL_COUNT}`}>{count}</span>
+        <span className={`tnum ml-1.5 ${active ? 'text-[var(--accent-ink)]/70' : RAIL_COUNT}`}>{count}</span>
       )}
     </button>
   );
@@ -661,8 +662,8 @@ function CheckRow({
   const empty = count === 0 && !checked;
   return (
     <label
-      className={`flex items-center gap-2.5 py-1.5 px-2 -mx-2 rounded-lg text-[13.5px] ${
-        empty ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer hover:bg-white'
+      className={`ty-meta -mx-2 flex items-center gap-2.5 r-touch px-2 py-1.5 ${
+        empty ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer hover:bg-[var(--surface)]'
       }`}
     >
       <input
@@ -670,12 +671,12 @@ function CheckRow({
         checked={checked}
         disabled={empty}
         onChange={onToggle}
-        className="w-4 h-4 accent-[#0071E3] shrink-0"
+        className="w-4 h-4 accent-[var(--accent)] shrink-0"
       />
-      <span className={`flex-1 truncate ${checked ? 'font-semibold text-[#1D1D1F]' : 'text-[#3a3a3c]'}`}>
+      <span className={`flex-1 truncate ${checked ? 'font-semibold text-[var(--ink)]' : 'text-[var(--ink-2)]'}`}>
         {label}
       </span>
-      <span className={`tnum text-[12px] ${RAIL_COUNT}`}>{count}</span>
+      <span className={`tnum ${RAIL_COUNT}`}>{count}</span>
     </label>
   );
 }
@@ -684,7 +685,7 @@ function SkeletonList({ rows }: { rows: number }) {
   return (
     <div className="flex flex-col gap-2">
       {Array.from({ length: rows }, (_, i) => (
-        <div key={i} className="skeleton h-4 rounded" style={{ width: `${60 + ((i * 13) % 35)}%` }} />
+        <div key={i} className="skeleton h-4" style={{ width: `${60 + ((i * 13) % 35)}%` }} />
       ))}
     </div>
   );

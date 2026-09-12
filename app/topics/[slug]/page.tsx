@@ -225,42 +225,47 @@ export default async function TopicPage({ params }: { params: Promise<{ slug: st
   return (
     <AppShell title="Topics">
       <div className="max-w-[900px] mx-auto px-4 md:px-8 pt-4 md:pt-6 pb-10">
-        <nav className="mb-4 flex items-center gap-1.5 text-[13px] font-semibold text-[#6E6E73]">
-          <Link href="/topics" className="hover:text-[#1D1D1F] transition-colors">
+        <nav className="ty-meta mb-[var(--s-4)] flex items-center gap-1.5 font-semibold">
+          <Link href="/topics" className="hover:text-[var(--ink)] transition-colors">
             Topics
           </Link>
-          <span aria-hidden="true" className="material-symbols-outlined text-[16px] text-[#c7c7cc]">
+          <span aria-hidden="true" className="material-symbols-outlined text-[16px] text-[var(--ink-3)]">
             chevron_right
           </span>
-          <span className="text-[#1D1D1F]">{topic.name}</span>
+          <span className="text-[var(--ink)]">{topic.name}</span>
         </nav>
 
-        <h1
-          className="text-[27px] md:text-[38px] font-bold leading-[1.08] tracking-[-0.035em] text-[#1D1D1F]"
-          style={{ fontFamily: 'var(--font-display)' }}
-        >
-          {topic.heading}
-        </h1>
+        {/*
+          SANS, AND THAT IS THE INTERESTING CALL ON THIS PAGE. A topic is the app's own grouping —
+          `lib/events/topics.ts` decides what a topic is — so by the rule that serif belongs to things
+          that exist in the city, the heading of a grouping cannot take the display face. It loses
+          scale doing it (38px display → `.ty-section`'s 26px sans), which is the honest consequence:
+          a real event's title is now visibly larger than any label we invented for a set of them.
+        */}
+        <h1 className="ty-section text-[var(--ink)]">{topic.heading}</h1>
 
-        <p className="mt-1.5 text-[13px] font-semibold text-[#86868B] tnum">
+        <p className="ty-meta mt-[var(--s-2)]">
           {count} upcoming {count === 1 ? 'event' : 'events'}
         </p>
 
         {/* The written paragraph. This is the half of the page that makes it not a doorway. */}
-        <div className="mt-5 rounded-[18px] bg-white card-shadow p-5 md:p-6">
-          <p className="text-[15px] leading-[1.65] text-[#3a3a3c]">{topic.blurb}</p>
+        {/* The written paragraph is the page's argument, so it reads as prose on the page ground
+            rather than as a panel: `.ty-lede` is the editorial standfirst, serif, 62ch. The rule under
+            it was a raw `rgba(0,0,0,0.07)` — the token composites correctly on both grounds. */}
+        <div className="mt-[var(--s-6)] rule-t pt-[var(--s-4)]">
+          <p className="ty-lede text-[color:var(--ink)]">{topic.blurb}</p>
           {rhythm && (
-            <p className="mt-4 border-t border-[rgba(0,0,0,0.07)] pt-4 text-[13.5px] leading-relaxed text-[#6E6E73]">
-              <span className="t-label text-[#8E8E93]">When these happen</span>
+            <p className="rule-t mt-[var(--s-4)] pt-[var(--s-4)] text-[13.5px] leading-relaxed text-[color:var(--ink-2)]">
+              <span className="t-label text-[color:var(--ink-2)]">When these happen</span>
               <br />
               {rhythm}
             </p>
           )}
         </div>
 
-        <section className="mt-8">
-          <h2 className="t-sub text-[#1D1D1F] mb-1">Upcoming</h2>
-          <p className="mb-3 text-[12.5px] text-[#6E6E73]">
+        <section className="mt-[var(--s-16)]">
+          <h2 className="ty-section text-[var(--ink)]">Upcoming</h2>
+          <p className="ty-meta mt-[var(--s-2)] mb-[var(--s-4)] max-w-[62ch]">
             Ranked by how likely you are to leave with a useful contact, not by date — in-person
             events with a real venue come first.
           </p>
@@ -278,7 +283,7 @@ export default async function TopicPage({ params }: { params: Promise<{ slug: st
                   ? `/?category=${encodeURIComponent(topic.name)}`
                   : `/?area=${encodeURIComponent(topic.name)}`
               }
-              className="mt-4 inline-block px-5 py-2.5 rounded-full bg-[#1D1D1F] text-white text-label-md font-semibold hover:bg-black transition-colors"
+              className="pressable mt-[var(--s-4)] inline-block r-touch bg-[var(--ink)] px-5 py-2.5 text-[13.5px] font-semibold text-[var(--accent-ink)]"
             >
               See all {count} in the feed
             </Link>
@@ -286,8 +291,8 @@ export default async function TopicPage({ params }: { params: Promise<{ slug: st
         </section>
 
         {siblings.length > 0 && (
-          <section className="mt-10">
-            <h2 className="t-label text-[#8E8E93] mb-2.5">
+          <section className="rule-t mt-[var(--s-16)] pt-[var(--s-6)]">
+            <h2 className="t-label mb-2.5 text-[color:var(--ink)]">
               {topic.kind === 'category' ? 'Other subjects' : 'Other areas'}
             </h2>
             <div className="flex flex-wrap gap-1.5">
@@ -295,9 +300,9 @@ export default async function TopicPage({ params }: { params: Promise<{ slug: st
                 <Link
                   key={sibling.slug}
                   href={`/topics/${sibling.slug}`}
-                  className="pill pill-quiet hover:bg-[#F7F7F9]"
+                  className="pill pill-quiet pressable hover:bg-[var(--paper)]"
                 >
-                  {sibling.name} <span className="tnum text-[#86868B]">{siblingCount}</span>
+                  {sibling.name} <span className="tnum text-[var(--ink-2)]">{siblingCount}</span>
                 </Link>
               ))}
             </div>

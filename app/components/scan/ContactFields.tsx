@@ -38,7 +38,7 @@ export interface ContactDraft {
 }
 
 const FIELD_CLASS =
-  'mt-1.5 h-11 w-full rounded-xl bg-[#F7F7F9] px-3.5 text-[15px] text-[#1D1D1F] outline-none focus:shadow-[inset_0_0_0_2px_var(--blue)]';
+  'mt-1.5 h-11 w-full r-touch bg-[var(--paper)] px-3.5 text-[15px] text-[var(--ink)] shadow-[inset_0_0_0_1px_var(--rule)] outline-none focus:shadow-[inset_0_0_0_2px_var(--accent)]';
 
 /**
  * Follow-up offsets, in days. Deliberately few — at a conference the point is one tap.
@@ -142,7 +142,7 @@ export default function ContactFields({
   return (
     <div className="flex flex-col gap-4">
       <label className="block">
-        <span className="t-label text-[#8E8E93]">Name</span>
+        <span className="t-label text-[var(--ink-2)]">Name</span>
         <input
           value={draft.name}
           onChange={e => onChange({ ...draft, name: e.target.value, nameIsGuess: false })}
@@ -157,7 +157,7 @@ export default function ContactFields({
          * roughly a third of real slugs are custom handles with no name in them at all.
          */}
         {draft.nameIsGuess && (
-          <span className="mt-1.5 flex items-center gap-1 text-[12px] text-[#A85B00]">
+          <span className="mt-1.5 flex items-center gap-1 text-[12px] text-[var(--ink-2)]">
             <span aria-hidden="true" className="material-symbols-outlined text-[14px]">edit_note</span>
             Guessed from their profile link — check it
           </span>
@@ -166,7 +166,7 @@ export default function ContactFields({
 
       <div className="grid grid-cols-2 gap-3">
         <label className="block">
-          <span className="t-label text-[#8E8E93]">Company</span>
+          <span className="t-label text-[var(--ink-2)]">Company</span>
           <input
             value={draft.company ?? ''}
             onChange={e => set('company', e.target.value)}
@@ -176,7 +176,7 @@ export default function ContactFields({
           />
         </label>
         <label className="block">
-          <span className="t-label text-[#8E8E93]">Role</span>
+          <span className="t-label text-[var(--ink-2)]">Role</span>
           <input
             value={draft.role ?? ''}
             onChange={e => set('role', e.target.value)}
@@ -188,7 +188,7 @@ export default function ContactFields({
       </div>
 
       <label className="block">
-        <span className="t-label text-[#8E8E93]">Phone</span>
+        <span className="t-label text-[var(--ink-2)]">Phone</span>
         <input
           value={draft.phone ?? ''}
           onChange={e => set('phone', e.target.value)}
@@ -203,15 +203,15 @@ export default function ContactFields({
       </label>
 
       <label className="block">
-        <span className="t-label text-[#8E8E93]">How you met</span>
+        <span className="t-label text-[var(--ink-2)]">How you met</span>
         <textarea
           value={draft.note ?? ''}
           onChange={e => set('note', e.target.value)}
           rows={2}
           placeholder="Asked about our AEM migration — wants an intro to the platform team"
-          className="mt-1.5 w-full resize-none rounded-xl bg-[#F7F7F9] px-3.5 py-2.5 text-[15px] leading-relaxed text-[#1D1D1F] outline-none focus:shadow-[inset_0_0_0_2px_var(--blue)]"
+          className="mt-1.5 w-full resize-none r-touch bg-[var(--paper)] px-3.5 py-2.5 text-[15px] leading-relaxed text-[var(--ink)] shadow-[inset_0_0_0_1px_var(--rule)] outline-none focus:shadow-[inset_0_0_0_2px_var(--accent)]"
         />
-        <span className="mt-1 block text-[12px] text-[#8E8E93]">
+        <span className="mt-1 block text-[12px] text-[var(--ink-2)]">
           The bit you will have forgotten in a fortnight.
         </span>
       </label>
@@ -223,7 +223,7 @@ export default function ContactFields({
       />
 
       <div>
-        <span className="t-label text-[#8E8E93]">Follow up</span>
+        <span className="t-label text-[var(--ink-2)]">Follow up</span>
         <div className="mt-1.5 flex flex-wrap gap-x-1.5 gap-y-2">
           {FOLLOW_UP_CHOICES.map(choice => {
             const active = !pickingDate && activeFollowUp?.label === choice.label;
@@ -239,10 +239,10 @@ export default function ContactFields({
                     choice.days === null ? null : followUpInstantInDays(choice.days)
                   );
                 }}
-                className={`${TAP_44} h-9 rounded-full px-3.5 text-[12.5px] font-semibold transition-colors ${
+                className={`${TAP_44} h-9 r-touch px-3.5 text-[12.5px] font-semibold transition-colors ${
                   active
-                    ? 'bg-[#1D1D1F] text-white'
-                    : 'bg-white text-[#1D1D1F] shadow-[inset_0_0_0_1px_var(--hairline)] hover:bg-[#F7F7F9]'
+                    ? 'bg-[var(--ink)] text-[var(--accent-ink)]'
+                    : 'bg-[var(--surface)] text-[var(--ink)] shadow-[inset_0_0_0_1px_var(--rule)] hover:bg-[var(--paper)]'
                 }`}
               >
                 {choice.label}
@@ -259,10 +259,10 @@ export default function ContactFields({
             aria-pressed={pickingDate}
             aria-expanded={pickingDate}
             onClick={() => setShowDatePicker(open => !open)}
-            className={`${TAP_44} h-9 rounded-full px-3.5 text-[12.5px] font-semibold transition-colors ${
+            className={`${TAP_44} h-9 r-touch px-3.5 text-[12.5px] font-semibold transition-colors ${
               pickingDate
-                ? 'bg-[#1D1D1F] text-white'
-                : 'bg-white text-[#1D1D1F] shadow-[inset_0_0_0_1px_var(--hairline)] hover:bg-[#F7F7F9]'
+                ? 'bg-[var(--ink)] text-[var(--accent-ink)]'
+                : 'bg-[var(--surface)] text-[var(--ink)] shadow-[inset_0_0_0_1px_var(--rule)] hover:bg-[var(--paper)]'
             }`}
           >
             Another day
@@ -303,13 +303,13 @@ export default function ContactFields({
         )}
 
         {draft.followUpAt ? (
-          <p className="mt-1.5 text-[12px] text-[#6E6E73]">
+          <p className="mt-1.5 text-[12px] text-[var(--ink-2)]">
             {/* IST, via lib/format.ts — never the ambient locale. */}
             Reminder on {fullDateIST(draft.followUpAt)}
           </p>
         ) : (
           pickingDate && (
-            <p className="mt-1.5 text-[12px] text-[#8E8E93]">
+            <p className="mt-1.5 text-[12px] text-[var(--ink-2)]">
               Pick today or a day after it.
             </p>
           )
@@ -320,16 +320,16 @@ export default function ContactFields({
         <button
           type="button"
           onClick={onToggleShowAll}
-          className={`${TAP_44} self-start text-[13px] font-semibold text-[#0071E3] hover:underline`}
+          className={`${TAP_44} self-start text-[13px] font-semibold text-[var(--accent)] hover:underline`}
         >
           More fields
         </button>
       )}
 
       {showAll && (
-        <div className="flex flex-col gap-4 border-t border-[color:var(--hairline)] pt-4">
+        <div className="rule-t flex flex-col gap-4 pt-4">
           <label className="block">
-            <span className="t-label text-[#8E8E93]">LinkedIn</span>
+            <span className="t-label text-[var(--ink-2)]">LinkedIn</span>
             <input
               value={draft.linkedin ?? ''}
               onChange={e => set('linkedin', e.target.value)}
@@ -338,13 +338,13 @@ export default function ContactFields({
               className={FIELD_CLASS}
             />
             {/* Canonicalised server-side, which is also what upgrades their identity key. */}
-            <span className="mt-1 block text-[12px] text-[#8E8E93]">
+            <span className="mt-1 block text-[12px] text-[var(--ink-2)]">
               Adding this makes them match automatically next time you scan their code.
             </span>
           </label>
 
           <label className="block">
-            <span className="t-label text-[#8E8E93]">Headline</span>
+            <span className="t-label text-[var(--ink-2)]">Headline</span>
             <input
               value={draft.headline ?? ''}
               onChange={e => set('headline', e.target.value)}
@@ -356,7 +356,7 @@ export default function ContactFields({
 
           <div className="grid grid-cols-2 gap-3">
             <label className="block">
-              <span className="t-label text-[#8E8E93]">X</span>
+              <span className="t-label text-[var(--ink-2)]">X</span>
               <input
                 value={draft.x ?? ''}
                 onChange={e => set('x', e.target.value)}
@@ -366,7 +366,7 @@ export default function ContactFields({
               />
             </label>
             <label className="block">
-              <span className="t-label text-[#8E8E93]">GitHub</span>
+              <span className="t-label text-[var(--ink-2)]">GitHub</span>
               <input
                 value={draft.github ?? ''}
                 onChange={e => set('github', e.target.value)}
@@ -378,7 +378,7 @@ export default function ContactFields({
           </div>
 
           <label className="block">
-            <span className="t-label text-[#8E8E93]">Email</span>
+            <span className="t-label text-[var(--ink-2)]">Email</span>
             <input
               value={draft.email ?? ''}
               onChange={e => set('email', e.target.value)}
@@ -391,7 +391,7 @@ export default function ContactFields({
           </label>
 
           <label className="block">
-            <span className="t-label text-[#8E8E93]">Website</span>
+            <span className="t-label text-[var(--ink-2)]">Website</span>
             <input
               value={draft.website ?? ''}
               onChange={e => set('website', e.target.value)}
@@ -491,8 +491,8 @@ function TagField({
 
   return (
     <div>
-      <span className="t-label text-[#8E8E93]">Tags</span>
-      <p className="mt-0.5 text-[12px] text-[#8E8E93]">
+      <span className="t-label text-[var(--ink-2)]">Tags</span>
+      <p className="mt-0.5 text-[12px] text-[var(--ink-2)]">
         Your own labels — an employer we don&apos;t recognise, a team, anything you&apos;ll filter by
         later.
       </p>
@@ -510,14 +510,14 @@ function TagField({
           {value.map(tag => (
             <span
               key={tag}
-              className="inline-flex items-center gap-1 rounded-full bg-[#EBF4FE] py-1 pl-3 pr-1.5 text-[12.5px] font-semibold text-[#0058B0]"
+              className="inline-flex items-center gap-1 r-touch bg-[var(--paper)] py-1 pl-3 pr-1.5 text-[12.5px] font-semibold text-[var(--accent)]"
             >
               {tag}
               <button
                 type="button"
                 onClick={() => onChange(value.filter(t => t !== tag))}
                 aria-label={`Remove tag ${tag}`}
-                className={`${TAP_44_SQUARE} grid h-5 w-5 place-items-center rounded-full hover:bg-[#D6E7FB]`}
+                className={`${TAP_44_SQUARE} grid h-5 w-5 place-items-center r-touch hover:bg-[var(--surface)]`}
               >
                 <span aria-hidden="true" className="material-symbols-outlined text-[14px]">
                   close
@@ -555,7 +555,7 @@ function TagField({
             <button
               type="button"
               onClick={() => add(entry)}
-              className={`${TAP_44} inline-flex h-8 items-center gap-1 rounded-full bg-[#1D1D1F] px-3 text-[12px] font-semibold text-white`}
+              className={`${TAP_44} inline-flex h-8 items-center gap-1 r-touch bg-[var(--ink)] px-3 text-[12px] font-semibold text-[var(--accent-ink)]`}
             >
               <span aria-hidden="true" className="material-symbols-outlined text-[14px]">add</span>
               Create &ldquo;{typed}&rdquo;
@@ -566,7 +566,7 @@ function TagField({
               key={s}
               type="button"
               onClick={() => add(s)}
-              className={`${TAP_44} h-8 rounded-full bg-white px-3 text-[12px] font-semibold text-[#1D1D1F] shadow-[inset_0_0_0_1px_var(--hairline)] hover:bg-[#F7F7F9]`}
+              className={`${TAP_44} h-8 r-touch bg-[var(--surface)] px-3 text-[12px] font-semibold text-[var(--ink)] shadow-[inset_0_0_0_1px_var(--rule)] hover:bg-[var(--paper)]`}
             >
               {s}
             </button>

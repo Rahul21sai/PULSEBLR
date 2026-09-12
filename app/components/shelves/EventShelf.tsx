@@ -52,10 +52,10 @@ function CompactShelfCard({
   return (
     <Link
       href={`/events/${event._id}`}
-      className="pressable flex h-full w-full flex-col gap-1 rounded-[14px] bg-white px-3.5 py-3 text-left shadow-[inset_0_0_0_1px_var(--hairline)] transition-colors hover:bg-[#FAFAFC] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0071E3]"
+      className="pressable r-touch flex h-full w-full flex-col gap-1 bg-[var(--surface)] px-3.5 py-3 text-left shadow-[inset_0_0_0_1px_var(--rule)] transition-colors hover:bg-[var(--paper)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
     >
       {/* ── NOT BLUE, AND NOT `t-label`, AND BOTH CHANGES HAVE A RULE BEHIND THEM. ───────────────
-          It was `t-label text-[#0071E3]`: 11px uppercase at +0.055em in the accent. Two problems.
+          It was `t-label` in the accent: 11px uppercase at +0.055em. Two problems.
 
           globals.css rule 4 — the one that outranks every other document here — is that `--blue`
           means "you can act on this" and is never decoration. This whole card is ONE `<Link>`, so a
@@ -70,18 +70,18 @@ function CompactShelfCard({
           this is. The shelf keeps its visual difference from the curated shelf beside it — three
           text lines against two — without spending the accent to get it. */}
       {matched && (
-        <span className="truncate text-[11.5px] font-semibold tracking-[0] text-[#1D1D1F]">
+        <span className="truncate text-[11.5px] font-semibold tracking-[0] text-[var(--ink)]">
           {matched}
         </span>
       )}
-      <span className="line-clamp-2 text-[13.5px] font-semibold leading-[1.3] tracking-[-0.01em] text-[#1D1D1F]">
+      <span className="line-clamp-2 font-serif text-[15px] font-medium leading-[1.25] tracking-[-0.004em] text-[var(--ink)]">
         {event.title}
       </span>
       {/* Day, time and place on one line. `dayHeading` gives "Today"/"Tomorrow" where they apply,
           which is the part a reader scans for; the shelf spans weeks, so a bare time would leave the
           ordering looking arbitrary — the same reason the cover rails pass `showDate`. */}
-      <span className="mt-auto truncate text-[11.5px] text-[#6E6E73]">
-        <span className="font-semibold text-[#3a3a3c]">{dayHeading(event.startDateTime)}</span>
+      <span className="mt-auto truncate text-[11.5px] text-[var(--ink-2)]">
+        <span className="font-semibold text-[var(--ink-2)]">{dayHeading(event.startDateTime)}</span>
         {' · '}
         {timeIST(event.startDateTime)}
         {place && ` · ${place}`}
@@ -272,8 +272,14 @@ export default function EventShelf({
             </div>
           )}
           {/* `showDate` because a shelf is not a schedule — its rows can be weeks apart, and without
-              a date the ordering reads as arbitrary. */}
-          <div className="hidden rail sm:block">
+              a date the ordering reads as arbitrary.
+
+              `.rail` IS GONE FROM THIS WRAPPER, and leaving it would have been a visible bug rather
+              than a redundancy: the class draws `::before` as a 1px vertical line at 58px, which
+              `EventRow` used to meet with a `.rail-node` dot per card. The row is a hairline-separated
+              editorial row now and has no node, so the spine would have been a stray vertical rule
+              crossing every horizontal one at right angles — a second separator system for nothing. */}
+          <div className="hidden sm:block">
             {events.map(event => (
               <EventRow key={event._id} event={event} showDate />
             ))}

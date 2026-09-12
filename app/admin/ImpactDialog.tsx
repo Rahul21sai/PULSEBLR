@@ -175,8 +175,8 @@ export default function ImpactDialog({
 
         {loading && !report && (
           <div className="space-y-2">
-            <div className="skeleton h-4 w-2/3 rounded bg-[#EEEEF0]" />
-            <div className="skeleton h-4 w-1/2 rounded bg-[#EEEEF0]" />
+            <div className="skeleton h-4 w-2/3 rounded bg-[var(--paper)]" />
+            <div className="skeleton h-4 w-1/2 rounded bg-[var(--paper)]" />
           </div>
         )}
 
@@ -185,7 +185,7 @@ export default function ImpactDialog({
             <div className="flex items-center gap-2">
               <SeverityPill severity={summary.severity} />
               {summary.reversible && (
-                <span className="text-[12px] text-[#6E6E73]">
+                <span className="text-[12px] text-[var(--ink-2)]">
                   Restorable from the audit log afterwards
                 </span>
               )}
@@ -199,9 +199,9 @@ export default function ImpactDialog({
                   ['Scan folders', counts.folders],
                   ['People scanned', counts.contacts],
                 ].map(([label, n]) => (
-                  <div key={String(label)} className="rounded-xl bg-[#F7F7F9] px-3 py-2.5">
-                    <p className="t-label text-[#8E8E93]">{label}</p>
-                    <p className="tnum mt-0.5 text-[19px] font-bold text-[#1D1D1F]">{String(n)}</p>
+                  <div key={String(label)} className="rounded-xl bg-[var(--paper)] px-3 py-2.5">
+                    <p className="t-label text-[var(--ink-2)]">{label}</p>
+                    <p className="tnum mt-0.5 text-[19px] font-bold text-[var(--ink)]">{String(n)}</p>
                   </div>
                 ))}
               </div>
@@ -212,7 +212,7 @@ export default function ImpactDialog({
                 <li
                   key={w.code}
                   className={`rounded-xl px-3.5 py-2.5 text-[12.5px] leading-relaxed ${
-                    w.blocking ? 'bg-[#FFF1F0] text-[#C7362D]' : 'bg-[#F7F7F9] text-[#3a3a3c]'
+                    w.blocking ? 'bg-[var(--paper)] text-[var(--live)]' : 'bg-[var(--paper)] text-[var(--ink-2)]'
                   }`}
                 >
                   {w.message}
@@ -221,7 +221,7 @@ export default function ImpactDialog({
             </ul>
 
             {report && report.rows.length > 1 && (
-              <p className="text-[12px] text-[#6E6E73]">
+              <p className="text-[12px] text-[var(--ink-2)]">
                 {report.rows.length} rows selected.{' '}
                 {report.rows.filter(r => r.report.severity === 'blocked').length} have been acted on by
                 a user.

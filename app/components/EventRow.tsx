@@ -2,27 +2,77 @@
 import Link from 'next/link';
 
 import { FeedEvent } from '@/lib/event-types';
-import { meterLabel, meterLevel, scoreReasonLine } from '@/lib/events/score-reason';
 import {
   timeIST,
   shortDateIST,
   istDaysSpanned,
   locationLabel,
+  priceLabel,
   isHappeningNow,
-  categoryAccent,
 } from '@/lib/format';
-import EventCover from './EventCover';
-import EventPills from './EventPills';
 import SaveButton from './SaveButton';
 
 /**
- * One row on the time rail — the feed's primary unit.
+ * One row of the feed — an EDITORIAL LIST ROW, not a card.
  *
- * Layout: [ 19:30 ]──●──[ cover | title / host / where / pills ]──[ save ]
+ * ```
+ *  19:30    Kubernetes Bengaluru Meetup #42          [save]
+ *           Indiranagar · CNCF Bangalore · 180 going
+ *  ───────────────────────────────────────────────────────
+ * ```
  *
- * The clock time lives OUTSIDE the card, on the rail, so a column of times reads
- * as a schedule you can scan vertically. Putting the time inside each card (the
- * obvious choice) forces the eye to re-find it on every row.
+ * ═════════════════════════════════════════════════════════════════════════════════════════════
+ * WHAT CAME OFF, AND WHY EACH REMOVAL IS THE POINT RATHER THAN A SIDE EFFECT.
+ *
+ * This row was a white `rounded-[18px] card-shadow` panel holding a 76px cover thumbnail, a
+ * 15.5px sans title, an organiser line with an avatar, a venue line, a hairline band, three
+ * connection bars, a reason clause and a pill row — thirty of them stacked down the page. Since
+ * `--lift-1` was neutralised to `none`, the shadow composited to nothing, so what a reader
+ * actually met was thirty white rectangles floating on the paper ground with no defined edge.
+ * A list of cards is the one shape that reads as a template no matter what is in it.
+ *
+ *  · **THE CARD.** `--r-flat` on containers and list rows is the geometry rule, and hairlines do
+ *    all separating. So the row is a `rule-b` and nothing else: no surface, no radius, no ring.
+ *    The paper is the ground for the whole feed, which is what lets the day headings and the
+ *    rows read as one document instead of as a stack of objects.
+ *
+ *  · **THE `.meter`.** Three bars derived from `connectionScore`. The direction is explicit that
+ *    the score may never be a number, bar, meter, star or percentage — it is a ranking signal,
+ *    and "83" (or three bars) implies a resolution it does not have. CLAUDE.md §7 calls the meter
+ *    "the signature element"; that is now history, and `/events/[id]` lost it in the same pass.
+ *    **ROW ORDER IS HOW THE SCORE EXPRESSES ITSELF HERE.** Nothing replaces the bars — no badge,
+ *    no dot scale, no word like "high". The full rationale is one tap away on the event page,
+ *    which is where an argument belongs.
+ *
+ *  · **THE COVER THUMBNAIL.** The hardest removal to argue and the one with the best evidence:
+ *    `EventCover`'s own header measures **40% of the first twenty ranked rows with no
+ *    `imageUrl`** (29% corpus-wide), and its fallback for those is the event's DATE in the
+ *    category tint — sitting 12px from a gutter printing the same date. Two rows in five spent
+ *    76px square repeating their own neighbour. Removing it also returns ~90px of measure to the
+ *    title at 390px, which is what lets a 20px serif set as a headline rather than as a caption.
+ *    Covers are still the only colour this design system permits — they lead the Spotlight, the
+ *    curated shelf and grid view, all of which are one tap or one toggle away.
+ *
+ *  · **THE RAIL SPINE AND ITS NODE.** `.rail::before` drew a 1px vertical line at 58px and
+ *    `.rail-node` a dot where each card met it. That is a second separator system running at
+ *    right angles to the hairlines that now do the separating, and the node existed to mark the
+ *    join between a spine and a card — neither of which is left. Its 9px column is gone too.
+ *
+ *  · **THE PILL ROW, AND `EventPills.tsx` WITH IT — THE FILE IS DELETED.** Five `rounded-full`
+ *    capsules per row is the one geometry this system does not have: radius here means "you can
+ *    touch this", and nothing in a pill row is touchable. Dropping it from the row alone would have
+ *    left the component alive for `EventGridCard`, i.e. two vocabularies for the same four facts
+ *    across two views of one list — so `EventFactsLine` below serves both and the pills are gone.
+ *    That also closes a live violation of a recorded refusal: the price pill was `Free` on 88.5% of
+ *    rows. What each pill carried is accounted for in `EventFactsLine`'s header.
+ *
+ * WHAT THE TWO FACES ARE DOING, because it is the whole design in two lines of type. The title
+ * is `.ty-row-title` — 20px Newsreader, the same class the event page gives a venue name —
+ * because an event is a thing in the world. Everything else on the row is the app talking about
+ * it, so the clock, the date, the area, the host and the count are all tabular Jakarta at 13px.
+ * A reader can tell the two apart before reading a word, which is the only reason the row needs
+ * no labels, no icons and no chips to be scannable.
+ * ═════════════════════════════════════════════════════════════════════════════════════════════
  */
 export default function EventRow({
   event,
@@ -30,315 +80,206 @@ export default function EventRow({
 }: {
   event: FeedEvent;
   /**
-   * Render the DATE above the time in the rail gutter.
+   * Render the DATE above the time in the gutter.
    *
-   * Off by default, because in the day-grouped feed the section heading above already says which
-   * day it is and repeating it on every row is noise.
+   * Off by default, because in the day-grouped feed the section heading already says which day it
+   * is and repeating it on every row is noise.
    *
-   * It must be ON for any ungrouped list — currently the ranked sorts, which are the DEFAULT view.
-   * Those deliberately have no day headings (grouping a ranked list by day would re-sort it
-   * chronologically and discard the ranking), and without this the rail showed "18:30 / 21:30" with
-   * the date appearing nowhere on the row at all. Verified on a 375px viewport: a reader could not
-   * tell whether the top event was tonight or in three weeks.
+   * It must be ON for any ungrouped list — the ranked sorts, which are the DEFAULT view. Those
+   * deliberately have no day headings (grouping a ranked list by day would re-sort it
+   * chronologically and discard the ranking), and without this the gutter showed "18:30 / 21:30"
+   * with the date appearing nowhere on the row at all. Verified at 375px: a reader could not tell
+   * whether the top event was tonight or in three weeks.
    */
   showDate?: boolean;
 }) {
   const live = isHappeningNow(event.startDateTime, event.endDateTime);
-  const primaryCategory = event.category?.[0];
-  const accent = categoryAccent(primaryCategory);
   const href = `/events/${event._id}`;
+  const spanDays = event.endDateTime
+    ? istDaysSpanned(event.startDateTime, event.endDateTime)
+    : 0;
 
   return (
-    <div className="flex items-stretch gap-3 md:gap-4">
-      {/* Time + rail node */}
-      <div className="w-[42px] md:w-[58px] shrink-0 pt-4 flex flex-col items-end">
-        {showDate && (
-          /* Above the time, and quieter than it: under a ranked sort the date is context, not the
-             thing being scanned. `whitespace-nowrap` because "15 Sept" must not wrap to two lines
-             in a 42px gutter and push the time out of alignment with the rail node.
-             NOT `.t-label`: that class uppercases, so this read "15 SEPT" — a tracked-out caps
-             label above content that needs no announcing, and the date's own capitalisation
-             carries more information than the shout does. */
-          <span className="whitespace-nowrap text-[10px] font-semibold tracking-[0.01em] leading-none text-[color:var(--ink-3)] mb-1">
-            {shortDateIST(event.startDateTime)}
+    /*
+     * `rule-b` on every row, including the last of a group. The day heading below it opens with
+     * its own rule, so a group boundary reads as one line rather than two — and the final row of
+     * the final group wants a rule anyway: it is what tells the reader the list has ended rather
+     * than been cut off.
+     */
+    <article className="rule-b">
+      <div className="flex items-start gap-[var(--s-3)] py-[var(--s-4)] md:gap-[var(--s-4)]">
+        {/*
+         * THE CLOCK GUTTER — a schedule column read vertically, which is the one thing a card
+         * cannot give you. `tnum` (from `.ty-meta`) is what makes it a column: proportional
+         * figures put "11:00" and "19:30" at different widths and the edge stops being straight.
+         *
+         * 54px holds `26 Sept` at 13px with 2px to spare; 68px from `md`. The date is above the
+         * time and quieter than it, because under a ranked sort the date is context and the time
+         * is what is being scanned.
+         */}
+        {/*
+         * `.ty-meta` IS ON THIS CONTAINER AND NOT ON THE THREE SPANS INSIDE IT, AND THAT IS A HARD
+         * CONSTRAINT OF THE SUBSTRATE RATHER THAN A STYLE CHOICE.
+         *
+         * `.ty-meta` is written UNLAYERED in globals.css while every Tailwind utility is emitted into
+         * `@layer utilities`, and an unlayered declaration beats every layered one whatever its
+         * specificity. So `ty-meta font-semibold text-[var(--ink)]` on one element silently computes
+         * **weight 500 in --ink-2** — measured in Chromium, on this very row, before this comment
+         * existed: the clock rendered grey and unbolded and nothing in the source said so.
+         *
+         * Putting the class on the PARENT gives the children the size, the face and `tabular-nums` by
+         * inheritance, and leaves each free to set its own weight and ink with an ordinary utility —
+         * because those children carry no unlayered rule of their own. It is the only fix that keeps
+         * the scale in one place; the alternative is hand-setting `text-[13px] leading-[1.4]` per
+         * element, which is the drift the scale exists to prevent.
+         */}
+        <div className="ty-meta w-[54px] shrink-0 md:w-[68px]">
+          {showDate && (
+            <span className="block whitespace-nowrap">{shortDateIST(event.startDateTime)}</span>
+          )}
+          <span
+            /* `--live` on the clock is the ONE place a row spends the second hue, and it replaces
+               `.rail-node[data-live]`'s dot. The time is the right carrier: what is urgent about a
+               live event is its clock, and the ranked feed already groups live rows under their own
+               heading, so a per-row badge would say it twice. */
+            className={`block font-semibold ${live ? 'text-[var(--live)]' : 'text-[var(--ink)]'}`}
+          >
+            {timeIST(event.startDateTime)}
           </span>
-        )}
-        <span
-          className={`tnum text-[13px] md:text-[15px] font-semibold leading-none ${
-            live ? 'text-[#FF3B30]' : 'text-[#1D1D1F]'
-          }`}
-        >
-          {timeIST(event.startDateTime)}
-        </span>
-        {event.endDateTime &&
-          (() => {
+          {event.endDateTime && (
             /*
              * A multi-day event shows how many days it RUNS, not a bare end time.
              *
              * Printing the end time unconditionally made every multi-day event read as ending
-             * before it started. Measured on the live feed: 15 of the first 100 tech events cross
-             * an IST day boundary, and the conference sources are worst because their dates are
-             * date-only — `Great International Developer Summit` (3 days) and `WeAreDevelopers
-             * Conference India` (1 day) both rendered "05:30 / 05:30". Identical start and end
-             * reads as a data bug, so the reader distrusts the row rather than understanding it.
+             * before it started: 15 of the first 100 tech events cross an IST day boundary, and the
+             * conference sources are worst because their dates are date-only — `Great International
+             * Developer Summit` (3 days) rendered "05:30 / 05:30". Identical start and end reads as
+             * a data bug, so the reader distrusts the row rather than understanding it.
              *
-             * `+3d` rather than the end date, because this gutter is 42px on a phone and
-             * "→ 30 Apr" cannot fit without wrapping, which would push the time out of alignment
-             * with the rail node. The exact end is on the detail page; the rail only needs to say
-             * "this is not a one-evening thing".
+             * `+3d` rather than the end date, because the exact end is on the event page and this
+             * gutter is 54px. `--ink-2`, not `--ink-3`: the ink ramp forbids the lightest grey for
+             * text at any size, and this is 13px.
              */
-            const days = istDaysSpanned(event.startDateTime, event.endDateTime);
-            return (
-              <span
-                /* Was `#a1a1a6`, which measured 2.36:1 on the page grey — the worst contrast
-                   ratio in the app, on an 11px string. See the ink ramp note in globals.css. */
-                className="tnum text-[11px] text-[color:var(--ink-3)] leading-none mt-1"
-                title={
-                  days > 0
-                    ? `Runs until ${shortDateIST(event.endDateTime)}`
-                    : `Ends ${timeIST(event.endDateTime)}`
-                }
-              >
-                {days > 0 ? `+${days}d` : timeIST(event.endDateTime)}
-              </span>
-            );
-          })()}
-      </div>
-
-      <div className="w-[9px] shrink-0 flex justify-center pt-[22px]">
-        <span className="rail-node" data-live={live} />
-      </div>
-
-      {/* Card */}
-      <article className="flex-1 min-w-0 mb-3">
-        <div className="group relative bg-white rounded-[18px] card-shadow raise pressable overflow-hidden">
-          {/* Category cue. Kept to a low-opacity tint rather than a saturated stripe:
-              the cover image is the only thing on this card allowed to be colourful,
-              because it is the only part that is real content. */}
-          <span
-            aria-hidden="true"
-            className="absolute left-0 top-0 bottom-0 w-[3px] opacity-70"
-            style={{ background: accent }}
-          />
-
-          {/*
-           * A GRID, NOT A FLEX ROW, AND THE REASON IS THE FOOTER BAND'S GEOMETRY.
-           *
-           * Three rows — title, meta, the connection band — with the cover spanning the first two
-           * on a phone and all three on a desktop. That single difference is what lets the band be
-           * full-width UNDER the cover on a phone and beside it on a desktop, from one DOM.
-           *
-           * IT WAS A FLEX ROW WITH `mt-auto` AND A NEGATIVE MARGIN FIRST, AND THAT WAS BROKEN.
-           * `mt-auto` aligns the band's BOTTOM with the cover's bottom, not its top — so a card
-           * whose text is shorter than its cover put the band's hairline straight across the cover.
-           * Measured on the worst real case (a one-word title like "Demos", no organiser): cover
-           * bottom at 107px, band top at 77px, a rule drawn 30px up the image. It survived six
-           * fixture rows only because every one of them had a two-line title. Grid cannot express
-           * that bug: on a phone the band is in row 3 and the cover ends in row 2.
-           *
-           * `minmax(0,1fr)` rather than `1fr` for the text column: a bare `1fr` floors at
-           * min-content, which stops `truncate` and `line-clamp` from ever clamping.
-           */}
-          <div
-            className="grid grid-cols-[76px_minmax(0,1fr)] md:grid-cols-[104px_minmax(0,1fr)]
-                       grid-rows-[auto_auto_auto] md:grid-rows-[auto_minmax(0,1fr)_auto]
-                       gap-x-3 md:gap-x-4 gap-y-1
-                       pt-3 md:pt-4 pb-3 md:pb-4 pl-4 md:pl-5 pr-3 md:pr-4"
-          >
-            {/* aria-hidden as well as tabIndex={-1}: this link duplicates the title link below
-                it and wraps a deliberately decorative cover (EventCover sets alt=""), so it has
-                no accessible name and a screen reader would announce it as an unlabelled link.
-                Safe to hide because it is already out of the tab order — hiding a FOCUSABLE
-                element is the anti-pattern, and this is not one.
-                `self-start` so the link does not stretch past the cover it wraps when the text
-                beside it is the taller side. */}
-            <Link
-              href={href}
-              className="row-span-2 md:row-span-3 self-start rounded-xl overflow-hidden"
-              tabIndex={-1}
-              aria-hidden="true"
+            <span
+              /* No `text-[…]` here: `--ink-2` is what `.ty-meta` on the parent already gives, and a
+                 utility restating it would look like it was doing work it cannot do — see the note
+                 above. `--ink-3` would be wrong anyway; the ink ramp forbids it for text. */
+              className="block"
+              title={
+                spanDays > 0
+                  ? `Runs until ${shortDateIST(event.endDateTime)}`
+                  : `Ends ${timeIST(event.endDateTime)}`
+              }
             >
-              <EventCover
-                src={event.imageUrl}
-                title={event.title}
-                category={primaryCategory}
-                className="w-[76px] h-[76px] md:w-[104px] md:h-[104px] rounded-xl"
-                /* Coverless rows — 40% of the first twenty — show the date here instead of a
-                   monogram. It repeats the gutter visually and that is the intended trade: the
-                   gutter is a schedule column read vertically, the tile is this card's identity,
-                   and under a day-grouped sort (`showDate` false) the tile is the row's only date.
-                   It costs a screen-reader user nothing, because the tile is aria-hidden. */
-                date={event.startDateTime}
-              />
-            </Link>
-
-            <div className="col-start-2 row-start-1 min-w-0 flex items-start gap-2">
-              <h3 className="flex-1 min-w-0 text-[15.5px] md:text-[17.5px] font-semibold leading-[1.28] tracking-[-0.021em] text-[#1D1D1F]">
-                <Link href={href} className="hover:text-[#0071E3] transition-colors line-clamp-2">
-                  {event.title}
-                </Link>
-              </h3>
-              {/* `event.tracked` comes from `GET /api/events` for a signed-in caller, so a row
-                  the user already saved opens with a FILLED bookmark. Before this the prop
-                  existed and nothing passed it, and the only way to learn you had saved
-                  something was to save it again and collect a 409. */}
-              <SaveButton eventId={event._id} initiallySaved={event.tracked} />
-            </div>
-
-            <div className="col-start-2 row-start-2 self-start flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px] tracking-[0] text-[#6E6E73] min-w-0">
-              {event.organizer && (
-                <span className="inline-flex items-center gap-1 min-w-0 max-w-full">
-                  {event.hostAvatarUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element -- third-party avatar CDN
-                    <img
-                      src={event.hostAvatarUrl}
-                      alt=""
-                      loading="lazy"
-                      className="w-4 h-4 rounded-full object-cover shrink-0"
-                    />
-                  ) : (
-                    <span aria-hidden="true" className="material-symbols-outlined text-[14px] shrink-0">person</span>
-                  )}
-                  <span className="truncate max-w-[180px]">{event.organizer}</span>
-                </span>
-              )}
-              <span className="inline-flex items-center gap-1 min-w-0">
-                <span aria-hidden="true" className="material-symbols-outlined text-[14px] shrink-0">
-                  {event.format === 'online' ? 'videocam' : 'location_on'}
-                </span>
-                <span className="truncate max-w-[220px]">{locationLabel(event)}</span>
-              </span>
-            </div>
-
-            {/*
-             * THE CARD'S CONCLUSION, and the app's signature object.
-             *
-             * The meter used to be the FIRST ITEM of the metadata row above, at the same 12.5px
-             * grey as the host and the venue, with its clause truncated at 210px. The one signal
-             * Luma and Meetup cannot show was therefore one of five equal-weight scraps, which is
-             * why the row read as a wall.
-             *
-             * WHAT MAKES IT THE SIGNATURE IS STRUCTURE, NOT WEIGHT — a hairline and a band of its
-             * own, with the pills brought down beside it: the judgement on the left, the facts
-             * behind it on the right. The type stays the same quiet grey as everything else,
-             * because a card gets two levels of emphasis and the title already holds the loud
-             * one. A third would rebuild the wall this is fixing.
-             *
-             * IT SPANS BOTH COLUMNS ON A PHONE AND ONLY THE TEXT COLUMN ON A DESKTOP, and both
-             * halves of that are measured rather than chosen:
-             *
-             *   · Desktop, at the feed's real 896px column: the 104px cover is taller than the
-             *     text beside it, so the foot of the text column was already empty. Putting the
-             *     band there costs NOTHING — 136px per row before, 132px after. A full-width
-             *     footer under the cover was built first and measured +38px per row for no extra
-             *     information, because it converted that free space into new height.
-             *   · Phone, at 390px: the text is the taller side, so the band costs a line wherever
-             *     it goes — but confined to the 167px text column it wrapped to three lines and
-             *     orphaned a single pill on its own right-aligned row. Spanning both columns it
-             *     gets 255px, fits the clause and the pills in two, and saves 113px over six rows.
-             *
-             * Net against the shipped layout, same six fixtures: 1095 → 1060px on a phone and
-             * 888 → 864px on a desktop. The signature got bigger and the feed got shorter.
-             */}
-            <div className="col-span-2 md:col-span-1 md:col-start-2 row-start-3 hairline-t pt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5">
-              {typeof event.connectionScore === 'number' && (
-                <ConnectionMeter score={event.connectionScore} reason={cardReasonLine(event)} />
-              )}
-              {/* `ml-auto` so the facts sit opposite the judgement on one line where there is room.
-                  When they wrap they wrap as a GROUP, which reads as composed; the earlier version
-                  let a single pill orphan itself, right-aligned, on its own line. */}
-              <div className="ml-auto">
-                <EventPills event={event} compact />
-              </div>
-            </div>
-          </div>
+              {spanDays > 0 ? `+${spanDays}d` : timeIST(event.endDateTime)}
+            </span>
+          )}
         </div>
-      </article>
-    </div>
+
+        <div className="min-w-0 flex-1">
+          {/* `.ty-row-title`: 20px Newsreader at 390, 22px from 768. The loudest thing in the
+              feed, and the only serif on the row. `line-clamp-2` because a scraped title can run
+              to 140 characters and a three-line headline turns a schedule back into a wall. */}
+          <h3 className="ty-row-title text-[var(--ink)]">
+            <Link href={href} className="line-clamp-2 hover:text-[var(--accent)] transition-colors">
+              {event.title}
+            </Link>
+          </h3>
+          <EventFactsLine event={event} className="mt-[var(--s-1)]" />
+        </div>
+
+        {/* Already `r-touch` with a 44px `::after` overlay of its own. It stands 12px clear of the
+            title link, which is more than the 8px two overhangs would need to stop contesting each
+            other's band — the failure the scan sheet records. */}
+        <SaveButton eventId={event._id} initiallySaved={event.tracked} />
+      </div>
+    </article>
   );
 }
 
 /**
- * The clause that goes beside the meter on a CARD, as opposed to the full rationale the detail
- * page's "Worth going?" panel prints.
+ * Where, who, how many, what it costs — one line, in the reader's question order.
  *
- * WHAT IT LEAVES OUT IS THE DESIGN. `EventPills`, directly below, already shows a pill for food, for
- * the attendee count and for the price, and an `Online` pill for an online event — so naming any of
- * those again spends the row's remaining width saying nothing new. What is left is exactly the part
- * of the ranking a reader cannot see anywhere else on the row: whether it is in person (which has no
- * pill, absence being the only cue), what kind of gathering it is, who is behind it, and whether the
- * title reads like a sales session.
+ * EXPORTED AND SHARED WITH `EventGridCard`, for the reason that file already gives for importing
+ * from this one: which facts a card may state is ONE decision, and two copies of it drift the way
+ * two copies of the `>= 70 ? 3` threshold already had. It is also what keeps the view toggle honest
+ * — switching to grid changes the SHAPE of the list, never what it tells you.
  *
- * The format exclusion is CONDITIONAL because the pills are asymmetric — an online event gets a
- * pill and an in-person one does not, and in-person is the single biggest term in the score. Only
- * the component knows what else is on screen, which is why `scoreReasonLine` takes the exclusion
- * rather than guessing.
+ * THIS REPLACES `EventPills`, WHICH IS DELETED. Five capsule chips per row said the same four
+ * things at a fifth of the legibility, and radius in this system means "you can touch this" —
+ * nothing in a pill row is touchable. Everything the pills carried survives: live is the clock in
+ * `--live`, the price and the count and the venue are here, `Curated` is the last element below,
+ * and the duration is derivable from a start and an end. What did NOT survive is the `Food` chip,
+ * which is a perk rather than a fact about where and when, and which the event page states in
+ * prose where there is room to say what the food actually is.
  *
- * Two clauses, not four: a strong meetup reads `in person · meetup`, and the rest is one tap away.
+ * **NO "FREE" ELEMENT, AND THAT IS A MEASURED REFUSAL RATHER THAN AN OMISSION.** `Event.isFree` is
+ * `{ type: Boolean, default: true }` and reads true on 88.5% of upcoming tech events, so a `Free`
+ * label carries no information on nine rows in ten — and `EventPills` was still drawing one, filled,
+ * on every card in the feed, against a refusal `docs/design-decisions.md` records explicitly. A
+ * price is printed only when there IS a price; absence means free.
  *
- * `host` LOOKS LIKE IT BELONGS IN THE EXCLUSION LIST AND MUST NOT GO IN IT. The card prints the
- * organiser two lines up, so `hosted by Razorpay` beside `Razorpay Rize` is a visible repeat — but
- * excluding it makes the reason line EMPTY on exactly the rows that need it most. Read against the
- * scorer's weights: format is 34, a social category 12, a peer title 10, a named company 8. At
- * `max: 2` the host clause is already fourth and effectively never rendered, so excluding it buys
- * nothing on a normal row; the only rows where it DOES surface are the ones with no format, no
- * social category and no peer title, where it is the single thing the ranking has to say. Silence
- * under three bars is worse than a repeat.
+ * **NO CLAUSE FROM THE SCORER EITHER.** The direction permits row order "plus at most one factual
+ * clause", and at most one includes none. The three clauses a row would earn — in person, the
+ * attendee count, the price — are already here as facts the event states about itself, so a
+ * scorer-derived sentence would be the app repeating them back in its own voice thirty rows deep.
+ * `locationLabel` returning `Online` is what makes "in person" redundant rather than merely
+ * repetitive: the format is legible from the place on every row, both ways round. `cardReasonLine`
+ * went with it — it had no other caller.
  */
-export function cardReasonLine(event: FeedEvent): string {
-  const covered = ['food', 'attendees', 'price'] as const;
-  return scoreReasonLine(event, {
-    max: 2,
-    exclude: event.format === 'online' ? [...covered, 'format'] : covered,
-  });
-}
+export function EventFactsLine({ event, className = '' }: { event: FeedEvent; className?: string }) {
+  /*
+   * THE AREA, NOT THE VENUE, AND THAT IS THE WHOLE DIFFERENCE BETWEEN ONE LINE AND THREE.
+   *
+   * `locationLabel` returns `venue · area` and the venues are scraped strings that already carry the
+   * city: measured on the live feed, `East of NGEF Layout, Bengaluru · Kalyan Nagar` and
+   * `Prestige Ferns Galaxy, Bellandur, Bengaluru · Sarjapur Road`. Prefixing that to a host and a
+   * count wrapped this line to THREE lines under a two-line serif title, which is how a row starts
+   * competing with itself again.
+   *
+   * The area is also the fact the decision actually turns on — "can I get to Indiranagar on a
+   * Tuesday" — while the street address is what you need once you have decided, which is what the
+   * event page is for. `locationLabel` is kept as the fallback so an event with no `area` still says
+   * where it is (venue, then city) and an online one still says `Online`; area coverage is 63.7%
+   * after the geo backfill, so the fallback is a third of rows rather than an edge case.
+   *
+   * `'Other'` IS EXCLUDED, AND IT IS THE COMMONEST BUCKET — 31 of the areas the facet endpoint
+   * returns for the tech feed, against 11 for the runner-up. It is `resolveArea`'s sentinel for "a
+   * Bengaluru event we cannot place", so printing it renders an internal bucket name to a reader as
+   * though it were a neighbourhood: the row read `Other · bangalore apache airflow meetup`.
+   *
+   * EXCLUDING IT HERE WAS NOT ENOUGH, and that is worth recording because the first attempt looked
+   * right and shipped the same string: `locationLabel` composes `venue · area` ITSELF, so falling
+   * through to it re-introduced `Uber Bangalore Office · Other`. The fallback therefore hands it an
+   * event with `area` cleared, which is also why this is not just `event.venue` — that keeps
+   * `dropRepeatedSegments` (venues arrive as `Prestige Ferns Galaxy, Bellandur, Bengaluru`) and the
+   * city fallback for a row with no venue at all.
+   */
+  const area = event.area && event.area !== 'Other' ? event.area : null;
+  const place =
+    event.format === 'online' ? 'Online' : (area ?? locationLabel({ ...event, area: undefined }));
+  const facts: string[] = [place];
 
-/**
- * How likely is this event to leave you with useful contacts?
- *
- * `connectionScore` is computed for every event by lib/events/connection-score.ts —
- * in-person weighting, log-scaled attendee counts, food, and a hard penalty for
- * certification funnels — and it powers the "Best for connections" sort. It was
- * displayed NOWHERE, which meant the app's most distinctive signal was invisible and
- * that sort order looked arbitrary.
- *
- * Three bars, not the number. The score is a ranking signal, not a measurement, and
- * printing "83" invites a precision it does not have.
- *
- * BUT BARS ALONE WERE NOT ENOUGH, and the words are the fix. Three unlabelled bars rank at a glance
- * and explain nothing, so "Best for connections" still read as an arbitrary order — the reader had
- * no way to agree or disagree with it. The clause is derived from the same arithmetic that produced
- * the bars (`lib/events/score-reason.ts` differences `connectionScore` rather than restating it), so
- * the two cannot contradict each other.
- *
- * The level and the screen-reader label come from the same module for the same reason: this
- * component and the detail page each held their own copy of `>= 70 ? 3 : >= 50 ? 2 : 1`.
- */
-export function ConnectionMeter({ score, reason }: { score: number; reason?: string }) {
-  const level = meterLevel(score);
-  const label = meterLabel(score);
+  // The host is the fact a reader cannot infer from anywhere else on the row, and the one this
+  // product is actually about — "CNCF Bangalore is running this" is why you would go. The avatar
+  // that used to sit beside it is gone: a 16px third-party image is decoration at that size, and it
+  // was the row's only network request once the cover went.
+  if (event.organizer) facts.push(event.organizer);
+  if (typeof event.attendeeCount === 'number' && event.attendeeCount > 0) {
+    facts.push(`${event.attendeeCount} going`);
+  }
+  if (event.soldOut) facts.push('Sold out');
+  else if (!event.isFree && event.price) facts.push(priceLabel(event));
+  // LAST, because it is a claim about the listing rather than about the event. `source: 'manual'` is
+  // what `POST /api/events` writes for anything typed in by hand, and in grid view — which has no
+  // "Added by hand" shelf heading above it — this is the only place that provenance appears.
+  if (event.source === 'manual') facts.push('Added by hand');
 
   return (
-    <span className="inline-flex items-center gap-2 min-w-0 text-[12.5px] text-[#6E6E73]" title={label}>
-      {/* `meter-lg` rather than `meter`: at 3×11px, beside a 15.5px title, the bars read as a speck
-          of punctuation. The detail page keeps the small one because a 19px verdict word sits
-          beside it there and carries the judgement on its own. */}
-      <span className="meter meter-lg shrink-0" data-level={level} aria-hidden="true">
-        <i />
-        <i />
-        <i />
-      </span>
-      {/* The bars are the judgement; this is what a screen reader hears in their place, and what a
-          pointer user gets from the title. NOT the number — the score is a ranking signal, and "83"
-          would imply a precision it does not have. */}
-      <span className="sr-only">{label}</span>
-      {reason && (
-        /* Wraps now rather than truncating at 210px. In the old metadata row a long clause pushed
-           the host and the venue onto a third line, so cutting it was the lesser cost; in its own
-           band the second line is free, and the tail of the clause is the part the reader had no
-           other way to see. */
-        <span className="min-w-0">{reason}</span>
-      )}
-    </span>
+    /* `line-clamp-2` is a CEILING, not the expected shape: with the area rather than the venue the
+       line fits once on almost every row, and the clamp is there so a 60-character community name
+       (`Bangalore Apache Airflow / Iceberg / Kafka Meetup Group`) cannot turn a 110px row into a
+       160px one. Two lines of 13px is the most a fact line may spend under a title. */
+    <p className={`ty-meta line-clamp-2 ${className}`}>{facts.join(' · ')}</p>
   );
 }

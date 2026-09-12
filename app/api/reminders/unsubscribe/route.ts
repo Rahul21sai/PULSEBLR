@@ -67,14 +67,23 @@ function page(input: { title: string; body: string; status: number }): NextRespo
   <meta name="robots" content="noindex, nofollow">
   <title>${escapeHtml(input.title)} · PulseBLR</title>
   <style>
+    /* LITERAL HEXES ON PURPOSE - DO NOT CONVERT THESE TO var(). This is a standalone
+       document: app/globals.css is not in scope, so a custom property would resolve to
+       nothing and paint transparent.
+
+       Every colour below mirrors one of the nine tokens - ground/--paper, card/--surface,
+       body/--ink, secondary/--ink-2, quiet/--ink-3, rule/--rule, link/--accent. Read the
+       CURRENT value out of the palette block in app/globals.css and re-sync by hand; this
+       comment deliberately does NOT repeat the hexes, because a value copied into a comment
+       is a snapshot that goes stale silently and then gets trusted. */
     :root { color-scheme: light; }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; background: #F7F7F9; color: #1D1D1F; margin: 0; padding: 24px; display: flex; min-height: 100vh; align-items: center; justify-content: center; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; background: #FAF9F5; color: #121417; margin: 0; padding: 24px; display: flex; min-height: 100vh; align-items: center; justify-content: center; }
     .card { background: #FFFFFF; border-radius: 18px; box-shadow: 0 0.5px 0 rgba(0,0,0,0.07), 0 8px 30px rgba(0,0,0,0.06); padding: 28px 24px; max-width: 420px; width: 100%; }
     h1 { font-size: 21px; letter-spacing: -0.02em; margin: 0 0 10px 0; }
-    p { font-size: 15px; line-height: 1.55; color: #6E6E73; margin: 0 0 14px 0; }
-    button { appearance: none; border: 0; width: 100%; min-height: 48px; border-radius: 999px; background: #1D1D1F; color: #FFFFFF; font-size: 15px; font-weight: 600; cursor: pointer; touch-action: manipulation; }
-    a.quiet { display: inline-block; margin-top: 14px; font-size: 14px; color: #0071E3; text-decoration: none; }
-    .ok { color: #248A3D; font-weight: 600; }
+    p { font-size: 15px; line-height: 1.55; color: #55595F; margin: 0 0 14px 0; }
+    button { appearance: none; border: 0; width: 100%; min-height: 48px; border-radius: 999px; background: #121417; color: #FFFFFF; font-size: 15px; font-weight: 600; cursor: pointer; touch-action: manipulation; }
+    a.quiet { display: inline-block; margin-top: 14px; font-size: 14px; color: #12513C; text-decoration: none; }
+    .ok { color: #12513C; font-weight: 600; }
   </style>
 </head>
 <body>

@@ -56,17 +56,17 @@ export default async function IntakePage({ params }: { params: Promise<{ token: 
 
   if (!folder) {
     return (
-      <main className="grid min-h-screen place-items-center bg-[#F5F5F7] px-6">
+      <main className="grid min-h-screen place-items-center bg-[var(--paper)] px-6">
         <div className="max-w-[360px] text-center">
-          <span aria-hidden="true" className="material-symbols-outlined text-[40px] text-[#8E8E93]">link_off</span>
-          <h1 className="t-title mt-3 text-[#1D1D1F]">This link is not active</h1>
-          <p className="mt-2 text-[13.5px] leading-relaxed text-[#6E6E73]">
+          <span aria-hidden="true" className="material-symbols-outlined text-[40px] text-[var(--ink-3)]">link_off</span>
+          <h1 className="ty-section mt-3 text-[var(--ink)]">This link is not active</h1>
+          <p className="mt-2 text-[13.5px] leading-relaxed text-[var(--ink-2)]">
             Sign-up links expire after the event, and can be switched off at any time. Ask for a
             fresh code, or just swap LinkedIn details the usual way.
           </p>
           <Link
             href="/"
-            className="mt-5 inline-flex h-10 items-center rounded-full bg-[#1D1D1F] px-5 text-[13.5px] font-semibold text-white"
+            className="pressable mt-5 inline-flex h-10 items-center r-touch bg-[var(--ink)] px-5 text-[13.5px] font-semibold text-[var(--accent-ink)]"
           >
             About PulseBLR
           </Link>
@@ -76,22 +76,18 @@ export default async function IntakePage({ params }: { params: Promise<{ token: 
   }
 
   return (
-    <main className="min-h-screen bg-[#F5F5F7] px-4 py-10">
+    <main className="min-h-screen bg-[var(--paper)] px-4 py-10">
       <div className="mx-auto max-w-[420px]">
         <div className="mb-5 text-center">
-          <p className="t-label text-[#8E8E93]">You&apos;re adding yourself to</p>
-          <h1
-            className="mt-1.5 text-[26px] font-bold leading-tight tracking-[-0.03em] text-[#1D1D1F]"
-            style={{ fontFamily: 'var(--font-display)' }}
-          >
-            {folder.name}
-          </h1>
-          {folder.venue && <p className="mt-1 text-[13px] text-[#6E6E73]">{folder.venue}</p>}
+          <p className="t-label text-[var(--ink-2)]">You&apos;re adding yourself to</p>
+          {/* SERIF: the folder is named after the event you are standing at. */}
+          <h1 className="ty-h1 mt-[var(--s-2)] text-[var(--ink)]">{folder.name}</h1>
+          {folder.venue && <p className="ty-meta mt-[var(--s-1)]">{folder.venue}</p>}
         </div>
 
         <IntakeForm token={token} folderName={folder.name} />
 
-        <p className="mt-4 px-2 text-center text-[11.5px] leading-relaxed text-[#8E8E93]">
+        <p className="mt-4 px-2 text-center text-[11.5px] leading-relaxed text-[var(--ink-2)]">
           What you enter goes to the person who showed you this code, so they remember who they
           met. It is not published anywhere and nobody else can read this folder.
         </p>

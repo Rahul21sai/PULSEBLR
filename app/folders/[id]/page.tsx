@@ -15,7 +15,7 @@ import ContactFields, {
   type ContactDraft,
 } from '../../components/scan/ContactFields';
 import FolderSettingsSheet from './FolderSettingsSheet';
-import { Banner, Button, ButtonLink, Card, EmptyState, PageHeader } from '../../components/ui';
+import { Banner, Button, ButtonLink } from '../../components/ui';
 import { dayHeading, fullDateIST, relativeTime, timeIST } from '@/lib/format';
 import {
   moveQueuedContact,
@@ -518,12 +518,13 @@ export default function FolderPage({ params }: { params: Promise<{ id: string }>
     return (
       <AppShell title="People">
         <div className="mx-auto max-w-[900px] px-4 pt-6 md:px-8">
-          <EmptyState
-            icon="folder_off"
-            title="Folder not found"
-            body={error}
-            action={<ButtonLink href="/folders">Back to folders</ButtonLink>}
-          />
+          <div className="rule-y py-[var(--s-8)]">
+            <h1 className="ty-section text-[var(--ink)]">Folder not found</h1>
+            <p className="mt-[var(--s-3)] ty-body max-w-[52ch] text-[color:var(--ink-2)]">{error}</p>
+            <div className="mt-[var(--s-4)]">
+              <ButtonLink href="/folders">Back to folders</ButtonLink>
+            </div>
+          </div>
         </div>
       </AppShell>
     );
@@ -534,23 +535,34 @@ export default function FolderPage({ params }: { params: Promise<{ id: string }>
       <div className="mx-auto max-w-[1240px] px-4 pt-4 md:px-8">
         <Link
           href="/folders"
-          className="mb-3 inline-flex items-center gap-1 text-[13px] font-semibold text-[#0071E3] hover:underline"
+          className="pressable mb-[var(--s-3)] inline-flex h-11 items-center gap-1 ty-meta font-semibold transition-colors hover:text-[var(--ink)]"
         >
           <span aria-hidden="true" className="material-symbols-outlined text-[16px]">arrow_back</span>
           All folders
         </Link>
 
-        <PageHeader
-          eyebrow={folder?.eventDate ? dayHeading(folder.eventDate) : undefined}
-          title={folder?.name ?? (loading ? 'Loading…' : 'Folder')}
-          subtitle={
-            folder
-              ? `${rows.length} ${rows.length === 1 ? 'person' : 'people'}${
-                  folder.venue ? ` · ${folder.venue}` : ''
-                }`
-              : undefined
-          }
-          action={
+        {/*
+          THE FOLDER'S NAME IS SERIF AT `.ty-h1`, because it is an event that happened in the city —
+          the same face and step the event page gives an event title. The date above it and the count
+          below it are the app talking, so both are `.ty-meta` sans. `PageHeader` could not express
+          that (it sets one face for every page) and its `eyebrow` slot printed the date in the
+          tracked-out small label this system removed.
+
+          No `shrink-0` on the action group: five controls at 390 measure well past the content box,
+          and pinning their width is what puts a page into a sideways scroll.
+        */}
+        <div className="mb-[var(--s-8)] flex flex-wrap items-start justify-between gap-[var(--s-4)]">
+          <div className="min-w-0 basis-full md:max-w-[62ch] md:basis-auto">
+            {folder?.eventDate && <p className="ty-meta mb-[var(--s-1)]">{dayHeading(folder.eventDate)}</p>}
+            <h1 className="ty-h1 text-[var(--ink)]">{folder?.name ?? (loading ? 'Loading…' : 'Folder')}</h1>
+            {folder && (
+              <p className="ty-meta mt-[var(--s-2)]">
+                {rows.length} {rows.length === 1 ? 'person' : 'people'}
+                {folder.venue ? ` · ${folder.venue}` : ''}
+              </p>
+            )}
+          </div>
+          <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               {/*
                 THE MODE SWITCH, offered only when there is something to select — a Select button over
@@ -567,7 +579,7 @@ export default function FolderPage({ params }: { params: Promise<{ id: string }>
                   type="button"
                   aria-pressed={selecting}
                   onClick={() => (selecting ? leaveSelection() : setSelecting(true))}
-                  className={`${TAP_44} inline-flex h-10 items-center justify-center gap-1.5 rounded-full bg-white px-5 text-[13.5px] font-semibold tracking-[-0.006em] text-[#1D1D1F] shadow-[inset_0_0_0_1px_var(--hairline-strong)] pressable hover:bg-[#F7F7F9]`}
+                  className={`${TAP_44} inline-flex h-10 items-center justify-center gap-1.5 r-touch bg-[var(--surface)] px-5 text-[13.5px] font-semibold tracking-[-0.006em] text-[var(--ink)] shadow-[inset_0_0_0_1px_var(--rule)] pressable hover:bg-[var(--paper)]`}
                 >
                   <span aria-hidden="true" className="material-symbols-outlined text-[17px]">
                     {selecting ? 'close' : 'checklist'}
@@ -593,8 +605,8 @@ export default function FolderPage({ params }: { params: Promise<{ id: string }>
                 Settings
               </Button>
             </div>
-          }
-        />
+          </div>
+        </div>
 
         {notice && (
           <div className="mb-4">
@@ -610,26 +622,26 @@ export default function FolderPage({ params }: { params: Promise<{ id: string }>
         {/* Withdrawn while selecting: its Message and Done buttons are competing targets, and this
             mode has one meaning per tap. */}
         {due.length > 0 && !selecting && (
-          <div className="mb-4">
-            <Card padding="tight">
+          /* A LEFT RULE IN `--accent`, which is `Banner`'s own tone treatment: the follow-up strip is
+             this feature's reason to exist, so it leads — but `--live` is rationed for things that
+             expire imminently, and a permanent fixture wearing the loudest colour is how an accent
+             stops meaning anything. That trade is already recorded for the tracker's strip. */
+          <div className="mb-[var(--s-6)] border-l-2 border-[var(--accent)] bg-[var(--paper)] px-[var(--s-4)] py-[var(--s-3)]">
               <div className="mb-2 flex items-center justify-between">
-                <h2 className="t-label text-[#A85B00]">
+                <h2 className="t-label text-[color:var(--ink)]">
                   {due.length} follow-up{due.length === 1 ? '' : 's'} due
                 </h2>
               </div>
-              <div className="flex flex-col gap-2">
+              <div className="flex flex-col">
                 {due.map(contact => (
                   <div
                     key={contact._id}
-                    className="flex items-center justify-between gap-3 rounded-xl bg-[#FFF9F0] px-3 py-2.5"
+                    className="rule-b flex items-center justify-between gap-3 py-[var(--s-2)] last:border-0"
                   >
                     <div className="min-w-0">
-                      <p className="truncate text-[13.5px] font-semibold text-[#1D1D1F]">
-                        {contact.name}
-                      </p>
-                      <p className="text-[12px] text-[#6E6E73]">
-                        due {relativeTime(contact.followUpAt!)}
-                      </p>
+                      {/* SERIF: a person's name. */}
+                      <p className="ty-row-title truncate text-[var(--ink)]">{contact.name}</p>
+                      <p className="ty-meta">due {relativeTime(contact.followUpAt!)}</p>
                     </div>
                     <div className="flex shrink-0 items-center gap-2">
                       {contact.linkedin && (
@@ -650,14 +662,14 @@ export default function FolderPage({ params }: { params: Promise<{ id: string }>
                   </div>
                 ))}
               </div>
-            </Card>
           </div>
         )}
 
         {/* ── Bulk bar — only in selection mode, and only with a selection ─ */}
         {selecting && chosen.length > 0 && (
-          /* Sticky under the mobile header, so it stays reachable while scrolling forty rows. */
-          <div className="sticky top-16 z-20 mb-4">
+          /* Sticky under the mobile header (`--topbar-h`), so it stays reachable while scrolling
+             forty rows. Not `.sticky-bar`: that shadow is thrown upward for a BOTTOM bar. */
+          <div className="sticky top-[var(--topbar-h)] z-20 mb-[var(--s-4)] rule-b bg-[var(--surface)]">
             <BulkBar
               total={chosen.length}
               queued={chosenQueued.length}
@@ -705,26 +717,28 @@ export default function FolderPage({ params }: { params: Promise<{ id: string }>
         )}
 
         {loading ? (
-          <Card>
-            <div className="h-4 w-1/3 rounded bg-[#EEEEF0]" />
-            <div className="mt-3 h-3 w-1/2 rounded bg-[#F3F3F5]" />
-          </Card>
+          <div className="rule-t pt-[var(--s-4)]">
+            <div className="h-5 w-1/3 bg-[var(--paper)]" />
+            <div className="mt-3 h-3 w-1/2 bg-[var(--paper)]" />
+          </div>
         ) : rows.length === 0 ? (
-          <EmptyState
-            icon="qr_code_scanner"
-            title="Nobody here yet"
-            body="Point the scanner at somebody's LinkedIn QR, or add them by hand if they'd rather just tell you."
-            action={
+          <div className="rule-y py-[var(--s-8)]">
+            <h2 className="ty-section text-[var(--ink)]">Nobody here yet</h2>
+            <p className="mt-[var(--s-3)] ty-body max-w-[52ch] text-[color:var(--ink-2)]">
+              Point the scanner at somebody&apos;s LinkedIn QR, or add them by hand if they&apos;d
+              rather just tell you.
+            </p>
+            <div className="mt-[var(--s-4)]">
               <ButtonLink href={`/scan?folder=${id}`} tone="primary" icon="qr_code_scanner">
                 Open the scanner
               </ButtonLink>
-            }
-          />
+            </div>
+          </div>
         ) : (
           <>
             {selecting && (
-              <p className="mb-2 text-[12.5px] text-[#6E6E73]">
-                <strong className="tnum text-[#1D1D1F]">{chosen.length}</strong> of{' '}
+              <p className="ty-meta mb-2">
+                <strong className="tnum text-[var(--ink)]">{chosen.length}</strong> of{' '}
                 <span className="tnum">{rows.length}</span> selected — tap a row to pick it, Escape to
                 stop.
               </p>
@@ -827,13 +841,15 @@ function ContactTable({
     : ['Name', 'Company', 'How you met', 'Links', 'Scanned', ''];
 
   return (
-    <div className="hidden overflow-hidden rounded-[18px] bg-white card-shadow md:block">
+    /* Flat and ruled: `card-shadow` resolves to `--lift-1: none`, so the rounded surface was a
+       radius around nothing. The header row's hairline is what separates it now. */
+    <div className="hidden overflow-hidden rule-t md:block">
       <div className="overflow-x-auto">
         <table className="w-full border-collapse text-left">
           <thead>
-            <tr className="border-b border-[color:var(--hairline)]">
+            <tr className="rule-b">
               {headers.map((header, i) => (
-                <th key={`${header}:${i}`} className="t-label px-4 py-3 text-[#8E8E93]">
+                <th key={`${header}:${i}`} className="t-label px-4 py-3 text-[color:var(--ink-2)]">
                   {header}
                 </th>
               ))}
@@ -845,8 +861,8 @@ function ContactTable({
               return (
                 <tr
                   key={contact._id}
-                  className={`border-b border-[color:var(--hairline)] last:border-0 ${
-                    isSelected ? 'bg-[#EBF4FE]' : 'hover:bg-[#FAFAFC]'
+                  className={`rule-b last:border-0 ${
+                    isSelected ? 'bg-[var(--paper)]' : 'hover:bg-[var(--paper)]'
                   }`}
                 >
                   {selecting && (
@@ -862,10 +878,10 @@ function ContactTable({
                         aria-pressed={isSelected}
                         aria-label={`Select ${contact.name}`}
                         onClick={() => onToggle(contact._id)}
-                        className={`${TAP_44_SQUARE} grid h-5 w-5 place-items-center rounded-[6px] ${
+                        className={`${TAP_44_SQUARE} grid h-5 w-5 place-items-center r-touch ${
                           isSelected
-                            ? 'bg-[#0071E3] text-white'
-                            : 'bg-white shadow-[inset_0_0_0_1.5px_var(--hairline-strong)]'
+                            ? 'bg-[var(--accent)] text-[var(--accent-ink)]'
+                            : 'bg-[var(--surface)] shadow-[inset_0_0_0_1px_var(--rule)]'
                         }`}
                       >
                         {isSelected && (
@@ -882,9 +898,10 @@ function ContactTable({
                   <td className="px-4 py-3 align-top">
                     <div className="flex items-start gap-2">
                       <div className="min-w-0">
-                        <p className="text-[13.5px] font-semibold text-[#1D1D1F]">{contact.name}</p>
+                        {/* SERIF: a person's name, the same face `/people` gives it. */}
+                        <p className="ty-row-title text-[var(--ink)]">{contact.name}</p>
                         {(contact.role || contact.headline) && (
-                          <p className="text-[12px] text-[#6E6E73]">
+                          <p className="text-[12px] text-[var(--ink-2)]">
                             {contact.role || contact.headline}
                           </p>
                         )}
@@ -895,11 +912,11 @@ function ContactTable({
                     </div>
                   </td>
                   <td className="px-4 py-3 align-top">
-                    <span className="text-[13px] text-[#1D1D1F]">{contact.company || '—'}</span>
+                    <span className="text-[13px] text-[var(--ink)]">{contact.company || '—'}</span>
                     {contact.isTargetCompany && <TargetBadge />}
                   </td>
                   <td className="max-w-[280px] px-4 py-3 align-top">
-                    <p className="line-clamp-2 text-[12.5px] leading-relaxed text-[#6E6E73]">
+                    <p className="line-clamp-2 text-[12.5px] leading-relaxed text-[var(--ink-2)]">
                       {contact.note || '—'}
                     </p>
                   </td>
@@ -908,7 +925,7 @@ function ContactTable({
                       <ContactLinks contact={contact} />
                     </td>
                   )}
-                  <td className="whitespace-nowrap px-4 py-3 align-top text-[12px] text-[#8E8E93]">
+                  <td className="whitespace-nowrap px-4 py-3 align-top text-[12px] text-[var(--ink-2)]">
                     {/* IST, via lib/format.ts. */}
                     {timeIST(contact.scannedAt)}
                   </td>
@@ -917,7 +934,7 @@ function ContactTable({
                       <button
                         type="button"
                         onClick={() => onEdit(contact)}
-                        className={`${TAP_44} rounded-full px-3 py-1.5 text-[12.5px] font-semibold text-[#0071E3] hover:bg-[#EBF4FE]`}
+                        className={`${TAP_44} r-touch px-3 py-1.5 text-[12.5px] font-semibold text-[var(--accent)] hover:bg-[var(--paper)]`}
                       >
                         Edit
                       </button>
@@ -949,7 +966,7 @@ function ContactCards({
   onToggle: (id: string) => void;
 }) {
   return (
-    <div className="flex flex-col gap-2 md:hidden">
+    <div className="rule-t md:hidden">
       {rows.map(contact => {
         const isSelected = selected.has(contact._id);
 
@@ -957,13 +974,13 @@ function ContactCards({
         // drifts is always the mode you look at less often.
         const summary = (
           <>
-            <p className="flex items-center gap-2 text-[15px] font-semibold text-[#1D1D1F]">
+            <p className="ty-row-title flex items-center gap-2 text-[var(--ink)]">
               <span className="truncate">{contact.name}</span>
               {contact.pending && (
                 <PendingDot blocked={contact.blocked} reason={contact.blockedReason} />
               )}
             </p>
-            <p className="mt-0.5 text-[12.5px] text-[#6E6E73]">
+            <p className="ty-meta mt-[var(--s-1)]">
               {[contact.role || contact.headline, contact.company].filter(Boolean).join(' · ') ||
                 'No details yet'}
             </p>
@@ -974,8 +991,8 @@ function ContactCards({
         return (
           <div
             key={contact._id}
-            className={`rounded-[18px] bg-white p-4 card-shadow ${
-              isSelected ? 'shadow-[inset_0_0_0_2px_var(--blue)]' : ''
+            className={`rule-b py-[var(--s-4)] ${
+              isSelected ? 'border-l-2 border-[var(--accent)] pl-[var(--s-3)]' : 'border-l-2 border-transparent pl-[var(--s-3)]'
             }`}
           >
             <div className="flex items-start justify-between gap-3">
@@ -989,14 +1006,14 @@ function ContactCards({
                   type="button"
                   aria-pressed={isSelected}
                   onClick={() => onToggle(contact._id)}
-                  className="flex min-w-0 flex-1 items-start gap-3 rounded-lg text-left outline-none [touch-action:manipulation] focus-visible:shadow-[0_0_0_2px_var(--blue)]"
+                  className="flex min-w-0 flex-1 items-start gap-3 r-touch text-left outline-none [touch-action:manipulation] focus-visible:shadow-[0_0_0_2px_var(--accent)]"
                 >
                   <span
                     aria-hidden="true"
-                    className={`mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-[6px] ${
+                    className={`mt-0.5 grid h-5 w-5 shrink-0 place-items-center r-touch ${
                       isSelected
-                        ? 'bg-[#0071E3] text-white'
-                        : 'bg-white shadow-[inset_0_0_0_1.5px_var(--hairline-strong)]'
+                        ? 'bg-[var(--accent)] text-[var(--accent-ink)]'
+                        : 'bg-[var(--surface)] shadow-[inset_0_0_0_1px_var(--rule)]'
                     }`}
                   >
                     {isSelected && (
@@ -1014,7 +1031,7 @@ function ContactCards({
                     type="button"
                     onClick={() => onEdit(contact)}
                     aria-label={`Edit ${contact.name}`}
-                    className={`${TAP_44_SQUARE} grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[#F5F5F7] text-[#6E6E73]`}
+                    className={`${TAP_44_SQUARE} grid h-8 w-8 shrink-0 place-items-center r-touch bg-[var(--paper)] text-[var(--ink-2)]`}
                   >
                     <span aria-hidden="true" className="material-symbols-outlined text-[18px]">
                       edit
@@ -1025,13 +1042,15 @@ function ContactCards({
             </div>
 
             {contact.note && (
-              <p className="mt-2.5 text-[13px] leading-relaxed text-[#3a3a3c]">{contact.note}</p>
+              <p className="mt-[var(--s-2)] border-l-2 border-[color:var(--rule)] pl-2.5 text-[13px] leading-[1.5] text-[color:var(--ink-2)]">
+                {contact.note}
+              </p>
             )}
 
             <div className="mt-3 flex items-center justify-between gap-2">
               {/* Links withdrawn while selecting, for the reason the table drops the column. */}
               {selecting ? <span /> : <ContactLinks contact={contact} />}
-              <span className="text-[11.5px] text-[#8E8E93]">{timeIST(contact.scannedAt)}</span>
+              <span className="ty-meta">{timeIST(contact.scannedAt)}</span>
             </div>
           </div>
         );
@@ -1052,7 +1071,7 @@ function ContactLinks({ contact }: { contact: ContactDTO }) {
     links.push({ href: `https://github.com/${contact.github}`, icon: 'code', label: 'GitHub' });
   }
 
-  if (!links.length) return <span className="text-[12.5px] text-[#8E8E93]">—</span>;
+  if (!links.length) return <span className="text-[12.5px] text-[var(--ink-2)]">—</span>;
 
   return (
     /*
@@ -1072,7 +1091,7 @@ function ContactLinks({ contact }: { contact: ContactDTO }) {
           rel="noopener noreferrer"
           aria-label={link.label}
           title={link.label}
-          className={`${TAP_44_SQUARE} grid h-8 w-8 place-items-center rounded-full bg-[#F5F5F7] text-[#3a3a3c] hover:bg-[#EBF4FE] hover:text-[#0071E3]`}
+          className={`${TAP_44_SQUARE} grid h-8 w-8 place-items-center r-touch bg-[var(--paper)] text-[var(--ink-2)] hover:text-[var(--accent)]`}
         >
           <span aria-hidden="true" className="material-symbols-outlined text-[17px]">{link.icon}</span>
         </a>
@@ -1094,7 +1113,7 @@ function PendingDot({ blocked = false, reason }: { blocked?: boolean; reason?: s
     return (
       <span
         title={reason ?? 'The server refused this capture. Open People to fix or discard it.'}
-        className="inline-flex shrink-0 items-center gap-1 rounded-full bg-[#FFF1F0] px-2 py-0.5 text-[10.5px] font-bold text-[#C7362D]"
+        className="pill pill-live shrink-0"
       >
         <span aria-hidden="true" className="material-symbols-outlined text-[12px]">error</span>
         stuck
@@ -1104,7 +1123,7 @@ function PendingDot({ blocked = false, reason }: { blocked?: boolean; reason?: s
   return (
     <span
       title="Saved on this device, not uploaded yet"
-      className="inline-flex shrink-0 items-center gap-1 rounded-full bg-[#F5F5F7] px-2 py-0.5 text-[10.5px] font-bold text-[#6E6E73]"
+      className="pill pill-quiet shrink-0"
     >
       <span aria-hidden="true" className="material-symbols-outlined text-[12px]">cloud_off</span>
       local
@@ -1114,7 +1133,7 @@ function PendingDot({ blocked = false, reason }: { blocked?: boolean; reason?: s
 
 function TargetBadge() {
   return (
-    <span className="mt-1 inline-block rounded-full bg-[#EBF7EF] px-2 py-0.5 text-[10.5px] font-bold text-[#166B35]">
+    <span className="pill pill-quiet mt-1 text-[color:var(--accent)]">
       Target company
     </span>
   );
@@ -1166,17 +1185,20 @@ function BulkBar({
   onCancel: () => void;
 }) {
   const ACTION =
-    'inline-flex h-11 items-center justify-center rounded-full px-4 text-[13px] font-semibold pressable disabled:opacity-45 disabled:pointer-events-none';
-  const PRIMARY = `${ACTION} bg-[#1D1D1F] text-white hover:bg-black`;
-  const QUIET = `${ACTION} bg-white text-[#1D1D1F] shadow-[inset_0_0_0_1px_var(--hairline-strong)] hover:bg-[#F7F7F9]`;
+    'inline-flex h-11 items-center justify-center r-touch px-4 text-[13px] font-semibold pressable disabled:opacity-45 disabled:pointer-events-none';
+  const PRIMARY = `${ACTION} bg-[var(--ink)] text-[var(--accent-ink)]`;
+  const QUIET = `${ACTION} bg-[var(--surface)] text-[var(--ink)] shadow-[inset_0_0_0_1px_var(--rule)] hover:bg-[var(--paper)]`;
   const INPUT =
-    'h-11 min-w-[150px] flex-1 rounded-full bg-[#F7F7F9] px-4 text-[13.5px] text-[#1D1D1F] outline-none focus:shadow-[inset_0_0_0_2px_var(--blue)]';
-  const LABEL = 't-label w-[68px] shrink-0 pt-3 text-[#8E8E93]';
+    'h-11 min-w-[150px] flex-1 r-touch bg-[var(--paper)] px-4 text-[13.5px] text-[var(--ink)] shadow-[inset_0_0_0_1px_var(--rule)] outline-none focus:shadow-[inset_0_0_0_2px_var(--accent)]';
+  const LABEL = 't-label w-[68px] shrink-0 pt-3 text-[var(--ink-2)]';
 
   return (
-    <Card padding="tight">
+    /* The bulk bar is the one raised element here, and it is raised by its STICKY wrapper's
+       hairline rather than by a shadow — see the wrapper for why `.sticky-bar` is wrong at the top
+       of a page. */
+    <div className="bg-[var(--surface)] px-[var(--s-4)] py-[var(--s-3)]">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-[13px] font-semibold text-[#1D1D1F]">
+        <p className="text-[13px] font-semibold text-[var(--ink)]">
           <span className="tnum">{total}</span> selected
           {queued > 0 && (
             /*
@@ -1184,7 +1206,7 @@ function BulkBar({
               document, so its change is written to this device and travels with the upload. Silently
               skipping these is the documented failure mode of this whole area.
             */
-            <span className="ml-2 font-normal text-[#6E6E73]">
+            <span className="ml-2 font-normal text-[var(--ink-2)]">
               · <span className="tnum">{queued}</span> only on this device
             </span>
           )}
@@ -1194,7 +1216,7 @@ function BulkBar({
         </button>
       </div>
 
-      <div className="mt-3 flex flex-col gap-2 border-t border-[color:var(--hairline)] pt-3">
+      <div className="rule-t mt-3 flex flex-col gap-2 pt-3">
         {/* ── Tag ── */}
         <div className="flex flex-wrap items-center gap-2">
           <span className={LABEL}>Tag</span>
@@ -1288,11 +1310,11 @@ function BulkBar({
                 </option>
               ))}
             </select>
-            <span className="text-[12px] text-[#8E8E93]">Moves them straight away.</span>
+            <span className="text-[12px] text-[var(--ink-2)]">Moves them straight away.</span>
           </div>
         )}
       </div>
-    </Card>
+    </div>
   );
 }
 
@@ -1414,14 +1436,14 @@ function EditContactSheet({
       */}
       {!contact.pending && otherFolders.length > 0 && (
         <label className="mb-4 block">
-          <span className="t-label text-[#8E8E93]">Move to another folder</span>
+          <span className="t-label text-[var(--ink-2)]">Move to another folder</span>
           <select
             defaultValue=""
             aria-label={`Move ${contact.name} to another folder`}
             onChange={e => {
               if (e.target.value) onMove(e.target.value);
             }}
-            className="mt-1.5 h-11 w-full rounded-xl bg-[#F7F7F9] px-3.5 text-[15px] text-[#1D1D1F] outline-none focus:shadow-[inset_0_0_0_2px_var(--blue)]"
+            className="mt-1.5 h-11 w-full r-touch bg-[var(--paper)] px-3.5 text-[15px] text-[var(--ink)] shadow-[inset_0_0_0_1px_var(--rule)] outline-none focus:shadow-[inset_0_0_0_2px_var(--accent)]"
           >
             <option value="">Stay in this folder</option>
             {otherFolders.map(f => (
@@ -1431,7 +1453,7 @@ function EditContactSheet({
               </option>
             ))}
           </select>
-          <span className="mt-1 block text-[12px] text-[#8E8E93]">
+          <span className="mt-1 block text-[12px] text-[var(--ink-2)]">
             Moves them straight away — the other fields here still need Save.
           </span>
         </label>
@@ -1446,7 +1468,7 @@ function EditContactSheet({
       />
 
       {contact.companies.length > 0 && (
-        <p className="mt-4 text-[12px] text-[#8E8E93]">
+        <p className="mt-4 text-[12px] text-[var(--ink-2)]">
           Matched to {contact.companies.join(', ')} in the company registry.
         </p>
       )}
@@ -1611,15 +1633,15 @@ function FolderQrSheet({
       {url ? (
         <div className="flex flex-col items-center text-center">
           <QrCode value={url} size={240} ariaLabel={`Sign-up QR for ${folder.name}`} />
-          <p className="mt-4 text-[13px] leading-relaxed text-[#6E6E73]">
+          <p className="mt-4 text-[13px] leading-relaxed text-[var(--ink-2)]">
             Anyone who scans this adds themselves to <strong>{folder.name}</strong>. Works with any
             phone camera — they don&apos;t need this app.
           </p>
-          <code className="mt-3 block w-full break-all rounded-xl bg-[#F7F7F9] px-3 py-2 text-[11.5px] text-[#3a3a3c]">
+          <code className="mt-3 block w-full break-all r-touch bg-[var(--paper)] px-3 py-2 text-[11.5px] text-[var(--ink-2)] shadow-[inset_0_0_0_1px_var(--rule)]">
             {url}
           </code>
           {folder.intakeExpiresAt && (
-            <p className="mt-3 text-[12px] text-[#8E8E93]">
+            <p className="mt-3 text-[12px] text-[var(--ink-2)]">
               Stops working on {fullDateIST(folder.intakeExpiresAt)} at{' '}
               {timeIST(folder.intakeExpiresAt)}.
             </p>
@@ -1627,11 +1649,11 @@ function FolderQrSheet({
         </div>
       ) : (
         <div>
-          <p className="text-[13.5px] leading-relaxed text-[#3a3a3c]">
+          <p className="text-[13.5px] leading-relaxed text-[var(--ink-2)]">
             Show one code and let people add themselves — useful at a booth, or when five people
             want to swap details at once.
           </p>
-          <ul className="mt-3 flex flex-col gap-1.5 text-[12.5px] text-[#6E6E73]">
+          <ul className="mt-3 flex flex-col gap-1.5 text-[12.5px] text-[var(--ink-2)]">
             <li>· Expires after 12 hours, so a photographed code stops working after the event.</li>
             <li>· Anyone with the link can add a row, but nobody can read the folder.</li>
             <li>· You can turn it off or replace it at any time.</li>

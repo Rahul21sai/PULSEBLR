@@ -11,29 +11,29 @@ import { isAdminOnlyPath, isProtectedPath } from '@/lib/protected-routes';
  */
 function AdminOnlyNotice() {
   return (
-    <div className="min-h-screen bg-[#F5F5F7]">
+    <div className="min-h-screen bg-[var(--paper)]">
       <div className="mx-auto max-w-[520px] px-5 pt-24 text-center">
         <span
           aria-hidden="true"
-          className="material-symbols-outlined mb-3 block text-[48px] text-[#d5d5da]"
+          className="material-symbols-outlined mb-3 block text-[48px] text-[var(--ink-3)]"
         >
           shield_person
         </span>
-        <h1 className="t-head text-[#1D1D1F]">Admins only</h1>
-        <p className="mt-2 text-[14px] leading-relaxed text-[#6E6E73]">
+        <h1 className="t-head text-[var(--ink)]">Admins only</h1>
+        <p className="mt-2 text-[14px] leading-relaxed text-[var(--ink-2)]">
           Adding events by hand changes what everyone sees, so it is limited to this
           deployment&apos;s operators. Everything else in your account is unaffected.
         </p>
         <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
           <Link
             href="/"
-            className="pressable inline-flex h-11 items-center justify-center rounded-full bg-[#0071E3] px-6 text-[13.5px] font-semibold text-white hover:bg-blue-600"
+            className="pressable inline-flex h-11 items-center justify-center rounded-full bg-[var(--accent)] px-6 text-[13.5px] font-semibold text-[var(--accent-ink)] hover:bg-blue-600"
           >
             Back to events
           </Link>
           <Link
             href="/tracker"
-            className="pressable inline-flex h-11 items-center justify-center rounded-full bg-white px-6 text-[13.5px] font-semibold text-[#1D1D1F] shadow-[inset_0_0_0_1px_var(--hairline-strong)] hover:bg-[#F7F7F9]"
+            className="pressable inline-flex h-11 items-center justify-center rounded-full bg-[var(--surface)] px-6 text-[13.5px] font-semibold text-[var(--ink)] shadow-[inset_0_0_0_1px_var(--hairline-strong)] hover:bg-[var(--paper)]"
           >
             Your tracker
           </Link>
@@ -99,32 +99,32 @@ export default function ProtectedRouteGate({ children }: { children: React.React
   const callbackUrl = `/login?callbackUrl=${encodeURIComponent(pathname || '/')}`;
 
   return (
-    <div className="min-h-screen bg-[#F5F5F7]">
+    <div className="min-h-screen bg-[var(--paper)]">
       <div className="mx-auto max-w-[520px] px-5 pt-24 text-center">
         <span
           aria-hidden="true"
-          className="material-symbols-outlined mb-3 block text-[48px] text-[#d5d5da]"
+          className="material-symbols-outlined mb-3 block text-[48px] text-[var(--ink-3)]"
         >
           lock
         </span>
-        <h1 className="t-head text-[#1D1D1F]">Sign in to continue</h1>
-        <p className="mt-2 text-[14px] leading-relaxed text-[#6E6E73]">
+        <h1 className="t-head text-[var(--ink)]">Sign in to continue</h1>
+        <p className="mt-2 text-[14px] leading-relaxed text-[var(--ink-2)]">
           This page is private to your account — the events you saved, the people you met, and
           when to follow up.
         </p>
 
         <Link
           href={callbackUrl}
-          className="pressable mt-6 inline-flex h-11 items-center justify-center rounded-full bg-[#0071E3] px-6 text-[13.5px] font-semibold text-white hover:bg-blue-600"
+          className="pressable mt-6 inline-flex h-11 items-center justify-center rounded-full bg-[var(--accent)] px-6 text-[13.5px] font-semibold text-[var(--accent-ink)] hover:bg-blue-600"
         >
           Sign in with Google
         </Link>
 
         {/* The feed, search, filters and company directory are all public, so this is a real
             alternative rather than a dead end. */}
-        <p className="mt-5 text-[13px] text-[#8E8E93]">
+        <p className="mt-5 text-[13px] text-[var(--ink-2)]">
           or{' '}
-          <Link href="/" className="font-semibold text-[#0071E3] hover:underline">
+          <Link href="/" className="font-semibold text-[var(--accent)] hover:underline">
             browse events without an account
           </Link>
         </p>

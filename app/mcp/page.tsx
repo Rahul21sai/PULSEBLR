@@ -180,7 +180,7 @@ export default function McpPage() {
             subtitle="Streamable HTTP. Read-only, unauthenticated, no key to manage."
           />
           <Well className="font-mono text-[13px] break-all">{ENDPOINT}</Well>
-          <p className="mt-3 text-[13px] leading-relaxed text-[#6E6E73]">
+          <p className="mt-3 text-[13px] leading-relaxed text-[var(--ink-2)]">
             It answers JSON-RPC 2.0 over <code className="font-mono text-[12px]">POST</code> and
             speaks MCP revisions 2024-11-05 through 2025-06-18, so it works with whichever your
             client negotiates. There is no server-initiated SSE stream and no session — a{' '}
@@ -195,11 +195,11 @@ export default function McpPage() {
             subtitle="No account, no key. Bengaluru only, and software/hardware engineering only — the same scope as the feed on this site."
           />
           <ToolList tools={PUBLIC_TOOL_DEFS} />
-          <p className="mt-4 text-[13px] leading-relaxed text-[#6E6E73]">
+          <p className="mt-4 text-[13px] leading-relaxed text-[var(--ink-2)]">
             Every result carries the canonical event page URL, so an assistant can send you straight
             there. Results are ranked by connection potential rather than by date, which is the one
             thing this corpus has that the source platforms do not —{' '}
-            <Link href="/" className="text-[#0071E3] hover:underline">
+            <Link href="/" className="text-[var(--accent)] hover:underline">
               see it on the feed
             </Link>
             .
@@ -211,24 +211,24 @@ export default function McpPage() {
             title={`${PERSONAL_TOOL_DEFS.length} more with a token`}
             subtitle="Your own record of the people you have met. Nobody else can offer these, because nobody else has the data."
           />
-          <p className="mb-4 text-[13px] leading-relaxed text-[#3a3a3c]">
+          <p className="mb-4 text-[13px] leading-relaxed text-[var(--ink-2)]">
             Event listings are a commodity — several sites aggregate the same Luma and Meetup feeds.
             What is not a commodity is <em>who you met at them</em>, because that only exists if you
             recorded it. With a token in your client,{' '}
-            <span className="font-semibold text-[#1D1D1F]">
+            <span className="font-semibold text-[var(--ink)]">
               &ldquo;who do I know at Razorpay?&rdquo;
             </span>{' '}
             becomes a question your assistant can actually answer.
           </p>
           <ToolList tools={PERSONAL_TOOL_DEFS} />
-          <div className="mt-4 rounded-xl bg-[#f9f9fb] p-4 text-[12.5px] leading-relaxed text-[#3a3a3c]">
+          <div className="mt-4 rounded-xl bg-[var(--paper)] p-4 text-[12.5px] leading-relaxed text-[var(--ink-2)]">
             <p>
               These are read-only and scoped to the one account that minted the token. There is no
               argument on any of them that can name a different account, and without a token they do
               not appear in the tool list at all.
             </p>
             <p className="mt-2">
-              <Link href="/settings" className="font-semibold text-[#0071E3] hover:underline">
+              <Link href="/settings" className="font-semibold text-[var(--accent)] hover:underline">
                 Mint a token in Settings
               </Link>{' '}
               — shown once, revocable at any time, and it expires after {TOKEN_TTL_DAYS.default} days
@@ -242,11 +242,11 @@ export default function McpPage() {
           <div className="flex flex-col gap-5">
             {CLIENTS.map(client => (
               <div key={client.name}>
-                <p className="text-[13.5px] font-semibold text-[#1D1D1F]">{client.name}</p>
-                <p className="mt-0.5 mb-2 text-[12.5px] text-[#8E8E93]">{client.where}</p>
+                <p className="text-[13.5px] font-semibold text-[var(--ink)]">{client.name}</p>
+                <p className="mt-0.5 mb-2 text-[12.5px] text-[var(--ink-2)]">{client.where}</p>
                 <Well className="font-mono whitespace-pre overflow-x-auto">{client.snippet}</Well>
                 {client.note && (
-                  <p className="mt-1.5 text-[12.5px] text-[#6E6E73]">{client.note}</p>
+                  <p className="mt-1.5 text-[12.5px] text-[var(--ink-2)]">{client.note}</p>
                 )}
               </div>
             ))}
@@ -261,16 +261,16 @@ export default function McpPage() {
           <div className="flex flex-col gap-5">
             {AUTHED_CLIENTS.map(client => (
               <div key={client.name}>
-                <p className="text-[13.5px] font-semibold text-[#1D1D1F]">{client.name}</p>
-                <p className="mt-0.5 mb-2 text-[12.5px] text-[#8E8E93]">{client.where}</p>
+                <p className="text-[13.5px] font-semibold text-[var(--ink)]">{client.name}</p>
+                <p className="mt-0.5 mb-2 text-[12.5px] text-[var(--ink-2)]">{client.where}</p>
                 <Well className="font-mono whitespace-pre overflow-x-auto">{client.snippet}</Well>
                 {client.note && (
-                  <p className="mt-1.5 text-[12.5px] text-[#6E6E73]">{client.note}</p>
+                  <p className="mt-1.5 text-[12.5px] text-[var(--ink-2)]">{client.note}</p>
                 )}
               </div>
             ))}
           </div>
-          <p className="mt-4 text-[12.5px] leading-relaxed text-[#6E6E73]">
+          <p className="mt-4 text-[12.5px] leading-relaxed text-[var(--ink-2)]">
             Replace <code className="font-mono">{TOKEN_PLACEHOLDER}</code> with the token Settings
             gives you. Treat it like a password: it is not a shared link, and a config file holding one
             should not be committed.
@@ -282,31 +282,31 @@ export default function McpPage() {
             title="What it does not do"
             subtitle="Stated plainly, because the limits are the useful part."
           />
-          <ul className="flex flex-col gap-3 text-[13px] leading-relaxed text-[#3a3a3c]">
+          <ul className="flex flex-col gap-3 text-[13px] leading-relaxed text-[var(--ink-2)]">
             <li>
-              <span className="font-semibold text-[#1D1D1F]">No OAuth, so no connector directory.</span>{' '}
+              <span className="font-semibold text-[var(--ink)]">No OAuth, so no connector directory.</span>{' '}
               Authentication is a token you paste into a config file. Any client that can set a header
               works — Claude Code, Claude Desktop, Cursor, VS Code. The one thing it cannot do is the
               &ldquo;add a custom connector&rdquo; flow on claude.ai, which drives an OAuth handshake
               and gives you nowhere to put a header. That flow still reaches the public four tools.
             </li>
             <li>
-              <span className="font-semibold text-[#1D1D1F]">Read-only, with no way to opt out of that.</span>{' '}
+              <span className="font-semibold text-[var(--ink)]">Read-only, with no way to opt out of that.</span>{' '}
               Nothing here can save an event, record a person, complete a follow-up or edit anything.
               The token has one scope and it is <code className="font-mono">read</code>.
             </li>
             <li>
-              <span className="font-semibold text-[#1D1D1F]">No emails or phone numbers.</span> Person
+              <span className="font-semibold text-[var(--ink)]">No emails or phone numbers.</span> Person
               results carry a name, employer, role, your own note and a LinkedIn URL where a scan
               supplied one. Contact details stay in{' '}
-              <Link href="/people" className="text-[#0071E3] hover:underline">
+              <Link href="/people" className="text-[var(--accent)] hover:underline">
                 the app
               </Link>
               , which is also where the CSV export lives — a result here lands in a model&rsquo;s
               context and from there into a transcript, and that is not where a phone number belongs.
             </li>
             <li>
-              <span className="font-semibold text-[#1D1D1F]">No streaming, and no sessions.</span> A{' '}
+              <span className="font-semibold text-[var(--ink)]">No streaming, and no sessions.</span> A{' '}
               <code className="font-mono">GET</code> is refused rather than left hanging, because a
               stateless server has nothing to push. The token is verified on every request.
             </li>
@@ -331,11 +331,11 @@ function ToolList({ tools }: { tools: readonly { name: string; description: stri
           key={tool.name}
           className="border-t border-[color:var(--hairline)] pt-3 first:border-0 first:pt-0"
         >
-          <p className="font-mono text-[12.5px] text-[#1D1D1F]">{tool.name}</p>
-          <p className="mt-1 text-[13px] leading-relaxed text-[#6E6E73]">
+          <p className="font-mono text-[12.5px] text-[var(--ink)]">{tool.name}</p>
+          <p className="mt-1 text-[13px] leading-relaxed text-[var(--ink-2)]">
             {firstSentence(tool.description)}
           </p>
-          <p className="mt-1.5 t-label text-[#8E8E93]">{argumentLine(tool.inputSchema)}</p>
+          <p className="mt-1.5 t-label text-[var(--ink-2)]">{argumentLine(tool.inputSchema)}</p>
         </li>
       ))}
     </ul>

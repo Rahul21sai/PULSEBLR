@@ -169,23 +169,23 @@ export default function EditTrackerModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="edit-tracker-title"
-        className="relative flex max-h-[92vh] w-full max-w-[560px] flex-col rounded-t-[22px] bg-white sm:rounded-[22px] card-shadow-lg"
+        className="relative flex max-h-[92vh] w-full max-w-[560px] flex-col rounded-[var(--r-flat)] bg-[var(--surface)] sm:rounded-[var(--r-flat)]"
       >
         {/* Header stays out of the scrollport so it cannot overlay the content. */}
         <div className="flex shrink-0 items-start justify-between gap-3 border-b border-[color:var(--hairline)] p-5">
           <div className="min-w-0">
-            <h2 id="edit-tracker-title" className="t-sub text-[#1D1D1F]">
+            <h2 id="edit-tracker-title" className="t-sub text-[var(--ink)]">
               Who did you meet?
             </h2>
             {eventTitle && (
-              <p className="mt-0.5 truncate text-[13px] text-[#6E6E73]">{eventTitle}</p>
+              <p className="mt-0.5 truncate text-[13px] text-[var(--ink-2)]">{eventTitle}</p>
             )}
           </div>
           <button
             type="button"
             onClick={onClose}
             aria-label="Close without saving"
-            className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[#F5F5F7] text-[#6E6E73] hover:bg-[#EEEEF0] [touch-action:manipulation]"
+            className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[var(--paper)] text-[var(--ink-2)] [touch-action:manipulation]"
           >
             <span aria-hidden="true" className="material-symbols-outlined text-[18px]">close</span>
           </button>
@@ -193,25 +193,25 @@ export default function EditTrackerModal({
 
         <div className="min-h-0 flex-1 overflow-y-auto p-5">
           {error && (
-            <div className="mb-4 rounded-xl bg-[#FFF1F0] px-4 py-3 text-[12.5px] text-[#C7362D]" role="alert">
+            <div className="mb-4 rounded-xl border-l-2 border-l-[var(--live)] bg-[var(--paper)] px-4 py-3 text-[12.5px] text-[var(--live)]" role="alert">
               {error}
             </div>
           )}
 
           {/* ── People ─────────────────────────────────────────────────── */}
           <div className="mb-2 flex items-center justify-between">
-            <h3 className="t-label text-[#8E8E93]">
+            <h3 className="t-label text-[var(--ink-2)]">
               People {connections.length > 0 && `· ${connections.length}`}
             </h3>
             {dueCount > 0 && (
-              <span className="rounded-full bg-[#FFF4E5] px-2 py-0.5 text-[11px] font-bold text-[#A85B00]">
+              <span className="rounded-full bg-[var(--paper)] px-2 py-0.5 text-[11px] font-bold text-[var(--ink-2)]">
                 {dueCount} follow-up{dueCount === 1 ? '' : 's'} due
               </span>
             )}
           </div>
 
           {connections.length === 0 && !adding && (
-            <p className="py-4 text-[13px] text-[#8E8E93]">
+            <p className="py-4 text-[13px] text-[var(--ink-2)]">
               Nobody logged yet. Names fade fast — add them while you remember.
             </p>
           )}
@@ -223,20 +223,20 @@ export default function EditTrackerModal({
               return (
                 <li
                   key={`${conn.name}-${index}`}
-                  className="rounded-xl bg-[#F7F7F9] p-3.5"
+                  className="rounded-xl bg-[var(--paper)] p-3.5"
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="text-[14px] font-semibold text-[#1D1D1F]">{conn.name}</p>
+                      <p className="text-[14px] font-semibold text-[var(--ink)]">{conn.name}</p>
                       {(conn.role || conn.company) && (
-                        <p className="text-[12.5px] text-[#6E6E73]">
+                        <p className="text-[12.5px] text-[var(--ink-2)]">
                           {[conn.role, conn.company].filter(Boolean).join(' · ')}
                         </p>
                       )}
                       {/* `context` is what you actually talked about — the single most
                           useful thing here, and previously invisible after saving. */}
                       {conn.context && (
-                        <p className="mt-1.5 text-[12.5px] leading-relaxed text-[#3a3a3c]">
+                        <p className="mt-1.5 text-[12.5px] leading-relaxed text-[var(--ink-2)]">
                           {conn.context}
                         </p>
                       )}
@@ -244,10 +244,10 @@ export default function EditTrackerModal({
                         <p
                           className={`mt-1.5 inline-flex items-center gap-1 text-[12px] font-semibold ${
                             conn.followedUp
-                              ? 'text-[#166B35]'
+                              ? 'text-[var(--accent)]'
                               : due
-                                ? 'text-[#C7362D]'
-                                : 'text-[#6E6E73]'
+                                ? 'text-[var(--live)]'
+                                : 'text-[var(--ink-2)]'
                           }`}
                         >
                           <span className="material-symbols-outlined text-[14px]" aria-hidden="true">
@@ -263,7 +263,7 @@ export default function EditTrackerModal({
                           href={conn.linkedin}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="mt-1.5 block text-[12px] font-semibold text-[#0071E3] hover:underline"
+                          className="mt-1.5 block text-[12px] font-semibold text-[var(--accent)] hover:underline"
                         >
                           LinkedIn
                         </a>
@@ -278,8 +278,8 @@ export default function EditTrackerModal({
                           aria-pressed={!!conn.followedUp}
                           className={`rounded-full px-2.5 py-1 text-[11.5px] font-semibold [touch-action:manipulation] ${
                             conn.followedUp
-                              ? 'bg-[#EBF7EF] text-[#166B35]'
-                              : 'bg-white text-[#1D1D1F] shadow-[inset_0_0_0_1px_var(--hairline-strong)] hover:bg-[#F0F0F2]'
+                              ? 'bg-[var(--paper)] text-[var(--accent)]'
+                              : 'bg-[var(--surface)] text-[var(--ink)] shadow-[inset_0_0_0_1px_var(--hairline-strong)] hover:bg-[var(--paper)]'
                           }`}
                         >
                           {conn.followedUp ? 'Done' : 'Mark done'}
@@ -290,7 +290,7 @@ export default function EditTrackerModal({
                           type="button"
                           onClick={() => startEdit(index)}
                           aria-label={`Edit ${conn.name}`}
-                          className="grid h-7 w-7 place-items-center rounded-full text-[#6E6E73] hover:bg-white [touch-action:manipulation]"
+                          className="grid h-7 w-7 place-items-center rounded-full text-[var(--ink-2)] hover:bg-[var(--surface)] [touch-action:manipulation]"
                         >
                           <span aria-hidden="true" className="material-symbols-outlined text-[16px]">edit</span>
                         </button>
@@ -298,7 +298,7 @@ export default function EditTrackerModal({
                           type="button"
                           onClick={() => remove(index)}
                           aria-label={`Remove ${conn.name}`}
-                          className="grid h-7 w-7 place-items-center rounded-full text-[#FF3B30] hover:bg-white [touch-action:manipulation]"
+                          className="grid h-7 w-7 place-items-center rounded-full text-[var(--live)] hover:bg-[var(--surface)] [touch-action:manipulation]"
                         >
                           <span aria-hidden="true" className="material-symbols-outlined text-[16px]">delete</span>
                         </button>
@@ -312,8 +312,8 @@ export default function EditTrackerModal({
 
           {/* ── Add / edit a person ────────────────────────────────────── */}
           {adding ? (
-            <div className="mt-3 rounded-xl bg-white p-4 shadow-[inset_0_0_0_1px_var(--hairline-strong)]">
-              <p className="t-label mb-3 text-[#8E8E93]">
+            <div className="mt-3 rounded-[var(--r-flat)] bg-[var(--surface)] p-4 shadow-[inset_0_0_0_1px_var(--hairline-strong)]">
+              <p className="t-label mb-3 text-[var(--ink-2)]">
                 {editingIndex === null ? 'New person' : `Editing ${connections[editingIndex]?.name}`}
               </p>
               <div className="space-y-2.5">
@@ -367,7 +367,7 @@ export default function EditTrackerModal({
                   type="button"
                   onClick={commitDraft}
                   disabled={!draft.name.trim()}
-                  className="pressable h-9 flex-1 rounded-full bg-[#1D1D1F] text-[13px] font-semibold text-white hover:bg-black disabled:opacity-40"
+                  className="pressable h-9 flex-1 rounded-full bg-[var(--ink)] text-[13px] font-semibold text-[var(--accent-ink)] hover:bg-[var(--ink)] disabled:opacity-40"
                 >
                   {editingIndex === null ? 'Add person' : 'Save person'}
                 </button>
@@ -378,7 +378,7 @@ export default function EditTrackerModal({
                     setAdding(false);
                     setEditingIndex(null);
                   }}
-                  className="pressable h-9 rounded-full bg-white px-4 text-[13px] font-semibold text-[#1D1D1F] shadow-[inset_0_0_0_1px_var(--hairline-strong)] hover:bg-[#F7F7F9]"
+                  className="pressable h-9 rounded-full bg-[var(--surface)] px-4 text-[13px] font-semibold text-[var(--ink)] shadow-[inset_0_0_0_1px_var(--hairline-strong)] hover:bg-[var(--paper)]"
                 >
                   Cancel
                 </button>
@@ -392,7 +392,7 @@ export default function EditTrackerModal({
                 setEditingIndex(null);
                 setAdding(true);
               }}
-              className="pressable mt-3 flex h-10 w-full items-center justify-center gap-1.5 rounded-full bg-white text-[13px] font-semibold text-[#0071E3] shadow-[inset_0_0_0_1px_var(--hairline-strong)] hover:bg-[#F7F7F9]"
+              className="pressable mt-3 flex h-10 w-full items-center justify-center gap-1.5 rounded-full bg-[var(--surface)] text-[13px] font-semibold text-[var(--accent)] shadow-[inset_0_0_0_1px_var(--hairline-strong)] hover:bg-[var(--paper)]"
             >
               <span aria-hidden="true" className="material-symbols-outlined text-[17px]">person_add</span>
               Add someone you met
@@ -401,7 +401,7 @@ export default function EditTrackerModal({
 
           {/* ── Notes ─────────────────────────────────────────────────── */}
           <div className="mt-6">
-            <label htmlFor="tracker-notes" className="t-label mb-2 block text-[#8E8E93]">
+            <label htmlFor="tracker-notes" className="t-label mb-2 block text-[var(--ink-2)]">
               Notes on the event
             </label>
             <textarea
@@ -411,7 +411,7 @@ export default function EditTrackerModal({
               onChange={e => setNotes(e.target.value)}
               rows={3}
               placeholder="Worth going again? What was actually useful?"
-              className="w-full resize-y rounded-xl bg-white px-3.5 py-2.5 text-[13.5px] text-[#1D1D1F] placeholder:text-[#a1a1a6] shadow-[inset_0_0_0_1px_var(--hairline-strong)] focus:outline-none focus-visible:shadow-[inset_0_0_0_2px_#0071E3]"
+              className="w-full resize-y rounded-[var(--r-touch)] bg-[var(--surface)] px-3.5 py-2.5 text-[13.5px] text-[var(--ink)] placeholder:text-[var(--ink-2)] shadow-[inset_0_0_0_1px_var(--hairline-strong)] focus:outline-none focus-visible:shadow-[inset_0_0_0_2px_var(--accent)]"
             />
           </div>
         </div>
@@ -422,14 +422,14 @@ export default function EditTrackerModal({
             type="button"
             onClick={handleSave}
             disabled={saving}
-            className="pressable h-11 flex-1 rounded-full bg-[#1D1D1F] text-[14px] font-semibold text-white hover:bg-black disabled:opacity-50"
+            className="pressable h-11 flex-1 rounded-full bg-[var(--ink)] text-[14px] font-semibold text-[var(--accent-ink)] hover:bg-[var(--ink)] disabled:opacity-50"
           >
             {saving ? 'Saving…' : 'Save'}
           </button>
           <button
             type="button"
             onClick={onClose}
-            className="pressable h-11 rounded-full bg-white px-5 text-[14px] font-semibold text-[#1D1D1F] shadow-[inset_0_0_0_1px_var(--hairline-strong)] hover:bg-[#F7F7F9]"
+            className="pressable h-11 rounded-full bg-[var(--surface)] px-5 text-[14px] font-semibold text-[var(--ink)] shadow-[inset_0_0_0_1px_var(--hairline-strong)] hover:bg-[var(--paper)]"
           >
             Cancel
           </button>
@@ -460,9 +460,9 @@ function Input({
   const id = `conn-${label.toLowerCase().replace(/[^a-z]+/g, '-')}`;
   return (
     <div>
-      <label htmlFor={id} className="mb-1 block text-[12px] font-semibold text-[#3a3a3c]">
+      <label htmlFor={id} className="mb-1 block text-[12px] font-semibold text-[var(--ink-2)]">
         {label}
-        {required && <span className="text-[#FF3B30]"> *</span>}
+        {required && <span className="text-[var(--live)]"> *</span>}
       </label>
       <input
         id={id}
@@ -471,7 +471,7 @@ function Input({
         onChange={e => onChange(e.target.value)}
         placeholder={placeholder}
         autoComplete={autoComplete}
-        className="h-9 w-full rounded-lg bg-white px-3 text-[13px] text-[#1D1D1F] placeholder:text-[#a1a1a6] shadow-[inset_0_0_0_1px_var(--hairline-strong)] focus:outline-none focus-visible:shadow-[inset_0_0_0_2px_#0071E3]"
+        className="h-9 w-full rounded-[var(--r-touch)] bg-[var(--surface)] px-3 text-[13px] text-[var(--ink)] placeholder:text-[var(--ink-2)] shadow-[inset_0_0_0_1px_var(--hairline-strong)] focus:outline-none focus-visible:shadow-[inset_0_0_0_2px_var(--accent)]"
       />
     </div>
   );

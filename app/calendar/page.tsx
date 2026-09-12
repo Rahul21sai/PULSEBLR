@@ -249,13 +249,13 @@ export default function CalendarPage() {
   const daysWithEvents = Object.keys(counts).length;
 
   return (
-    <div className="min-h-screen bg-[#F5F5F7]">
+    <div className="min-h-screen bg-[var(--paper)]">
       <DesktopNav />
 
       {/* Mobile Header */}
-      <header className="md:hidden fixed top-0 w-full h-14 bg-white/96 glass-nav z-50 border-b border-black/5 flex items-center justify-between px-5">
-        <Link href="/" className="text-lg font-bold tracking-tight text-[#1D1D1F]">PulseBLR</Link>
-        <span className="text-[#86868B] text-label-md font-semibold">Calendar</span>
+      <header className="md:hidden fixed top-0 w-full h-14 bg-[var(--surface)]/96 glass-nav z-50 border-b border-[var(--rule)] flex items-center justify-between px-5">
+        <Link href="/" className="text-lg font-bold tracking-tight text-[var(--ink)]">PulseBLR</Link>
+        <span className="text-[var(--ink-2)] text-label-md font-semibold">Calendar</span>
       </header>
 
       <main className="pt-14 pb-24 md:pb-8">
@@ -264,22 +264,24 @@ export default function CalendarPage() {
             full-bleed `bg-black text-white` band — the one surface in the app that
             looked like it came from a different product. */}
         <div className="max-w-[1200px] mx-auto px-4 md:px-8 pt-6">
-          <div className="flex flex-wrap items-end justify-between gap-4 mb-6">
+          {/* A month name is a LABEL the app is printing, not the name of a thing in the world, so it
+              takes the sans side of the split — `.t-display` was serif at up to 40px. */}
+          <div className="rule-b flex flex-wrap items-end justify-between gap-4 mb-6 pb-[var(--s-4)]">
             <div>
-              <p className="t-label text-[#8E8E93] mb-1">{yearFmt.format(monthInstant)}</p>
-              <h1 className="t-display text-[#1D1D1F]">{monthNameFmt.format(monthInstant)}</h1>
-              <p className="mt-1.5 text-[13px] text-[#6E6E73] tracking-[0]">
+              <p className="ty-meta mb-1">{yearFmt.format(monthInstant)}</p>
+              <h1 className="ty-section text-[var(--ink)]">{monthNameFmt.format(monthInstant)}</h1>
+              <p className="ty-meta mt-1.5">
                 {loading ? (
                   'Counting…'
                 ) : monthError ? (
-                  <span className="text-[#B3261E]">Could not load this month</span>
+                  <span className="text-[var(--live)]">Could not load this month</span>
                 ) : monthTotal === 0 ? (
                   'No tech events this month'
                 ) : (
                   <>
-                    <span className="tnum font-semibold text-[#1D1D1F]">{monthTotal}</span> tech
+                    <span className="tnum font-semibold text-[var(--ink)]">{monthTotal}</span> tech
                     event{monthTotal === 1 ? '' : 's'} across{' '}
-                    <span className="tnum font-semibold text-[#1D1D1F]">{daysWithEvents}</span>{' '}
+                    <span className="tnum font-semibold text-[var(--ink)]">{daysWithEvents}</span>{' '}
                     day{daysWithEvents === 1 ? '' : 's'}
                   </>
                 )}
@@ -291,14 +293,14 @@ export default function CalendarPage() {
                 type="button"
                 aria-label="Previous month"
                 onClick={() => pageMonth(-1)}
-                className="pressable grid h-10 w-10 place-items-center rounded-full bg-white text-[#1D1D1F] shadow-[inset_0_0_0_1px_var(--hairline)] hover:bg-[#F7F7F9]"
+                className="pressable grid h-10 w-10 place-items-center rounded-full bg-[var(--surface)] text-[var(--ink)] shadow-[inset_0_0_0_1px_var(--hairline)] hover:bg-[var(--paper)]"
               >
                 <span aria-hidden="true" className="material-symbols-outlined text-[20px]">chevron_left</span>
               </button>
               <button
                 type="button"
                 onClick={() => setSelectedKey(todayKeyIST())}
-                className="pressable h-10 rounded-full bg-white px-4 text-[12.5px] font-semibold text-[#1D1D1F] shadow-[inset_0_0_0_1px_var(--hairline)] hover:bg-[#F7F7F9]"
+                className="pressable h-10 rounded-full bg-[var(--surface)] px-4 text-[12.5px] font-semibold text-[var(--ink)] shadow-[inset_0_0_0_1px_var(--hairline)] hover:bg-[var(--paper)]"
               >
                 Today
               </button>
@@ -306,7 +308,7 @@ export default function CalendarPage() {
                 type="button"
                 aria-label="Next month"
                 onClick={() => pageMonth(1)}
-                className="pressable grid h-10 w-10 place-items-center rounded-full bg-white text-[#1D1D1F] shadow-[inset_0_0_0_1px_var(--hairline)] hover:bg-[#F7F7F9]"
+                className="pressable grid h-10 w-10 place-items-center rounded-full bg-[var(--surface)] text-[var(--ink)] shadow-[inset_0_0_0_1px_var(--hairline)] hover:bg-[var(--paper)]"
               >
                 <span aria-hidden="true" className="material-symbols-outlined text-[20px]">chevron_right</span>
               </button>
@@ -314,14 +316,14 @@ export default function CalendarPage() {
           </div>
 
           {monthError && (
-            <div className="mb-4 flex items-center justify-between gap-3 rounded-[14px] border border-[#F2C4BF] bg-[#FDF2F1] px-4 py-3">
-              <p className="text-[13px] text-[#8C1D18]">
+            <div className="mb-4 flex items-center justify-between gap-3 rounded-[var(--r-flat)] border-l-2 border-l-[var(--live)] bg-[var(--paper)] px-4 py-3">
+              <p className="text-[13px] text-[var(--live)]">
                 Could not load this month&rsquo;s counts. Your data is fine — the request failed.
               </p>
               <button
                 type="button"
                 onClick={() => void fetchCounts(monthKey)}
-                className="pressable shrink-0 rounded-full bg-white px-3 py-1.5 text-[12px] font-semibold text-[#8C1D18] shadow-[inset_0_0_0_1px_rgba(140,29,24,0.2)]"
+                className="pressable shrink-0 rounded-full bg-[var(--surface)] px-3 py-1.5 text-[12px] font-semibold text-[var(--live)] shadow-[inset_0_0_0_1px_var(--rule)]"
               >
                 Try again
               </button>
@@ -332,11 +334,11 @@ export default function CalendarPage() {
             {/* `lg:self-start` so the grid hugs its five or six rows. As a stretched flex item it
                 took its height from the day panel beside it, which is the taller of the two on any
                 busy day, leaving a tall empty band under the last week. */}
-            <div className="flex-1 min-w-0 rounded-[18px] bg-white card-shadow p-4 md:p-5 lg:self-start">
+            <div className="flex-1 min-w-0 rounded-[var(--r-flat)] border border-[var(--rule)] p-4 md:p-5 lg:self-start">
               {/* Weekday labels */}
               <div className="grid grid-cols-7 mb-2">
                 {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => (
-                  <div key={i} className="t-label text-center text-[#8E8E93]">
+                  <div key={i} className="t-label text-center text-[var(--ink-2)]">
                     {d}
                   </div>
                 ))}
@@ -371,12 +373,12 @@ export default function CalendarPage() {
                       <span
                         className={`tnum flex h-9 w-9 items-center justify-center rounded-full text-[14.5px] font-semibold transition-colors ${
                           isSelected
-                            ? 'bg-[#1D1D1F] text-white'
+                            ? 'bg-[var(--ink)] text-[var(--accent-ink)]'
                             : isCurrentDay
-                              ? 'bg-[#EBF4FE] text-[#0071E3]'
+                              ? 'bg-[var(--paper)] text-[var(--accent)]'
                               : n > 0
-                                ? 'text-[#1D1D1F] hover:bg-[#F7F7F9]'
-                                : 'text-[#c7c7cc] hover:bg-[#F7F7F9]'
+                                ? 'text-[var(--ink)] hover:bg-[var(--paper)]'
+                                : 'text-[var(--ink-3)] hover:bg-[var(--paper)]'
                         }`}
                       >
                         {dayNumber}
@@ -386,7 +388,7 @@ export default function CalendarPage() {
                           <span
                             key={i}
                             className={`h-1.5 w-1.5 rounded-full ${
-                              isSelected ? 'bg-white/70' : 'bg-[#0071E3]'
+                              isSelected ? 'bg-[var(--surface)]/70' : 'bg-[var(--accent)]'
                             }`}
                           />
                         ))}
@@ -402,14 +404,18 @@ export default function CalendarPage() {
                 flex item beside `flex-1`, so its width was decided by its own contents: an empty day
                 shrank it and the calendar grid grew, so paging through months resized the squares and
                 nudged every date under the cursor. */}
-            <div className="bg-white rounded-[20px] card-shadow p-6 lg:w-[360px] lg:shrink-0">
+            <div className="rounded-[var(--r-flat)] border border-[var(--rule)] p-6 lg:w-[360px] lg:shrink-0">
               {/* A day is ALWAYS selected — the month is derived from it, so there is no state in
                   which one exists without the other and no "Select a date" placeholder to write. */}
-              <h3 className="text-headline-md text-[#1D1D1F] mb-1">
+              {/* Sans, matching the month name above it. `.text-headline-md` is a legacy alias on
+                  `--font-display`, i.e. the serif — so a date, which is the app printing a label,
+                  was set in the face reserved for the names of things in the world. The event
+                  titles in the list below are the serif side of that split. */}
+              <h3 className="ty-section text-[var(--ink)] mb-1">
                 {dayMonthFmt.format(istMidday(selectedKey))}
               </h3>
               {!dayLoading && !dayError ? (
-                <p className="t-label text-[#8E8E93] mb-5">
+                <p className="ty-meta mb-5">
                   {dayTotal} event{dayTotal !== 1 ? 's' : ''}
                   {dayTotal > events.length && ` · showing ${events.length}`}
                 </p>
@@ -423,29 +429,29 @@ export default function CalendarPage() {
                 // day loads, which reads as the wrong answer rather than as loading.
                 <div className="flex flex-col gap-2">
                   {Array.from({ length: 3 }).map((_, i) => (
-                    <div key={i} className="skeleton h-14 rounded-xl bg-[#EEEEF0]" />
+                    <div key={i} className="skeleton h-14 rounded-xl bg-[var(--paper)]" />
                   ))}
                 </div>
               ) : dayError ? (
                 <div className="py-8 text-center">
-                  <span aria-hidden="true" className="material-symbols-outlined mb-2 block text-[36px] text-[#d9d9de]">
+                  <span aria-hidden="true" className="material-symbols-outlined mb-2 block text-[36px] text-[var(--ink-3)]">
                     cloud_off
                   </span>
-                  <p className="mb-3 text-[13.5px] text-[#8E8E93]">Could not load this day.</p>
+                  <p className="mb-3 text-[13.5px] text-[var(--ink-2)]">Could not load this day.</p>
                   <button
                     type="button"
                     onClick={() => void fetchDay(selectedKey)}
-                    className="pressable rounded-full bg-[#F5F5F7] px-4 py-2 text-[12.5px] font-semibold text-[#1D1D1F] hover:bg-[#EBEBEF]"
+                    className="pressable rounded-full bg-[var(--paper)] px-4 py-2 text-[12.5px] font-semibold text-[var(--ink)]"
                   >
                     Try again
                   </button>
                 </div>
               ) : events.length === 0 ? (
                 <div className="py-10 text-center">
-                  <span aria-hidden="true" className="material-symbols-outlined mb-2 block text-[36px] text-[#d9d9de]">
+                  <span aria-hidden="true" className="material-symbols-outlined mb-2 block text-[36px] text-[var(--ink-3)]">
                     event_busy
                   </span>
-                  <p className="text-[13.5px] text-[#8E8E93]">Nothing scheduled this day.</p>
+                  <p className="text-[13.5px] text-[var(--ink-2)]">Nothing scheduled this day.</p>
                 </div>
               ) : (
                 <div className="flex flex-col gap-3">
@@ -474,43 +480,50 @@ export default function CalendarPage() {
                           the list, which is right) — only the label is corrected. */}
                       <div className="flex flex-col items-center w-14 shrink-0 pt-1 pb-1">
                         {startsToday ? (
-                          <span className="tnum text-label-md font-bold text-[#1D1D1F]">
+                          <span className="tnum text-label-md font-bold text-[var(--ink)]">
                             {timeIST(event.startDateTime)}
                           </span>
                         ) : (
                           <>
-                            <span className="tnum text-label-md font-bold text-[#6E6E73]">
+                            <span className="tnum text-label-md font-bold text-[var(--ink-2)]">
                               {shortDateIST(event.startDateTime)}
                             </span>
-                            <span className="text-label-sm text-[#86868B]">onward</span>
+                            <span className="text-label-sm text-[var(--ink-2)]">onward</span>
                           </>
                         )}
-                        <div className="flex-1 w-px bg-[#e5e5e5] mt-1.5" />
+                        <div className="flex-1 w-px bg-[var(--rule)] mt-1.5" />
                       </div>
-                      {/* Card */}
-                      <div className="flex-1 min-w-0 relative overflow-hidden rounded-xl border border-[#f0f0f0] group-hover:border-[#0071E3]/30 group-hover:bg-[#f7faff] transition-colors mb-1">
+                      {/*
+                        The row. Flat and ruled rather than a rounded bordered card: the event title
+                        is a thing in the world, so it takes the serif `.ty-row-title`, and the
+                        category keeps its thin spine, which is the one use of the categorical scale
+                        the direction allows (a tint or a spine, never a fill).
+
+                        THE "FREE" PILL IS GONE, and this is a recorded refusal rather than a tidy-up.
+                        `Event.isFree` is `{ type: Boolean, default: true }` — true on 88.5% of
+                        upcoming tech events — so the pill fired on nearly every row and therefore
+                        distinguished nothing; the old green-on-green pair also failed AA at 4.00:1.
+                        Absence means free, and a price is marked only where there is one.
+
+                        "Food" survives because it is genuinely sparse and genuinely decides
+                        attendance, but it stops being a coloured pill: it is a `.ty-meta` clause on
+                        the same line as the location, which is where the reference surface puts the
+                        same fact. One accent, rationed — and "there are snacks" is not an action.
+                      */}
+                      <div className="flex-1 min-w-0 relative overflow-hidden rounded-[var(--r-flat)] rule-y group-hover:bg-[var(--paper)] transition-colors mb-1">
                         <div
-                          className="absolute left-0 top-0 bottom-0 w-1.5"
+                          className="absolute left-0 top-0 bottom-0 w-[3px]"
                           style={{ backgroundColor: categoryAccent(event.category?.[0]) }}
                         />
                         <div className="pl-4 pr-3 py-3">
-                          <p className="text-label-md font-semibold text-[#1D1D1F] line-clamp-2 leading-snug">
+                          <p className="ty-row-title text-[var(--ink)] line-clamp-2">
                             {event.title}
                           </p>
-                          <div className="flex items-center gap-1 mt-1 text-label-sm text-[#86868B]">
-                            <span aria-hidden="true" className="material-symbols-outlined text-[12px]">
-                              {event.format === 'online' ? 'videocam' : 'location_on'}
-                            </span>
-                            <span className="truncate">{locationLabel(event)}</span>
-                          </div>
-                          <div className="flex gap-1.5 mt-2 flex-wrap">
-                            {event.isFree && (
-                              <span className="bg-green-50 text-green-700 text-[10px] font-semibold px-2 py-0.5 rounded-full">Free</span>
-                            )}
-                            {event.hasFood === 'yes' && (
-                              <span className="bg-orange-50 text-orange-700 text-[10px] font-semibold px-2 py-0.5 rounded-full">Food</span>
-                            )}
-                          </div>
+                          <p className="ty-meta mt-1 truncate">
+                            {[locationLabel(event), event.hasFood === 'yes' ? 'Food' : null]
+                              .filter(Boolean)
+                              .join(' · ')}
+                          </p>
                         </div>
                       </div>
                     </Link>

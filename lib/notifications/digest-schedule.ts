@@ -512,16 +512,25 @@ export function formatDigestEmail(input: {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; line-height: 1.6; color: #1D1D1F; max-width: 600px; margin: 0 auto; padding: 20px; background: #FFFFFF; }
+    /* LITERAL HEXES ON PURPOSE - DO NOT CONVERT THESE TO var(). This is a standalone
+       document: app/globals.css is not in scope, so a custom property would resolve to
+       nothing and paint transparent.
+
+       Every colour below mirrors one of the nine tokens - ground/--paper, card/--surface,
+       body/--ink, secondary/--ink-2, quiet/--ink-3, rule/--rule, link/--accent. Read the
+       CURRENT value out of the palette block in app/globals.css and re-sync by hand; this
+       comment deliberately does NOT repeat the hexes, because a value copied into a comment
+       is a snapshot that goes stale silently and then gets trusted. */
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; line-height: 1.6; color: #121417; max-width: 600px; margin: 0 auto; padding: 20px; background: #FFFFFF; }
     .lede { font-size: 17px; font-weight: 600; margin: 0 0 18px 0; }
-    .card { border-left: 3px solid #0071E3; background: #F7F7F9; border-radius: 8px; padding: 14px 16px; margin-bottom: 12px; }
+    .card { border-left: 3px solid #12513C; background: #FAF9F5; border-radius: 8px; padding: 14px 16px; margin-bottom: 12px; }
     .title { font-size: 16px; font-weight: 600; margin-bottom: 4px; }
-    .title a { color: #1D1D1F; text-decoration: none; }
-    .meta { font-size: 14px; color: #6E6E73; }
+    .title a { color: #121417; text-decoration: none; }
+    .meta { font-size: 14px; color: #55595F; }
     .actions { margin: 22px 0 8px 0; }
-    .button { display: inline-block; background: #1D1D1F; color: #FFFFFF; padding: 12px 22px; text-decoration: none; border-radius: 999px; font-size: 14px; font-weight: 600; }
-    .footer { border-top: 1px solid rgba(0,0,0,0.07); margin-top: 26px; padding-top: 16px; font-size: 12.5px; color: #8E8E93; }
-    .footer a { color: #6E6E73; }
+    .button { display: inline-block; background: #121417; color: #FFFFFF; padding: 12px 22px; text-decoration: none; border-radius: 999px; font-size: 14px; font-weight: 600; }
+    .footer { border-top: 1px solid rgba(0,0,0,0.07); margin-top: 26px; padding-top: 16px; font-size: 12.5px; color: #8A8F96; }
+    .footer a { color: #55595F; }
   </style>
 </head>
 <body>

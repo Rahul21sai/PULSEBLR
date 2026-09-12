@@ -137,7 +137,7 @@ export default function WeekAheadStrip({
             <button
               type="button"
               onClick={() => onSelectDay('')}
-              className="text-[11.5px] font-semibold text-[#0071E3] hover:underline"
+              className="text-[11.5px] font-semibold text-[var(--accent)] hover:underline"
             >
               Show all upcoming
             </button>
@@ -182,22 +182,23 @@ export default function WeekAheadStrip({
               aria-label={`${fullDateIST(instant)} — ${
                 empty ? 'no events' : `${day.count} event${day.count === 1 ? '' : 's'}`
               }${selected ? ', showing this day' : ''}`}
-              className={`pressable flex w-[108px] shrink-0 snap-start flex-col items-start gap-0.5 rounded-[14px] px-3 py-2.5 text-left transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0071E3] sm:w-auto [touch-action:manipulation] ${
+              className={`pressable flex w-[108px] shrink-0 snap-start flex-col items-start gap-0.5 r-touch px-3 py-2.5 text-left transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] sm:w-auto [touch-action:manipulation] ${
                 selected
-                  ? 'bg-[#1D1D1F] text-white'
+                  ? 'bg-[var(--ink)] text-[var(--accent-ink)]'
                   : empty
-                    ? 'cursor-not-allowed bg-[#F0F0F2] text-[#c7c7cc]'
-                    : 'bg-white text-[#1D1D1F] shadow-[inset_0_0_0_1px_var(--hairline)] hover:bg-[#FAFAFC]'
+                    ? 'cursor-not-allowed bg-[var(--paper)] text-[var(--ink-3)]'
+                    : 'bg-[var(--surface)] text-[var(--ink)] shadow-[inset_0_0_0_1px_var(--rule)] hover:bg-[var(--paper)]'
               }`}
             >
               {/* Sentence case, not `t-label`. `weekdayFmt` already yields "Sun" and `Today` — the
                   uppercase came from the class, and it turned both into shouted abbreviations for no
-                  gain. `#6E6E73` rather than `#8E8E93`: the latter measures 3.26:1 on white at 11px,
-                  under the 4.5:1 floor `docs/design-direction.md` asks for at the sizes actually
-                  used. Disabled tiles keep `#c7c7cc` — a disabled control is exempt. */}
+                  gain. `--ink-2` rather than a decorative grey: the grey this carried measures 3.26:1
+                  on white at 11px, under the 4.5:1 floor `docs/design-direction.md` asks for at the
+                  sizes actually used. Disabled tiles take `--ink-3` — a disabled control is exempt from the
+                  body-text rule, which is the one thing that token is for. */}
               <span
                 className={`text-[11px] font-semibold leading-[1.15] tracking-[0] ${
-                  selected ? 'text-white/70' : empty ? 'text-[#c7c7cc]' : 'text-[#6E6E73]'
+                  selected ? 'text-[var(--accent-ink)]/70' : empty ? 'text-[var(--ink-3)]' : 'text-[var(--ink-2)]'
                 }`}
               >
                 {weekday}
@@ -209,9 +210,9 @@ export default function WeekAheadStrip({
                 {dayNumFmt.format(instant)}
                 <span
                   className={`ml-1 text-[11.5px] font-medium ${
-                    /* `#a1a1a6` measured 2.58:1 on white — the month is real information, not a
-                       decorative flourish, so it has to clear the floor. */
-                    selected ? 'text-white/60' : 'text-[#6E6E73]'
+                    /* The grey this used to carry measured 2.58:1 on white — the month is real
+                       information, not a decorative flourish, so it has to clear the floor. */
+                    selected ? 'text-[var(--accent-ink)]/60' : 'text-[var(--ink-2)]'
                   }`}
                 >
                   {monthFmt.format(instant)}
@@ -231,7 +232,7 @@ export default function WeekAheadStrip({
                   across seven tiles. */}
               <span
                 className={`tnum text-[11.5px] font-semibold ${
-                  selected ? 'text-white/80' : empty ? 'text-[#c7c7cc]' : 'text-[#1D1D1F]'
+                  selected ? 'text-[var(--accent-ink)]/80' : empty ? 'text-[var(--ink-3)]' : 'text-[var(--ink)]'
                 }`}
               >
                 {empty ? 'Nothing yet' : `${day.count} event${day.count === 1 ? '' : 's'}`}
@@ -255,7 +256,7 @@ export default function WeekAheadStrip({
               {day.top && (
                 <span
                   className={`mt-0.5 hidden line-clamp-2 text-[11.5px] leading-[1.3] sm:block ${
-                    selected ? 'text-white/85' : 'text-[#6E6E73]'
+                    selected ? 'text-[var(--accent-ink)]/85' : 'text-[var(--ink-2)]'
                   }`}
                 >
                   {day.top.title}

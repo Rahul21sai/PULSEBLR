@@ -300,17 +300,17 @@ export default function TrackerPage() {
     return (
       <Shell>
         <div className="max-w-[520px] mx-auto px-4 pt-24 text-center">
-          <span aria-hidden="true" className="material-symbols-outlined text-[48px] text-[#d5d5da] block mb-3">
+          <span aria-hidden="true" className="material-symbols-outlined text-[48px] text-[var(--ink-3)] block mb-3">
             lock
           </span>
-          <h1 className="text-[22px] font-bold text-[#1D1D1F]">Sign in to use your tracker</h1>
-          <p className="text-[14px] text-[#6E6E73] mt-2">
+          <h1 className="text-[22px] font-bold text-[var(--ink)]">Sign in to use your tracker</h1>
+          <p className="text-[14px] text-[var(--ink-2)] mt-2">
             Your tracker keeps the events you saved, who you met, and when to follow up. It’s
             private to your account.
           </p>
           <Link
             href="/login"
-            className="inline-block mt-6 px-6 py-2.5 rounded-full bg-[#0071E3] text-white text-label-md font-semibold hover:bg-blue-600 transition-colors"
+            className="inline-block mt-6 px-6 py-2.5 rounded-full bg-[var(--accent)] text-[var(--accent-ink)] text-label-md font-semibold hover:bg-[var(--accent)] transition-colors"
           >
             Sign in with Google
           </Link>
@@ -322,15 +322,11 @@ export default function TrackerPage() {
   return (
     <Shell>
       <div className="max-w-[1400px] mx-auto px-4 md:px-8 pt-4">
-        {/* Header */}
-        <div className="flex flex-wrap items-end justify-between gap-4 mb-5">
+        {/* Header — ruled, sans, same as every other surface. */}
+        <div className="rule-b flex flex-wrap items-end justify-between gap-4 mb-5 pb-[var(--s-4)]">
           <div>
-            <h1 className="text-[24px] md:text-[30px] font-bold tracking-[-0.025em] text-[#1D1D1F]">
-              Your tracker
-            </h1>
-            <p className="text-[13.5px] text-[#6E6E73] mt-0.5">
-              Events you saved, and what happened next.
-            </p>
+            <h1 className="ty-section text-[var(--ink)]">Your tracker</h1>
+            <p className="ty-meta mt-[var(--s-1)]">Events you saved, and what happened next.</p>
           </div>
 
           <div className="flex items-center gap-2">
@@ -339,7 +335,7 @@ export default function TrackerPage() {
                 and its type scale are untouched (CLAUDE.md section 7, rule 1), and `gap-1` becomes
                 `gap-0` so the two overlays are contiguous rather than separated by a 4px dead
                 strip. Width is already 50-64px, so height was the only failing axis. */}
-            <div className="flex items-center gap-0 bg-white border border-[#e5e5ea] rounded-full p-0.5">
+            <div className="flex items-center gap-0 bg-[var(--surface)] border border-[var(--rule)] rounded-full p-0.5">
               {(['board', 'list'] as const).map(mode => (
                 <button
                   key={mode}
@@ -347,7 +343,7 @@ export default function TrackerPage() {
                   onClick={() => setView(mode)}
                   aria-pressed={view === mode}
                   className={`relative px-3.5 h-8 rounded-full text-[12.5px] font-semibold transition-colors after:absolute after:inset-x-0 after:-inset-y-1.5 after:content-[''] ${
-                    view === mode ? 'bg-[#f3f3f5] text-[#1D1D1F]' : 'text-[#86868B] hover:text-[#1D1D1F]'
+                    view === mode ? 'bg-[var(--paper)] text-[var(--ink)]' : 'text-[var(--ink-2)] hover:text-[var(--ink)]'
                   }`}
                 >
                   {mode === 'board' ? 'Board' : 'List'}
@@ -356,7 +352,7 @@ export default function TrackerPage() {
             </div>
             <Link
               href="/"
-              className="h-9 px-4 rounded-full bg-[#1D1D1F] text-white text-[12.5px] font-semibold flex items-center hover:bg-black transition-colors"
+              className="h-9 px-4 rounded-full bg-[var(--ink)] text-[var(--accent-ink)] text-[12.5px] font-semibold flex items-center hover:bg-[var(--ink)] transition-colors"
             >
               Find events
             </Link>
@@ -372,7 +368,7 @@ export default function TrackerPage() {
         </div>
 
         {error && (
-          <div className="mb-4 bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-[13px] text-red-700">
+          <div className="mb-4 bg-[var(--paper)] border border-[var(--live)] rounded-xl px-4 py-3 text-[13px] text-[var(--live)]">
             {error}
           </div>
         )}
@@ -381,7 +377,7 @@ export default function TrackerPage() {
             vanishes after four seconds takes the link with it — the whole point is that you can
             go straight to the folder and start scanning. Dismissed by hand instead. */}
         {folderNote && (
-          <div className="mb-4 flex items-center gap-3 rounded-xl border border-[#c9e7d2] bg-[#f2fbf5] px-4 py-3 text-[13px] text-[#1d6b39]">
+          <div className="mb-4 flex items-center gap-3 rounded-xl border-l-2 border-l-[var(--accent)] bg-[var(--paper)] px-4 py-3 text-[13px] text-[var(--accent)]">
             <span aria-hidden="true" className="material-symbols-outlined text-[18px]">
               folder_check
             </span>
@@ -399,7 +395,7 @@ export default function TrackerPage() {
               type="button"
               onClick={() => setFolderNote(null)}
               aria-label="Dismiss"
-              className="shrink-0 text-[#1d6b39]/60 hover:text-[#1d6b39]"
+              className="shrink-0 text-[var(--accent)]/60 hover:text-[var(--accent)]"
             >
               <span aria-hidden="true" className="material-symbols-outlined text-[18px]">close</span>
             </button>
@@ -408,11 +404,11 @@ export default function TrackerPage() {
 
         {/* Follow-ups due — the tracker's reason to exist, so it leads. */}
         {dueFollowUps.length > 0 && (
-          <section className="mb-5 bg-white rounded-2xl card-shadow overflow-hidden">
-            <div className="h-1 bg-[#FF9500]" />
+          <section className="mb-5 rounded-[var(--r-flat)] border border-[var(--rule)] overflow-hidden">
+            <div className="h-1 bg-[var(--accent)]" />
             <div className="p-4 md:p-5">
-              <h2 className="text-[15px] font-bold text-[#1D1D1F] flex items-center gap-1.5 mb-3">
-                <span aria-hidden="true" className="material-symbols-outlined text-[18px] text-[#FF9500]">
+              <h2 className="text-[15px] font-bold text-[var(--ink)] flex items-center gap-1.5 mb-3">
+                <span aria-hidden="true" className="material-symbols-outlined text-[18px] text-[var(--accent)]">
                   notifications_active
                 </span>
                 {dueFollowUps.length} follow-up{dueFollowUps.length === 1 ? '' : 's'} due
@@ -421,16 +417,16 @@ export default function TrackerPage() {
                 {dueFollowUps.slice(0, 5).map(({ entry, connection }, index) => (
                   <div
                     key={`${entry._id}-${connection.name}-${index}`}
-                    className="flex items-center gap-3 bg-[#f9f9fb] rounded-xl px-3 py-2.5"
+                    className="flex items-center gap-3 bg-[var(--paper)] rounded-xl px-3 py-2.5"
                   >
                     <div className="min-w-0 flex-1">
-                      <p className="text-[13.5px] font-semibold text-[#1D1D1F] truncate">
+                      <p className="text-[13.5px] font-semibold text-[var(--ink)] truncate">
                         {connection.name}
                         {connection.company && (
-                          <span className="font-normal text-[#6E6E73]"> · {connection.company}</span>
+                          <span className="font-normal text-[var(--ink-2)]"> · {connection.company}</span>
                         )}
                       </p>
-                      <p className="text-[12px] text-[#86868B] truncate">
+                      <p className="text-[12px] text-[var(--ink-2)] truncate">
                         Met at {entry.eventId!.title} · due{' '}
                         {relativeTime(connection.followUpAt!)}
                       </p>
@@ -440,7 +436,7 @@ export default function TrackerPage() {
                         href={connection.linkedin}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="shrink-0 text-[12px] font-semibold text-[#0071E3] hover:underline"
+                        className="shrink-0 text-[12px] font-semibold text-[var(--accent)] hover:underline"
                       >
                         LinkedIn
                       </a>
@@ -456,14 +452,14 @@ export default function TrackerPage() {
                       type="button"
                       onClick={() => completeFollowUp(entry._id, connection.name)}
                       disabled={completing === `${entry._id}:${connection.name}`}
-                      className="pressable shrink-0 h-8 px-3 rounded-full bg-[#1D1D1F] text-[12px] font-semibold text-white hover:bg-black disabled:opacity-50"
+                      className="pressable shrink-0 h-8 px-3 rounded-full bg-[var(--ink)] text-[12px] font-semibold text-[var(--accent-ink)] hover:bg-[var(--ink)] disabled:opacity-50"
                     >
                       {completing === `${entry._id}:${connection.name}` ? 'Saving…' : 'Done'}
                     </button>
                     <button
                       type="button"
                       onClick={() => setEditing(entry)}
-                      className="pressable shrink-0 h-8 px-3 rounded-full bg-white text-[12px] font-semibold text-[#1D1D1F] shadow-[inset_0_0_0_1px_var(--hairline-strong)] hover:bg-[#F7F7F9]"
+                      className="pressable shrink-0 h-8 px-3 rounded-full bg-[var(--surface)] text-[12px] font-semibold text-[var(--ink)] shadow-[inset_0_0_0_1px_var(--hairline-strong)] hover:bg-[var(--paper)]"
                     >
                       Edit
                     </button>
@@ -478,17 +474,17 @@ export default function TrackerPage() {
         {loading ? (
           <BoardSkeleton />
         ) : entries.length === 0 ? (
-          <div className="bg-white rounded-2xl card-shadow py-20 px-6 text-center">
-            <span aria-hidden="true" className="material-symbols-outlined text-[44px] text-[#d5d5da] block mb-3">
+          <div className="rounded-[var(--r-flat)] border border-[var(--rule)] py-20 px-6 text-center">
+            <span aria-hidden="true" className="material-symbols-outlined text-[44px] text-[var(--ink-3)] block mb-3">
               bookmarks
             </span>
-            <p className="text-[17px] font-semibold text-[#1D1D1F]">Nothing tracked yet</p>
-            <p className="text-[14px] text-[#6E6E73] mt-1.5 max-w-sm mx-auto">
+            <p className="text-[17px] font-semibold text-[var(--ink)]">Nothing tracked yet</p>
+            <p className="text-[14px] text-[var(--ink-2)] mt-1.5 max-w-sm mx-auto">
               Save an event from the feed and it lands here, ready to move through your pipeline.
             </p>
             <Link
               href="/"
-              className="inline-block mt-6 px-6 py-2.5 rounded-full bg-[#1D1D1F] text-white text-label-md font-semibold hover:bg-black transition-colors"
+              className="inline-block mt-6 px-6 py-2.5 rounded-full bg-[var(--ink)] text-[var(--accent-ink)] text-label-md font-semibold hover:bg-[var(--ink)] transition-colors"
             >
               Browse events
             </Link>
@@ -514,10 +510,10 @@ export default function TrackerPage() {
                     if (id) moveTo(id, column.id);
                     setDragId(null);
                   }}
-                  className="kanban-col w-[290px] shrink-0 bg-[#efeff2] rounded-2xl flex flex-col transition-colors"
+                  className="kanban-col w-[290px] shrink-0 rounded-[var(--r-flat)] border border-[var(--rule)] flex flex-col transition-colors"
                 >
                   <div className="px-3.5 py-3 flex items-center justify-between sticky top-0">
-                    <span className="flex items-center gap-2 text-[13px] font-bold text-[#1D1D1F]">
+                    <span className="flex items-center gap-2 text-[13px] font-bold text-[var(--ink)]">
                       <span
                         className="w-2 h-2 rounded-full"
                         style={{ background: column.tint }}
@@ -527,7 +523,7 @@ export default function TrackerPage() {
                       {FOLDER_COLUMNS.has(column.id) && (
                         <span
                           title="Moving an event here creates a folder under People, ready to scan people into"
-                          className="inline-flex items-center gap-0.5 rounded-full bg-white px-1.5 py-0.5 text-[10px] font-bold text-[#6E6E73]"
+                          className="inline-flex items-center gap-0.5 rounded-full bg-[var(--surface)] px-1.5 py-0.5 text-[10px] font-bold text-[var(--ink-2)]"
                         >
                           <span aria-hidden="true" className="material-symbols-outlined text-[11px]">
                             folder
@@ -536,7 +532,7 @@ export default function TrackerPage() {
                         </span>
                       )}
                     </span>
-                    <span className="tnum text-[11.5px] font-semibold text-[#86868B] bg-white rounded-full px-2 py-0.5">
+                    <span className="tnum text-[11.5px] font-semibold text-[var(--ink-2)] bg-[var(--surface)] rounded-full px-2 py-0.5">
                       {byColumn[column.id]?.length || 0}
                     </span>
                   </div>
@@ -563,7 +559,7 @@ export default function TrackerPage() {
                     ))}
 
                     {(byColumn[column.id]?.length || 0) === 0 && (
-                      <div className="flex items-center justify-center h-[110px] text-[12px] text-[#b0b0b5]">
+                      <div className="flex items-center justify-center h-[110px] text-[12px] text-[var(--ink-2)]">
                         Drop here
                       </div>
                     )}
@@ -584,26 +580,26 @@ export default function TrackerPage() {
             onClick={() => setSelected(null)}
             className="absolute inset-0 bg-black/45 backdrop-blur-sm"
           />
-          <div className="relative bg-white w-full md:max-w-lg rounded-t-3xl md:rounded-2xl max-h-[88vh] overflow-y-auto">
+          <div className="relative bg-[var(--surface)] w-full md:max-w-lg rounded-[var(--r-flat)] md:rounded-[var(--r-flat)] max-h-[88vh] overflow-y-auto">
             <div className="flex justify-center pt-3 pb-1 md:hidden">
-              <div className="w-10 h-1 bg-[#e5e5ea] rounded-full" />
+              <div className="w-10 h-1 bg-[var(--rule)] rounded-full" />
             </div>
             <div className="p-5 md:p-6">
               <div className="flex items-start justify-between gap-3 mb-4">
-                <h2 className="text-[19px] font-bold leading-snug tracking-[-0.01em] text-[#1D1D1F]">
+                <h2 className="text-[19px] font-bold leading-snug tracking-[-0.01em] text-[var(--ink)]">
                   {selected.eventId.title}
                 </h2>
                 <button
                   type="button"
                   onClick={() => setSelected(null)}
                   aria-label="Close"
-                  className="shrink-0 w-8 h-8 rounded-full bg-[#f3f3f5] flex items-center justify-center hover:bg-[#e8e8ea] transition-colors"
+                  className="shrink-0 w-8 h-8 rounded-full bg-[var(--paper)] flex items-center justify-center transition-colors"
                 >
                   <span aria-hidden="true" className="material-symbols-outlined text-[18px]">close</span>
                 </button>
               </div>
 
-              <label className="block text-label-sm uppercase tracking-widest text-[#86868B] mb-2">
+              <label className="block text-label-sm uppercase tracking-widest text-[var(--ink-2)] mb-2">
                 Status
               </label>
               <select
@@ -612,7 +608,7 @@ export default function TrackerPage() {
                   moveTo(selected._id, e.target.value);
                   setSelected({ ...selected, status: e.target.value });
                 }}
-                className="w-full px-4 py-2.5 border border-[#e5e5ea] rounded-xl text-label-md text-[#1D1D1F] focus:outline-none focus:border-[#0071E3] bg-white mb-5"
+                className="w-full px-4 py-2.5 border border-[var(--rule)] rounded-xl text-label-md text-[var(--ink)] focus:outline-none focus:border-[var(--accent)] bg-[var(--surface)] mb-5"
               >
                 {COLUMNS.map(column => (
                   <option key={column.id} value={column.id}>
@@ -621,9 +617,9 @@ export default function TrackerPage() {
                 ))}
               </select>
 
-              <div className="bg-[#f9f9fb] rounded-xl p-4 mb-5 flex flex-col gap-2 text-[13.5px] text-[#3a3a3c]">
+              <div className="bg-[var(--paper)] rounded-xl p-4 mb-5 flex flex-col gap-2 text-[13.5px] text-[var(--ink-2)]">
                 <span className="flex items-center gap-2">
-                  <span aria-hidden="true" className="material-symbols-outlined text-[16px] text-[#86868B]">
+                  <span aria-hidden="true" className="material-symbols-outlined text-[16px] text-[var(--ink-2)]">
                     calendar_month
                   </span>
                   <span className="tnum">
@@ -632,7 +628,7 @@ export default function TrackerPage() {
                   </span>
                 </span>
                 <span className="flex items-center gap-2">
-                  <span aria-hidden="true" className="material-symbols-outlined text-[16px] text-[#86868B]">
+                  <span aria-hidden="true" className="material-symbols-outlined text-[16px] text-[var(--ink-2)]">
                     location_on
                   </span>
                   {locationLabel(selected.eventId)}
@@ -641,10 +637,10 @@ export default function TrackerPage() {
 
               {selected.notes && (
                 <div className="mb-5">
-                  <p className="text-label-sm uppercase tracking-widest text-[#86868B] mb-2">
+                  <p className="text-label-sm uppercase tracking-widest text-[var(--ink-2)] mb-2">
                     Notes
                   </p>
-                  <p className="text-[13.5px] text-[#1D1D1F] bg-[#f9f9fb] rounded-xl p-4 whitespace-pre-line">
+                  <p className="text-[13.5px] text-[var(--ink)] bg-[var(--paper)] rounded-xl p-4 whitespace-pre-line">
                     {selected.notes}
                   </p>
                 </div>
@@ -652,24 +648,24 @@ export default function TrackerPage() {
 
               {selected.connections.length > 0 && (
                 <div className="mb-5">
-                  <p className="text-label-sm uppercase tracking-widest text-[#86868B] mb-2">
+                  <p className="text-label-sm uppercase tracking-widest text-[var(--ink-2)] mb-2">
                     People met ({selected.connections.length})
                   </p>
                   <div className="flex flex-col gap-2">
                     {selected.connections.map((connection, index) => (
-                      <div key={index} className="bg-[#f9f9fb] rounded-xl p-3">
-                        <p className="text-[13.5px] font-semibold text-[#1D1D1F]">
+                      <div key={index} className="bg-[var(--paper)] rounded-xl p-3">
+                        <p className="text-[13.5px] font-semibold text-[var(--ink)]">
                           {connection.name}
                         </p>
                         {(connection.role || connection.company) && (
-                          <p className="text-[12.5px] text-[#6E6E73]">
+                          <p className="text-[12.5px] text-[var(--ink-2)]">
                             {connection.role}
                             {connection.role && connection.company ? ' @ ' : ''}
                             {connection.company}
                           </p>
                         )}
                         {connection.followUpAt && (
-                          <p className="text-[12px] text-[#FF9500] font-semibold mt-1">
+                          <p className="text-[12px] text-[var(--accent)] font-semibold mt-1">
                             Follow up {relativeTime(connection.followUpAt)}
                             {connection.followedUp && ' · done'}
                           </p>
@@ -679,7 +675,7 @@ export default function TrackerPage() {
                             href={connection.linkedin}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="text-[12px] font-semibold text-[#0071E3] hover:underline mt-1 inline-block"
+                            className="text-[12px] font-semibold text-[var(--accent)] hover:underline mt-1 inline-block"
                           >
                             LinkedIn
                           </a>
@@ -693,7 +689,7 @@ export default function TrackerPage() {
               <div className="flex flex-wrap gap-2">
                 <Link
                   href={`/events/${selected.eventId._id}`}
-                  className="flex-1 min-w-[120px] text-center bg-[#1D1D1F] text-white text-label-md font-semibold py-3 rounded-full hover:bg-black transition-colors"
+                  className="flex-1 min-w-[120px] text-center bg-[var(--ink)] text-[var(--accent-ink)] text-label-md font-semibold py-3 rounded-full hover:bg-[var(--ink)] transition-colors"
                 >
                   View event
                 </Link>
@@ -703,14 +699,14 @@ export default function TrackerPage() {
                     setEditing(selected);
                     setSelected(null);
                   }}
-                  className="flex-1 min-w-[120px] bg-[#f3f3f5] text-[#1D1D1F] text-label-md font-semibold py-3 rounded-full hover:bg-[#e8e8ea] transition-colors"
+                  className="flex-1 min-w-[120px] bg-[var(--paper)] text-[var(--ink)] text-label-md font-semibold py-3 rounded-full transition-colors"
                 >
                   Edit notes & people
                 </button>
                 <button
                   type="button"
                   onClick={() => remove(selected._id)}
-                  className="px-5 py-3 rounded-full text-label-md font-semibold text-red-600 bg-red-50 hover:bg-red-100 transition-colors"
+                  className="px-5 py-3 rounded-full text-label-md font-semibold text-[var(--live)] bg-[var(--paper)] hover:bg-[var(--paper)] transition-colors"
                 >
                   Remove
                 </button>
@@ -776,7 +772,7 @@ function TrackerCard({
       }}
       role="button"
       tabIndex={0}
-      className="kanban-card bg-white rounded-xl p-3 shadow-[0_2px_10px_rgba(0,0,0,0.05)] hover:shadow-[0_5px_18px_rgba(0,0,0,0.09)] transition-shadow"
+      className="kanban-card bg-[var(--surface)] rounded-[var(--r-flat)] p-3 shadow-[inset_0_0_0_1px_var(--rule)]"
       style={{ borderLeft: `3px solid ${accent}` }}
     >
       <div className="flex gap-2.5">
@@ -788,19 +784,34 @@ function TrackerCard({
           monogramSize="text-[11px]"
         />
         <div className="min-w-0 flex-1">
-          <p className="text-[13px] font-semibold leading-snug text-[#1D1D1F] line-clamp-2">
+          <p className="text-[13px] font-semibold leading-snug text-[var(--ink)] line-clamp-2">
             {event.title}
           </p>
-          <p className={`text-[11.5px] tnum mt-0.5 ${isPast ? 'text-[#b0b0b5]' : 'text-[#6E6E73]'}`}>
+          {/*
+            PAST vs UPCOMING, CARRIED BY A WORD INSTEAD OF A COLOUR.
+
+            This was `#b0b0b5` for a past date against `--ink-2` for an upcoming one. Both strings are
+            READ, so neither may take `--ink-3` — 3.09:1 is never body text, and this is an 11.5px
+            string — which left both on `--ink-2` and the distinction carried by nothing at all: the
+            ternary was `isPast ? --ink-2 : --ink-2`, two identical branches.
+
+            A tenth value is not the fix. The signal is now LEXICAL: a past card says "Was Thu 4 Sep",
+            an upcoming one prints the date bare. That is strictly better than the colour it replaces,
+            because it survives greyscale, low contrast and a screen reader, none of which a 4% grey
+            shift does — and on a board whose columns include `Attended` and `Skipped`, "did this
+            already happen" is a question the card should answer in words.
+          */}
+          <p className="text-[11.5px] tnum mt-0.5 text-[var(--ink-2)]">
+            {isPast && <span className="font-semibold">Was </span>}
             {dayLabelIST(event.startDateTime)} · {timeIST(event.startDateTime)}
           </p>
         </div>
       </div>
 
       {(entry.connections.length > 0 || entry.notes) && (
-        <div className="flex items-center gap-3 mt-2 text-[11px] text-[#86868B]">
+        <div className="flex items-center gap-3 mt-2 text-[11px] text-[var(--ink-2)]">
           {entry.connections.length > 0 && (
-            <span className="inline-flex items-center gap-1 text-[#0071E3] font-semibold">
+            <span className="inline-flex items-center gap-1 text-[var(--accent)] font-semibold">
               <span aria-hidden="true" className="material-symbols-outlined text-[13px]">group</span>
               {entry.connections.length}
             </span>
@@ -828,7 +839,7 @@ function TrackerCard({
              simply grows by ~16px. An `::after` overlay was the alternative and is wrong here: the
              card itself is `role="button"` with an `onClick`, so an overlay reaching into the
              card's padding would silently convert "open this entry" taps into status changes. */
-          className="flex w-full items-start min-h-11 mt-2.5 pt-2.5 border-t border-[#f0f0f2] text-[11.5px] font-semibold text-[#0071E3] hover:text-[#0060C0] transition-colors text-left"
+          className="flex w-full items-start min-h-11 mt-2.5 pt-2.5 border-t border-[var(--rule)] text-[11.5px] font-semibold text-[var(--accent)] transition-colors text-left"
         >
           Move to {next.label} →
         </button>
@@ -852,15 +863,15 @@ function ListView({
   );
 
   return (
-    <div className="bg-white rounded-2xl card-shadow overflow-hidden">
+    <div className="rounded-[var(--r-flat)] border border-[var(--rule)] overflow-hidden">
       {sorted.map((entry, index) => {
         const event = entry.eventId!;
         const column = COLUMNS.find(c => c.id === entry.status);
         return (
           <div
             key={entry._id}
-            className={`flex items-center gap-3 px-4 py-3 hover:bg-[#f9f9fb] transition-colors ${
-              index > 0 ? 'border-t border-[#f0f0f2]' : ''
+            className={`flex items-center gap-3 px-4 py-3 hover:bg-[var(--paper)] transition-colors ${
+              index > 0 ? 'border-t border-[var(--rule)]' : ''
             }`}
           >
             <EventCover
@@ -880,14 +891,14 @@ function ListView({
               onClick={() => onOpen(entry)}
               className="flex min-h-11 min-w-0 flex-1 flex-col justify-center text-left"
             >
-              <p className="text-[14px] font-semibold text-[#1D1D1F] truncate">{event.title}</p>
-              <p className="text-[12px] text-[#86868B] tnum truncate">
+              <p className="text-[14px] font-semibold text-[var(--ink)] truncate">{event.title}</p>
+              <p className="text-[12px] text-[var(--ink-2)] tnum truncate">
                 {dayLabelIST(event.startDateTime)} · {timeIST(event.startDateTime)} ·{' '}
                 {locationLabel(event)}
               </p>
             </button>
             {entry.connections.length > 0 && (
-              <span className="hidden sm:inline-flex items-center gap-1 text-[11.5px] font-semibold text-[#0071E3] shrink-0">
+              <span className="hidden sm:inline-flex items-center gap-1 text-[11.5px] font-semibold text-[var(--accent)] shrink-0">
                 <span aria-hidden="true" className="material-symbols-outlined text-[14px]">group</span>
                 {entry.connections.length}
               </span>
@@ -902,7 +913,7 @@ function ListView({
                    the one place in this pass where the painted control does grow (30 -> 44px); the
                    type size, weight and radius are untouched, and it is the primary action of the
                    default mobile view. */
-                className="min-h-11 text-[12px] font-semibold rounded-full px-3 py-1.5 border border-[#e5e5ea] bg-white focus:outline-none focus:border-[#0071E3] cursor-pointer"
+                className="min-h-11 text-[12px] font-semibold rounded-full px-3 py-1.5 border border-[var(--rule)] bg-[var(--surface)] focus:outline-none focus:border-[var(--accent)] cursor-pointer"
                 style={{ color: column?.tint }}
               >
                 {COLUMNS.map(c => (
@@ -919,11 +930,26 @@ function ListView({
   );
 }
 
+/**
+ * The four figures above the board.
+ *
+ * This is the one hand-rolled copy of a `ui.tsx` primitive left in these surfaces — `ui.tsx` exports
+ * `Stat`, and a second implementation of the same thing is exactly what makes an app look assembled.
+ * It is NOT switched to the shared one, for a reason worth stating rather than leaving as a silent
+ * divergence: `ui.tsx`'s `Stat` renders its value in `--font-display`, which now resolves to the
+ * SERIF. A count is the app speaking, so by the semantic rule it is sans with tabular numerals —
+ * which is also what stops four figures shifting width as they update. Same call as `AdminUI`'s
+ * `StatCard` and `/dashboard`'s grid, so all three agree; when `ui.tsx`'s `Stat` moves off the
+ * legacy scale, all three should collapse into it.
+ *
+ * Ruled rather than a white plane: with `card-shadow` composited to nothing, `bg-[var(--surface)]`
+ * on `--paper` had no edge at all.
+ */
 function Stat({ label, value }: { label: string; value: number }) {
   return (
-    <div className="bg-white rounded-xl card-shadow px-4 py-3">
-      <p className="tnum text-[24px] font-bold leading-none text-[#1D1D1F]">{value}</p>
-      <p className="text-[12px] text-[#86868B] mt-1">{label}</p>
+    <div className="rounded-[var(--r-flat)] border border-[var(--rule)] px-[var(--s-4)] py-[var(--s-3)]">
+      <p className="tnum text-[24px] font-semibold leading-none tracking-[-0.02em] text-[var(--ink)]">{value}</p>
+      <p className="ty-meta mt-[var(--s-1)]">{label}</p>
     </div>
   );
 }
@@ -932,10 +958,10 @@ function BoardSkeleton() {
   return (
     <div className="flex gap-4 overflow-hidden">
       {Array.from({ length: 5 }, (_, i) => (
-        <div key={i} className="w-[290px] shrink-0 bg-[#efeff2] rounded-2xl p-2.5">
+        <div key={i} className="w-[290px] shrink-0 rounded-[var(--r-flat)] border border-[var(--rule)] p-2.5">
           <div className="skeleton h-4 w-24 rounded mb-3 ml-1" />
           {Array.from({ length: 2 }, (_, j) => (
-            <div key={j} className="bg-white rounded-xl p-3 mb-2">
+            <div key={j} className="rounded-[var(--r-flat)] border border-[var(--rule)] p-3 mb-2">
               <div className="flex gap-2.5">
                 <div className="skeleton w-11 h-11 rounded-lg shrink-0" />
                 <div className="flex-1 flex flex-col gap-1.5">
@@ -953,13 +979,13 @@ function BoardSkeleton() {
 
 function Shell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-screen bg-[#F5F5F7]">
+    <div className="min-h-screen bg-[var(--paper)]">
       <DesktopNav />
-      <header className="md:hidden fixed top-0 w-full h-14 bg-white/96 glass-nav z-50 border-b border-black/5 flex items-center justify-between px-5">
-        <Link href="/" className="text-lg font-bold tracking-tight text-[#1D1D1F]">
+      <header className="md:hidden fixed top-0 w-full h-14 bg-[var(--surface)]/96 glass-nav z-50 border-b border-[var(--rule)] flex items-center justify-between px-5">
+        <Link href="/" className="text-lg font-bold tracking-tight text-[var(--ink)]">
           PulseBLR
         </Link>
-        <span className="text-[#86868B] text-label-md font-semibold">Tracker</span>
+        <span className="text-[var(--ink-2)] text-label-md font-semibold">Tracker</span>
       </header>
       <main className="pt-14 pb-24 md:pb-10">{children}</main>
       <MobileBottomNav />

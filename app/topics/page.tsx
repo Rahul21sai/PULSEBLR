@@ -2,7 +2,6 @@ import Link from 'next/link';
 import type { Metadata } from 'next';
 
 import AppShell from '../components/AppShell';
-import { PageHeader } from '../components/ui';
 import { publishedTopics } from '@/lib/events/topic-counts';
 import { MIN_TOPIC_EVENTS } from '@/lib/events/topics';
 import { absoluteUrl, canonicalOrigin } from '@/lib/canonical-origin';
@@ -80,16 +79,20 @@ export default async function TopicsIndexPage() {
   return (
     <AppShell title="Topics">
       <div className="max-w-[1100px] mx-auto px-4 md:px-8 pt-4 md:pt-6">
-        <PageHeader
-          eyebrow="Browse"
-          title="Topics and areas"
-          subtitle={
-            <>
-              {DESCRIPTION} A page appears here once it has at least {MIN_TOPIC_EVENTS} upcoming
-              events — a shorter list than that is not worth your click, so we do not publish one.
-            </>
-          }
-        />
+        {/*
+          SANS, and no eyebrow. `PageHeader` sets `.t-title` — the SERIF display face — for every page
+          in the app, which is wrong here for the same reason it is wrong on `/topics/[slug]`: a topic
+          is a grouping this product invented, and the serif belongs to things that exist in the city.
+          The `eyebrow` slot also printed "Browse" as a small tracked label above the title, saying
+          nothing the nav and the heading do not already say.
+        */}
+        <div className="mb-[var(--s-6)]">
+          <h1 className="ty-section text-[var(--ink)]">Topics and areas</h1>
+          <p className="mt-[var(--s-2)] ty-body max-w-[68ch] text-[color:var(--ink-2)]">
+            {DESCRIPTION} A page appears here once it has at least {MIN_TOPIC_EVENTS} upcoming events
+            — a shorter list than that is not worth your click, so we do not publish one.
+          </p>
+        </div>
 
         {/*
           TWO ZERO-ROW STATES, AND THEY SAY OPPOSITE THINGS. The reassurance below — "the calendar is
@@ -98,27 +101,30 @@ export default async function TopicsIndexPage() {
           the calendar's "No events this month" for a 500, on a different page.
         */}
         {loadFailed ? (
-          <div className="rounded-[18px] bg-white card-shadow p-6">
-            <p className="text-[14px] text-[#3a3a3c]">
+          /* Flat and ruled. `card-shadow` resolves to `--lift-1: none`, so the rounded surface was a
+             radius with nothing under it; and `hover:bg-black` was a tenth colour outside the nine —
+             the press affordance carries the interaction instead. */
+          <div className="rule-y py-[var(--s-8)]">
+            <p className="ty-body max-w-[62ch] text-[color:var(--ink-2)]">
               We could not load the topic list just now. The events themselves are unaffected — this
               page groups them, so only the grouping is missing.
             </p>
             <Link
               href="/"
-              className="inline-block mt-4 px-5 py-2.5 rounded-full bg-[#1D1D1F] text-white text-label-md font-semibold hover:bg-black transition-colors"
+              className="inline-block mt-[var(--s-4)] px-5 py-2.5 r-touch bg-[var(--ink)] text-[var(--accent-ink)] text-[13.5px] font-semibold pressable"
             >
               Browse everything upcoming
             </Link>
           </div>
         ) : published.length === 0 ? (
-          <div className="rounded-[18px] bg-white card-shadow p-6">
-            <p className="text-[14px] text-[#3a3a3c]">
+          <div className="rule-y py-[var(--s-8)]">
+            <p className="ty-body max-w-[62ch] text-[color:var(--ink-2)]">
               Nothing clears the {MIN_TOPIC_EVENTS}-event floor at the moment, which usually means
               the calendar is between busy weeks rather than that anything is wrong.
             </p>
             <Link
               href="/"
-              className="inline-block mt-4 px-5 py-2.5 rounded-full bg-[#1D1D1F] text-white text-label-md font-semibold hover:bg-black transition-colors"
+              className="inline-block mt-[var(--s-4)] px-5 py-2.5 r-touch bg-[var(--ink)] text-[var(--accent-ink)] text-[13.5px] font-semibold pressable"
             >
               Browse everything upcoming
             </Link>
@@ -155,24 +161,29 @@ function TopicSection({
 
   return (
     <section>
-      <h2 className="t-sub text-[#1D1D1F]">{heading}</h2>
-      <p className="mt-0.5 mb-3 text-[13px] text-[#6E6E73]">{hint}</p>
+      {/* SANS: a topic is a grouping the PRODUCT made, not a thing that exists in the city. That
+          is the whole reason the section heading and the topic names below it are not serif. */}
+      <h2 className="ty-section text-[var(--ink)]">{heading}</h2>
+      <p className="ty-meta mt-[var(--s-2)] mb-[var(--s-4)]">{hint}</p>
+      {/* 4px and a hairline ring, because each of these IS a touchable — the one thing radius is
+          allowed to mean in this system. `raise` resolved to `--lift-2: none`, so the hover promised
+          a lift that could not happen; the press does the work. */}
       <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
         {entries.map(({ topic, count }) => (
           <Link
             key={topic.slug}
             href={`/topics/${topic.slug}`}
-            className="group rounded-[18px] bg-white card-shadow p-4 raise pressable"
+            className="group r-touch bg-[var(--surface)] p-4 shadow-[inset_0_0_0_1px_var(--rule)] pressable"
           >
             <div className="flex items-start justify-between gap-3">
-              <p className="text-[14.5px] font-semibold leading-snug text-[#1D1D1F] group-hover:text-[#0071E3] transition-colors">
+              <p className="text-[14.5px] font-semibold leading-snug text-[var(--ink)] group-hover:text-[var(--accent)] transition-colors">
                 {topic.heading}
               </p>
-              <span className="shrink-0 text-[12px] font-semibold text-[#86868B] tnum">{count}</span>
+              <span className="ty-meta shrink-0">{count}</span>
             </div>
             {/* One clause of the page's own written copy, so the card says something specific
                 rather than repeating its heading in longer form. */}
-            <p className="mt-1.5 text-[12.5px] leading-relaxed text-[#6E6E73]">
+            <p className="mt-[var(--s-2)] text-[12.5px] leading-relaxed text-[color:var(--ink-2)]">
               {firstClause(topic.blurb)}
             </p>
           </Link>

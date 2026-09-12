@@ -86,7 +86,20 @@ export default async function DigestPage() {
 
   return (
     <AppShell title="This week">
-      <div className="max-w-[1100px] mx-auto px-4 md:px-8 pt-4 md:pt-6 pb-10">
+      {/*
+        THE BOTTOM NAV WAS COVERING THE LAST ROWS OF THE LIST, and only a hit test found it.
+
+        `pb-10` is 40px against a mobile bottom nav measured at 62px, so on a 390x844 viewport the
+        centre of a real event link sat UNDER the nav: `document.elementFromPoint()` at that point
+        returned the nav's own label, not the link. Nothing about the geometry looked wrong — the
+        element reported itself fully on screen — which is exactly why occlusion has to be hit-tested
+        rather than computed from a bounding box.
+
+        `--bottomnav-h` exists in globals.css for this, and already folds in
+        `env(safe-area-inset-bottom)`, so it is correct on a notched phone too. `md:pb-10` restores the
+        original spacing at the width where the nav is `md:hidden` and there is nothing to clear.
+      */}
+      <div className="max-w-[1100px] mx-auto px-4 md:px-8 pt-4 md:pt-6 pb-[calc(var(--bottomnav-h)+var(--s-6))] md:pb-10">
         <PageHeader
           eyebrow="The week ahead"
           title={TITLE}
@@ -101,25 +114,25 @@ export default async function DigestPage() {
 
         {failed || !week ? (
           <Card>
-            <h2 className="t-sub text-[#1D1D1F]">We could not load this week</h2>
+            <h2 className="t-sub text-[var(--ink)]">We could not load this week</h2>
             {/*
               STATED AS OUR FAULT AND AS UNKNOWN, both. The one thing this must not say is
               anything about how many events there are, because that is precisely what we
               failed to find out.
             */}
-            <p className="mt-1.5 mb-4 text-[13.5px] leading-relaxed text-[#6E6E73]">
+            <p className="mt-1.5 mb-4 text-[13.5px] leading-relaxed text-[var(--ink-2)]">
               Something went wrong on our side while reading the calendar, so we do not know what is
               on this week rather than knowing that nothing is. Nothing is wrong with the events
               themselves.
             </p>
             <RetryButton />
-            <p className="mt-4 text-[12.5px] text-[#6E6E73]">
+            <p className="mt-4 text-[12.5px] text-[var(--ink-2)]">
               The{' '}
-              <Link href="/" className="text-[#0071E3] hover:underline">
+              <Link href="/" className="text-[var(--accent)] hover:underline">
                 full feed
               </Link>{' '}
               and the{' '}
-              <Link href="/calendar" className="text-[#0071E3] hover:underline">
+              <Link href="/calendar" className="text-[var(--accent)] hover:underline">
                 calendar
               </Link>{' '}
               are worth a try too — they read the same data by a different path, so one of them may
@@ -144,39 +157,39 @@ export default async function DigestPage() {
               <Card>
                 {/* A REAL, TEMPORARY ANSWER — and it is only ever printed when the query
                     SUCCEEDED and returned nothing. See the header. */}
-                <h2 className="t-sub text-[#1D1D1F]">A quiet week</h2>
-                <p className="mt-1.5 mb-4 text-[13.5px] leading-relaxed text-[#6E6E73]">
+                <h2 className="t-sub text-[var(--ink)]">A quiet week</h2>
+                <p className="mt-1.5 mb-4 text-[13.5px] leading-relaxed text-[var(--ink-2)]">
                   Nothing is scheduled in the next {WEEKLY_WINDOW_DAYS} days that clears the bar for
                   this page. That happens between busy weeks — Bengaluru bunches its conferences —
                   rather than meaning anything is broken.
                 </p>
                 <Link
                   href="/calendar"
-                  className="pressable inline-flex min-h-[44px] items-center rounded-full bg-[#1D1D1F] px-5 text-label-md font-semibold text-white transition-colors hover:bg-black"
+                  className="pressable inline-flex min-h-[44px] items-center rounded-full bg-[var(--ink)] px-5 text-label-md font-semibold text-[var(--accent-ink)] transition-colors hover:bg-[var(--ink)]"
                 >
                   Look further ahead
                 </Link>
               </Card>
             ) : (
               <section>
-                <h2 className="t-sub text-[#1D1D1F]">
+                <h2 className="t-sub text-[var(--ink)]">
                   {week.events.length === week.total
                     ? 'Everything on this week'
                     : `The ${week.events.length} best of them`}
                 </h2>
-                <p className="mt-0.5 mb-3 text-[13px] text-[#6E6E73]">
+                <p className="mt-0.5 mb-3 text-[13px] text-[var(--ink-2)]">
                   Ordered by how much use the room is to you, not by date — an in-person evening with
                   a company host beats a webinar happening sooner.
                 </p>
-                <div className="rounded-[18px] bg-white card-shadow overflow-hidden">
+                <div className="rounded-[var(--r-flat)] border border-[var(--rule)] overflow-hidden">
                   {week.events.map(event => (
                     <EventRow key={event._id} event={event} showDate />
                   ))}
                 </div>
                 {week.total > week.events.length && (
-                  <p className="mt-3 text-[12.5px] text-[#6E6E73]">
+                  <p className="mt-3 text-[12.5px] text-[var(--ink-2)]">
                     {week.total - week.events.length} more this week —{' '}
-                    <Link href="/" className="text-[#0071E3] hover:underline">
+                    <Link href="/" className="text-[var(--accent)] hover:underline">
                       see the whole feed
                     </Link>
                     .
@@ -186,8 +199,8 @@ export default async function DigestPage() {
             )}
 
             <Card>
-              <h2 className="t-sub text-[#1D1D1F]">Get this by email</h2>
-              <p className="mt-1.5 mb-4 text-[13.5px] leading-relaxed text-[#6E6E73]">
+              <h2 className="t-sub text-[var(--ink)]">Get this by email</h2>
+              <p className="mt-1.5 mb-4 text-[13.5px] leading-relaxed text-[var(--ink-2)]">
                 The same shortlist, five events, sent on Monday morning and ranked for what you told
                 us you care about. Weekly is the default; daily is available if you would rather.
                 Every email carries a one-tap unsubscribe that needs no sign-in.
@@ -202,7 +215,7 @@ export default async function DigestPage() {
               */}
               <Link
                 href="/onboarding"
-                className="pressable inline-flex min-h-[44px] items-center rounded-full bg-[#1D1D1F] px-5 text-label-md font-semibold text-white transition-colors hover:bg-black"
+                className="pressable inline-flex min-h-[44px] items-center rounded-full bg-[var(--ink)] px-5 text-label-md font-semibold text-[var(--accent-ink)] transition-colors hover:bg-[var(--ink)]"
               >
                 Choose a cadence
               </Link>

@@ -74,29 +74,29 @@ function LoginBody() {
   const signedIn = status === 'authenticated' && Boolean(session?.user);
 
   return (
-    <div className="min-h-screen bg-[#F5F5F7] px-5 py-12 md:py-0 md:grid md:min-h-screen md:place-items-center">
+    <div className="min-h-screen bg-[var(--paper)] px-5 py-12 md:py-0 md:grid md:min-h-screen md:place-items-center">
       <div className="mx-auto w-full max-w-[880px] md:grid md:grid-cols-[1.15fr_1fr] md:items-center md:gap-14">
         {/* ── The thesis ──────────────────────────────────────────────────────
             Stated as the job the product does, not as a feature list. */}
         <div className="mb-10 md:mb-0">
           <Link
             href="/"
-            className="inline-flex items-center gap-2 text-[15px] font-bold tracking-[-0.02em] text-[#1D1D1F]"
+            className="inline-flex items-center gap-2 text-[15px] font-bold tracking-[-0.02em] text-[var(--ink)]"
             style={{ fontFamily: 'var(--font-display)' }}
           >
-            <span className="grid h-6 w-6 place-items-center rounded-[7px] bg-[#1D1D1F] text-[11px] font-bold text-white">
+            <span className="grid h-6 w-6 place-items-center rounded-[7px] bg-[var(--ink)] text-[11px] font-bold text-[var(--accent-ink)]">
               P
             </span>
             PulseBLR
           </Link>
 
-          <h1 className="t-display mt-7 text-[#1D1D1F]">
+          <h1 className="t-display mt-7 text-[var(--ink)]">
             Remember who
             <br />
             you met.
           </h1>
 
-          <p className="mt-4 max-w-[42ch] text-[15px] leading-relaxed text-[#6E6E73]">
+          <p className="mt-4 max-w-[42ch] text-[15px] leading-relaxed text-[var(--ink-2)]">
             Bengaluru runs a few hundred tech events a month. Finding them is the easy
             part — the value is walking out with names, and still having them next week.
           </p>
@@ -120,14 +120,14 @@ function LoginBody() {
               },
             ].map(item => (
               <li key={item.icon} className="flex items-start gap-3">
-                <span className="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-full bg-white shadow-[inset_0_0_0_1px_var(--hairline)]">
-                  <span aria-hidden="true" className="material-symbols-outlined text-[16px] text-[#0071E3]">
+                <span className="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[var(--surface)] shadow-[inset_0_0_0_1px_var(--hairline)]">
+                  <span aria-hidden="true" className="material-symbols-outlined text-[16px] text-[var(--accent)]">
                     {item.icon}
                   </span>
                 </span>
                 <div className="min-w-0">
-                  <p className="text-[13.5px] font-semibold text-[#1D1D1F]">{item.title}</p>
-                  <p className="text-[13px] text-[#6E6E73] tracking-[0]">{item.body}</p>
+                  <p className="text-[13.5px] font-semibold text-[var(--ink)]">{item.title}</p>
+                  <p className="text-[13px] text-[var(--ink-2)] tracking-[0]">{item.body}</p>
                 </div>
               </li>
             ))}
@@ -135,15 +135,15 @@ function LoginBody() {
         </div>
 
         {/* ── The action ─────────────────────────────────────────────────── */}
-        <div className="rounded-[22px] bg-white card-shadow-lg p-7 md:p-8">
-          <h2 className="t-head text-[#1D1D1F]">
+        <div className="rounded-[var(--r-flat)] border border-[var(--rule)] p-7 md:p-8">
+          <h2 className="t-head text-[var(--ink)]">
             {signedIn ? 'You’re already signed in' : 'Sign in'}
           </h2>
-          <p className="mt-1 text-[13.5px] leading-relaxed text-[#6E6E73]">
+          <p className="mt-1 text-[13.5px] leading-relaxed text-[var(--ink-2)]">
             {signedIn ? (
               <>
                 as{' '}
-                <span className="font-semibold text-[#1D1D1F]">
+                <span className="font-semibold text-[var(--ink)]">
                   {session?.user?.email || session?.user?.name}
                 </span>
                 . If you were sent here from another page, continue below.
@@ -159,7 +159,7 @@ function LoginBody() {
           {signedIn && (
             <Link
               href={callbackUrl}
-              className="pressable mt-6 flex h-12 w-full items-center justify-center gap-2 rounded-full bg-[#0071E3] px-6 text-[14.5px] font-semibold text-white hover:bg-blue-600"
+              className="pressable mt-6 flex h-12 w-full items-center justify-center gap-2 rounded-full bg-[var(--accent)] px-6 text-[14.5px] font-semibold text-[var(--accent-ink)] hover:bg-[var(--accent)]"
             >
               Continue
               <span aria-hidden="true" className="material-symbols-outlined text-[18px]">
@@ -173,16 +173,18 @@ function LoginBody() {
             type="button"
             onClick={handleGoogleSignIn}
             disabled={loading}
-            className="pressable mt-6 flex h-12 w-full items-center justify-center gap-3 rounded-full bg-[#1D1D1F] px-6 text-[14.5px] font-semibold text-white hover:bg-black disabled:opacity-50"
+            className="pressable mt-6 flex h-12 w-full items-center justify-center gap-3 rounded-full bg-[var(--ink)] px-6 text-[14.5px] font-semibold text-[var(--accent-ink)] hover:bg-[var(--ink)] disabled:opacity-50"
           >
             {loading ? (
               <>
-                <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                {/* `--accent-ink`, not white: this spinner sits on the `--ink` button ground, which
+                    is the only place the token is legal. Same value today, but it says WHY. */}
+                <span className="h-4 w-4 animate-spin rounded-full border-2 border-[var(--accent-ink)]/30 border-t-[var(--accent-ink)]" />
                 Opening Google…
               </>
             ) : (
               <>
-                <span className="grid h-5 w-5 place-items-center rounded-full bg-white">
+                <span className="grid h-5 w-5 place-items-center rounded-full bg-[var(--surface)]">
                   <svg width="13" height="13" viewBox="0 0 24 24" aria-hidden="true">
                     <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
                     <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" />
@@ -197,27 +199,27 @@ function LoginBody() {
           )}
 
           {error && (
-            <p className="mt-3 rounded-xl bg-[#FFF1F0] px-3.5 py-2.5 text-[12.5px] text-[#C7362D]" role="alert">
+            <p className="mt-3 rounded-xl border-l-2 border-l-[var(--live)] bg-[var(--paper)] px-3.5 py-2.5 text-[12.5px] text-[var(--live)]" role="alert">
               {error}
             </p>
           )}
 
           <div className="mt-6 flex items-center gap-3">
             <span aria-hidden="true" className="h-px flex-1 bg-[color:var(--hairline)]" />
-            <span className="t-label text-[#8E8E93]">or</span>
+            <span className="t-label text-[var(--ink-2)]">or</span>
             <span aria-hidden="true" className="h-px flex-1 bg-[color:var(--hairline)]" />
           </div>
 
           {/* The honest escape hatch: the whole feed is public. */}
           <Link
             href="/"
-            className="pressable mt-6 flex h-11 w-full items-center justify-center gap-1.5 rounded-full bg-white text-[13.5px] font-semibold text-[#1D1D1F] shadow-[inset_0_0_0_1px_var(--hairline-strong)] hover:bg-[#F7F7F9]"
+            className="pressable mt-6 flex h-11 w-full items-center justify-center gap-1.5 rounded-full bg-[var(--surface)] text-[13.5px] font-semibold text-[var(--ink)] shadow-[inset_0_0_0_1px_var(--hairline-strong)] hover:bg-[var(--paper)]"
           >
             Browse events without an account
             <span aria-hidden="true" className="material-symbols-outlined text-[16px]">arrow_forward</span>
           </Link>
 
-          <p className="mt-5 text-[12px] leading-relaxed text-[#8E8E93]">
+          <p className="mt-5 text-[12px] leading-relaxed text-[var(--ink-2)]">
             We store your name, email and profile picture from Google, and the events and
             contacts you choose to save. Nothing else.
           </p>
@@ -236,7 +238,7 @@ function LoginBody() {
  */
 export default function LoginPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-[#F5F5F7]" />}>
+    <Suspense fallback={<div className="min-h-screen bg-[var(--paper)]" />}>
       <LoginBody />
     </Suspense>
   );

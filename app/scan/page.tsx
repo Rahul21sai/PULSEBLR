@@ -30,7 +30,7 @@ import type { FolderDTO } from '@/lib/contacts/types';
  * card whose primary action is a REAL TAP on "Connect on LinkedIn" — which reliably hands the
  * URL to the native app via universal links.
  *
- * Rendered with no app chrome (`AppShell bare`): the nav is `bg-white/96` and looks wrong over
+ * Rendered with no app chrome (`AppShell bare`): the nav is a near-opaque `--surface` and looks wrong over
  * a viewfinder, and this is the app's only dark surface.
  */
 export default function ScanPage() {
@@ -111,7 +111,8 @@ function ScanScreen() {
    *
    * WHY THIS IS SEPARATE FROM `toast`. `Sheet` is `z-[70]` and the toast is `z-20`, both in the
    * scan screen's stacking context (its root is `fixed` with `z-index: auto`, so it creates none).
-   * So every message raised without closing the sheet rendered BEHIND the sheet's own backdrop —   * and those are exactly the two messages that matter: "add a name first", and the `lost` outcome
+   * So every message raised without closing the sheet rendered BEHIND the sheet's own backdrop —
+   * and those are exactly the two messages that matter: "add a name first", and the `lost` outcome
    * where the record is genuinely gone and the sheet is deliberately kept open so the details can
    * be re-entered. A failed capture therefore showed NOTHING while the user was standing in front
    * of the person they had just scanned.
@@ -405,7 +406,7 @@ function ScanScreen() {
         <Link
           href={folderId ? `/folders/${folderId}` : '/folders'}
           aria-label="Close the scanner"
-          className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-white/15 text-white [touch-action:manipulation]"
+          className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[var(--surface)]/15 text-white [touch-action:manipulation]"
         >
           <span aria-hidden="true" className="material-symbols-outlined text-[20px]">close</span>
         </Link>
@@ -413,7 +414,7 @@ function ScanScreen() {
         <button
           type="button"
           onClick={() => setChoosingFolder(true)}
-          className="flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-full bg-white/15 px-4 py-2.5 text-[13px] font-semibold text-white [touch-action:manipulation]"
+          className="flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-full bg-[var(--surface)]/15 px-4 py-2.5 text-[13px] font-semibold text-white [touch-action:manipulation]"
         >
           <span aria-hidden="true" className="material-symbols-outlined text-[17px]">folder</span>
           <span className="truncate">{folder ? folder.name : 'Choose a folder'}</span>
@@ -424,7 +425,7 @@ function ScanScreen() {
           href="/card"
           aria-label="Show my own code"
           title="Show my code"
-          className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-white/15 text-white [touch-action:manipulation]"
+          className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[var(--surface)]/15 text-white [touch-action:manipulation]"
         >
           <span aria-hidden="true" className="material-symbols-outlined text-[20px]">qr_code_2</span>
         </Link>
@@ -435,7 +436,7 @@ function ScanScreen() {
         {!folderId ? (
           <div className="grid h-full place-items-center px-6 text-center">
             <div>
-              <p className="text-[15px] font-semibold text-white">Pick a folder first</p>
+              <p className="text-[15px] font-semibold text-[var(--accent-ink)]">Pick a folder first</p>
               <p className="mt-1.5 text-[13px] leading-relaxed text-white/70">
                 Everyone you record lands in it, so it is worth naming after the event.
               </p>
@@ -461,7 +462,7 @@ function ScanScreen() {
            * screenshot and is worse in a corridor.
            */
           <div className="flex h-full flex-col justify-end px-6 pb-8 text-center">
-            <p className="text-[17px] font-semibold text-white">No QR? Just type it.</p>
+            <p className="text-[17px] font-semibold text-[var(--accent-ink)]">No QR? Just type it.</p>
             <p className="mx-auto mt-2 max-w-[300px] text-[13px] leading-relaxed text-white/70">
               A name is enough to start. Everything else — company, one line about why they matter,
               a reminder — can go in now or later.
@@ -497,7 +498,7 @@ function ScanScreen() {
             >
               photo_camera
             </span>
-            <p className="mt-2 text-[17px] font-semibold text-white">Card photo is not built yet</p>
+            <p className="mt-2 text-[17px] font-semibold text-[var(--accent-ink)]">Card photo is not built yet</p>
             <p className="mx-auto mt-2 max-w-[320px] text-[13px] leading-relaxed text-white/70">
               Reading a business card needs a vision model, and it will get names wrong. Rather than
               quietly file somebody under a misspelling, this stays switched off until it can hand
@@ -520,7 +521,7 @@ function ScanScreen() {
             {recent.map((name, index) => (
               <span
                 key={`${name}-${index}`}
-                className="rounded-full bg-black/55 px-3 py-1 text-[12px] font-semibold text-white"
+                className="rounded-full bg-black/55 px-3 py-1 text-[12px] font-semibold text-[var(--accent-ink)]"
                 style={{ opacity: 1 - index * 0.3 }}
               >
                 ✓ {name}
@@ -539,7 +540,7 @@ function ScanScreen() {
               type="button"
               onClick={syncNow}
               className={`mx-auto flex min-h-11 items-center gap-2 rounded-full px-4 py-2 text-[12px] font-semibold [touch-action:manipulation] ${
-                pending.blocked > 0 ? 'bg-[#FFF1F0]/95 text-[#C7362D]' : 'bg-white/95 text-[#1D1D1F]'
+                pending.blocked > 0 ? 'bg-[var(--paper)]/95 text-[var(--live)]' : 'bg-[var(--surface)]/95 text-[var(--ink)]'
               }`}
             >
               <span aria-hidden="true" className="material-symbols-outlined text-[16px]">
@@ -598,7 +599,7 @@ function ScanScreen() {
                 if (option.id === 'type' && folderId) startTyping();
               }}
               className={`flex h-11 flex-1 items-center justify-center gap-1.5 rounded-full text-[12.5px] font-semibold [touch-action:manipulation] ${
-                active ? 'bg-white text-[#1D1D1F]' : 'bg-white/15 text-white'
+                active ? 'bg-[var(--surface)] text-[var(--ink)]' : 'bg-[var(--surface)]/15 text-white'
               }`}
             >
               <span aria-hidden="true" className="material-symbols-outlined text-[17px]">
@@ -620,7 +621,7 @@ function ScanScreen() {
         <div className="pointer-events-none absolute inset-x-0 top-20 z-[80] px-4">
           <p
             role="status"
-            className="mx-auto max-w-[420px] rounded-2xl bg-white/95 px-4 py-3 text-center text-[13px] font-medium leading-relaxed text-[#1D1D1F]"
+            className="mx-auto max-w-[420px] rounded-2xl bg-[var(--surface)]/95 px-4 py-3 text-center text-[13px] font-medium leading-relaxed text-[var(--ink)]"
           >
             {toast}
           </p>
@@ -682,7 +683,7 @@ function ScanScreen() {
               >
                 {capture.parsed.actionLabel ?? 'Open profile'}
               </ButtonLink>
-              <p className="mt-1.5 text-center text-[12px] text-[#8E8E93]">
+              <p className="mt-1.5 text-center text-[12px] text-[var(--ink-2)]">
                 Opens LinkedIn. Come back here — this is already saved when you tap Save.
               </p>
             </div>
@@ -722,7 +723,7 @@ function ScanScreen() {
         }
       >
         {folders.length === 0 ? (
-          <p className="text-[13.5px] leading-relaxed text-[#6E6E73]">
+          <p className="text-[13.5px] leading-relaxed text-[var(--ink-2)]">
             You have no folders yet. Create one — name it after the event — and come back.
           </p>
         ) : (
@@ -736,20 +737,22 @@ function ScanScreen() {
                   setChoosingFolder(false);
                 }}
                 aria-pressed={option._id === folderId}
-                className={`flex items-center justify-between gap-3 rounded-xl px-4 py-3 text-left [touch-action:manipulation] ${
-                  option._id === folderId ? 'bg-[#EBF4FE]' : 'bg-[#F7F7F9] hover:bg-[#EEEEF0]'
+                className={`flex items-center justify-between gap-3 r-touch px-4 py-3 text-left [touch-action:manipulation] ${
+                  option._id === folderId
+                    ? 'bg-[var(--paper)] shadow-[inset_0_0_0_2px_var(--accent)]'
+                    : 'bg-[var(--paper)]'
                 }`}
               >
                 <span className="min-w-0">
-                  <span className="block truncate text-[14px] font-semibold text-[#1D1D1F]">
+                  <span className="ty-row-title block truncate text-[var(--ink)]">
                     {option.name}
                   </span>
-                  <span className="block text-[12px] text-[#6E6E73]">
+                  <span className="block text-[12px] text-[var(--ink-2)]">
                     {option.contactCount ?? 0} {option.contactCount === 1 ? 'person' : 'people'}
                   </span>
                 </span>
                 {option._id === folderId && (
-                  <span aria-hidden="true" className="material-symbols-outlined shrink-0 text-[20px] text-[#0071E3]">
+                  <span aria-hidden="true" className="material-symbols-outlined shrink-0 text-[20px] text-[var(--accent)]">
                     check_circle
                   </span>
                 )}

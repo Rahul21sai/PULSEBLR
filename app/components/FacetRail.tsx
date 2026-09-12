@@ -42,9 +42,9 @@ const CHIP_BASE =
   "relative inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full px-3.5 text-[12.5px] font-semibold transition-colors [touch-action:manipulation] after:absolute after:inset-x-0 after:top-1/2 after:h-11 after:-translate-y-1/2 after:content-['']";
 
 const CHIP_IDLE =
-  'bg-white text-[color:var(--ink)] shadow-[inset_0_0_0_1px_var(--hairline)] hover:bg-[#F7F7F9]';
+  'bg-[var(--surface)] text-[color:var(--ink)] shadow-[inset_0_0_0_1px_var(--hairline)] hover:bg-[var(--paper)]';
 /** Zero-count chips stay CLICKABLE and merely quiet — see `FacetRail`'s note on empty buckets. */
-const CHIP_EMPTY = 'bg-white text-[color:var(--ink-3)] shadow-[inset_0_0_0_1px_var(--hairline)]';
+const CHIP_EMPTY = 'bg-[var(--surface)] text-[color:var(--ink-3)] shadow-[inset_0_0_0_1px_var(--hairline)]';
 
 /**
  * TWO KINDS OF FACT NEED TWO KINDS OF CHIP, and the axis is STRUCTURE rather than hue.
@@ -64,13 +64,13 @@ const CHIP_EMPTY = 'bg-white text-[color:var(--ink-3)] shadow-[inset_0_0_0_1px_v
  *
  * `registry` is the DEFAULT, so an existing caller that passes no `kind` keeps the treatment it had.
  * (The idle greys did move onto `--ink` / `--ink-3` rather than the hexes they were pinned to, because
- * the ramp was darkened in `globals.css` while this was being written and a hardcoded `#A1A1A6` would
+ * the ramp was darkened in `globals.css` while this was being written and a hardcoded grey would
  * now render lighter than the rest of the app. `/people` is this component's only consumer.)
  */
 export type FacetKind = 'registry' | 'own';
 
-const CHIP_OWN_IDLE = 'bg-[#F5F5F7] text-[color:var(--ink-2)] hover:bg-[#EEEEF0]';
-const CHIP_OWN_EMPTY = 'bg-[#F5F5F7] text-[color:var(--ink-3)]';
+const CHIP_OWN_IDLE = 'bg-[var(--paper)] text-[color:var(--ink-2)] hover:bg-[var(--paper)]';
+const CHIP_OWN_EMPTY = 'bg-[var(--paper)] text-[color:var(--ink-3)]';
 
 /**
  * A boolean facet: "target companies", "follow-up due".
@@ -95,11 +95,11 @@ export function FacetToggle({
       type="button"
       aria-pressed={active}
       onClick={onClick}
-      className={`${CHIP_BASE} ${active ? 'bg-[#1D1D1F] text-white' : CHIP_IDLE}`}
+      className={`${CHIP_BASE} ${active ? 'bg-[var(--ink)] text-[var(--accent-ink)]' : CHIP_IDLE}`}
     >
       {label}
       {typeof count === 'number' && (
-        <span className={`tnum ${active ? 'text-white/60' : 'text-[color:var(--ink-3)]'}`}>{count}</span>
+        <span className={`tnum ${active ? 'text-[var(--accent-ink)]/60' : 'text-[color:var(--ink-3)]'}`}>{count}</span>
       )}
     </button>
   );
@@ -176,7 +176,7 @@ export default function FacetRail({
               type="button"
               aria-pressed={active}
               onClick={() => onSelect(active ? null : bucket.value)}
-              className={`${CHIP_BASE} ${active ? 'bg-[#0071E3] text-white' : idle}`}
+              className={`${CHIP_BASE} ${active ? 'bg-[var(--accent)] text-[var(--accent-ink)]' : idle}`}
             >
               {/*
                 ONE SPAN, because `CHIP_BASE` sets `gap-1.5` and the `#` must sit AGAINST its word —
@@ -187,7 +187,7 @@ export default function FacetRail({
               */}
               <span>
                 {own && (
-                  <span aria-hidden="true" className={active ? 'text-white/55' : 'text-[color:var(--ink-3)]'}>
+                  <span aria-hidden="true" className={active ? 'text-[var(--accent-ink)]/55' : 'text-[color:var(--ink-3)]'}>
                     #
                   </span>
                 )}
@@ -198,7 +198,7 @@ export default function FacetRail({
                   ●
                 </span>
               )}
-              <span className={`tnum ${active ? 'text-white/60' : 'text-[color:var(--ink-3)]'}`}>
+              <span className={`tnum ${active ? 'text-[var(--accent-ink)]/60' : 'text-[color:var(--ink-3)]'}`}>
                 {bucket.count}
               </span>
             </button>

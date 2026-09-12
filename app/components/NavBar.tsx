@@ -93,13 +93,13 @@ export function DesktopNav() {
   const { data: session } = useSession();
 
   return (
-    <nav className="hidden md:flex fixed top-0 w-full h-14 bg-white/96 glass-nav z-50 border-b border-black/5">
+    <nav className="hidden md:flex fixed top-0 w-full h-14 bg-[var(--surface)]/96 glass-nav z-50 border-b border-black/5">
       <div className="flex justify-between items-center w-full max-w-[1240px] mx-auto px-8">
         {/* The mark inherits this link's colour, so it goes ink -> blue on hover with the
             wordmark rather than carrying a brand colour of its own. See app/components/Logo.tsx. */}
         <Link
           href="/"
-          className="flex items-center gap-2 text-xl font-bold tracking-[-0.02em] text-[#1D1D1F] hover:text-[#0071E3] transition-colors select-none"
+          className="flex items-center gap-2 text-xl font-bold tracking-[-0.02em] text-[var(--ink)] hover:text-[var(--accent)] transition-colors select-none"
         >
           <Logo className="w-[22px] h-[22px] shrink-0" />
           PulseBLR
@@ -115,8 +115,8 @@ export function DesktopNav() {
                 aria-current={active ? 'page' : undefined}
                 className={`text-[13.5px] font-medium transition-colors ${
                   active
-                    ? 'text-[#0071E3] font-semibold'
-                    : 'text-[#6E6E73] hover:text-[#1D1D1F]'
+                    ? 'text-[var(--accent)] font-semibold'
+                    : 'text-[var(--ink-2)] hover:text-[var(--ink)]'
                 }`}
               >
                 {link.label}
@@ -133,7 +133,7 @@ export function DesktopNav() {
               href="/admin"
               aria-current={isActive('/admin') ? 'page' : undefined}
               className={`flex items-center gap-1 text-[13.5px] font-semibold transition-colors ${
-                isActive('/admin') ? 'text-[#0071E3]' : 'text-[#1D1D1F] hover:text-[#0071E3]'
+                isActive('/admin') ? 'text-[var(--accent)]' : 'text-[var(--ink)] hover:text-[var(--accent)]'
               }`}
             >
               <span aria-hidden="true" className="material-symbols-outlined text-[16px]">shield_person</span>
@@ -157,12 +157,12 @@ export function DesktopNav() {
                 <img
                   src={session.user.image}
                   alt={session.user.name || 'Your account'}
-                  className="w-8 h-8 rounded-full object-cover border border-[#e5e5ea]"
+                  className="w-8 h-8 rounded-full object-cover border border-[var(--rule)]"
                 />
               ) : (
                 <span
                   aria-label={session.user.name || 'Your account'}
-                  className="grid h-8 w-8 place-items-center rounded-full border border-[#e5e5ea] bg-[#F5F5F7] text-[12px] font-bold text-[#6E6E73]"
+                  className="grid h-8 w-8 place-items-center rounded-full border border-[var(--rule)] bg-[var(--paper)] text-[12px] font-bold text-[var(--ink-2)]"
                 >
                   {(session.user.name || session.user.email || '?').trim().charAt(0).toUpperCase()}
                 </span>
@@ -171,7 +171,7 @@ export function DesktopNav() {
           ) : (
             <Link
               href="/login"
-              className="text-[13px] font-semibold text-[#0071E3] hover:underline"
+              className="text-[13px] font-semibold text-[var(--accent)] hover:underline"
             >
               Sign in
             </Link>
@@ -184,15 +184,15 @@ export function DesktopNav() {
 
 export function MobileHeader({ title }: { title?: string }) {
   return (
-    <header className="md:hidden fixed top-0 w-full h-14 bg-white/96 glass-nav z-50 border-b border-black/5 flex items-center justify-between px-5">
+    <header className="md:hidden fixed top-0 w-full h-14 bg-[var(--surface)]/96 glass-nav z-50 border-b border-black/5 flex items-center justify-between px-5">
       <Link
         href="/"
-        className="flex items-center gap-1.5 text-lg font-bold tracking-tight text-[#1D1D1F]"
+        className="flex items-center gap-1.5 text-lg font-bold tracking-tight text-[var(--ink)]"
       >
         <Logo className="w-[19px] h-[19px] shrink-0" />
         PulseBLR
       </Link>
-      {title && <span className="text-[#86868B] text-label-md font-semibold">{title}</span>}
+      {title && <span className="text-[var(--ink-2)] text-label-md font-semibold">{title}</span>}
     </header>
   );
 }
@@ -202,7 +202,7 @@ export function MobileBottomNav() {
 
   return (
     <nav
-      className="fixed bottom-0 w-full md:hidden bg-white/96 glass-nav border-t border-black/5 flex justify-around items-center px-2 pt-1.5 z-50"
+      className="fixed bottom-0 w-full md:hidden bg-[var(--surface)]/96 glass-nav border-t border-black/5 flex justify-around items-center px-2 pt-1.5 z-50"
       // Keep the bar clear of the iOS home indicator.
       style={{ paddingBottom: 'max(6px, env(safe-area-inset-bottom))' }}
     >
@@ -214,12 +214,12 @@ export function MobileBottomNav() {
             href={link.href}
             aria-current={active ? 'page' : undefined}
             className={`flex min-w-0 flex-1 flex-col items-center justify-center px-1 py-1 rounded-xl transition-colors active:scale-95 ${
-              active ? 'bg-[#0071E3]/10' : 'hover:bg-[#f3f3f5]'
+              active ? 'bg-[var(--accent)]/10' : 'hover:bg-[var(--paper)]'
             }`}
           >
             <span aria-hidden="true"
               className={`material-symbols-outlined text-[21px] ${
-                active ? 'text-[#0071E3]' : 'text-[#86868B]'
+                active ? 'text-[var(--accent)]' : 'text-[var(--ink-2)]'
               }`}
               style={{ fontVariationSettings: `'FILL' ${active ? 1 : 0}` }}
             >
@@ -227,7 +227,7 @@ export function MobileBottomNav() {
             </span>
             <span
               className={`text-[10px] font-semibold mt-0.5 ${
-                active ? 'text-[#0071E3]' : 'text-[#86868B]'
+                active ? 'text-[var(--accent)]' : 'text-[var(--ink-2)]'
               }`}
             >
               {link.label}

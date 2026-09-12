@@ -299,7 +299,7 @@ export default function QrScanner({
 
       {errorMessage && (
         <div className="absolute inset-x-0 top-16 mx-auto max-w-[420px] px-4">
-          <p className="rounded-2xl bg-white/95 px-4 py-3 text-[12.5px] leading-relaxed text-[#1D1D1F]" role="alert">
+          <p className="rounded-2xl bg-[var(--surface)]/95 px-4 py-3 text-[12.5px] leading-relaxed text-[var(--ink)]" role="alert">
             {errorMessage}
           </p>
         </div>
@@ -310,7 +310,7 @@ export default function QrScanner({
         className="absolute inset-x-0 bottom-0 flex items-center justify-center gap-3 p-5"
         style={{ paddingBottom: 'max(20px, env(safe-area-inset-bottom))' }}
       >
-        <label className="flex cursor-pointer items-center gap-2 rounded-full bg-white/95 px-4 py-2.5 text-[12.5px] font-semibold text-[#1D1D1F] [touch-action:manipulation]">
+        <label className="flex cursor-pointer items-center gap-2 rounded-full bg-[var(--surface)]/95 px-4 py-2.5 text-[12.5px] font-semibold text-[var(--ink)] [touch-action:manipulation]">
           <span aria-hidden="true" className="material-symbols-outlined text-[18px]">photo_camera</span>
           Photo
           {/**
@@ -337,7 +337,7 @@ export default function QrScanner({
             type="button"
             onClick={toggleTorch}
             aria-pressed={torchOn}
-            className="flex items-center gap-2 rounded-full bg-white/95 px-4 py-2.5 text-[12.5px] font-semibold text-[#1D1D1F] [touch-action:manipulation]"
+            className="flex items-center gap-2 rounded-full bg-[var(--surface)]/95 px-4 py-2.5 text-[12.5px] font-semibold text-[var(--ink)] [touch-action:manipulation]"
           >
             <span aria-hidden="true" className="material-symbols-outlined text-[18px]">
               {torchOn ? 'flashlight_off' : 'flashlight_on'}

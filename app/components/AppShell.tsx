@@ -12,7 +12,7 @@ import { DesktopNav, MobileBottomNav } from './NavBar';
  * hand-rolled the same markup with slightly different padding. A fourth copy for the scan
  * surfaces would be the point at which the drift becomes permanent.
  *
- * `bare` renders NO chrome at all. The camera screen needs that: the nav is `bg-white/96`
+ * `bare` renders NO chrome at all. The camera screen needs that: the nav is near-opaque `--surface`
  * and looks wrong over a viewfinder, and a full-bleed dark surface has nothing to align to.
  */
 export default function AppShell({
@@ -28,13 +28,13 @@ export default function AppShell({
   if (bare) return <>{children}</>;
 
   return (
-    <div className="min-h-screen bg-[#F5F5F7]">
+    <div className="min-h-screen bg-[var(--paper)]">
       <DesktopNav />
-      <header className="md:hidden fixed top-0 w-full h-14 bg-white/96 glass-nav z-50 border-b border-black/5 flex items-center justify-between px-5">
-        <Link href="/" className="text-lg font-bold tracking-tight text-[#1D1D1F]">
+      <header className="md:hidden fixed top-0 w-full h-14 bg-[var(--surface)]/96 glass-nav z-50 border-b border-black/5 flex items-center justify-between px-5">
+        <Link href="/" className="text-lg font-bold tracking-tight text-[var(--ink)]">
           PulseBLR
         </Link>
-        {title && <span className="text-[#86868B] text-label-md font-semibold">{title}</span>}
+        {title && <span className="text-[var(--ink-2)] text-label-md font-semibold">{title}</span>}
       </header>
       <main className="pt-14 pb-24 md:pb-10">{children}</main>
       <MobileBottomNav />
