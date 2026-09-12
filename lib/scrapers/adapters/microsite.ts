@@ -101,6 +101,37 @@ export const MICROSITE_WATCHLIST: MicrositeEntry[] = [
   // the finding the probe produced — see the note under the cascade above.
   { url: 'https://developersummit.com/', organizer: 'GIDS', bengaluruOnly: true },
   { url: 'https://www.bengalurutechsummit.com/', organizer: 'Bengaluru Tech Summit', bengaluruOnly: true },
+  /*
+   * KEPT, BUT ITS FIRST REAL RUN PRODUCED A DUPLICATE — measured 2026-09-12, on the run that armed
+   * `--microsites-llm` for the first time. Read this before approving anything it submits.
+   *
+   * Its JSON-LD gives ZERO upcoming events (one past edition, correctly dropped), so unlike the two
+   * entries above it contributes nothing on the cheap path. Everything it produces costs a browser
+   * render plus a frontier-model call — and what it produced was `Open Source India | India's #1
+   * Open Source Event`, an event ALREADY in the corpus and already public, carried by `allevents`
+   * as "Open Source India | 7-8 October 2026".
+   *
+   * The two cannot cluster, and both reasons are deliberate: the `microsite:` namespace prefix on
+   * the candidate's keys, and `normalizeTitleForMatch` stripping `india` so "India's #1" normalizes
+   * to `s 1` while the other row normalizes to `7 8 october 2026`. `lib/models/Event.ts` already
+   * names the cost — an approved row keeps its namespaced key, so the city gets two cards — with
+   * the mitigation being that "the review step is exactly where somebody can notice the event is
+   * already in the corpus". **That mitigation is now load-bearing rather than theoretical:
+   * approving that submission puts two Open Source India cards on 7 October.**
+   *
+   * Both rows are the SAME IST DAY, which is the only reason the clustering question arises at all
+   * — the candidate stores `2026-10-06T18:30Z`, which is 00:00 IST on the 7th. A UTC reading makes
+   * them look like different days and hides the duplicate.
+   *
+   * NOT REMOVED, deliberately. `indiafoss.net` came off this list for the adjacent reason (covered
+   * by `fossunited.ts`), but that domain had also lapsed into gambling SEO — it was dead supply.
+   * This one is live and its coverage elsewhere is incidental: `allevents` carries OSI this year by
+   * chance, not by contract, and the organiser's own site is the only source that cannot stop
+   * covering its own conference. Re-measure with
+   * `npx tsx scripts/probe-microsite-llm.ts --url=https://opensourceindia.in/ --render --llm`
+   * before deciding; the test a watchlist entry has to pass is "does it produce supply we do not
+   * already have", and today the answer is no.
+   */
   { url: 'https://opensourceindia.in/', organizer: 'Open Source India', bengaluruOnly: true },
   // ── Company event indexes ──────────────────────────────────────────────────────────────────
   // Measured structurally dead to every cheaper path, kept because they are where a Bengaluru
