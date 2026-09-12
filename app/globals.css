@@ -2,124 +2,124 @@
 
 /* ─── Design Tokens ──────────────────────────────────────────────────────── */
 :root {
-  /* ── Surfaces: Apple's system grays ─────────────────────────────────────── */
-  --paper:       #F5F5F7;   /* systemGray6 — the page itself */
-  --card:        #FFFFFF;
-  --well:        #F7F7F9;   /* insets, code, quiet wells inside a card */
+  /* ══════════════════════════════════════════════════════════════════════════════════════════
+     THE PALETTE. NINE VALUES, AND THEY ARE THE WHOLE PALETTE.
+     ══════════════════════════════════════════════════════════════════════════════════════════
 
-  /* ── Ink: three label levels, and only three ─────────────────────────────
-     Apple ships label / secondaryLabel / tertiaryLabel and stops. A fourth grey is
-     how type hierarchy turns to mud, so there isn't one here.
+     Editorial-technical, light. Near-monochrome ink on warm white, one accent, hairlines instead
+     of shadows. It should read as a precise instrument made for engineers — closer to a well-set
+     newspaper listings page than to a SaaS dashboard.
 
-     ── THE THIRD LEVEL FAILED CONTRAST AND HAS BEEN RETUNED. MEASURED, in the browser,
-     against all three surfaces this app paints on (--paper #F5F5F7, --card #FFFFFF,
-     --well #F7F7F9). Normal text needs 4.5:1 and every one of these is used at
-     10-12.5px, so no large-text exemption applies:
+     Every ratio below is measured against the ground the value is actually used on, not against
+     pure white. There is no tenth value: if a surface needs to feel lighter, it gets whitespace or
+     a hairline, never a new grey. `color-mix()` is banned in component code for the same reason —
+     it is how a nine-value palette quietly becomes a thirty-value one.
 
-       | value                    | on paper | on card | on well |
-       | ------------------------ | -------- | ------- | ------- |
-       | #1D1D1F  --ink           |    15.46 |   16.83 |   15.73 |
-       | #6E6E73  old --ink-2     |     4.66 |    5.07 |    4.74 |
-       | #8E8E93  old --ink-3     | **2.99** |  3.26   |  3.05   |
-       | #86868B  ad-hoc, 84 uses | **3.33** |  3.62   |  3.39   |
-       | #a1a1a6  ad-hoc, 15 uses | **2.36** |  2.57   |  2.40   |
+     WHAT THIS REPLACED, AND THE TWO RULES IT DELIBERATELY OVERTURNS. The previous palette was
+     Apple's system greys with a #0071E3 blue, and its docblock carried four settled rules. Two do
+     not survive, and they are recorded here so neither is later "restored" as a regression:
 
-     So the old third level was failing by a wide margin, and TWO further greys had
-     already been invented at call sites to sit below it — the fourth grey this comment
-     warns about, 99 times over.
+       · "Elevation is a ring PLUS a lift, never one blur." Now: hairlines do all the separating,
+         and exactly ONE box-shadow exists in the codebase — the mobile sticky action bar, which is
+         the only element that genuinely floats over content.
+       · "Hairlines are ALPHA, never solid grey", on the reasoning that a solid border reads as two
+         different weights on white versus the page grey. That reasoning was sound for a palette
+         whose ground was #F5F5F7 and whose cards were #FFFFFF. Here the ground is warm and the
+         separation is carried by the rule itself rather than by contrast against two surfaces, so
+         --rule is solid and warm — it belongs to the same family as the paper.
 
-     --ink-2 is darkened to #5C5C61 (6.11) to make room for a third level that passes:
-     #6F6F75 measures 4.58 / 4.99 / 4.67. That headroom is the whole reason ink-2 moved
-     — nothing lighter than roughly #6F6F75 passes 4.5:1 on #F5F5F7 at all, so keeping
-     ink-2 where it was would have left ink-3 either illegible or identical to it.
+     The other two rules stand and are unchanged: tracking is a function of size, and one accent
+     rationed to mean "you can act on this".
 
-     THE LIGHT GREY IS NOT DELETED, it is reclassified: --ink-disabled keeps #8E8E93 for
-     things that are not text — a disabled control, an icon on white. It is deliberately
-     NOT a text colour, and it is not a fourth label level.
+     BANNED, explicitly: a cream #F4F1EA-family ground with a terracotta #D97757-family accent.
+     That pairing is the most recognisable generated-design signature in circulation AND it is
+     Anthropic's own brand palette, so it would read as derivative twice over.
+  */
+  --paper:      #FAF9F5;   /* the page ground */
+  --surface:    #FFFFFF;   /* raised ONLY: sticky bars, sheets, menus */
+  --ink:        #121417;   /* primary text — 16.4:1 on paper */
+  --ink-2:      #55595F;   /* secondary text, metadata — 6.5:1 */
+  --ink-3:      #8A8F96;   /* 3.15:1 — NEVER body text. Icons, disabled, decorative only. */
+  --rule:       #E4E2DC;   /* every 1px hairline */
+  --accent:     #12513C;   /* deep canopy green — links, primary action, active — 8.9:1 */
+  --accent-ink: #FFFFFF;   /* on accent — 9.3:1 */
+  --live:       #B4381A;   /* 5.7:1 — URGENT OR DESTRUCTIVE. Both, deliberately: see below. */
 
-     A quieter THIRD level now comes from size and weight, not from a lighter grey.
+  /* ── Aliases, so ~250 existing call sites keep working while surfaces migrate ──────────────
+     These are a MIGRATION DEVICE, not part of the palette. Every one maps an old name onto one of
+     the nine above, which is what makes the new palette visible everywhere at once instead of
+     surface by surface. Delete an alias when its last caller is gone; do not add one.
 
-     THE TOKENS ARE BARELY THE POINT, THOUGH, AND WHOEVER ACTS ON THIS NEXT SHOULD KNOW IT:
-     measured across app/, `var(--ink-2)` is referenced 3 times and `var(--ink-3)` twice,
-     while the raw hexes appear 212 (#6E6E73, 53 files), 141 (#8E8E93, 39 files), 84
-     (#86868B) and 15 (#a1a1a6) times. Retuning these values therefore fixes almost
-     nothing on its own — the failing colour is pasted into ~240 call sites. The fix is
-     to replace a literal with `var(--ink-3)` as each file is touched. */
-  --ink:   #1D1D1F;
-  --ink-2: #5C5C61;
-  --ink-3: #6F6F75;
-  --ink-disabled: #8E8E93;
-
-  /* ── Hairlines are ALPHA, never solid grey ───────────────────────────────
-     A solid #E5E5EA border reads as a light line on white and as a DARKER line on
-     the page grey, so the same border looks like two different weights depending on
-     what it sits on. Alpha composites correctly against both. */
-  --hairline:        rgba(0, 0, 0, 0.07);
-  --hairline-strong: rgba(0, 0, 0, 0.13);
-
-  /* ── Accent, rationed ───────────────────────────────────────────────────
-     Blue means "you can act on this": links, focus, primary actions, the connection
-     meter. It is never decoration. Rationing one hue is what makes the covers —
-     real content — the only colourful thing on screen. */
-  --blue:       #0071E3;
-  --blue-press: #0061C3;
-  --blue-wash:  #EBF4FE;
-
-  /* The only other hue in the chrome, and it marks exactly one state. */
-  --live:      #FF3B30;
-  --live-wash: #FFF1F0;
-
-  /* Darkened from #1D8A44, which measured 4.00:1 on --good-wash and therefore FAILED AA for
-     text under 18.66px — and `.pill-free` below is exactly that pairing at 11px, so every
-     "Free" pill in the public feed failed. #166B35 measures 5.98:1 on the wash and 6.59:1 on
-     white, so it passes in both places this green is actually used. Found by measuring the
-     resolved token rather than eyeballing it. */
-  --good:      #166B35;
-  --good-wash: #EBF7EF;
-
-  /* ── Motion: one curve ──────────────────────────────────────────────────
-     Apple's standard decelerate. It settles hard instead of coasting, which is why
-     UIKit transitions read as "placed" rather than "eased". Everything uses it, so
-     the whole app moves with one accent. */
-  --ease: cubic-bezier(0.32, 0.72, 0, 1);
-  --dur-fast: 160ms;
-  --dur-med:  260ms;
-
-  /* ── Elevation: a ring PLUS a lift, never one blur ───────────────────────
-     The previous `0 4px 40px rgba(0,0,0,.04)` was a single very diffuse shadow,
-     which reads as fog: the card had no defined edge and barely separated from the
-     page. Apple stacks a half-pixel ring for the boundary with a soft offset shadow
-     for the height, so a card is crisply bounded AND clearly above the surface. */
-  --lift-1: 0 0 0 0.5px rgba(0,0,0,0.045), 0 1px 1.5px rgba(0,0,0,0.04),
-            0 6px 16px -8px rgba(0,0,0,0.08);
-  --lift-2: 0 0 0 0.5px rgba(0,0,0,0.05), 0 2px 4px rgba(0,0,0,0.05),
-            0 16px 34px -14px rgba(0,0,0,0.14);
-
-  /* ── Aliases ────────────────────────────────────────────────────────────
-     Kept because components already reference these names. Everything else from the
-     old Material token set was referenced nowhere and is gone. */
+     `--card` maps to --surface deliberately: under the old system a card was white ON grey, which
+     is what made a white box read as elevated. Here elevation is a hairline, so most things that
+     were cards should end up on --paper with a rule. An alias cannot make that judgement, so it
+     keeps them white and the surfaces get fixed as they are touched. */
+  --card:                  var(--surface);
+  --well:                  var(--paper);
   --background:            var(--paper);
   --foreground:            var(--ink);
   --text-primary:          var(--ink);
   --text-secondary:        var(--ink-2);
-  --accent-blue:           var(--blue);
-  --surface-container:     #EEEEF0;
-  --surface-container-low: #F3F3F5;
-  --outline-variant:       var(--hairline-strong);
-  --hairline-solid:        #E5E5EA;
+  --ink-disabled:          var(--ink-3);
+  --blue:                  var(--accent);
+  --blue-press:            var(--accent);
+  --blue-wash:             var(--paper);
+  --accent-blue:           var(--accent);
+  --hairline:              var(--rule);
+  --hairline-strong:       var(--rule);
+  --hairline-solid:        var(--rule);
+  --outline-variant:       var(--rule);
+  --surface-container:     var(--paper);
+  --surface-container-low: var(--paper);
+  --live-wash:             var(--paper);
+  --good:                  var(--accent);
+  --good-wash:             var(--paper);
 
-  /* ── Feed chrome heights: ONE source of truth ───────────────────────────────
-     The feed has two stacked fixed bars — the nav/mobile header, then the command
-     bar (search row + time-window tabs). Both the main content's top padding and
-     the sticky day-heading offset must clear their combined height.
+  /* ── Motion: one curve, and it answers an action or it does not exist ──────────────────────
+     Apple's standard decelerate. It settles instead of coasting, which is why UIKit transitions
+     read as "placed". Everything uses it, so the whole app moves with one accent. Fade-and-slide
+     entrances on every section and a hover lift on every row are the generated default and are
+     banned; motion that answers opening, expanding or confirming is always welcome because it
+     shows what changed. */
+  --ease: cubic-bezier(0.32, 0.72, 0, 1);
+  --dur-fast: 160ms;
+  --dur-med:  260ms;
 
-     These were previously hand-tuned constants in two different files and they
-     disagreed: main used 132px while the command bar actually ends at 153px, so
-     21px of the first event row sat hidden underneath it, and the sticky day
-     heading parked at 106px — 47px BEHIND the bar, invisible whenever it stuck.
-     Deriving both from these variables makes that class of drift impossible. */
-  --topbar-h: 56px;      /* h-14 nav / mobile header */
-  --commandbar-h: 98px;  /* search row + tab row */
+  /* ── Elevation: ONE shadow in the whole codebase ───────────────────────────────────────────
+     The mobile sticky action bar, and nothing else. It is the only element that genuinely floats
+     over scrolling content, so it is the only one that may claim height. `--lift-1` / `--lift-2`
+     are kept as aliases pointing at nothing so the old `card-shadow` class composites to a
+     hairline rather than to fog while surfaces migrate. */
+  --shadow-sticky: 0 -1px 0 var(--rule), 0 -8px 24px rgb(18 20 23 / 0.06);
+  --lift-1: none;
+  --lift-2: none;
+
+  /* ── Spacing, from a 4px base ──────────────────────────────────────────────────────────────
+     One scale, used everywhere. Section rhythm 64 mobile / 96 desktop; row interior 16 / 20. The
+     repetition IS the design — a rhythm a reader can feel is what separates a composed page from
+     a set of correctly-spaced boxes. */
+  --s-1: 4px;  --s-2: 8px;  --s-3: 12px; --s-4: 16px;
+  --s-6: 24px; --s-8: 32px; --s-12: 48px; --s-16: 64px; --s-24: 96px;
+
+  /* ── Radius encodes ONE fact: roundness means you can touch it ─────────────────────────────
+     4px on interactive elements, 0 on structural containers and list rows. That replaces uniform
+     card radii, which said nothing. A reader learns the rule without being told it. */
+  --r-touch: 4px;
+  --r-flat: 0px;
+
+  /* ── Feed chrome heights: ONE source of truth ──────────────────────────────────────────────
+     Both the main content's top padding and the sticky day-heading offset derive from these.
+     They were once hand-tuned constants in two files and disagreed: main used 132px while the
+     command bar ends at 153px, hiding 21px of the first row, and the sticky heading parked 47px
+     BEHIND the bar. Deriving both makes that class of drift impossible. */
+  --topbar-h: 56px;
+  /* The mobile bottom nav's own height, so anything that has to sit ABOVE it can be positioned from
+     one definition. It restates `MobileBottomNav`'s padding formula in NavBar.tsx — 50px of content,
+     6px above, and below it whichever is larger of 6px and the iOS home-indicator inset. Do not
+     replace this with a literal: the inset is 0 in a headless browser and ~34px on a notched phone,
+     so a measured constant is correct exactly where nobody is looking and wrong on the device. */
+  --bottomnav-h: calc(50px + 6px + max(6px, env(safe-area-inset-bottom)));
+  --commandbar-h: 98px;
   --feed-offset: calc(var(--topbar-h) + var(--commandbar-h));
 }
 
@@ -127,37 +127,29 @@
   --color-background: var(--background);
   --color-foreground: var(--foreground);
 
-  /* ── `var(--font-inter)` FIRST, AND THAT WAS A REAL BUG, NOT TIDYING ─────────────────────
-     This said `'Inter', system-ui` — the literal family name — while `--font-inter` (declared
-     by next/font in app/layout.tsx) was referenced NOWHERE in this file.
+  /* ── THE VARIABLE FIRST, ALWAYS. THIS EXACT LINE SHIPPED THE BUG. ─────────────────────────
+     It said `'Inter', system-ui` — the literal family name — while the variable `next/font`
+     actually exposes went unreferenced. `next/font` registers a HASHED family, so the literal
+     never matched, the browser fell through to `system-ui`, and the app rendered **Segoe UI on
+     Windows** while downloading Inter on every visit. Every tracking value in the scale below was
+     calibrated against a face nobody saw.
 
-     next/font does not register a family called `Inter`. It emits a hashed one
-     (`__Inter_<hash>`) plus a metric-matched fallback, and exposes both through the CSS
-     variable; the bundled 16.3.4 docs give `--font-sans: var(--font-inter)` as the pattern.
-     So the literal name matched nothing the app had loaded, and the whole product's BODY type
-     silently resolved to whatever `Inter` happens to mean on the reader's machine — Segoe UI
-     on Windows, Roboto on Android — while the font it downloaded went unused. Every tracking
-     value in the scale below was calibrated for Inter and was being applied to a different
-     face. The display role never had this bug: it always put the variable first, which is the
-     evidence this was an oversight rather than a decision.
-
-     The literal names stay AFTER the variable, as a genuine fallback for anyone who has the
-     faces installed locally. */
-  --font-sans: var(--font-inter), 'Inter', system-ui, -apple-system, sans-serif;
-
-  /* Familjen Grotesk, headings and the date tile only — see the long note in app/layout.tsx for
-     the candidates, the measurements, and why Instrument Sans was rejected on width. */
-  --font-display: var(--font-display-face), 'Familjen Grotesk', system-ui, -apple-system, sans-serif;
+     The fallbacks are deliberately generic: if the variable is missing the right failure is a
+     system face, not a *different* named face that would mask the problem again. */
+  --font-sans:  var(--font-jakarta), system-ui, -apple-system, sans-serif;
+  --font-serif: var(--font-newsreader), Georgia, 'Times New Roman', serif;
+  /* Kept: `.t-*` classes below still say `--font-display`. It now means the SERIF, because the
+     display role is editorial content — see the split in app/layout.tsx. */
+  --font-display: var(--font-serif);
 }
 
 /* ─── Base ────────────────────────────────────────────────────────────────── */
 html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
 body {
-  background: #F5F5F7;
-  color: #1D1D1F;
-  /* Same fix as --font-sans above: the variable first, or next/font's Inter is downloaded and
-     never used and every reader gets their system face instead. */
-  font-family: var(--font-inter), 'Inter', system-ui, -apple-system, sans-serif;
+  background: var(--paper);
+  color: var(--ink);
+  /* The sans, via the variable. See the note on --font-sans above for why the literal is fatal. */
+  font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
 }
 
@@ -177,7 +169,7 @@ body {
 
    Two consequences encoded here:
      1. The companion utility classes now carry near-opaque backgrounds (see the
-        `bg-white/96` / `bg-[#F5F5F7]/97` usages in app/), so text can never bleed
+        `bg-[var(--surface)]/96` / `bg-[var(--paper)]/97` usages in app/), so text can never bleed
         through regardless of blur support.
      2. The blur sits inside `@supports`, which survives the optimiser and also
         degrades cleanly on engines where the property is unavailable or disabled
@@ -199,7 +191,9 @@ body {
 }
 
 .glass-header {
-  background-color: rgba(245, 245, 247, 0.97);
+  /* Was rgba(245, 245, 247, .97) — the retired cool #F5F5F7. That put this class and the
+     `/97` utility on the SAME elements at two different grounds once the paper went warm. */
+  background-color: color-mix(in srgb, var(--paper) 97%, transparent);
 }
 
 /* ─── Material Symbols variation defaults ────────────────────────────────── */
@@ -294,7 +288,13 @@ body {
 
 /* Headings pick up the display face automatically, so a page does not have to
    remember to ask for it. */
-h1, h2, h3 { font-family: var(--font-display); }
+/* IN `@layer base` SO A UTILITY CAN WIN. Unlayered, this rule made every `<h2>` serif even with
+   `font-sans` on it — and the direction's rule is that a SECTION heading is the product's voice and
+   therefore sans, while an event or a person's name is serif. An element default that cannot be
+   overridden turns that distinction into a coin toss decided by which element you reached for. */
+@layer base {
+  h1, h2, h3 { font-family: var(--font-display); }
+}
 
 /* ─── Elevation ────────────────────────────────────────────────────────────
    Eight category gradients, a hero gradient and a `hover-lift` that scaled cards to
@@ -319,8 +319,8 @@ h1, h2, h3 { font-family: var(--font-display); }
 /* ─── Loading spinner ────────────────────────────────────────────────────── */
 .spinner {
   width: 40px; height: 40px;
-  border: 3px solid #e5e5e5;
-  border-top-color: #0071E3;
+  border: 3px solid var(--rule);
+  border-top-color: var(--accent);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
@@ -368,7 +368,7 @@ h1, h2, h3 { font-family: var(--font-display); }
 .toggle-wrap input { opacity: 0; width: 0; height: 0; position: absolute; }
 .toggle-track {
   position: absolute; inset: 0;
-  background: #e5e7eb;
+  background: var(--rule);
   border-radius: 9999px;
   cursor: pointer;
   transition: background 0.3s;
@@ -378,12 +378,14 @@ h1, h2, h3 { font-family: var(--font-display); }
   position: absolute;
   top: 2px; left: 2px;
   width: 27px; height: 27px;
-  background: white;
+  background: var(--surface);
   border-radius: 50%;
   transition: transform 0.3s;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+  /* The knob needs an edge, and the ONE shadow in this file belongs to the sticky bar. A hairline
+     ring does the same job here and composites correctly on both track colours. */
+  box-shadow: inset 0 0 0 1px var(--rule);
 }
-.toggle-wrap input:checked + .toggle-track { background: #34C759; }
+.toggle-wrap input:checked + .toggle-track { background: var(--accent); }
 .toggle-wrap input:checked + .toggle-track::after { transform: translateX(20px); }
 
 /* ─── Segmented control (Add Event format/food) ──────────────────────────── */
@@ -399,16 +401,22 @@ h1, h2, h3 { font-family: var(--font-display); }
   border: none;
 }
 .seg-btn.active {
-  background: white;
-  color: var(--text-primary);
-  box-shadow: 0 1px 6px rgba(0,0,0,0.12);
+  /* Was `background: white` + `0 1px 6px rgba(0,0,0,.12)`. The soft drop shadow is one of the
+     `rgba(0,0,0,.1)` card shadows the direction explicitly bans, and it was the SECOND real
+     elevation shadow in this file against a rule allowing exactly one (the sticky action bar). A
+     raised surface plus a hairline ring says "this one is selected" without any blur at all. */
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--rule);
 }
 
 /* ─── Bottom nav active indicator ───────────────────────────────────────── */
 .nav-active {
-  background: rgba(0, 113, 227, 0.10);
+  /* Was a 10% blue wash. A wash is a tenth value; the active state is the ink plus a ring. */
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--rule);
   border-radius: 9999px;
-  color: #0071E3;
+  color: var(--accent);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -444,12 +452,12 @@ h1, h2, h3 { font-family: var(--font-display); }
   width: 9px;
   height: 9px;
   border-radius: 9999px;
-  background: #fff;
-  box-shadow: 0 0 0 2px var(--hairline) inset, 0 0 0 3px #F5F5F7;
+  background: var(--surface);
+  box-shadow: 0 0 0 2px var(--rule) inset, 0 0 0 3px var(--paper);
 }
 .rail-node[data-live='true'] {
   background: var(--live);
-  box-shadow: 0 0 0 3px #F5F5F7, 0 0 0 5px color-mix(in srgb, var(--live) 22%, transparent);
+  box-shadow: 0 0 0 3px var(--paper), 0 0 0 5px color-mix(in srgb, var(--live) 22%, transparent);
 }
 
 /* Live pulse for an event that is happening right now. */
@@ -476,7 +484,7 @@ h1, h2, h3 { font-family: var(--font-display); }
   z-index: 20;
   /* Near-opaque so the rows scrolling underneath never show through the heading.
      The blur that used to live here is now in the @supports block above. */
-  background: color-mix(in srgb, #F5F5F7 97%, transparent);
+  background: color-mix(in srgb, var(--paper) 97%, transparent);
 }
 
 /* Content must start below the fixed chrome, from the same variable. */
@@ -503,7 +511,7 @@ h1, h2, h3 { font-family: var(--font-display); }
    visual weight, so only genuinely exceptional states (live, free) get any fill. */
 .pill-quiet  { background: transparent; color: var(--ink-2); box-shadow: inset 0 0 0 1px var(--hairline); }
 .pill-free   { background: var(--good-wash); color: var(--good); }
-.pill-live   { background: var(--live-wash); color: #C7362D; font-weight: 650; }
+.pill-live   { background: transparent; color: var(--live); box-shadow: inset 0 0 0 1px var(--live); font-weight: 650; }
 .pill-online { background: transparent; color: var(--ink-2); box-shadow: inset 0 0 0 1px var(--hairline); }
 .pill-sold   { background: transparent; color: var(--ink-3); box-shadow: inset 0 0 0 1px var(--hairline); text-decoration: line-through; }
 
@@ -677,3 +685,101 @@ h1, h2, h3 { font-family: var(--font-display); }
    a gradient; and a rainbow of gradient category tiles is the loudest "template"
    signal a UI can send. On this product they would compete with the only element
    allowed to carry colour — the cover image, which is real content. */
+
+/* ══════════════════════════════════════════════════════════════════════════════════════════════
+   THE TYPE SCALE — 16px base, ~1.25 mobile / 1.333 desktop
+   ══════════════════════════════════════════════════════════════════════════════════════════════
+
+   Seven steps and no more. The role names say what a thing IS, not how big it is, because that is
+   what keeps the serif/sans split semantic: `.ty-row-title` is serif because an event title is a
+   thing in the world, and it would still be serif at 12px.
+
+   Everything is sentence case. Every time, date, count and id gets tabular numerals — a column of
+   figures that shifts width as it updates reads as sloppy in a way readers feel without naming.
+
+   These coexist with the older `.t-*` classes while surfaces migrate. `.t-*` is the previous scale
+   and is not the target; when a surface is redesigned it moves to `.ty-*` and the `.t-*` uses go
+   with it.
+   ══════════════════════════════════════════════════════════════════════════════════════════════ */
+
+/* THE SCALE LIVES IN `@layer components` SO IT IS COMPOSABLE.
+   Unlayered, `.ty-meta font-semibold` computed weight 500 — the utility was discarded in silence,
+   which is the worst possible failure for a type scale: the source says one thing, the screen says
+   another, and nothing errors. Layered, the seven steps set the baseline and a caller may still
+   adjust one property without spelling the whole step out again. */
+@layer components {
+  .ty-meta {
+    font-family: var(--font-sans);
+    font-size: 13px; line-height: 1.4; font-weight: 500;
+    color: var(--ink-2);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .ty-body {
+    font-family: var(--font-sans);
+    font-size: 16px; line-height: 1.55; font-weight: 400;
+    max-width: 68ch;
+  }
+
+  /* Editorial standfirst. Serif, and given more leading than the sans body because a serif at this
+     size needs it — the same measure would read cramped. */
+  .ty-lede {
+    font-family: var(--font-serif);
+    font-size: 18px; line-height: 1.6; font-weight: 400;
+    max-width: 62ch;
+  }
+
+  /* The name of a thing in the world: an event, a venue, a person. The most common serif on the
+     site, and the reason the split is legible at all. */
+  .ty-row-title {
+    font-family: var(--font-serif);
+    font-size: 20px; line-height: 1.25; font-weight: 500;
+    letter-spacing: -0.004em;
+  }
+  @media (min-width: 768px) { .ty-row-title { font-size: 22px; } }
+
+  /* The app speaking: a section the SYSTEM has grouped. Sans on purpose — the group is the
+     product's opinion, not a thing that exists in the city. */
+  .ty-section {
+    font-family: var(--font-sans);
+    font-size: 26px; line-height: 1.2; font-weight: 600;
+    letter-spacing: -0.012em;
+  }
+
+  .ty-h1 {
+    font-family: var(--font-serif);
+    font-size: 34px; line-height: 1.05; font-weight: 500;
+    letter-spacing: -0.015em;
+  }
+  @media (min-width: 768px) { .ty-h1 { font-size: 46px; } }
+
+  .ty-display {
+    font-family: var(--font-serif);
+    font-size: 52px; line-height: 0.98; font-weight: 500;
+    letter-spacing: -0.025em;
+  }
+}
+@media (min-width: 1280px) { .ty-display { font-size: 72px; } }
+
+/* ── Structure: hairlines separate, radius means "touchable" ─────────────────────────────────
+   Radius 4px on things you can touch, 0 on structural containers and list rows. Roundness is
+   information — it is the one signal that says "this responds" — and uniform card radii said
+   nothing at all. */
+.rule-t { border-top: 1px solid var(--rule); }
+.rule-b { border-bottom: 1px solid var(--rule); }
+.rule-y { border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule); }
+.r-touch { border-radius: var(--r-touch); }
+.r-flat  { border-radius: var(--r-flat); }
+
+/* The ONE shadow in the codebase: the mobile sticky action bar, the only element that genuinely
+   floats over scrolling content. Anything else that wants height gets a hairline instead. */
+.sticky-bar { background: var(--surface); box-shadow: var(--shadow-sticky); }
+
+/* A dated editorial row. Interior 16px mobile / 20px desktop, per the spacing scale. */
+.row-pad { padding: var(--s-4); }
+@media (min-width: 768px) { .row-pad { padding: var(--s-5, 20px); } }
+
+/* Section rhythm: 64 mobile / 96 desktop. Repeating one interval is what makes a page feel
+   composed rather than merely correctly spaced. */
+.rhythm > * + * { margin-top: var(--s-16); }
+@media (min-width: 768px) { .rhythm > * + * { margin-top: var(--s-24); } }

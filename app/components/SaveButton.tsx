@@ -87,8 +87,8 @@ export default function SaveButton({
         onClick={e => e.stopPropagation()}
         className={
           variant === 'full'
-            ? 'flex-1 min-h-11 flex items-center justify-center text-center bg-[#0071E3] text-white text-label-md font-semibold py-3 rounded-full hover:bg-blue-600 transition-colors'
-            : "relative shrink-0 h-9 px-3 rounded-full border border-[#e5e5ea] bg-white text-[11px] font-semibold text-[#0071E3] hover:bg-[#f3f3f5] transition-colors after:absolute after:-inset-1 after:content-['']"
+            ? 'r-touch flex-1 min-h-11 flex items-center justify-center text-center bg-[var(--accent)] text-[var(--accent-ink)] text-[13.5px] font-semibold py-3 transition-colors'
+            : "relative shrink-0 h-9 px-3 r-touch border border-[var(--rule)] bg-[var(--surface)] text-[11px] font-semibold text-[var(--accent)] hover:bg-[var(--paper)] transition-colors after:absolute after:-inset-1 after:content-['']"
         }
       >
         Sign in to save
@@ -110,12 +110,16 @@ export default function SaveButton({
         type="button"
         onClick={save}
         aria-pressed={saved}
-        className={`flex-1 min-h-11 text-label-md font-semibold py-3 rounded-full transition-colors ${
+        /* EVERY STATE CARRIES AN EDGE. The default used to be `bg-[var(--paper)]` on a --paper
+           page — paper on paper, a word with no button around it. A hairline ring is what separates
+           a surface in this design, so the resting state is `--surface` inside a `--rule` ring and
+           the saved state is the accent's own ring, which reads as "on" without a tint. */
+        className={`r-touch flex-1 min-h-11 text-[13.5px] font-semibold py-3 transition-colors ${
           saved
-            ? 'bg-[#0071E3]/10 text-[#0071E3]'
+            ? 'bg-[var(--surface)] text-[var(--accent)] shadow-[inset_0_0_0_1px_var(--accent)]'
             : state === 'error'
-              ? 'bg-red-50 text-red-600 hover:bg-red-100'
-              : 'bg-[#f3f3f5] text-[#1D1D1F] hover:bg-[#e8e8ea]'
+              ? 'bg-[var(--surface)] text-[var(--live)] shadow-[inset_0_0_0_1px_var(--live)]'
+              : 'bg-[var(--surface)] text-[var(--ink)] shadow-[inset_0_0_0_1px_var(--rule)] hover:bg-[var(--paper)]'
         }`}
       >
         {saved ? 'Saved' : state === 'saving' ? 'Saving…' : state === 'error' ? 'Try again' : 'Save'}
@@ -130,12 +134,12 @@ export default function SaveButton({
       title={label}
       aria-label={label}
       aria-pressed={saved}
-      className={`relative shrink-0 w-9 h-9 rounded-full border flex items-center justify-center transition-colors active:scale-90 after:absolute after:-inset-1 after:content-[''] ${
+      className={`relative shrink-0 w-9 h-9 r-touch border flex items-center justify-center transition-colors active:scale-90 after:absolute after:-inset-1 after:content-[''] ${
         saved
-          ? 'border-[#0071E3]/25 bg-[#0071E3]/10 text-[#0071E3]'
+          ? 'border-[var(--accent)]/25 bg-[var(--accent)]/10 text-[var(--accent)]'
           : state === 'error'
-            ? 'border-red-200 bg-red-50 text-red-600'
-            : 'border-[#e5e5ea] bg-white text-[#86868B] hover:text-[#1D1D1F] hover:bg-[#f3f3f5]'
+            ? 'border-[var(--live)] bg-[var(--surface)] text-[var(--live)]'
+            : 'border-[var(--rule)] bg-[var(--surface)] text-[var(--ink-2)] hover:text-[var(--ink)] hover:bg-[var(--paper)]'
       }`}
     >
       <span aria-hidden="true"

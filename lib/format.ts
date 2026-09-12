@@ -206,6 +206,32 @@ export function isHappeningNow(start: Date | string, end?: Date | string | null)
   return endMs >= now;
 }
 
+/**
+ * Has this event finished?
+ *
+ * The mirror of `isHappeningNow`, and it lives here for the same two reasons that one does.
+ *
+ * · **Purity at the call site.** `Date.now()` in a component's render body is impure, and React's own
+ *   lint rule refuses it — correctly, because a value that changes between renders makes the output
+ *   non-idempotent. Sealing the clock inside a named function keeps every caller pure.
+ * · **One clock per question.** `EventActions` is hydrated, so if it asked the time itself the server
+ *   would render with one instant and the browser re-render with another: an event ending within
+ *   seconds of the request would produce a hydration mismatch, with the server saying "Register" and
+ *   the client saying "This event has ended". Callers must decide ONCE, on the server, and pass the
+ *   boolean down.
+ *
+ * Falls back to the START instant when there is no end, and the asymmetry with `isHappeningNow` is
+ * deliberate: that one grants a 3-hour grace so a meetup still reads as live, because being wrong
+ * there merely mislabels a badge. Being wrong HERE offers a ticket to something that has finished, so
+ * this takes no grace at all — the moment a start-only event has begun it stops being registrable.
+ */
+export function hasEnded(start: Date | string, end?: Date | string | null): boolean {
+  const endsAt = end ?? start;
+  if (!endsAt) return false;
+  const ms = new Date(endsAt).getTime();
+  return Number.isFinite(ms) && ms < Date.now();
+}
+
 /** "in 2h", "in 3 days", "started 40m ago" — relative to now, IST-agnostic. */
 export function relativeTime(date: Date | string): string {
   const diffMs = new Date(date).getTime() - Date.now();

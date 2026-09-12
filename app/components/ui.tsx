@@ -14,6 +14,8 @@
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 
+import { cn } from '@/lib/cn';
+
 /* ────────────────────────────── Page scaffolding ────────────────────────────── */
 
 /**
@@ -23,6 +25,7 @@ import type { ReactNode } from 'react';
  * only when a page sits inside a larger area of the product.
  */
 export function PageHeader({
+  className,
   title,
   subtitle,
   eyebrow,
@@ -35,16 +38,17 @@ export function PageHeader({
   action?: ReactNode;
   /** `large` is for a page that IS its content (the feed). `default` for everything else. */
   size?: 'default' | 'large';
+  className?: string;
 }) {
   return (
-    <div className="flex flex-wrap items-start justify-between gap-3 mb-5">
+    <div className={cn('flex flex-wrap items-start justify-between gap-3 mb-5', className)}>
       <div className="min-w-0">
-        {eyebrow && <p className="t-label text-[#8E8E93] mb-1.5">{eyebrow}</p>}
-        <h1 className={size === 'large' ? 't-display text-[#1D1D1F]' : 't-title text-[#1D1D1F]'}>
+        {eyebrow && <p className="t-label text-[var(--ink-3)] mb-1.5">{eyebrow}</p>}
+        <h1 className={size === 'large' ? 't-display text-[var(--ink)]' : 't-title text-[var(--ink)]'}>
           {title}
         </h1>
         {subtitle && (
-          <p className="mt-1.5 text-[13.5px] leading-relaxed text-[#6E6E73] tracking-[0]">
+          <p className="mt-1.5 text-[13.5px] leading-relaxed text-[var(--ink-2)] tracking-[0]">
             {subtitle}
           </p>
         )}
@@ -56,6 +60,7 @@ export function PageHeader({
 
 /** Section heading used inside a Card. */
 export function SectionTitle({
+  className,
   title,
   subtitle,
   action,
@@ -63,12 +68,13 @@ export function SectionTitle({
   title: ReactNode;
   subtitle?: ReactNode;
   action?: ReactNode;
+  className?: string;
 }) {
   return (
-    <div className="flex flex-wrap items-start justify-between gap-2 pb-3">
+    <div className={cn('flex flex-wrap items-start justify-between gap-2 pb-3', className)}>
       <div className="min-w-0">
-        <h2 className="t-sub text-[#1D1D1F]">{title}</h2>
-        {subtitle && <p className="mt-0.5 text-[13px] text-[#6E6E73] tracking-[0]">{subtitle}</p>}
+        <h2 className="t-sub text-[var(--ink)]">{title}</h2>
+        {subtitle && <p className="mt-0.5 text-[13px] text-[var(--ink-2)] tracking-[0]">{subtitle}</p>}
       </div>
       {action}
     </div>
@@ -92,9 +98,12 @@ export function Card({
   const pad = padding === 'none' ? '' : padding === 'tight' ? 'p-4' : 'p-5';
   return (
     <section
-      className={`rounded-[18px] bg-white card-shadow ${pad} ${
-        interactive ? 'raise pressable' : ''
-      } ${className}`}
+      className={cn(
+        'r-flat bg-[var(--surface)] rule-y',
+        pad,
+        interactive && 'raise pressable',
+        className
+      )}
     >
       {children}
     </section>
@@ -104,7 +113,7 @@ export function Card({
 /** A quiet inset well: for read-only detail, config notes, code. */
 export function Well({ children, className = '' }: { children: ReactNode; className?: string }) {
   return (
-    <div className={`rounded-xl bg-[#F7F7F9] p-4 text-[12.5px] leading-relaxed text-[#3a3a3c] ${className}`}>
+    <div className={cn('rounded-xl bg-[var(--paper)] p-4 text-[12.5px] leading-relaxed text-[var(--ink-2)]', className)}>
       {children}
     </div>
   );
@@ -117,10 +126,12 @@ type ButtonTone = 'primary' | 'secondary' | 'quiet' | 'danger';
 const TONE: Record<ButtonTone, string> = {
   // Filled dark, not blue: reserving blue for links and state keeps a page from having
   // three competing "most important" colours.
-  primary: 'bg-[#1D1D1F] text-white hover:bg-black',
-  secondary: 'bg-[#0071E3] text-white hover:bg-[#0061C3]',
-  quiet: 'bg-white text-[#1D1D1F] shadow-[inset_0_0_0_1px_var(--hairline-strong)] hover:bg-[#F7F7F9]',
-  danger: 'bg-[#FFF1F0] text-[#FF3B30] hover:bg-[#ffe3e1]',
+  primary: 'bg-[var(--ink)] text-[var(--accent-ink)] hover:bg-[var(--ink)]',
+  secondary: 'bg-[var(--accent)] text-[var(--accent-ink)] hover:bg-[var(--accent)]',
+  quiet:
+    'bg-[var(--surface)] text-[var(--ink)] shadow-[inset_0_0_0_1px_var(--rule)] hover:bg-[var(--paper)]',
+  danger:
+    'bg-[var(--paper)] text-[var(--live)] shadow-[inset_0_0_0_1px_var(--live)] hover:bg-[var(--surface)]',
 };
 
 const SIZES = {
@@ -131,7 +142,7 @@ const SIZES = {
 
 function buttonClass(tone: ButtonTone, size: keyof typeof SIZES, full?: boolean) {
   return [
-    'inline-flex items-center justify-center rounded-full font-semibold tracking-[-0.006em]',
+    'inline-flex items-center justify-center r-touch font-semibold tracking-[-0.006em]',
     'pressable disabled:opacity-45 disabled:pointer-events-none',
     SIZES[size],
     TONE[tone],
@@ -178,7 +189,7 @@ export function Button({
   return (
     <button
       type="button"
-      className={[buttonClass(tone, size, full), className].filter(Boolean).join(' ')}
+      className={cn(buttonClass(tone, size, full), className)}
       {...rest}
     >
       {icon && <span aria-hidden="true" className="material-symbols-outlined text-[17px]">{icon}</span>}
@@ -207,7 +218,7 @@ export function ButtonLink({
   external?: boolean;
   className?: string;
 }) {
-  const cls = [buttonClass(tone, size, full), className].filter(Boolean).join(' ');
+  const cls = cn(buttonClass(tone, size, full), className);
   if (external) {
     return (
       <a href={href} target="_blank" rel="noopener noreferrer" className={cls}>
@@ -251,21 +262,18 @@ export function Chip({
     <button
       type="button"
       aria-pressed={pressed}
-      className={[
-        `inline-flex shrink-0 items-center gap-1.5 rounded-full px-3.5 h-9 text-[12.5px] font-semibold transition-colors ${
-          pressed
-            ? 'bg-[#1D1D1F] text-white'
-            : 'bg-white text-[#1D1D1F] shadow-[inset_0_0_0_1px_var(--hairline)] hover:bg-[#F7F7F9]'
-        }`,
-        className,
-      ]
-        .filter(Boolean)
-        .join(' ')}
+      className={cn(
+        'inline-flex shrink-0 items-center gap-1.5 r-touch px-3.5 h-9 text-[12.5px] font-semibold transition-colors',
+        pressed
+          ? 'bg-[var(--ink)] text-[var(--accent-ink)]'
+          : 'bg-[var(--surface)] text-[var(--ink)] shadow-[inset_0_0_0_1px_var(--rule)] hover:bg-[var(--paper)]',
+        className
+      )}
       {...rest}
     >
       {children}
       {count !== undefined && (
-        <span className={`tnum ${pressed ? 'text-white/55' : 'text-[#8E8E93]'}`}>{count}</span>
+        <span className={`tnum ${pressed ? 'text-[var(--accent-ink)]/55' : 'text-[var(--ink-3)]'}`}>{count}</span>
       )}
     </button>
   );
@@ -278,34 +286,46 @@ export function Stat({
   value,
   sub,
   tone,
+  className,
 }: {
   label: string;
   value: ReactNode;
   sub?: string;
   tone?: 'accent' | 'warn';
+  className?: string;
 }) {
   return (
-    <div>
-      <p className="t-label text-[#8E8E93]">{label}</p>
+    <div className={cn(className)}>
+      <p className="t-label text-[var(--ink-3)]">{label}</p>
       <p
-        className={`tnum mt-1.5 text-[26px] font-bold leading-none tracking-[-0.03em] ${
-          tone === 'accent' ? 'text-[#0071E3]' : tone === 'warn' ? 'text-[#C7362D]' : 'text-[#1D1D1F]'
+        /* SANS, not `--font-display`. That variable now resolves to the serif, and a count is the
+           product's voice — the one thing on screen that is nothing but a number. Setting it in
+           Newsreader inverted the rule the whole design rests on. `tnum` so a column aligns. */
+        className={`tnum mt-1.5 text-[26px] font-bold leading-none tracking-[-0.03em] font-[family-name:var(--font-sans)] ${
+          tone === 'accent' ? 'text-[var(--accent)]' : tone === 'warn' ? 'text-[var(--live)]' : 'text-[var(--ink)]'
         }`}
-        style={{ fontFamily: 'var(--font-display)' }}
       >
         {value}
       </p>
-      {sub && <p className="mt-1 text-[12px] text-[#6E6E73] tracking-[0]">{sub}</p>}
+      {sub && <p className="mt-1 text-[12px] text-[var(--ink-2)] tracking-[0]">{sub}</p>}
     </div>
   );
 }
 
 /** Label/value row, for detail panels. */
-export function Field({ label, children }: { label: string; children: ReactNode }) {
+export function Field({
+  label,
+  children,
+  className,
+}: {
+  label: string;
+  children: ReactNode;
+  className?: string;
+}) {
   return (
-    <div className="flex items-start justify-between gap-4 py-2.5">
-      <dt className="shrink-0 text-[13px] text-[#8E8E93] tracking-[0]">{label}</dt>
-      <dd className="min-w-0 text-right text-[13.5px] font-medium text-[#1D1D1F]">{children}</dd>
+    <div className={cn('flex items-start justify-between gap-4 py-2.5', className)}>
+      <dt className="shrink-0 text-[13px] text-[var(--ink-3)] tracking-[0]">{label}</dt>
+      <dd className="min-w-0 text-right text-[13.5px] font-medium text-[var(--ink)]">{children}</dd>
     </div>
   );
 }
@@ -322,21 +342,34 @@ export function Field({ label, children }: { label: string; children: ReactNode 
  * Class output is untouched, so this changes nothing visually on any of the surfaces that consume it.
  */
 export function Banner({
+  className,
   tone = 'info',
   children,
 }: {
   tone?: 'info' | 'ok' | 'warn' | 'error';
   children: ReactNode;
+  className?: string;
 }) {
+  // A tone is a LEFT RULE plus a text colour, on the same paper ground as everything else. There is
+  // no tint layer in a nine-value palette, and inventing four washes to carry four tones is exactly
+  // the "one more grey" move that made the old palette 212 raw hexes across 53 files.
+  //
+  // `info` and `ok` share the accent because they are the same claim to a reader — the app is fine.
+  // `warn` is deliberately the QUIETEST of the four: --ink-2 with an --ink-2 rule. It used to be
+  // amber, which made a routine caution louder than a failure.
   const cls = {
-    info: 'bg-[#EBF4FE] text-[#0058B0]',
-    ok: 'bg-[#EBF7EF] text-[#166B35]',
-    warn: 'bg-amber-50 text-amber-900',
-    error: 'bg-[#FFF1F0] text-[#C7362D]',
+    info: 'border-l-[var(--accent)] text-[var(--ink)]',
+    ok: 'border-l-[var(--accent)] text-[var(--ink)]',
+    warn: 'border-l-[var(--ink-2)] text-[var(--ink-2)]',
+    error: 'border-l-[var(--live)] text-[var(--live)]',
   }[tone];
   return (
     <div
-      className={`rounded-xl px-4 py-3 text-[12.5px] leading-relaxed ${cls}`}
+      className={cn(
+        'border-l-2 bg-[var(--paper)] px-4 py-3 text-[13px] leading-relaxed',
+        cls,
+        className
+      )}
       role={tone === 'error' ? 'alert' : 'status'}
     >
       {children}
@@ -351,6 +384,7 @@ export function Banner({
  * dead-end empty state is a bug, not a state.
  */
 export function EmptyState({
+  className,
   icon,
   title,
   body,
@@ -360,19 +394,23 @@ export function EmptyState({
   title: string;
   body?: string;
   action?: ReactNode;
+  className?: string;
 }) {
   return (
-    <div className="flex flex-col items-center justify-center rounded-[18px] bg-white card-shadow px-6 py-14 text-center">
-      <span className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-[#F5F5F7]">
-        <span aria-hidden="true" className="material-symbols-outlined text-[24px] text-[#8E8E93]">{icon}</span>
+    <div className={cn(
+        'flex flex-col items-center justify-center r-flat bg-[var(--surface)] rule-y px-6 py-14',
+        className
+      )}>
+      <span className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-[var(--paper)]">
+        <span aria-hidden="true" className="material-symbols-outlined text-[24px] text-[var(--ink-3)]">{icon}</span>
       </span>
-      <h3 className="t-sub text-[#1D1D1F]">{title}</h3>
-      {body && <p className="mt-1 max-w-[38ch] text-[13.5px] leading-relaxed text-[#6E6E73]">{body}</p>}
+      <h3 className="t-sub text-[var(--ink)]">{title}</h3>
+      {body && <p className="mt-1 max-w-[38ch] text-[13.5px] leading-relaxed text-[var(--ink-2)]">{body}</p>}
       {action && <div className="mt-5">{action}</div>}
     </div>
   );
 }
 
 export function Skeleton({ className = '' }: { className?: string }) {
-  return <div className={`skeleton rounded-lg bg-[#EEEEF0] ${className}`} />;
+  return <div className={cn('skeleton rounded-lg bg-[var(--rule)]', className)} />;
 }
