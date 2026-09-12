@@ -60,7 +60,7 @@ export default function Description({ text }: { text: string }) {
         ref={ref}
         /* max-w in `ch` keeps the measure under 80 characters in the 648px desktop column, which
            is wider than comfortable prose. On a phone the viewport is the constraint. */
-        className={`evt-desc max-w-[64ch] text-[15px] leading-[1.65] text-[#3a3a3c] whitespace-pre-line ${
+        className={`evt-desc max-w-[64ch] text-[15px] leading-[1.65] text-[var(--ink-2)] whitespace-pre-line ${
           open ? '' : 'line-clamp-[14]'
         }`}
       >

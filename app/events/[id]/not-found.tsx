@@ -15,25 +15,25 @@ import { DesktopNav, MobileBottomNav } from '../../components/NavBar';
  */
 export default function EventNotFound() {
   return (
-    <div className="min-h-screen bg-[#F5F5F7]">
+    <div className="min-h-screen bg-[var(--paper)]">
       <DesktopNav />
-      <header className="md:hidden fixed top-0 w-full h-14 bg-white/96 glass-nav z-50 border-b border-black/5 flex items-center px-5">
-        <Link href="/" className="text-lg font-bold tracking-tight text-[#1D1D1F]">
+      <header className="md:hidden fixed top-0 w-full h-14 bg-[var(--surface)]/96 glass-nav z-50 border-b border-black/5 flex items-center px-5">
+        <Link href="/" className="text-lg font-bold tracking-tight text-[var(--ink)]">
           PulseBLR
         </Link>
       </header>
       <main className="pt-14 pb-24 md:pb-10">
-        <div className="max-w-[600px] mx-auto px-4 pt-20 text-center">
-          <span aria-hidden="true" className="material-symbols-outlined text-[48px] text-[#d5d5da] block mb-3">
+        <div className="max-w-[600px] mx-auto px-4 pt-20">
+          <span aria-hidden="true" className="material-symbols-outlined text-[48px] text-[var(--ink-3)] block mb-3">
             search_off
           </span>
-          <h1 className="text-[22px] font-bold text-[#1D1D1F]">We couldn’t find that event</h1>
-          <p className="text-[14px] text-[#6E6E73] mt-2">
+          <h1 className="text-[22px] font-bold text-[var(--ink)]">We couldn’t find that event</h1>
+          <p className="text-[14px] text-[var(--ink-2)] mt-2">
             It may have been removed by the organiser, or the link is out of date.
           </p>
           <Link
             href="/"
-            className="inline-block mt-6 px-6 py-2.5 rounded-full bg-[#1D1D1F] text-white text-label-md font-semibold hover:bg-black transition-colors"
+            className="pressable r-touch inline-flex items-center min-h-[44px] mt-[var(--s-6)] px-6 bg-[var(--accent)] text-[var(--accent-ink)] text-[15px] font-semibold transition-colors"
           >
             Browse all events
           </Link>

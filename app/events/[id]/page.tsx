@@ -20,9 +20,7 @@ import {
 import { absoluteUrl, canonicalOrigin } from '@/lib/canonical-origin';
 import { topicForDimension } from '@/lib/events/topics';
 import {
-  connectionVerdict,
   meterLabel,
-  meterLevel,
   scoreReasons,
 } from '@/lib/events/score-reason';
 import type { SpeakerMatch } from '@/lib/events/speaker-match';
@@ -38,10 +36,10 @@ import {
   fullDateIST,
   relativeTime,
   locationLabel,
-  categoryAccent,
   priceLabel,
   dayLabelIST,
   shortDateIST,
+  hasEnded,
   isHappeningNow,
   stripMarkdown,
 } from '@/lib/format';
@@ -141,14 +139,14 @@ import {
  *
  * GREYS ARE TOKENS HERE, NOT LITERALS, WHICH IS A DEBT PAYMENT RATHER THAN A PREFERENCE. Three
  * text colours on this page failed 4.5:1 when measured in the harness — the `<dt>` labels and the
- * "Working against it" lead-in at `#8E8E93` (3.26 on white), the provenance line at `#86868B`
- * (3.33 on the page grey), the similar-event meta at `#86868B` (3.62) — all at 12–12.5px, where no
- * large-text exemption applies. globals.css retuned the whole ink scale for exactly this
- * (`--ink-2` #5C5C61, `--ink-3` #6F6F75, `#8E8E93` reclassified as `--ink-disabled` and no longer a
- * text colour) and its note asks that each file replace its literals with the token as it is
- * touched, because the failing hex is pasted into ~240 call sites and retuning the token alone
- * fixes almost none of them. So this file now references `var(--ink-2)` / `var(--ink-3)` and holds
- * no grey hex: the next retune reaches this page without an edit.
+ * "Working against it" lead-in (3.26 on white), the provenance line (3.33 on the page grey), the
+ * similar-event meta (3.62) — all at 12–12.5px, where no large-text exemption applies. globals.css
+ * retuned the whole ink scale for exactly this, reclassifying the lightest grey as decorative-only
+ * and no longer a text colour, and its note asks that each file replace its literals with the token
+ * as it is touched, because the failing hex was pasted into ~240 call sites and retuning the token
+ * alone fixes almost none of them. So this file references `var(--ink-2)` / `var(--ink-3)` and holds
+ * no grey hex: the next retune reaches this page without an edit. (That per-file migration has since
+ * been finished across `app/` and `lib/` — the palette is now reachable from one place.)
  *
  * ONE CONTRAST MISS IS LEFT AND IS NOT MINE TO FIX: `--blue` on `--paper` measures **4.31**, so the
  * description's "Read the full description" button and a strong speaker match both sit just under
@@ -320,7 +318,12 @@ export default async function EventDetailPage({ params }: { params: Promise<{ id
    */
   const speakerMatches = await loadSpeakerMatches(event.speakers, loaded.viewerId);
 
+
   const live = isHappeningNow(event.startDateTime, event.endDateTime);
+
+  /* DECIDED HERE, ON THE SERVER, and passed to `EventActions` as a boolean — see `hasEnded`'s own
+     docblock for why the client must never ask the time itself. */
+  const isPast = hasEnded(event.startDateTime, event.endDateTime);
 
   return (
     <Shell>
@@ -339,7 +342,9 @@ export default async function EventDetailPage({ params }: { params: Promise<{ id
         />
       )}
 
-      <article className="max-w-[1100px] mx-auto px-4 md:px-8 pt-3 md:pt-6">
+      {/* `pb` reserves the sticky bar's own height below `lg`, so the bar can never cover the last
+          row of the page. Dropped at `lg`, where the bar is not rendered. */}
+      <article className="max-w-[1100px] mx-auto px-4 md:px-8 pt-3 md:pt-6 pb-[calc(var(--bottomnav-h)+84px)] md:pb-[84px] lg:pb-0">
         {/* A back link rather than a breadcrumb trail, and it keeps its arrow. This page's most
             common entry is a shared WhatsApp link, where there is no in-app history to go back
             through — so the one affordance that says "there is more here" has to be visible. The
@@ -347,7 +352,7 @@ export default async function EventDetailPage({ params }: { params: Promise<{ id
             names appears nowhere on this page. */}
         <Link
           href="/"
-          className="pressable inline-flex min-h-[44px] items-center gap-1 text-[13px] font-semibold text-[color:var(--ink-2)] hover:text-[#1D1D1F] transition-colors"
+          className="pressable inline-flex min-h-[44px] items-center gap-1 text-[13px] font-semibold text-[color:var(--ink-2)] hover:text-[var(--ink)] transition-colors"
         >
           <span aria-hidden="true" className="material-symbols-outlined text-[16px]">arrow_back</span>
           All events
@@ -377,8 +382,10 @@ export default async function EventDetailPage({ params }: { params: Promise<{ id
               bled edge with rounded corners reads as a mistake rather than as a decision.
             */}
             <div
-              className={`relative -mx-4 md:mx-0 overflow-hidden bg-white md:rounded-[18px] md:card-shadow ${
-                event.imageUrl ? 'aspect-[2/1] max-h-[380px]' : 'h-[124px] md:h-[148px]'
+              className={`relative -mx-4 md:mx-0 overflow-hidden bg-[var(--surface)] md:rounded-[18px] md:card-shadow ${
+                event.imageUrl
+                  ? 'aspect-[2/1] max-h-[260px] lg:max-h-[380px]'
+                  : 'h-[124px] md:h-[148px]'
               }`}
             >
               {/*
@@ -403,60 +410,20 @@ export default async function EventDetailPage({ params }: { params: Promise<{ id
                 date={event.startDateTime}
               />
               {live && (
-                <span className="absolute left-4 top-4 pill pill-live shadow-sm bg-white">
-                  <span className="live-dot w-1.5 h-1.5 rounded-full bg-[#FF3B30]" />
+                <span className="absolute left-4 top-4 pill pill-live shadow-[inset_0_0_0_1px_var(--rule)] bg-[var(--surface)]">
+                  <span className="live-dot w-1.5 h-1.5 rounded-full bg-[var(--live)]" />
                   Happening now
                 </span>
               )}
             </div>
 
-            {/* Category as a dot plus a label, not a filled block. Saturated chips stacked
-                directly above the title made the taxonomy the loudest thing on the page; the
-                colour still identifies the category, at a tenth of the visual weight.
-
-                A category links to its topic page only when one is PUBLISHED —
-                `topicForDimension` is a lookup in that set, not a slugify, because only 16 of the
-                22 categories have a page and a hand-rolled slug would link the rest to a 404. */}
-            <div className="mt-5 flex flex-wrap items-center gap-x-3.5 gap-y-1.5">
-              {(event.category || []).map(category => {
-                const topic = topicForDimension('category', category);
-                const dot = (
-                  <span
-                    aria-hidden="true"
-                    className="h-[7px] w-[7px] rounded-full"
-                    style={{ background: categoryAccent(category) }}
-                  />
-                );
-                return topic ? (
-                  <Link
-                    key={category}
-                    href={`/topics/${topic.slug}`}
-                    className="inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-[#3a3a3c] hover:text-[color:var(--blue)] transition-colors"
-                  >
-                    {dot}
-                    {category}
-                  </Link>
-                ) : (
-                  <span
-                    key={category}
-                    className="inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-[#3a3a3c]"
-                  >
-                    {dot}
-                    {category}
-                  </span>
-                );
-              })}
-            </div>
-
             {/* The subject of the page, and the biggest thing on it. Tracking follows the
                 globals.css rule that it is a function of size, so this is set tighter than the
                 verdict below it rather than sharing one letter-spacing. */}
-            <h1
-              className="mt-2.5 text-[27px] md:text-[38px] font-bold leading-[1.06] tracking-[-0.035em] text-[#1D1D1F]"
-              style={{ fontFamily: 'var(--font-display)' }}
-            >
-              {event.title}
-            </h1>
+            {/* `.ty-h1` — 34px serif at 390, 46px from 768, tracking -0.015em, set in globals.css
+                rather than here so the scale has one definition. The hero of the page: nothing above
+                it now competes, which is what removing the category row bought. */}
+            <h1 className="mt-[var(--s-4)] ty-h1 text-[var(--ink)]">{event.title}</h1>
           </header>
 
           {/* ── Decide: the verdict, the facts, the action ───────────────────
@@ -477,9 +444,12 @@ export default async function EventDetailPage({ params }: { params: Promise<{ id
               remark about the listing's copy, not part of the decision instrument. That is the one
               thing taken off this surface, and it happened to be the weakest card on it.
             */}
-            <div className="mt-6 lg:mt-0 lg:sticky lg:top-[84px] flex flex-col gap-3">
+            {/* FACTS FIRST, VERDICT SECOND — the one order change in this phase. The page used to
+                lead with the verdict, which asks the reader to judge "worth going" before they know
+                when or where it is. The argument follows the proposition. */}
+            <div className="mt-[var(--s-6)] lg:mt-0 lg:sticky lg:top-[84px] flex flex-col gap-[var(--s-6)]">
+              <EventFacts event={event} isPast={isPast} />
               {typeof event.connectionScore === 'number' && <WorthGoing event={event} />}
-              <EventFacts event={event} />
             </div>
           </aside>
 
@@ -498,9 +468,41 @@ export default async function EventDetailPage({ params }: { params: Promise<{ id
               <Description text={stripMarkdown(event.description)} />
             )}
 
+            {/* THE CATEGORY LINKS, MOVED HERE FROM ABOVE THE TITLE — the one element this phase
+                removed from the hero. Reasons, in order: a category is a bucket the APP assigned,
+                so by this page's own semantic rule it is the product's voice and does not belong
+                above the event's own name; it was the only thing on the page drawing colour from a
+                scale outside the nine; and a reader arriving from a shared link needs to be told
+                what the event IS before being told which bucket we filed it in. As a footer it is
+                what it always should have been — "more like this".
+
+                Still linked only where a topic page is PUBLISHED. `topicForDimension` is a lookup
+                in that set, not a slugify, because only 16 of the 22 categories have a page and a
+                hand-rolled slug would send the other six to a 404. */}
+            {(event.category || []).length > 0 && (
+              <div className="mt-[var(--s-6)] flex flex-wrap items-center gap-x-[var(--s-4)] gap-y-[var(--s-2)]">
+                {(event.category || []).map(category => {
+                  const topic = topicForDimension('category', category);
+                  return topic ? (
+                    <Link
+                      key={category}
+                      href={`/topics/${topic.slug}`}
+                      className="pressable ty-meta font-semibold text-[color:var(--accent)] min-h-[44px] inline-flex items-center"
+                    >
+                      {category}
+                    </Link>
+                  ) : (
+                    <span key={category} className="ty-meta text-[color:var(--ink-2)]">
+                      {category}
+                    </span>
+                  );
+                })}
+              </div>
+            )}
+
             {event.recruiterMentioned && (
-              /* A LINE, NOT A CARD, AND GREYSCALE. It used to be a `bg-[#0071E3]/[0.06]` panel with
-                 blue text in the action rail — but `--blue` means "you can act on this" and nothing
+              /* A LINE, NOT A CARD, AND GREYSCALE. It used to be an accent-tinted panel at 6% with
+                 accent text in the action rail — but `--blue` means "you can act on this" and nothing
                  here is actionable, so a tinted informational box is exactly the decoration the
                  rationing rule exists to stop. As a remark about the listing's own copy it belongs
                  beside the copy. */
@@ -534,7 +536,7 @@ export default async function EventDetailPage({ params }: { params: Promise<{ id
                          NOT wrapped in a 44px overlay: at this gap two overlays would overhang
                          into each other and the later one in the DOM would win the tap — the
                          failure the direction doc's hit-area note describes. */
-                      className="pill pill-quiet pressable min-h-[32px] px-3 hover:bg-[#F7F7F9]"
+                      className="pill pill-quiet pressable min-h-[32px] px-3 hover:bg-[var(--paper)]"
                     >
                       {name}
                     </Link>
@@ -552,7 +554,7 @@ export default async function EventDetailPage({ params }: { params: Promise<{ id
                     <Link
                       key={item._id}
                       href={`/events/${item._id}`}
-                      className="group pressable flex items-center gap-3 bg-white rounded-xl card-shadow p-3"
+                      className="group pressable flex items-center gap-3 bg-[var(--surface)] rounded-xl card-shadow p-3"
                     >
                       <EventCover
                         src={item.imageUrl}
@@ -561,7 +563,7 @@ export default async function EventDetailPage({ params }: { params: Promise<{ id
                         className="w-14 h-14 rounded-lg shrink-0"
                       />
                       <div className="min-w-0 flex-1">
-                        <p className="text-[14px] font-semibold text-[#1D1D1F] truncate group-hover:text-[color:var(--blue)] transition-colors">
+                        <p className="text-[14px] font-semibold text-[var(--ink)] truncate group-hover:text-[color:var(--blue)] transition-colors">
                           {item.title}
                         </p>
                         {/* THE ONE middle-dot meta string left on this page, and it is the case
@@ -582,16 +584,26 @@ export default async function EventDetailPage({ params }: { params: Promise<{ id
           </div>
         </div>
       </article>
+
+      {/* THE STICKY ACTION BAR — mobile only, and mounted OUTSIDE the `<article>` on purpose.
+          It is `position: fixed`, and a fixed element nested inside a container that later gains a
+          transform, filter or `contain` is clipped to that container instead of the viewport. This
+          repo has already lost a sticky rail for its entire descent that way, so the bar sits as a
+          sibling of the article rather than inside it.
+
+          Measured baseline this replaces: Register at y=942 (sparse) and y=1026 (rich) at 390px, and
+          y=1097 at 768px — the tablet was the worst width and nobody had measured it. */}
+      <EventActions event={event} variant="bar" isPast={isPast} />
     </Shell>
   );
 }
 
 function Shell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-screen bg-[#F5F5F7]">
+    <div className="min-h-screen bg-[var(--paper)]">
       <DesktopNav />
-      <header className="md:hidden fixed top-0 w-full h-14 bg-white/96 glass-nav z-50 border-b border-black/5 flex items-center px-5">
-        <Link href="/" className="text-lg font-bold tracking-tight text-[#1D1D1F]">
+      <header className="md:hidden fixed top-0 w-full h-14 bg-[var(--surface)]/96 glass-nav z-50 border-b border-black/5 flex items-center px-5">
+        <Link href="/" className="text-lg font-bold tracking-tight text-[var(--ink)]">
           PulseBLR
         </Link>
       </header>
@@ -613,7 +625,7 @@ function Shell({ children }: { children: React.ReactNode }) {
 function Section({ heading, children }: { heading: string; children: React.ReactNode }) {
   return (
     <section className="mt-9 border-t border-[color:var(--hairline)] pt-7">
-      <h2 className="t-sub text-[#1D1D1F]">{heading}</h2>
+      <h2 className="t-sub text-[var(--ink)]">{heading}</h2>
       <div className="mt-3">{children}</div>
     </section>
   );
@@ -656,90 +668,44 @@ function Section({ heading, children }: { heading: string; children: React.React
  */
 function WorthGoing({ event }: { event: FeedEvent }) {
   const score = event.connectionScore ?? 0;
-  const level = meterLevel(score);
   const reasons = scoreReasons(event);
   const forIt = reasons.filter(r => r.good);
   const against = reasons.filter(r => !r.good);
 
   return (
-    /* THE ONLY `--lift-2` OBJECT ON THE PAGE, and a slightly larger radius than anything else, so
-       it reads as the one thing standing above a flat document rather than as another card. */
-    <section className="rounded-[22px] bg-white card-shadow-lg p-5 md:p-6">
-      <div className="flex items-center gap-3">
-        {/*
-          THE SIGNATURE ELEMENT, AT TWICE ITS FEED SIZE.
+    /* A RULED SECTION ON THE PAGE GROUND, not a card. The only raised object in this design is the
+       mobile action bar, which owns the single box-shadow the codebase allows. A floating panel here
+       competed with the cover and the title for the eye, on a page whose hero is the event's name. */
+    <section className="rule-t pt-[var(--s-6)]">
 
-          `.meter` (globals.css) is 11px tall with 3px bars — right in a dense feed row, far too
-          quiet for the one object this page is built around. It is SCALED rather than reimplemented
-          so it stays the same element: a change to the bar count, the colour or the `data-level`
-          mapping reaches this automatically, and a second visual definition of the meter could
-          drift from the rail the reader has already learnt. `scale(2)` exactly, because every
-          dimension in the rule is an integer and 2× keeps them integers (3→6px bars, 5/8/11→10/16/22px
-          heights, 2→4px gaps) — a fractional scale would blur the hairline geometry.
-
-          The wrapper is a fixed box because `transform` does not affect layout: without it the row
-          would reserve 13×11px for something painting at 26×22px.
-        */}
-        <span aria-hidden="true" className="block h-[22px] w-[26px] shrink-0">
-          <span
-            className="meter"
-            data-level={level}
-            style={{ transform: 'scale(2)', transformOrigin: 'left bottom' }}
-          >
-            <i />
-            <i />
-            <i />
-          </span>
-        </span>
-        <h2
-          className="text-[26px] font-bold leading-[1.1] tracking-[-0.028em] text-[#1D1D1F]"
-          style={{ fontFamily: 'var(--font-display)' }}
-        >
-          {connectionVerdict(score)}
-        </h2>
-      </div>
-
-      {/* What the judgement is ABOUT, in sentence case, saying something — which is the job an
-          ALL-CAPS eyebrow was doing here badly. `meterLabel` stays as the accessible name of the
-          bars, because the bars themselves are `aria-hidden`. */}
-      <p className="mt-1.5 text-[12.5px] leading-[1.45] text-[color:var(--ink-2)]">
-        Our read on your chances of leaving with useful contacts
-      </p>
+      {/* NO HEADING, deliberately. A label reading "Why this event" says exactly what the sentence
+          under it says, which is the rule that already, correctly, left the description headingless.
+          `meterLabel` remains the accessible summary — the visual meter is gone, but a screen-reader
+          user still gets the one-line read the sighted reader gets from the clauses. */}
       <span className="sr-only">{meterLabel(score)}</span>
 
       {reasons.length > 0 ? (
-        <div className="mt-4 border-t border-[color:var(--hairline)] pt-3.5">
-          {forIt.length > 0 && (
-            <ul className="flex flex-col gap-2">
-              {forIt.map(reason => (
-                /* `signal` is a safe key: the module resolves to at most one reason per signal. */
-                <li key={reason.signal} className="text-[13px] leading-[1.45] text-[#1D1D1F]">
-                  {reason.long}
-                </li>
-              ))}
-            </ul>
-          )}
-
+        <p className="ty-body text-[var(--ink)] max-w-[62ch]">
+          {forIt.map(r => r.long).join('. ')}
+          {forIt.length > 0 && '.'}
           {against.length > 0 && (
-            <div className={forIt.length > 0 ? 'mt-3.5 border-t border-[color:var(--hairline)] pt-3.5' : ''}>
-              {/* NOT quieter than the clauses above it. Greying the counterweight out is how a
-                  panel comes to explain a course advert without mentioning the penalty. */}
-              <p className="text-[12px] leading-[1.3] text-[color:var(--ink-3)]">Working against it</p>
-              <ul className="mt-1.5 flex flex-col gap-2">
-                {against.map(reason => (
-                  <li key={reason.signal} className="text-[13px] leading-[1.45] text-[#1D1D1F]">
-                    {reason.long}
-                  </li>
-                ))}
-              </ul>
-            </div>
+            /* NOT a quieter colour and NOT a separate block. Greying the counterweight or filing it
+               under its own heading is how a panel comes to explain a course advert without
+               mentioning the penalty. Same ink, same sentence, after the word "But". */
+            <>
+              {forIt.length > 0 ? ' But ' : ''}
+              {forIt.length > 0
+                ? against.map(r => r.long.charAt(0).toLowerCase() + r.long.slice(1)).join(', and ')
+                : against.map(r => r.long).join('. ')}
+              .
+            </>
           )}
-        </div>
+        </p>
       ) : (
         /* A listing with no format, no host and no categories genuinely has nothing to argue with.
-           Saying so is better than an empty list under a confident verdict. Rare but reachable: the
+           Saying so is better than an empty space under a confident claim. Rare but reachable: the
            smallest reason count in the upcoming tech corpus is 2, so this is the hand-entered case. */
-        <p className="mt-4 border-t border-[color:var(--hairline)] pt-3.5 text-[13px] leading-[1.45] text-[color:var(--ink-2)]">
+        <p className="ty-body text-[color:var(--ink-2)] max-w-[62ch]">
           This listing carries too little detail to say much either way.
         </p>
       )}
@@ -762,7 +728,7 @@ function WorthGoing({ event }: { event: FeedEvent }) {
  * `registrationDeadline` **0** — so that last row is correct, guarded and currently dormant on the
  * whole tech corpus, which is worth knowing before debugging it as a bug.
  */
-function EventFacts({ event }: { event: FeedEvent }) {
+function EventFacts({ event, isPast }: { event: FeedEvent; isPast: boolean }) {
   const mapsQuery = encodeURIComponent(
     [event.venue, event.address, event.area, 'Bengaluru'].filter(Boolean).join(', ')
   );
@@ -770,12 +736,10 @@ function EventFacts({ event }: { event: FeedEvent }) {
   const perks = (event.perks || []).map(vocabLabel);
 
   return (
-    <section className="rounded-[18px] bg-white card-shadow p-5 md:p-6">
-      <dl className="grid grid-cols-[62px_minmax(0,1fr)] gap-x-3 gap-y-4">
+    <section>
+      <dl className="grid grid-cols-[62px_minmax(0,1fr)] gap-x-3 gap-y-[var(--s-4)]">
         <Fact label="When">
-          <p className="text-[14.5px] font-semibold leading-[1.3] text-[#1D1D1F]">
-            {fullDateIST(event.startDateTime)}
-          </p>
+          <p className="ty-meta font-semibold text-[var(--ink)]">{fullDateIST(event.startDateTime)}</p>
           {/* THE DURATION IS GONE, DELIBERATELY: with a start and an end both printed, "2h" is
               arithmetic the reader can do, and cutting it takes this line from two commas to one.
               `relativeTime` is INK, not blue — it is a fact, and blue on this page means "you can
@@ -788,9 +752,10 @@ function EventFacts({ event }: { event: FeedEvent }) {
         </Fact>
 
         <Fact label="Where">
-          <p className="text-[14.5px] font-semibold leading-[1.3] text-[#1D1D1F]">
-            {locationLabel(event)}
-          </p>
+          {/* SERIF. The venue is a thing in the world; the date above it is the app describing that
+              thing. A reader should be able to tell those apart without reading a word, which only
+              works if the split is applied to the content and not just to headings. */}
+          <p className="ty-row-title text-[var(--ink)]">{locationLabel(event)}</p>
           {/*
             THE FULL POSTAL ADDRESS IS NOT PRINTED, and that is a removal rather than an oversight.
             Measured in the harness at 1440x900: `event.address` took THREE lines of the 348px
@@ -816,13 +781,13 @@ function EventFacts({ event }: { event: FeedEvent }) {
 
         {audience.length > 0 && (
           <Fact label="Aimed at">
-            <p className="text-[14.5px] leading-[1.35] text-[#1D1D1F]">{audience.join(', ')}</p>
+            <p className="text-[14.5px] leading-[1.35] text-[var(--ink)]">{audience.join(', ')}</p>
           </Fact>
         )}
 
         {perks.length > 0 && (
           <Fact label="You get">
-            <p className="text-[14.5px] leading-[1.35] text-[#1D1D1F]">{perks.join(', ')}</p>
+            <p className="text-[14.5px] leading-[1.35] text-[var(--ink)]">{perks.join(', ')}</p>
           </Fact>
         )}
 
@@ -837,7 +802,7 @@ function EventFacts({ event }: { event: FeedEvent }) {
                   className="w-7 h-7 rounded-full object-cover shrink-0"
                 />
               )}
-              <p className="text-[14.5px] font-semibold leading-[1.3] text-[#1D1D1F] min-w-0 truncate">
+              <p className="text-[14.5px] font-semibold leading-[1.3] text-[var(--ink)] min-w-0 truncate">
                 {event.organizer}
               </p>
             </div>
@@ -845,23 +810,25 @@ function EventFacts({ event }: { event: FeedEvent }) {
         )}
 
         <Fact label="Ticket">
-          <p className="text-[14.5px] font-semibold leading-[1.3] text-[#1D1D1F]">
+          <p className="text-[14.5px] font-semibold leading-[1.3] text-[var(--ink)]">
             {event.soldOut ? 'Sold out' : priceLabel(event)}
           </p>
         </Fact>
 
         {event.registrationDeadline && (
           <Fact label="Closes">
-            <p className="text-[14.5px] leading-[1.3] text-[#1D1D1F]">
+            <p className="text-[14.5px] leading-[1.3] text-[var(--ink)]">
               {relativeTime(event.registrationDeadline)}
             </p>
           </Fact>
         )}
       </dl>
 
-      {/* The only interactive block on the page — see EventDetailClient.tsx. */}
-      <div className="mt-5 border-t border-[color:var(--hairline)] pt-4">
-        <EventActions event={event} />
+      {/* DESKTOP ONLY. Below `lg` the sticky bar owns the primary action — rendering both would put
+          two Registers on one page, which is two answers to "what do I do next". Measured: Register
+          sits at y=669 at 1280, already above the fold, so the bar earns nothing there. */}
+      <div className="hidden lg:block mt-[var(--s-6)] rule-t pt-[var(--s-4)]">
+        <EventActions event={event} isPast={isPast} />
       </div>
     </section>
   );
@@ -999,17 +966,17 @@ function EventAgenda({ items }: { items?: FeedEvent['agenda'] }) {
       <ol className="flex flex-col">
         {items.map((item, index) => (
           <li key={`${item.title}-${index}`} className="flex gap-3 md:gap-4">
-            <span className="w-[42px] shrink-0 pt-[2px] text-right tnum text-[12.5px] font-semibold leading-[1.3] text-[#1D1D1F]">
+            <span className="w-[42px] shrink-0 pt-[2px] text-right tnum text-[12.5px] font-semibold leading-[1.3] text-[var(--ink)]">
               {item.startsAt ? timeIST(item.startsAt) : ''}
             </span>
             {/* The connector, drawn on every row but the last, so the column reads as one
                 sequence rather than as separate lines that happen to be stacked. */}
             <span aria-hidden="true" className="w-[9px] shrink-0 flex flex-col items-center pt-[6px]">
-              <span className="h-[7px] w-[7px] rounded-full bg-[#c7c7cc] shrink-0" />
+              <span className="h-[7px] w-[7px] rounded-full bg-[var(--ink-3)] shrink-0" />
               {index < items.length - 1 && <span className="flex-1 w-px bg-[color:var(--hairline)]" />}
             </span>
             <div className={`min-w-0 flex-1 ${index < items.length - 1 ? 'pb-4' : ''}`}>
-              <p className="text-[14.5px] font-semibold leading-[1.35] text-[#1D1D1F]">
+              <p className="text-[14.5px] font-semibold leading-[1.35] text-[var(--ink)]">
                 {item.title}
               </p>
               {(item.speakerName || item.speakerCompany) && (
@@ -1066,7 +1033,7 @@ function EventSpeakers({
             className="flex flex-col gap-1 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4"
           >
             <div className="min-w-0">
-              <p className="text-[14.5px] font-semibold leading-[1.3] text-[#1D1D1F]">
+              <p className="text-[14.5px] font-semibold leading-[1.3] text-[var(--ink)]">
                 {speaker.linkedin ? (
                   <a
                     href={speaker.linkedin}

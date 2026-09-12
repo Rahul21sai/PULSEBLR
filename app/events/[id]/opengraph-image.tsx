@@ -47,11 +47,19 @@ export const alt = 'Event on PulseBLR';
 export const size = { width: 1200, height: 630 };
 export const contentType = 'image/png';
 
-/** Greyscale, one accent — the same rule `app/globals.css` holds the rest of the product to. */
-const INK = '#1D1D1F';
-const MUTED = '#6E6E73';
-const HAIRLINE = '#E3E3E7';
-const BLUE = '#0071E3';
+/**
+ * Greyscale, one accent — the same rule `app/globals.css` holds the rest of the product to.
+ *
+ * LITERAL HEXES ON PURPOSE - DO NOT CONVERT THESE TO var(). Satori (next/og) resolves no CSS
+ * custom properties, so a token here would paint nothing. INK / MUTED / HAIRLINE / BLUE mirror
+ * --ink / --ink-2 / --rule / --accent; read their current values from the palette block in
+ * app/globals.css and re-sync by hand. The hexes are deliberately not repeated in prose here:
+ * a colour copied into a comment is a snapshot that goes stale and then gets believed.
+ */
+const INK = '#121417';
+const MUTED = '#55595F';
+const HAIRLINE = '#E4E2DC';
+const BLUE = '#12513C';
 
 interface CardEvent {
   title: string;
