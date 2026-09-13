@@ -1,8 +1,18 @@
 <svg width="192" height="192" viewBox="0 0 192 192" xmlns="http://www.w3.org/2000/svg">
   <!--
     PulseBLR app tile. Replaces a placeholder that was the letter "P" in Arial on #9333ea — a
-    purple that appears nowhere in app/globals.css. This uses the one brand colour the design
-    system actually defines, --blue #0071E3.
+    purple that appears nowhere in app/globals.css.
+
+    THE GROUND IS --accent #12513C, the deep canopy green, and it was Apple-blue until
+    2026-09-13. That blue was correct when this file was written and stopped being correct when
+    the design system landed: globals.css now defines exactly one accent, and --blue survives
+    only as a MIGRATION ALIAS onto it, labelled there "not part of the palette". So the app tile
+    was blue while every surface in the product was green -- visible on a home screen, in a
+    launcher and in the Play listing, and invisible to every check, because a hardcoded hex in an
+    SVG is not a token anything can validate. app/components/Logo.tsx never had the problem: it
+    uses stroke="currentColor" and inherits the accent.
+
+    White on this green measures 9.3:1, the ratio globals.css records for --accent-ink.
 
     MASKABLE SAFE ZONE. The manifest declares purpose "any maskable", so a launcher may crop
     this to a circle or squircle: only the central 80% (a circle of diameter 153.6 centred at
@@ -13,7 +23,7 @@
     Geometry is the same path as app/components/Logo.tsx, scaled 5.6x and centred, so the tile
     and the in-app mark are the same drawing rather than two that drifted.
   -->
-  <rect width="192" height="192" fill="#0071E3"/>
+  <rect width="192" height="192" fill="#12513C"/>
   <g transform="translate(28 26) scale(5.6)"
      fill="none" stroke="#ffffff" stroke-width="2.1"
      stroke-linecap="round" stroke-linejoin="round">

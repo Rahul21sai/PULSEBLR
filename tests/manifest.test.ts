@@ -42,6 +42,13 @@ const manifest = JSON.parse(
   theme_color: string;
   background_color: string;
   icons: { src: string; sizes: string; type: string; purpose?: string }[];
+  screenshots: {
+    src: string;
+    sizes: string;
+    type: string;
+    form_factor: 'narrow' | 'wide';
+    label?: string;
+  }[];
   shortcuts: { url: string; icons?: { src: string; sizes: string; type?: string }[] }[];
   share_target?: unknown;
 };
@@ -62,11 +69,18 @@ function pngHeader(file: string) {
   };
 }
 
-/** Every `src` the manifest references, from both the icon list and the shortcut icons. */
+/** Every `src` the manifest references — icons, screenshots and shortcut icons alike. */
 function allReferencedSources(): string[] {
   const fromIcons = manifest.icons.map((i) => i.src);
+  const fromScreenshots = manifest.screenshots.map((s) => s.src);
   const fromShortcuts = manifest.shortcuts.flatMap((s) => (s.icons ?? []).map((i) => i.src));
-  return [...fromIcons, ...fromShortcuts];
+  return [...fromIcons, ...fromScreenshots, ...fromShortcuts];
+}
+
+/** `"1080x1920"` -> `{ w, h }`. */
+function parseSizes(sizes: string): { w: number; h: number } {
+  const [w, h] = sizes.split('x').map(Number);
+  return { w, h };
 }
 
 describe('manifest colours agree with the design system', () => {
@@ -90,6 +104,34 @@ describe('manifest colours agree with the design system', () => {
     // of the wrong ground colour on every cold start.
     expect(manifest.background_color.toUpperCase()).toBe(match![1].toUpperCase());
   });
+
+  it.each(['icon-192.svg', 'icon-512.svg'])(
+    '%s is filled with --accent, not a stale brand colour',
+    (file) => {
+      // THE THIRD COLOUR DRIFT IN THIS FEATURE, and the one no sweep could ever have found. Both
+      // tiles hardcoded #0071E3 and their own comment called it "the one brand colour the design
+      // system actually defines". That was true when they were written; globals.css now defines a
+      // single accent, #12513C, and --blue survives only as a migration alias labelled "not part
+      // of the palette". So the home-screen icon, the launcher icon and the Play feature graphic
+      // were all Apple-blue while every surface in the product was deep green.
+      //
+      // A hex inside an SVG is not a token, so nothing validated it: not the design-token probe
+      // (which reads computed CSS), not a `grep '#'` over app/ (this lives in public/), and not
+      // a reviewer, because the comment asserted the value was correct. app/components/Logo.tsx
+      // was never affected — it uses stroke="currentColor" and inherits the accent.
+      //
+      // The PNGs are generated FROM these files, so guarding the source guards all 16 outputs.
+      const css = readFileSync(path.join(ROOT, 'app', 'globals.css'), 'utf8');
+      const accent = css.match(/--accent:\s*(#[0-9A-Fa-f]{6})/);
+      expect(accent, 'could not find --accent in app/globals.css').toBeTruthy();
+
+      const svg = readFileSync(path.join(PUBLIC_DIR, file), 'utf8');
+      const fill = svg.match(/<rect[^>]*\bfill="(#[0-9A-Fa-f]{6})"/);
+      expect(fill, `could not find the ground <rect fill> in ${file}`).toBeTruthy();
+
+      expect(fill![1].toUpperCase()).toBe(accent![1].toUpperCase());
+    }
+  );
 });
 
 describe('manifest identity', () => {
@@ -158,6 +200,92 @@ describe('every referenced file exists at the declared size', () => {
         );
         expect(icon.type).toBe('image/png');
       }
+    }
+  });
+});
+
+describe('screenshot geometry', () => {
+  /**
+   * EVERY RULE HERE DEGRADES SILENTLY. Chrome does not warn when a screenshot set is invalid; it
+   * simply drops the richer install dialog and shows the plain one, so the feature looks like it
+   * was never built. The nastiest is the shared-aspect-ratio rule: a single 1080x1921 among
+   * 1080x1920s disqualifies the whole set, and no amount of looking at the images reveals it.
+   */
+  const narrow = manifest.screenshots.filter((s) => s.form_factor === 'narrow');
+  const wide = manifest.screenshots.filter((s) => s.form_factor === 'wide');
+
+  it('has at least one narrow screenshot, and Play’s minimum of two overall', () => {
+    expect(narrow.length).toBeGreaterThanOrEqual(1);
+    expect(manifest.screenshots.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('respects the platform display caps', () => {
+    // Android shows at most 5 narrow; desktop at most 8 wide. Extra entries are ignored, so an
+    // over-long list is dead weight that still has to be generated and served.
+    expect(narrow.length).toBeLessThanOrEqual(5);
+    expect(wide.length).toBeLessThanOrEqual(8);
+  });
+
+  it.each(manifest.screenshots.map((s) => [s.src, s.sizes] as const))(
+    '%s sides are within 320..3840 and the ratio is at most 2.3',
+    (_src, sizes) => {
+      const { w, h } = parseSizes(sizes);
+      for (const side of [w, h]) {
+        expect(side).toBeGreaterThanOrEqual(320);
+        expect(side).toBeLessThanOrEqual(3840);
+      }
+      const ratio = Math.max(w, h) / Math.min(w, h);
+      // 1080x1920 is 1.78, which also clears Play's stricter 2x listing rule.
+      expect(ratio).toBeLessThanOrEqual(2.3);
+    }
+  );
+
+  it('every narrow screenshot shares one aspect ratio', () => {
+    const ratios = new Set(
+      narrow.map((s) => {
+        const { w, h } = parseSizes(s.sizes);
+        return (w / h).toFixed(4);
+      })
+    );
+    expect(
+      [...ratios],
+      'mixed aspect ratios disqualify the whole set with no warning anywhere'
+    ).toHaveLength(1);
+  });
+
+  it('declares src, sizes and type on every entry', () => {
+    for (const shot of manifest.screenshots) {
+      expect(shot.src).toBeTruthy();
+      expect(shot.sizes).toMatch(/^\d+x\d+$/);
+      // Chrome drops an entry missing `type` rather than sniffing it.
+      expect(shot.type).toBe('image/png');
+      expect(['narrow', 'wide']).toContain(shot.form_factor);
+    }
+  });
+
+  it('declared sizes match the real pixels on disk', () => {
+    for (const shot of manifest.screenshots) {
+      const { width, height } = pngHeader(path.join(PUBLIC_DIR, shot.src.slice(1)));
+      const { w, h } = parseSizes(shot.sizes);
+      expect(`${shot.src} ${width}x${height}`).toBe(`${shot.src} ${w}x${h}`);
+    }
+  });
+
+  it('every screenshot is 24-bit with no alpha, so Play can take these files directly', () => {
+    // Play requires JPEG or 24-bit PNG with no alpha for listing screenshots. Chromium already
+    // emits exactly that here (omitBackground defaults to false and these pages paint an opaque
+    // ground), so there is deliberately no separate flattened copy — an earlier version wrote one
+    // to store-assets/screenshots/, which cost 1.4 MB of duplicates, satisfied no requirement the
+    // originals did not, and on the event page made the file 56% larger.
+    //
+    // THIS ASSERTION IS WHAT MAKES THAT SAFE. It pins the property on the files themselves, so if
+    // a future Chromium starts emitting an alpha channel this fails and the flatten step can come
+    // back then — rather than running forever against a requirement that was already met.
+    for (const shot of manifest.screenshots) {
+      const file = path.join(PUBLIC_DIR, shot.src.slice(1));
+      expect(pngHeader(file).colorType, `${shot.src} must be 24-bit with no alpha for Play`).toBe(
+        2
+      );
     }
   });
 });

@@ -56,6 +56,50 @@
       "purpose": "any maskable"
     }
   ],
+  "screenshots": [
+    {
+      "src": "/screenshots/feed.png",
+      "sizes": "1080x1920",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "Bengaluru tech events, ranked by who you'll meet"
+    },
+    {
+      "src": "/screenshots/feed-rows.png",
+      "sizes": "1080x1920",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "Every developer meetup, conference and hackathon in the city"
+    },
+    {
+      "src": "/screenshots/event.png",
+      "sizes": "1080x1920",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "One event: when, where, and why it is worth going"
+    },
+    {
+      "src": "/screenshots/calendar.png",
+      "sizes": "1080x1920",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "A month of events at a glance"
+    },
+    {
+      "src": "/screenshots/topics.png",
+      "sizes": "1080x1920",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "Browse by what you actually work on"
+    },
+    {
+      "src": "/screenshots/wide-feed.png",
+      "sizes": "1920x1080",
+      "type": "image/png",
+      "form_factor": "wide",
+      "label": "The feed on a desktop"
+    }
+  ],
   "categories": ["productivity", "lifestyle"],
   "shortcuts": [
     {

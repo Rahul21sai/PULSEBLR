@@ -90,7 +90,9 @@ const TRACE_SCALE = 1.0;
 /** Google Play listing feature graphic. Exactly 1024x500, and Play rejects any other size. */
 const FEATURE_GRAPHIC = { width: 1024, height: 500 };
 
-const BRAND_BLUE = '#0071E3';
+// The design system's single accent (globals.css --accent). Was #0071E3, which went stale
+// when the palette landed -- see the comment in public/icon-192.svg.
+const BRAND_GROUND = '#12513C';
 
 /**
  * Add an alpha channel to an opaque PNG, producing 32-bit RGBA. Not a visual change — every
@@ -162,7 +164,7 @@ function featureGraphicPage(source) {
   html,body{margin:0;padding:0}
   body{
     width:${FEATURE_GRAPHIC.width}px;height:${FEATURE_GRAPHIC.height}px;
-    background:${BRAND_BLUE};
+    background:${BRAND_GROUND};
     display:flex;align-items:center;justify-content:center;gap:38px;
     padding:0 64px;box-sizing:border-box;
     font-family:Inter,system-ui,-apple-system,'Segoe UI',sans-serif;

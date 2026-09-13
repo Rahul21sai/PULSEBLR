@@ -68,6 +68,7 @@ type Manifest = {
   theme_color: string;
   background_color: string;
   icons: ManifestIcon[];
+  screenshots?: ManifestIcon[];
   shortcuts?: { icons?: ManifestIcon[] }[];
 };
 
@@ -121,8 +122,13 @@ async function main(): Promise<void> {
 
     // ------------------------------------------------------------------ every icon resolves
     section('Declared assets resolve over HTTP');
+    // Screenshots belong in here too. They were omitted at first and the count gave it away:
+    // adding six manifest entries left the check total unchanged at 18. A missing screenshot is
+    // exactly the kind of thing this script exists for — Chrome silently drops the richer install
+    // dialog rather than reporting a broken URL.
     const declared = [
       ...manifest.icons.map((i) => i.src),
+      ...(manifest.screenshots ?? []).map((s) => s.src),
       ...(manifest.shortcuts ?? []).flatMap((s) => (s.icons ?? []).map((i) => i.src)),
     ];
     for (const src of [...new Set(declared)]) {

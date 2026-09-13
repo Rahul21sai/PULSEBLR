@@ -3,11 +3,13 @@
     PulseBLR app tile, 512. Same drawing as icon-192.svg and app/components/Logo.tsx, scaled
     14.93x so the two tiles are identical at different resolutions rather than redrawn.
 
+    Ground is --accent #12513C. See icon-192.svg for why it is no longer Apple-blue.
+
     MASKABLE SAFE ZONE: the manifest declares purpose "any maskable", so only the central 80%
     (a circle of diameter 409.6 centred at 256,256) is guaranteed visible. The trace spans 309px,
     ~75% of that circle. Full-bleed fill so any crop shape still yields a solid blue tile.
   -->
-  <rect width="512" height="512" fill="#0071E3"/>
+  <rect width="512" height="512" fill="#12513C"/>
   <g transform="translate(74.6 70) scale(14.93)"
      fill="none" stroke="#ffffff" stroke-width="2.1"
      stroke-linecap="round" stroke-linejoin="round">
