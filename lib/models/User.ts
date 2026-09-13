@@ -40,12 +40,62 @@ export interface IUserCard {
   token: string;
 }
 
+/**
+ * The subscription calendar feed: one stable secret URL holding every event this user has saved,
+ * so Google / Apple / Outlook can subscribe once and stay in sync.
+ *
+ * ── WHY THE TOKEN IS STORED IN PLAINTEXT, WHEN `McpToken` HASHES ITS OWN ─────────────────────
+ * `lib/models/McpToken.ts` stores a SHA-256 of its bearer token and can therefore never show it
+ * again. That is right for a credential a human pastes into a config file once. It is wrong here,
+ * for two independent reasons, either of which alone settles it:
+ *
+ *   1. A CALENDAR CLIENT POLLS UNAUTHENTICATED, REPEATEDLY, FOREVER. Google's "From URL" field
+ *      has nowhere to put a header, so the secret has to be IN the URL — and the server must be
+ *      able to resolve that URL back to a user on every poll, which a one-way hash of a
+ *      43-character random string cannot do cheaply or at all.
+ *   2. THE USER HAS TO BE ABLE TO COPY IT AGAIN. Subscribing a second device (phone after laptop)
+ *      means returning to Settings and reading the same URL. A hashed token makes "show me my
+ *      link" impossible, so every extra device would need a rotation — which breaks the device
+ *      already subscribed. The feature would fight itself.
+ *
+ * So this follows the `card.token` precedent (see `IUserCard`), which is the same shape of
+ * problem: a secret in a URL that a stranger's device fetches with no session.
+ *
+ * ── HARDENED BEYOND THE CARD TOKEN, IN TWO WAYS ──────────────────────────────────────────────
+ *   · 32 bytes of CSPRNG rather than 16. The card token guards a page whose contents its owner
+ *     chose to publish; this one guards their whole saved-events list, including private
+ *     hand-entered events with venue and notes. 256 bits is not meaningfully more expensive and
+ *     the two are not the same kind of secret.
+ *   · `enabled` DEFAULTS TO FALSE. A leaked token is therefore not sufficient on its own, and —
+ *     the part that matters more — the user gets a kill switch that is NOT a rotation. Rotating
+ *     to stop a leak also silently breaks every calendar the user legitimately subscribed, and
+ *     they find out by noticing events stopped appearing. Switching off is reversible and
+ *     obvious.
+ *
+ * `lastPolledAt` is the one piece of feedback that tells a user the subscription is actually
+ * working, which is otherwise unknowable: calendar clients poll on their own schedule and report
+ * nothing. It is written by the public feed route, COALESCED (see that route) so a hammered token
+ * cannot turn a read endpoint into one write per request.
+ */
+export interface IUserCalendarFeed {
+  /** What appears in the subscription URL. Never the user id — see the note above and `IUserCard`. */
+  token: string;
+  /** Off means the feed 404s even with a valid token. Defaults to false; a kill switch, not a rotation. */
+  enabled: boolean;
+  /** When the current token was minted. Resets on rotation, which is the point. */
+  createdAt?: Date;
+  /** Last time any calendar client fetched the feed. Written coalesced by the public route. */
+  lastPolledAt?: Date;
+}
+
 export interface IUser extends Document {
   name: string;
   email: string;
   image?: string;
   googleId: string;
   card?: IUserCard;
+  /** The subscription calendar feed. See `IUserCalendarFeed` for why the token is not hashed. */
+  calendarFeed?: IUserCalendarFeed;
   /**
    * Companies whose people are worth flagging in the contacts table.
    *
@@ -135,6 +185,24 @@ const UserCardSchema = new Schema<IUserCard>(
 );
 
 /**
+ * `_id: false` like `UserCardSchema`: one embedded object per user, never queried on its own.
+ *
+ * `enabled` defaults to FALSE, and that default is the kill switch described in
+ * `IUserCalendarFeed` — not a formality. `createdAt` has no `default: Date.now` because the token
+ * and its birthday are minted together in one place (`newCalendarFeedToken()`'s two call sites),
+ * and a schema default here would silently stamp a creation date on a rotation that forgot to.
+ */
+const UserCalendarFeedSchema = new Schema<IUserCalendarFeed>(
+  {
+    token: { type: String, required: true },
+    enabled: { type: Boolean, default: false },
+    createdAt: { type: Date },
+    lastPolledAt: { type: Date },
+  },
+  { _id: false }
+);
+
+/**
  * `_id: false` like `UserCardSchema` — it is one embedded object per user, never queried on its
  * own, so an id would be noise in every document.
  *
@@ -168,6 +236,17 @@ const UserSchema = new Schema<IUser>(
     image: { type: String, trim: true },
     googleId: { type: String, required: true, unique: true, index: true },
     card: { type: UserCardSchema },
+    /**
+     * ⚠ SAME STALE-SCHEMA TRAP AS `preferences` BELOW, AND IT BIT DURING THIS WORK.
+     *
+     * `User` is an EXISTING model behind the `mongoose.models.X || mongoose.model(...)` hot-reload
+     * guard, so a dev server that has already touched it keeps the OLD schema for its whole life
+     * and silently drops writes to `calendarFeed` — no error, the in-memory document even reports
+     * the value, and only the database disagrees. RESTART `npm run dev` after pulling this.
+     * Persistence for this field was verified from a fresh `tsx` process
+     * (`scripts/diag-calendar-feed.ts`), never from a running dev server, for exactly that reason.
+     */
+    calendarFeed: { type: UserCalendarFeedSchema },
     targetCompanies: { type: [String], default: () => [...DEFAULT_TARGET_COMPANIES] },
     /**
      * The user's own tag vocabulary for people they have met.
@@ -212,6 +291,19 @@ const UserSchema = new Schema<IUser>(
 UserSchema.index({ 'card.token': 1 }, { unique: true, sparse: true });
 
 /**
+ * Resolving the calendar feed token, which happens on every poll from every subscribed device.
+ *
+ * SPARSE IS CORRECT HERE, AND THIS IS THE ONE SHAPE WHERE IT IS. CLAUDE.md §9 records `sparse` on
+ * a COMPOUND unique index capping every user at one folder, because on a compound key `sparse`
+ * omits a document only when EVERY indexed field is missing — so an always-present field like
+ * `userId` gets every row indexed with `null` standing in for the one meant to be skipped, and
+ * `unique` then permits exactly one such row. This index is SINGLE-FIELD, so `sparse` does what
+ * it says: a user with no `calendarFeed` is simply not in the index. Same shape, same reasoning
+ * and same options as `card.token` directly above.
+ */
+UserSchema.index({ 'calendarFeed.token': 1 }, { unique: true, sparse: true });
+
+/**
  * Seed list for a new user's `targetCompanies`.
  *
  * Spread on assignment (`[...DEFAULT_TARGET_COMPANIES]`) so no document ever shares this
@@ -242,6 +334,18 @@ export const DEFAULT_TARGET_COMPANIES = [
  */
 export function newCardToken(): string {
   return crypto.randomBytes(16).toString('base64url');
+}
+
+/**
+ * A URL-safe token for the calendar subscription feed. 32 bytes → 43 base64url characters.
+ *
+ * TWICE THE ENTROPY OF `newCardToken()`, deliberately. A card publishes what its owner chose to
+ * publish; this URL exposes their entire saved-events list, private hand-entered events included.
+ * The extra 16 bytes cost nothing and the two are not the same kind of secret — see
+ * `IUserCalendarFeed`.
+ */
+export function newCalendarFeedToken(): string {
+  return crypto.randomBytes(32).toString('base64url');
 }
 
 const User: Model<IUser> =

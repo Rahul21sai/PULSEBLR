@@ -5,6 +5,8 @@ import { useEffect, useState } from 'react';
 import { useSession, signOut } from 'next-auth/react';
 import { DesktopNav, MobileBottomNav } from '../components/NavBar';
 import MyCardSection from './MyCardSection';
+import CalendarFeedSection from './CalendarFeedSection';
+import PushSection from './PushSection';
 
 /**
  * /settings — the USER's surface: their account, their digest, what the app is.
@@ -18,16 +20,41 @@ import MyCardSection from './MyCardSection';
  * What is left is genuinely per-user, so there is nothing here to hide.
  */
 /**
- * Wipe the service worker's caches, then sign out.
+ * Release this device's push subscription and wipe the service worker's caches, then sign out.
  *
  * Sign-out is the only moment the app knows the identity behind an origin-wide cache is about
  * to change. `sw.js` v3 already refuses to cache private API responses, but cached NAVIGATIONS
  * can carry server-rendered private markup, and a device shared between two Google accounts is
  * exactly the case that made this a real leak rather than a theoretical one.
  *
+ * THE PUSH SUBSCRIPTION IS THE SAME PROBLEM WITH A LOUDER FAILURE, and it is why this function
+ * grew a second job. A push endpoint identifies a BROWSER PROFILE, not an account — which is why
+ * `PushSubscription`'s unique index is on `endpoint` alone. So when a shared phone changes hands,
+ * the row still points at the previous account until the new one happens to open Settings, and
+ * until then that account's saved-event reminders keep arriving on somebody else's lock screen.
+ * A cache leak needs the other person to go looking; this one walks up and taps them on the
+ * shoulder.
+ *
+ * Order matters: release the subscription while the session cookie is still valid, because
+ * `DELETE /api/me/push` is behind `requireUser()` and answers 401 the moment it is gone.
+ *
  * Bounded by a short timeout so a wedged worker can never trap somebody signed in.
  */
 async function signOutAfterPurgingCaches() {
+  try {
+    // Best-effort and deliberately not awaited into the failure path: if this 401s, times out or
+    // the user is offline, the row is repaired by the self-heal on next sign-in. Losing a
+    // notification is the acceptable failure; blocking sign-out is not.
+    await fetch('/api/me/push?all=true', { method: 'DELETE', cache: 'no-store' }).catch(() => {});
+    // Drop the browser-side subscription too, so the next account starts clean rather than
+    // re-POSTing an endpoint the server has just forgotten.
+    const reg = await navigator.serviceWorker?.getRegistration();
+    const existing = await reg?.pushManager?.getSubscription();
+    await existing?.unsubscribe().catch(() => {});
+  } catch {
+    // Never block sign-out on cleanup.
+  }
+
   try {
     const registration = await navigator.serviceWorker?.getRegistration();
     if (registration?.active) {
@@ -204,6 +231,13 @@ export default function SettingsPage() {
           {/* ── My card ─────────────────────────────────────────────────── */}
           {session?.user && <MyCardSection />}
 
+          {/* ── Calendar subscription ───────────────────────────────────────
+              Placed here rather than beside the digest on purpose: this is a
+              one-time setup that hands the user a URL, closer in kind to their
+              card than to a recurring message. The digest and push sections
+              below are the two things that actually arrive. */}
+          {session?.user && <CalendarFeedSection />}
+
           {/* ── Assistant access (MCP tokens) ───────────────────────────── */}
           {session?.user && <McpTokensSection />}
 
@@ -305,6 +339,16 @@ export default function SettingsPage() {
               )}
             </div>
           </section>
+
+          {/* ── Push notifications ──────────────────────────────────────────
+              Directly after the digest because they are the same question asked
+              twice — how should we reach you — and a reader deciding about one is
+              deciding about the other. They are NOT one setting: the digest is
+              gated on `preferences.remindersEnabled`, while for push the existence
+              of a PushSubscription row IS the consent, since it took a click and an
+              OS permission grant. Turning off email must not silence push, and
+              vice versa. */}
+          {session?.user && <PushSection />}
 
           {/* ── About ───────────────────────────────────────────────────── */}
           <section className="rounded-[var(--r-flat)] border border-[var(--rule)] p-5">

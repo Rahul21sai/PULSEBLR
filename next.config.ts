@@ -59,6 +59,40 @@ const nextConfig: NextConfig = {
    */
   typescript: { ignoreBuildErrors: Boolean(process.env.PULSEBLR_DIST_DIR) },
 
+  /**
+   * `/sw.js` MUST NOT BE CACHED BY THE BROWSER'S HTTP CACHE.
+   *
+   * This is the one file whose staleness is unrecoverable by shipping a fix. Every other
+   * asset is either content-hashed or reachable through a fresh document; the service
+   * worker is fetched by the browser on its own schedule, and if that fetch is answered
+   * from the HTTP cache the OLD worker keeps running — including the old worker's caching
+   * rules. A worker version that leaks or serves stale content therefore cannot be
+   * withdrawn: the fix is sitting on the server and the browser never asks for it.
+   *
+   * Browsers do bypass the HTTP cache for a worker script that is more than 24 hours old,
+   * and since Chrome 68 the update check bypasses it for the top-level script by default —
+   * but that is the platform's floor, not a guarantee to build on, and 24 hours is a long
+   * time to be leaking. An intermediary or CDN that decided to cache this file on its own
+   * is not covered by either rule. Saying `no-store` outright removes the question.
+   *
+   * `public/sw.js` is served as a static file, and headers() is the only place its response
+   * headers can be set — a static file has no route handler to set them in.
+   *
+   * The rest of this config is deliberately untouched: `distDir`, `typescript
+   * .ignoreBuildErrors` and `images.remotePatterns` each carry their own long
+   * justification above and below.
+   */
+  async headers() {
+    return [
+      {
+        source: '/sw.js',
+        headers: [
+          { key: 'Cache-Control', value: 'no-cache, no-store, must-revalidate' },
+        ],
+      },
+    ];
+  },
+
   images: {
     remotePatterns: [
       {

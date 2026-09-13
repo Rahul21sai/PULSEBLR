@@ -17,6 +17,30 @@
  * The double-send guard is deliberately NOT here: it is a unique index on `ReminderLog`
  * (`lib/models/ReminderLog.ts`). A rule enforced by a remembered check is a rule that fails the
  * first time two runs overlap.
+ *
+ * ── WEB PUSH SHARES THIS FILE, AND ITS CONSENT RULE IS THE OPPOSITE ONE. ─────────────────────
+ *
+ * `remindersEnabled()` above governs EMAIL ONLY. It must never gate a push, and the reason is not
+ * squeamishness about reusing a flag — it is that the flag answers a different question and gets
+ * BOTH directions wrong here:
+ *
+ *   · The schema default for `preferences.remindersEnabled` is **true**, which is exactly why
+ *     `remindersEnabled()` needs the second `onboardedAt` clause. Reuse it for push and a user who
+ *     completed onboarding but never granted a notification permission would be "opted in" to a
+ *     channel they were never asked about — except no push could be sent anyway, because there is
+ *     no subscription. So the flag is not sufficient.
+ *   · Read it the other way and it is harmful: somebody who taps "Stop these reminders" in an
+ *     EMAIL, and separately went to Settings, tapped a button and granted an OS-level permission,
+ *     would have their notifications silently killed by an unsubscribe from a different channel.
+ *     One opt-out must not turn off a channel it never mentioned.
+ *
+ * FOR PUSH, CONSENT *IS* THE EXISTENCE OF A `PushSubscription` ROW. It cannot exist without a
+ * click in the app and an explicit OS permission grant, and it disappears the moment either is
+ * revoked — which makes it stronger evidence than any boolean this app could store, and
+ * self-revoking in a way a boolean is not. The send path therefore derives its recipient list FROM
+ * that collection (`PushSubscription.distinct('userId')`) rather than from `User`, so "who may be
+ * pushed to" is structural rather than a check somebody has to remember. `tests/push-policy.test.ts`
+ * asserts that `lib/notifications/push.ts` does not so much as mention `remindersEnabled`.
  */
 import crypto from 'crypto';
 import { dayHeading, dayKeyIST, locationLabel, timeIST } from '../format';
@@ -30,6 +54,23 @@ import { escapeHtml } from './html';
  * gets its own at-most-once guarantee rather than colliding with this one.
  */
 export const REMINDER_KIND = 'event-reminder';
+
+/**
+ * The `kind` for the WEB PUSH channel — the second kind this collection has ever held, and the
+ * one the header of `lib/models/ReminderLog.ts` was written in anticipation of.
+ *
+ * A SEPARATE KIND IS NOT COSMETIC. The unique index is `{ userId, eventId, kind }`, so sharing
+ * `REMINDER_KIND` would mean the email row already claimed for an event silently suppresses the
+ * push for it — the reader gets whichever channel happened to run first that morning and no log
+ * line says the other was skipped. Two kinds, two at-most-once guarantees.
+ *
+ * IT ALSO HAS TO BE IN EVERY *QUERY*, not just the index. The frequency cap in `reminders.ts`
+ * counts `distinct('batchId')` for a user's rows since IST midnight, and that filter was missing
+ * `kind` — so with two kinds in the collection each channel was spending the other's daily
+ * allowance. Fixed there; see the comment at that query, which is the one place this is easy to
+ * get wrong again.
+ */
+export const PUSH_REMINDER_KIND = 'event-reminder-push';
 
 /**
  * How far ahead a saved event earns a reminder.
@@ -454,4 +495,270 @@ ${cards}
 </html>`;
 
   return { subject, html, text };
+}
+
+/* ── WEB PUSH: the rules, as pure functions ─────────────────────────────────── */
+
+/**
+ * Notifications per user per IST day.
+ *
+ * THREE, WHERE EMAIL GETS TWO, and the asymmetry is deliberate rather than generous. A push is
+ * about ONE event (see `formatPushPayload` on `tag`), so the number a recipient would count if they
+ * were annoyed is the number of EVENTS, not the number of runs — where an email covering three
+ * events is still one thing in an inbox. So push's two caps collapse into a single budget, and the
+ * number has to be the one that reads as "a few reminders", not "a few digests".
+ */
+export const DEFAULT_MAX_PUSHES_PER_DAY = 3;
+
+/**
+ * Notifications one run may fire.
+ *
+ * Never larger than the daily allowance would permit — see `pushEventsThisRun`, which is what
+ * actually enforces it. This exists so an operator running the script by hand at 3 pm cannot empty
+ * the whole day's budget in one go on a busy week.
+ */
+export const DEFAULT_MAX_EVENTS_PER_PUSH_RUN = 2;
+
+/**
+ * How many notifications this run may send, given what has already gone out today.
+ *
+ * WHY THIS IS A FUNCTION AND NOT A CLAMP AT THE CALL SITE. `applyReminderCaps` treats its two
+ * limits as protecting different things — the inbox, and the message — which is right for email
+ * and wrong for push, where one notification is one event and the two limits are the SAME budget.
+ * Passing `maxEventsPerEmail` unclamped would let a single run of 3 fire past a daily cap of 3 that
+ * already had 2 spent, and the overshoot would be invisible: the cap query reports the day's total
+ * only on the NEXT run. So the arithmetic is named, exported and pinned by a test rather than
+ * remembered as a `Math.min` in the sender.
+ *
+ * Returns 0 when the day is spent, which `applyReminderCaps` then reports as `daily-cap`.
+ */
+export function pushEventsThisRun(input: {
+  pushesSentToday: number;
+  maxPushesPerDay?: number;
+  maxEventsPerRun?: number;
+}): number {
+  const {
+    pushesSentToday,
+    maxPushesPerDay = DEFAULT_MAX_PUSHES_PER_DAY,
+    maxEventsPerRun = DEFAULT_MAX_EVENTS_PER_PUSH_RUN,
+  } = input;
+  const remaining = maxPushesPerDay - Math.max(0, pushesSentToday);
+  return Math.max(0, Math.min(maxEventsPerRun, remaining));
+}
+
+/* ── The subscription a browser hands us ───────────────────────────────────── */
+
+/** One problem with a submitted subscription, named by field. Never echoes the value back. */
+export interface PushSubscriptionIssue {
+  field: string;
+  message: string;
+}
+
+/** The stored shape. Flat, because `p256dh` and `auth` are what `web-push` wants as strings. */
+export interface PushSubscriptionInput {
+  endpoint: string;
+  p256dh: string;
+  auth: string;
+  userAgent?: string;
+}
+
+/**
+ * An endpoint longer than this is not a push service, and a unique index on it is not something to
+ * hand an unbounded string. Real ones measure ~180 chars (FCM) to ~230 (Mozilla).
+ */
+const MAX_ENDPOINT_CHARS = 1000;
+
+/** An uncompressed P-256 public point. Exactly 65 bytes, always — 0x04 plus two 32-byte coords. */
+const P256DH_BYTES = 65;
+
+/** The auth secret from the Web Push spec. Exactly 16 bytes, always. */
+const AUTH_SECRET_BYTES = 16;
+
+/** base64 or base64url, padded or not. Browsers are not consistent about which they emit. */
+const BASE64ISH = /^[A-Za-z0-9+/_-]+={0,2}$/;
+
+function decodedByteLength(value: string): number | null {
+  if (!BASE64ISH.test(value)) return null;
+  // Node's base64 decoder accepts the URL-safe alphabet, so one call covers both. It is LENIENT
+  // about junk, which is why the regex above runs first — otherwise a string of the right length
+  // full of invalid characters would decode to the right byte count and pass.
+  return Buffer.from(value, 'base64').length;
+}
+
+/** Bracketed IPv6, or four dotted decimal octets. Either means somebody is not naming a service. */
+function isIpLiteral(hostname: string): boolean {
+  if (hostname.startsWith('[')) return true;
+  return /^\d{1,3}(\.\d{1,3}){3}$/.test(hostname);
+}
+
+/**
+ * Validate a subscription submitted by a browser, BEFORE it reaches the database.
+ *
+ * ── THIS IS HALF OF AN SSRF GUARD, AND SAYING SO IS THE POINT. ────────────────────────────────
+ * `endpoint` is a URL supplied by the caller which the server will later POST to, from a cron
+ * runner, without a user watching. That is the same shape as `POST /api/scrape-url`, which was a
+ * general-purpose in-network proxy until `lib/security/safe-fetch.ts` was written — and unlike that
+ * route, the fetch here happens hours later and through `web-push`'s own `https.request`, so
+ * `safeFetch` cannot wrap it.
+ *
+ * What is enforceable purely, at write time, is the structural half: https only, no embedded
+ * credentials, a real dotted hostname rather than an IP literal or `localhost`. That already
+ * removes every literal metadata / loopback / private-range address. The remaining vector — a
+ * public hostname that RESOLVES to 169.254.169.254 — needs DNS, so it is checked in the send path
+ * with `assertSafeUrl()`; see the note there, including the TOCTOU limit it inherits.
+ *
+ * ── THE KEY LENGTHS ARE CHECKED BECAUSE THE FAILURE OTHERWISE LANDS HOURS LATER. ──────────────
+ * `web-push` throws while deriving the aes128gcm content encryption key if `p256dh` is not a valid
+ * 65-byte point, and that throw happens inside the cron run, per event, long after the request that
+ * stored the bad row. Refusing it at the door turns a 3 AM stack trace into a 400 the client can
+ * report. Both lengths are fixed by the spec, so this is a hard check rather than a heuristic.
+ *
+ * ── TWO BODY SHAPES ARE ACCEPTED. ────────────────────────────────────────────────────────────
+ * `PushSubscription.toJSON()` in the browser produces `{ endpoint, keys: { p256dh, auth } }`, so
+ * that is the canonical shape; a flat `{ endpoint, p256dh, auth }` is accepted too, because a
+ * caller that has already destructured is not making a mistake worth a 400.
+ */
+export function validatePushSubscriptionInput(
+  body: unknown
+): { subscription: PushSubscriptionInput; issues: [] } | { subscription: null; issues: PushSubscriptionIssue[] } {
+  const issues: PushSubscriptionIssue[] = [];
+  const fail = () => ({ subscription: null, issues });
+
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    issues.push({ field: 'body', message: 'Expected a JSON object.' });
+    return fail();
+  }
+
+  const raw = body as Record<string, unknown>;
+  const keys = (raw.keys && typeof raw.keys === 'object' ? raw.keys : {}) as Record<string, unknown>;
+
+  const endpoint = typeof raw.endpoint === 'string' ? raw.endpoint.trim() : '';
+  const p256dh = typeof keys.p256dh === 'string' ? keys.p256dh.trim() : typeof raw.p256dh === 'string' ? raw.p256dh.trim() : '';
+  const auth = typeof keys.auth === 'string' ? keys.auth.trim() : typeof raw.auth === 'string' ? raw.auth.trim() : '';
+
+  /* ── endpoint ── */
+  if (!endpoint) {
+    issues.push({ field: 'endpoint', message: 'A push endpoint is required.' });
+  } else if (endpoint.length > MAX_ENDPOINT_CHARS) {
+    issues.push({ field: 'endpoint', message: `A push endpoint may be at most ${MAX_ENDPOINT_CHARS} characters.` });
+  } else {
+    let url: URL | null = null;
+    try {
+      url = new URL(endpoint);
+    } catch {
+      issues.push({ field: 'endpoint', message: 'Not a valid absolute URL.' });
+    }
+    if (url) {
+      if (url.protocol !== 'https:') {
+        issues.push({ field: 'endpoint', message: 'A push endpoint must be https.' });
+      }
+      if (url.username || url.password) {
+        issues.push({ field: 'endpoint', message: 'A push endpoint must not contain credentials.' });
+      }
+      const host = url.hostname.toLowerCase();
+      if (isIpLiteral(host) || !host.includes('.') || host === 'localhost') {
+        issues.push({ field: 'endpoint', message: 'A push endpoint must name a public host.' });
+      }
+    }
+  }
+
+  /* ── keys ── */
+  if (!p256dh) {
+    issues.push({ field: 'keys.p256dh', message: 'The p256dh key is required.' });
+  } else if (decodedByteLength(p256dh) !== P256DH_BYTES) {
+    issues.push({
+      field: 'keys.p256dh',
+      message: `The p256dh key must be base64 of exactly ${P256DH_BYTES} bytes.`,
+    });
+  }
+
+  if (!auth) {
+    issues.push({ field: 'keys.auth', message: 'The auth secret is required.' });
+  } else if (decodedByteLength(auth) !== AUTH_SECRET_BYTES) {
+    issues.push({
+      field: 'keys.auth',
+      message: `The auth secret must be base64 of exactly ${AUTH_SECRET_BYTES} bytes.`,
+    });
+  }
+
+  if (issues.length > 0) return fail();
+
+  const userAgent = typeof raw.userAgent === 'string' ? raw.userAgent.trim().slice(0, 300) : undefined;
+  return { subscription: { endpoint, p256dh, auth, userAgent: userAgent || undefined }, issues: [] };
+}
+
+/* ── The notification itself ───────────────────────────────────────────────── */
+
+/**
+ * The payload put on the wire, and therefore the CONTRACT WITH `public/sw.js`.
+ *
+ * FOUR FIELDS, AND THE WORKER READS ALL FOUR — verified against the file rather than assumed. Its
+ * `push` listener takes `title`, `body` and `url`, and sets `tag` only when a non-empty string
+ * arrives (an empty tag is not the same as no tag, and it makes `renotify` a TypeError). Every value
+ * here is a flat primitive because that handler's `event.data.json()` can only degrade to treating
+ * the raw text as a body: a nested shape it does not expect would show the user a notification with
+ * no title and no destination rather than an error anybody could see.
+ *
+ * Do not add a field here expecting it to render. The worker ignores what it does not read, silently,
+ * and there is no channel back — a payload field with no handler is the "vocabulary value with no
+ * keyword pattern" problem moved onto the wire.
+ */
+export interface PushPayload {
+  title: string;
+  body: string;
+  /**
+   * A PATH, not an absolute URL. `clients.openWindow()` resolves it against the service worker's
+   * own origin, so the notification cannot be made to open somewhere else, and it does not depend
+   * on `NEXTAUTH_URL` being correct on whichever machine happened to run the cron.
+   */
+  url: string;
+  /** Per EVENT, so a re-send replaces the previous notification instead of stacking beside it. */
+  tag: string;
+}
+
+/**
+ * The push services enforce a payload ceiling — 4096 bytes is the figure FCM and Mozilla both
+ * publish — and aes128gcm adds ~103 bytes of header and tag on top of the plaintext. Over the
+ * limit the service answers **413**, which is a defect in this payload and not a dead subscription,
+ * so the send path reports it separately rather than pruning the row.
+ *
+ * 3000 leaves a very wide margin on purpose: the only unbounded inputs here are a scraped title
+ * and a scraped venue string, and the two caps below already bound them far below this. This is the
+ * backstop that makes "a pathological title cannot break the send" a fact rather than a hope.
+ */
+export const PUSH_PAYLOAD_MAX_BYTES = 3000;
+
+/** Android collapses a notification title at ~40 chars; this is a payload bound, not a design one. */
+const PUSH_TITLE_MAX_CHARS = 120;
+const PUSH_BODY_MAX_CHARS = 160;
+
+function clamp(value: string, max: number): string {
+  const text = value.trim();
+  if (text.length <= max) return text;
+  return `${text.slice(0, max - 1).trimEnd()}…`;
+}
+
+/**
+ * One event → one notification.
+ *
+ * The body is built from the SAME `whenLabel` / `whereLabel` helpers the reminder email uses, so a
+ * notification and the email about the same event cannot disagree about which day it is on — which
+ * is the whole reason `lib/format.ts` is pinned to Asia/Kolkata. Two formatters would drift, and
+ * the symptom is a notification saying "Tomorrow" about something the app lists as today.
+ */
+export function formatPushPayload(event: ReminderEventView, now: Date = new Date()): PushPayload {
+  const payload: PushPayload = {
+    title: clamp(event.title || 'A saved event', PUSH_TITLE_MAX_CHARS),
+    body: clamp(`${whenLabel(event.startDateTime, now)} · ${whereLabel(event)}`, PUSH_BODY_MAX_CHARS),
+    url: `/events/${event.id}`,
+    tag: `pblr-event-${event.id}`,
+  };
+
+  // Defensive, and it must not throw: dropping the body still delivers a usable notification (the
+  // title names the event and the tap still opens it), whereas a 413 delivers nothing.
+  if (Buffer.byteLength(JSON.stringify(payload), 'utf8') > PUSH_PAYLOAD_MAX_BYTES) {
+    payload.body = '';
+    payload.title = clamp(payload.title, 60);
+  }
+  return payload;
 }

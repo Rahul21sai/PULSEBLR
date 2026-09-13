@@ -4,6 +4,7 @@ import connectDB from '@/lib/mongodb';
 import Event from '@/lib/models/Event';
 import { getCurrentUserId } from '@/lib/auth-helpers';
 import { canViewEvent } from '@/lib/events/visibility';
+import { escapeIcsText, foldLine, toIcsUtc } from '@/lib/calendar/ics';
 
 /**
  * GET /api/events/[id]/ics — download the event as a calendar file.
@@ -23,37 +24,21 @@ import { canViewEvent } from '@/lib/events/visibility';
  * route's `public, max-age=3600`, since that is a shared calendar and this is one person's private
  * list". A private event makes THIS route the second instance of the same mistake, which is why the
  * header is decided per-event rather than being a constant.
+ *
+ * ── `escapeIcsText`, `toIcsUtc` AND `foldLine` NOW LIVE IN `lib/calendar/ics.ts`. ─────────────
+ * They were defined inline here until the subscription feed needed all three, and a second copy of
+ * a line-folding function is the duplication this repo has already paid for twice (the
+ * `WorthGoing` panel's copy of `FUNNEL_PATTERN` fell behind the original). They were moved
+ * VERBATIM, and `foldLine` was then FIXED there — it folded on UTF-16 code units rather than
+ * octets, so an em-dash title produced a 91-octet line and a fold could split a surrogate pair
+ * into two lone halves that become U+FFFD on the wire. Both were live in this route, since event
+ * titles are scraped from third-party pages. See that module's header for the measurements.
+ *
+ * `METHOD:PUBLISH` below STAYS. It marks the body as an iTIP message (RFC 5546), which is exactly
+ * right for a one-shot download — and exactly wrong for the feed, where Outlook then offers to
+ * import once rather than treating the URL as a living calendar. The feed omits it deliberately.
+ * The `UID` shape is shared, so a user who both subscribes and downloads gets a merge.
  */
-
-/** RFC 5545 requires escaping these characters inside TEXT values. */
-function escapeIcsText(value: string): string {
-  return value
-    .replace(/\\/g, '\\\\')
-    .replace(/;/g, '\\;')
-    .replace(/,/g, '\\,')
-    .replace(/\r?\n/g, '\\n');
-}
-
-/** UTC timestamp in the basic format ICS expects: 20260822T103000Z */
-function toIcsUtc(date: Date): string {
-  return `${date.toISOString().replace(/[-:]/g, '').split('.')[0]}Z`;
-}
-
-/**
- * Fold lines at 75 octets as the spec requires. Long descriptions otherwise
- * produce single multi-kilobyte lines that some clients (notably Outlook) reject.
- */
-function foldLine(line: string): string {
-  if (line.length <= 75) return line;
-  const parts: string[] = [line.slice(0, 75)];
-  let rest = line.slice(75);
-  while (rest.length > 74) {
-    parts.push(` ${rest.slice(0, 74)}`);
-    rest = rest.slice(74);
-  }
-  if (rest) parts.push(` ${rest}`);
-  return parts.join('\r\n');
-}
 
 export async function GET(
   request: NextRequest,

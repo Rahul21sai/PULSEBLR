@@ -318,9 +318,24 @@ export async function sendEventReminders(
      * The frequency cap counts EMAILS, not rows, which is why every row carries a `batchId`.
      * Counting rows would over-count by however many events happened to be due together, and the
      * cap would fire on the first morning somebody had a busy week.
+     *
+     * `kind` IS IN THIS FILTER AND MUST STAY. It was missing, and the omission was invisible for
+     * exactly as long as this was the only kind of reminder in the collection. The lookup nine
+     * lines above scopes by `kind: REMINDER_KIND`; this count did not — so the moment web push
+     * began writing `ReminderLog` rows under `PUSH_REMINDER_KIND`, every push consumed one of
+     * this user's two daily EMAIL slots and every email consumed one of their push slots. Two
+     * channels, one budget, silently: `DEFAULT_MAX_EMAILS_PER_DAY` is 2, so one morning's push
+     * run would have taken the email cap to 2 and the email path would have reported `daily-cap`
+     * with nothing in the inbox and nothing in the log to explain it.
+     *
+     * `ReminderLog`'s own header says `kind` is in the unique key so "a second sort of reminder
+     * added later gets its own at-most-once guarantee instead of being silently suppressed by
+     * this one". The same argument applies to the frequency cap, and the index alone does not
+     * enforce it — a `distinct` has to ask.
      */
     const batchIds = await ReminderLog.distinct('batchId', {
       userId,
+      kind: REMINDER_KIND,
       sentAt: { $gte: istDayStart(now) },
     });
     perUser.emailsSentToday = batchIds.length;

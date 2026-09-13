@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#FAF9F5" />
+    <title>Offline · PulseBLR</title>
+
+    <!--
+      THE OFFLINE FALLBACK DOCUMENT. Precached by public/sw.js and served for exactly
+      one case: a navigation whose network fetch FAILED and for which no real document
+      is cached. It can never win over genuine content.
+
+      WHY THIS DOES NOT REINTRODUCE THE v1 BUG. v1 precached "/" and served it
+      cache-first, so browsers were pinned to a stale shell whose content-hashed JS
+      chunks had been deleted by the next deploy — an infinite spinner. This file is
+      immune STRUCTURALLY, not by good intentions: it references no chunks, no
+      scripts, no external stylesheet and no webfont. There is no version of it that
+      can go stale in a way that breaks, because there is nothing for it to be out of
+      step with. Precaching the Next route `/offline` instead WOULD be the v1 bug
+      exactly, since that route's HTML names hashed chunks a static file cannot know.
+
+      ZERO JAVASCRIPT, deliberately. A retry button would need a script, and the
+      cheapest correct retry already exists in every browser: the reload control. A
+      script here would also be the one piece of code in the app that runs when the
+      service worker's assumptions have already failed.
+
+      COLOURS ARE LITERALS AND HAVE TO BE. app/globals.css is not loaded here, so
+      `var(--paper)` would resolve to nothing and the page would render as black on
+      transparent. These are copies of the nine-value palette — keep them in step
+      with app/globals.css by hand, the same standing obligation `themeColor` in
+      app/layout.tsx carries for the same reason. tests/sw-policy.test.ts pins them
+      so the drift cannot be silent.
+
+      FONTS ARE A SYSTEM STACK, and this is a real limitation rather than an
+      oversight. `next/font` registers a HASHED family name and exposes it only
+      through a CSS variable that the Next document defines — a standalone static
+      file has no access to it, and hardcoding the hashed .woff2 path would bind this
+      file to one build. So the serif/sans split the design system asks for is
+      expressed with system faces: a serif for the app's editorial voice, a sans for
+      the product's.
+    -->
+    <style>
+      :root {
+        --paper: #faf9f5;
+        --ink: #121417;
+        --ink-2: #55595f;
+        --ink-3: #8a8f96;
+        --rule: #e4e2dc;
+        --accent: #12513c;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+      }
+
+      body {
+        min-height: 100vh;
+        background: var(--paper);
+        color: var(--ink);
+        font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+        -webkit-font-smoothing: antialiased;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        /* The side gutter is on this element only, so it cannot be zeroed by a
+           shorthand later. `padding-block` keeps the sides intact. */
+        padding-inline: 24px;
+        padding-block: 48px;
+      }
+
+      main {
+        width: 100%;
+        max-width: 34rem;
+      }
+
+      /* Tracking is a function of size — the first of the four design rules. */
+      .mark {
+        font-family: ui-serif, Georgia, "Times New Roman", serif;
+        font-size: 13px;
+        font-weight: 600;
+        letter-spacing: 0.055em;
+        text-transform: uppercase;
+        color: var(--accent);
+        margin: 0 0 28px;
+      }
+
+      h1 {
+        font-family: ui-serif, Georgia, "Times New Roman", serif;
+        font-size: 34px;
+        line-height: 1.12;
+        letter-spacing: -0.032em;
+        font-weight: 700;
+        margin: 0 0 14px;
+      }
+
+      p {
+        font-size: 16px;
+        line-height: 1.55;
+        letter-spacing: -0.008em;
+        color: var(--ink-2);
+        margin: 0 0 14px;
+      }
+
+      /* Elevation is a hairline, never a shadow — the second design rule. */
+      .rule {
+        border: 0;
+        border-top: 1px solid var(--rule);
+        margin: 30px 0 22px;
+      }
+
+      h2 {
+        font-size: 12px;
+        font-weight: 600;
+        letter-spacing: 0.055em;
+        text-transform: uppercase;
+        color: var(--ink-3);
+        margin: 0 0 12px;
+      }
+
+      ul {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      li {
+        font-size: 15px;
+        line-height: 1.5;
+        color: var(--ink-2);
+        padding: 9px 0 9px 18px;
+        position: relative;
+        border-top: 1px solid var(--rule);
+      }
+
+      li:first-child {
+        border-top: 0;
+      }
+
+      li::before {
+        content: "";
+        position: absolute;
+        left: 0;
+        top: 18px;
+        width: 6px;
+        height: 1px;
+        background: var(--ink-3);
+      }
+
+      li b {
+        color: var(--ink);
+        font-weight: 600;
+      }
+
+      .note {
+        font-size: 14px;
+        line-height: 1.5;
+        color: var(--ink-3);
+        margin: 26px 0 0;
+      }
+
+      @media (min-width: 640px) {
+        h1 {
+          font-size: 42px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <p class="mark">PulseBLR</p>
+
+      <h1>You're offline.</h1>
+      <p>
+        This page hasn't been opened on this device yet, so there's no copy of it saved
+        here. Reload once you're back on a network.
+      </p>
+
+      <hr class="rule" />
+
+      <h2>Still working</h2>
+      <ul>
+        <li>
+          <b>Anything you scanned is safe.</b> Captures are written to this device first
+          and sent when the network returns — closing the app doesn't lose them.
+        </li>
+        <li>
+          <b>Pages you've already visited</b> will still open offline.
+        </li>
+      </ul>
+
+      <p class="note">
+        Your tracker, folders and people are never stored on the device, so they need a
+        connection.
+      </p>
+    </main>
+  </body>
+</html>
