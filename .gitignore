@@ -103,3 +103,18 @@ IMPROVEMENT-IDEAS.md
 # on routes that exist.
 .next-verify*/
 _layout-harness/
+
+# Android signing keys, added ahead of the Play Store TWA build.
+# Committing one hands anyone the ability to ship an update as you; LOSING one means you can
+# never update the app again, because Play matches uploads on the signing key. Back the keystore
+# up somewhere outside this repo before the first `bubblewrap build`.
+*.keystore
+*.jks
+
+# The Bubblewrap-generated Android project is DERIVED from twa-manifest.json, which is the only
+# part worth committing — Bubblewrap's own docs say manual edits to the project are overwritten
+# on `update`. Note the pattern excludes CONTENTS (`/android/*`) rather than the directory:
+# git does not descend into an excluded directory, so `/android/` would make the negation below
+# silently ineffective and the one file you needed would be the one that vanished.
+/android/*
+!/android/twa-manifest.json

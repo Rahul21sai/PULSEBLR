@@ -4,6 +4,7 @@ import "./globals.css";
 import Script from "next/script";
 import Providers from "./providers";
 import ProtectedRouteGate from "./components/ProtectedRouteGate";
+import InstallPrompt from "./components/InstallPrompt";
 
 /*
  * ══════════════════════════════════════════════════════════════════════════════════════════════
@@ -106,13 +107,55 @@ export default function RootLayout({
     >
       <head>
         <meta name="google" content="notranslate" />
-        <link rel="icon" href="/icon-192.svg" />
-        <link rel="apple-touch-icon" href="/icon-192.svg" />
+        {/*
+          NO HAND-WRITTEN ICON LINKS HERE. Two used to sit on this line and both were wrong:
+
+            <link rel="icon" href="/icon-192.svg" />
+            <link rel="apple-touch-icon" href="/icon-192.svg" />
+
+          The first COMPETED with `app/favicon.ico`, which Next's file convention already emits a
+          tag for — two `rel="icon"` links, and the browser picks whichever it likes. Worse, that
+          favicon.ico was still the untouched Create-Next-App default, so the app was shipping the
+          Next.js logo in the browser tab.
+
+          The second was inert: `apple-touch-icon` does not support SVG, so iOS ignored it and
+          screenshotted the page for the home screen instead of using the brand mark.
+
+          Both are now generated from `app/favicon.ico` and `app/apple-icon.png` (see
+          `scripts/generate-icons.js`), whose tags Next writes itself with the right `type` and
+          `sizes` attributes read off the actual files. Do not re-add a manual link: it would
+          reintroduce the duplicate rather than override it.
+        */}
         {/* Material Symbols — loaded globally for all pages */}
         <link
           rel="stylesheet"
           href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap"
         />
+        {/*
+          Catch `beforeinstallprompt` before React exists.
+
+          Chrome fires it as soon as it decides the app is installable, which is routinely
+          BEFORE hydration, and it does not fire again for the life of the page. A listener
+          added inside a component's effect therefore misses it on a cold load — and the event
+          object is the only way to open the OS install dialog, so missing it means the Install
+          button cannot work at all. `preventDefault()` suppresses Chrome's own mini-infobar so
+          our banner is the single affordance rather than the second one.
+
+          `beforeInteractive` is required here: `afterInteractive` runs too late to be a
+          reliable catch, which is the whole point of this script.
+        */}
+        <Script id="capture-install-prompt" strategy="beforeInteractive">
+          {`
+            window.__pblrInstall = null;
+            window.addEventListener('beforeinstallprompt', function (e) {
+              e.preventDefault();
+              window.__pblrInstall = e;
+            });
+            window.addEventListener('appinstalled', function () {
+              window.__pblrInstall = null;
+            });
+          `}
+        </Script>
       </head>
       <body className="min-h-full antialiased">
         <Providers>
@@ -121,6 +164,12 @@ export default function RootLayout({
             "is a cookie present" — no security, and it locked out users whose session was
             demonstrably valid. See lib/protected-routes.ts. */}
         <ProtectedRouteGate>{children}</ProtectedRouteGate>
+        {/* A SIBLING of the gate, not a child, and that matters. For a protected path with a
+            settled `unauthenticated` status the gate returns a sign-in panel INSTEAD of its
+            children — so nested here the prompt would be swallowed on exactly the pages a
+            signed-out visitor sees. It needs no session of its own; it decides what to draw
+            from `display-mode` and `beforeinstallprompt`. */}
+        <InstallPrompt />
         </Providers>
         <Script id="register-sw" strategy="afterInteractive">
           {process.env.NODE_ENV === "production"

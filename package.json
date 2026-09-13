@@ -11,6 +11,7 @@
     "send-digest": "tsx scripts/send-digest.ts",
     "test": "vitest run",
     "test:watch": "vitest",
+    "icons": "node scripts/generate-icons.js",
     "postinstall": "node scripts/copy-wasm.js"
   },
   "dependencies": {
@@ -40,6 +41,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.3.4",
     "playwright": "^1.61.1",
+    "sharp": "0.35.4",
     "tailwindcss": "^4",
     "tsx": "^4.22.4",
     "typescript": "^5",
