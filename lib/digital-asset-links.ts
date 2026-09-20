@@ -11,6 +11,11 @@ export type AssetLinkStatement = {
   };
 };
 
+export type AssetLinkEnvironment = {
+  PB_UPLOAD_SHA256?: string;
+  PB_PLAY_SHA256?: string;
+};
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -80,7 +85,7 @@ export function validateAssetLinks(statements: unknown, expectedFingerprints: re
   return issues;
 }
 
-export function expectedAssetLinkFingerprints(environment: NodeJS.ProcessEnv): string[] {
+export function expectedAssetLinkFingerprints(environment: AssetLinkEnvironment): string[] {
   const upload = environment.PB_UPLOAD_SHA256;
   if (!upload) throw new Error('PB_UPLOAD_SHA256 is required');
   const play = environment.PB_PLAY_SHA256;

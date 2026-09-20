@@ -1,17 +1,17 @@
 import { pathToFileURL } from 'node:url';
-import { expectedAssetLinkFingerprints, verifyProductionAssetLinks } from '../lib/digital-asset-links';
+import { expectedAssetLinkFingerprints, type AssetLinkEnvironment, verifyProductionAssetLinks } from '../lib/digital-asset-links';
 
 export async function diagnoseAssetLinks(
-  environment: NodeJS.ProcessEnv,
+  environment: AssetLinkEnvironment,
   fetchImpl: typeof fetch = fetch,
-): Promise<void> {
+): Promise<string> {
   await verifyProductionAssetLinks(expectedAssetLinkFingerprints(environment), fetchImpl);
+  return 'Digital Asset Links: PASS';
 }
 
 async function main(): Promise<void> {
   try {
-    await diagnoseAssetLinks(process.env);
-    console.log('Digital Asset Links: PASS');
+    console.log(await diagnoseAssetLinks(process.env as AssetLinkEnvironment));
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));
     process.exitCode = 1;
