@@ -1,7 +1,7 @@
 # PulseBLR Mobile Production Design
 
 **Date:** 20 September 2026  
-**Status:** Approved architecture; implementation pending design review  
+**Status:** Approved by Rahul; implementation planned
 **Repository:** existing PulseBLR repository  
 **Android package:** `app.pulseblr.twa`  
 **Permanent web origin:** `https://pulseblr-u9f1.vercel.app`
