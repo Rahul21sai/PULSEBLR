@@ -532,6 +532,42 @@ export async function pendingFolders(): Promise<QueuedFolderRecord[]> {
   }
 }
 
+async function purgeStoreForOwner(storeName: string, userId: string): Promise<number> {
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(storeName, 'readwrite');
+    const store = transaction.objectStore(storeName);
+    const request = store.openCursor();
+    let deleted = 0;
+
+    request.onsuccess = () => {
+      const cursor = request.result;
+      if (!cursor) return;
+      const record = cursor.value as QueueFailureState;
+      if (record.queuedFor === userId) {
+        cursor.delete();
+        deleted += 1;
+      }
+      cursor.continue();
+    };
+    request.onerror = () => reject(request.error ?? new Error('Outbox purge failed'));
+    transaction.oncomplete = () => resolve(deleted);
+    transaction.onerror = () => reject(transaction.error ?? new Error('Outbox purge failed'));
+    transaction.onabort = () => reject(transaction.error ?? new Error('Outbox purge aborted'));
+  });
+}
+
+/** Delete only the queued records belonging to a deleted account on this device. */
+export async function purgeOutboxForOwner(
+  userId: string
+): Promise<{ contacts: number; folders: number }> {
+  if (!userId) throw new Error('A user id is required to purge the outbox');
+  const contacts = await purgeStoreForOwner(CONTACTS, userId);
+  const folders = await purgeStoreForOwner(FOLDERS, userId);
+  notify();
+  return { contacts, folders };
+}
+
 /**
  * `pendingCount()` IS GONE ON PURPOSE. Use `pendingSummary()`.
  *
