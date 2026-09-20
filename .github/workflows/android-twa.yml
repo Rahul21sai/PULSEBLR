@@ -1,0 +1,103 @@
+name: Android TWA debug gate
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  debug-aab:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      # setup-android exposes ANDROID_HOME. Persist the identical path under the
+      # name consumed by PulseBLR's deterministic toolchain check.
+      - name: Set Android SDK root
+        shell: bash
+        run: echo "ANDROID_SDK_ROOT=${ANDROID_HOME:?setup-android did not expose ANDROID_HOME}" >> "$GITHUB_ENV"
+
+      # Bundletool is fetched only from Google's published release URL. Its digest is
+      # verified before BUNDLETOOL_JAR is exported for the AAB inspection command.
+      - name: Download verified Bundletool 1.18.3
+        shell: bash
+        run: |
+          set -euo pipefail
+          bundletool_dir="$RUNNER_TEMP/bundletool"
+          bundletool_jar="$bundletool_dir/bundletool-all-1.18.3.jar"
+          mkdir -p "$bundletool_dir"
+          curl --fail --location --proto '=https' --tlsv1.2 \
+            --output "$bundletool_jar" \
+            https://github.com/google/bundletool/releases/download/1.18.3/bundletool-all-1.18.3.jar
+          echo 'a099cfa1543f55593bc2ed16a70a7c67fe54b1747bb7301f37fdfd6d91028e29  '"$bundletool_jar" | sha256sum --check --status
+          echo "BUNDLETOOL_JAR=$bundletool_jar" >> "$GITHUB_ENV"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Accept Android SDK licenses
+        run: yes | sdkmanager --licenses > /dev/null
+
+      - name: Install Android SDK 36 tooling
+        run: sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Check Android toolchain
+        run: npm run android:toolchain
+
+      - name: Check Android release contract
+        run: npm run android:contract
+
+      # This is intentionally post-deployment: it reads the permanent public origin.
+      - name: Preflight deployed origin
+        run: npm run android:preflight
+
+      - name: Generate Android project
+        run: npm run android:generate
+
+      - name: Verify generated Android project
+        run: npm run android:verify-generated
+
+      - name: Build debug AAB
+        run: npm run android:bundle:debug
+
+      - name: Verify debug AAB
+        run: npm run android:verify-aab -- android/app/build/outputs/bundle/debug/app-debug.aab
+
+      - name: Collect Android diagnostics
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "JAVA_HOME=$JAVA_HOME"
+            "$JAVA_HOME/bin/java" -version
+            echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+            sdkmanager --list_installed
+          } > "$RUNNER_TEMP/android-debug-diagnostics.txt" 2>&1
+
+      # Deliberately no SDK cache or signing path is uploaded. This is only the
+      # reproducible debug output plus text needed to diagnose a failed run.
+      - name: Upload debug AAB and diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-twa-debug
+          if-no-files-found: warn
+          path: |
+            android/app/build/outputs/bundle/debug/app-debug.aab
+            ${{ runner.temp }}/android-debug-diagnostics.txt

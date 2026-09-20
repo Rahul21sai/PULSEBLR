@@ -1,0 +1,175 @@
+name: Android protected release build
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_code:
+        description: Monotonically increasing positive Android version code
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  signed-aab:
+    # This environment must be configured with required reviewers and the four
+    # Android upload-key secrets before a release run can reach signing material.
+    environment: android-release
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Validate version code input
+        shell: bash
+        env:
+          VERSION_CODE: ${{ inputs.version_code }}
+        run: |
+          set -euo pipefail
+          if ! [[ "$VERSION_CODE" =~ ^[1-9][0-9]*$ ]] || ! node -e 'process.exit(Number.isSafeInteger(Number(process.env.VERSION_CODE)) ? 0 : 1)'; then
+            echo 'version_code must be a positive safe integer' >&2
+            exit 1
+          fi
+          echo "VERSION_CODE=$VERSION_CODE" >> "$GITHUB_ENV"
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Set Android SDK root
+        shell: bash
+        run: echo "ANDROID_SDK_ROOT=${ANDROID_HOME:?setup-android did not expose ANDROID_HOME}" >> "$GITHUB_ENV"
+
+      - name: Download verified Bundletool 1.18.3
+        shell: bash
+        run: |
+          set -euo pipefail
+          bundletool_dir="$RUNNER_TEMP/bundletool"
+          bundletool_jar="$bundletool_dir/bundletool-all-1.18.3.jar"
+          mkdir -p "$bundletool_dir"
+          curl --fail --location --proto '=https' --tlsv1.2 \
+            --output "$bundletool_jar" \
+            https://github.com/google/bundletool/releases/download/1.18.3/bundletool-all-1.18.3.jar
+          echo 'a099cfa1543f55593bc2ed16a70a7c67fe54b1747bb7301f37fdfd6d91028e29  '"$bundletool_jar" | sha256sum --check --status
+          echo "BUNDLETOOL_JAR=$bundletool_jar" >> "$GITHUB_ENV"
+
+      # No signing secret is in scope for any step through this generation and
+      # unsigned bundle build. That boundary prevents Bubblewrap/npm from observing
+      # release credentials and keeps generated-project verification reproducible.
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Accept Android SDK licenses
+        run: yes | sdkmanager --licenses > /dev/null
+
+      - name: Install Android SDK 36 tooling
+        run: sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Check Android toolchain
+        run: npm run android:toolchain
+
+      - name: Check Android release contract
+        run: npm run android:contract
+
+      - name: Preflight deployed origin
+        run: npm run android:preflight
+
+      - name: Generate Android project
+        run: npm run android:generate
+
+      - name: Verify generated Android project
+        run: npm run android:verify-generated
+
+      - name: Set generated release version code
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const { readFileSync, writeFileSync } = require('node:fs');
+          const file = 'android/app/build.gradle';
+          const source = readFileSync(file, 'utf8');
+          const matches = [...source.matchAll(/\bversionCode\s+(\d+)\b/g)];
+          if (matches.length !== 1) throw new Error(`Expected exactly one versionCode in ${file}`);
+          const next = source.slice(0, matches[0].index) +
+            matches[0][0].replace(matches[0][1], process.env.VERSION_CODE) +
+            source.slice(matches[0].index + matches[0][0].length);
+          writeFileSync(file, next);
+          NODE
+
+      - name: Build unsigned release AAB
+        run: node scripts/android-gradle.mjs bundleRelease
+
+      # Signing secrets are declared only on these short-lived steps. Their
+      # values are masked before reconstruction and no password appears in a command.
+      - name: Reconstruct protected upload keystore
+        shell: bash
+        env:
+          ANDROID_UPLOAD_KEYSTORE_BASE64: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_BASE64 }}
+          ANDROID_UPLOAD_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_PASSWORD }}
+          ANDROID_UPLOAD_KEY_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEY_PASSWORD }}
+          ANDROID_UPLOAD_KEY_ALIAS: ${{ secrets.ANDROID_UPLOAD_KEY_ALIAS }}
+        run: |
+          set -euo pipefail
+          printf '::add-mask::%s\n' "$ANDROID_UPLOAD_KEYSTORE_BASE64"
+          printf '::add-mask::%s\n' "$ANDROID_UPLOAD_KEYSTORE_PASSWORD"
+          printf '::add-mask::%s\n' "$ANDROID_UPLOAD_KEY_PASSWORD"
+          printf '::add-mask::%s\n' "$ANDROID_UPLOAD_KEY_ALIAS"
+          if [ -z "$ANDROID_UPLOAD_KEYSTORE_BASE64" ] || [ -z "$ANDROID_UPLOAD_KEYSTORE_PASSWORD" ] || [ -z "$ANDROID_UPLOAD_KEY_PASSWORD" ] || [ -z "$ANDROID_UPLOAD_KEY_ALIAS" ]; then
+            echo 'A required android-release signing secret is empty' >&2
+            exit 1
+          fi
+          umask 077
+          keystore_path="$RUNNER_TEMP/pulseblr-upload.keystore"
+          printf '%s' "$ANDROID_UPLOAD_KEYSTORE_BASE64" | base64 --decode > "$keystore_path"
+          chmod 600 "$keystore_path"
+          echo "KEYSTORE_PATH=$keystore_path" >> "$GITHUB_ENV"
+
+      - name: Sign release AAB
+        shell: bash
+        env:
+          ANDROID_UPLOAD_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_PASSWORD }}
+          ANDROID_UPLOAD_KEY_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEY_PASSWORD }}
+          ANDROID_UPLOAD_KEY_ALIAS: ${{ secrets.ANDROID_UPLOAD_KEY_ALIAS }}
+        run: |
+          set -euo pipefail
+          printf '::add-mask::%s\n' "$ANDROID_UPLOAD_KEYSTORE_PASSWORD"
+          printf '::add-mask::%s\n' "$ANDROID_UPLOAD_KEY_PASSWORD"
+          printf '::add-mask::%s\n' "$ANDROID_UPLOAD_KEY_ALIAS"
+          "$JAVA_HOME/bin/jarsigner" \
+            -sigalg SHA256withRSA \
+            -digestalg SHA-256 \
+            -keystore "$KEYSTORE_PATH" \
+            -storepass:env ANDROID_UPLOAD_KEYSTORE_PASSWORD \
+            -keypass:env ANDROID_UPLOAD_KEY_PASSWORD \
+            -signedjar "$RUNNER_TEMP/app-release-signed.aab" \
+            android/app/build/outputs/bundle/release/app-release.aab \
+            "$ANDROID_UPLOAD_KEY_ALIAS"
+
+      - name: Verify signed release AAB
+        run: npm run android:verify-aab -- "$RUNNER_TEMP/app-release-signed.aab" --expected-version-code "$VERSION_CODE"
+
+      # This artifact remains behind the android-release environment approval.
+      # No store-upload action is present; upload remains an owner-approved external step.
+      - name: Upload protected release AAB
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-release-aab-${{ inputs.version_code }}
+          if-no-files-found: error
+          path: ${{ runner.temp }}/app-release-signed.aab
+
+      - name: Remove temporary signing material
+        if: always()
+        shell: bash
+        run: |
+          rm -f "$RUNNER_TEMP/pulseblr-upload.keystore"

@@ -41,6 +41,11 @@ jobs:
       - name: Unit tests
         run: npm test
 
+      # This is intentionally an offline manifest-only gate. Android SDK installation,
+      # deployed-origin checks, and Gradle builds stay in the manual Android workflows.
+      - name: Android release contract
+        run: npm run android:contract
+
       # The build needs no secrets: every page that touches Mongo is server-rendered on
       # demand, so nothing connects at build time. If that ever changes this step is where
       # it will surface.
