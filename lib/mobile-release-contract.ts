@@ -19,6 +19,7 @@ type WebManifest = {
   background_color?: string;
   display?: string;
   orientation?: string;
+  icons?: unknown;
   shortcuts?: unknown;
   share_target?: unknown;
 };
@@ -40,6 +41,9 @@ type TwaManifest = {
 
 const REQUIRED_SHORTCUT_PATHS = ['/scan', '/card', '/', '/tracker', '/calendar'];
 const PRODUCTION_URL = new URL(PRODUCTION_ORIGIN);
+const CANONICAL_ICON_URL = `${PRODUCTION_ORIGIN}/icon-512.png`;
+const CANONICAL_MASKABLE_ICON_URL = `${PRODUCTION_ORIGIN}/icon-maskable-512.png`;
+const CANONICAL_SHORTCUT_ICON_URL = `${PRODUCTION_ORIGIN}/icon-192.png`;
 
 type ResolvedUrl = { href: string; origin: string; pathname: string };
 type ValidShortcut = { name: string; shortName: string; url: ResolvedUrl };
@@ -82,6 +86,38 @@ function parseShortcuts(value: unknown): ValidShortcut[] | undefined {
   if (!Array.isArray(value)) return undefined;
   const shortcuts = value.map(parseShortcut);
   return shortcuts.every((shortcut): shortcut is ValidShortcut => shortcut !== undefined) ? shortcuts : undefined;
+}
+
+function purposeIncludes(value: unknown, purpose: string): boolean {
+  return nonEmptyString(value) && value.trim().split(/\s+/).includes(purpose);
+}
+
+function isCanonicalWebIcon(value: unknown, expectedUrl: string, purpose: string): boolean {
+  if (!isRecord(value)) return false;
+  const src = resolveProductionUrl(value.src);
+  return src?.href === expectedUrl &&
+    value.sizes === '512x512' &&
+    value.type === 'image/png' &&
+    purposeIncludes(value.purpose, purpose);
+}
+
+function hasCanonicalWebIcons(value: unknown): boolean {
+  return Array.isArray(value) &&
+    value.some(icon => isCanonicalWebIcon(icon, CANONICAL_ICON_URL, 'any')) &&
+    value.some(icon => isCanonicalWebIcon(icon, CANONICAL_MASKABLE_ICON_URL, 'maskable'));
+}
+
+function webShortcutHasCanonicalIcon(value: unknown): boolean {
+  if (!isRecord(value) || !Array.isArray(value.icons) || value.icons.length !== 1) return false;
+  const icon = value.icons[0];
+  if (!isRecord(icon)) return false;
+  const src = resolveProductionUrl(icon.src);
+  return src?.href === CANONICAL_SHORTCUT_ICON_URL && icon.sizes === '192x192' && icon.type === 'image/png';
+}
+
+function twaShortcutHasCanonicalIcon(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  return resolveProductionUrl(value.chosenIconUrl)?.href === CANONICAL_SHORTCUT_ICON_URL;
 }
 
 function parseParams(value: unknown): Record<string, string> | undefined {
@@ -139,6 +175,16 @@ export function validateWebAndTwaParity(web: WebManifest, twa: TwaManifest): Rel
       shortcut.shortName === twaShortcuts[index].shortName,
     );
   add(shortcutsMatch, 'shortcut-parity', 'web and Android must define the exact five permanent-origin shortcuts in order');
+  add(hasCanonicalWebIcons(web.icons), 'web-icons', 'web manifest must expose the approved any-purpose and maskable PNG icons');
+  add(
+    Array.isArray(web.shortcuts) && Array.isArray(twa.shortcuts) &&
+      web.shortcuts.length === REQUIRED_SHORTCUT_PATHS.length &&
+      twa.shortcuts.length === REQUIRED_SHORTCUT_PATHS.length &&
+      web.shortcuts.every(webShortcutHasCanonicalIcon) &&
+      twa.shortcuts.every(twaShortcutHasCanonicalIcon),
+    'shortcut-icons',
+    'every web and Android shortcut must use the approved permanent-origin icon-192.png',
+  );
 
   const webShare = parseShareTarget(web.share_target);
   const twaShare = parseShareTarget(twa.shareTarget);
@@ -147,8 +193,8 @@ export function validateWebAndTwaParity(web: WebManifest, twa: TwaManifest): Rel
     'share-target',
     `web and Android share targets must each be ${CANONICAL_SHARE_TARGET.method} ${CANONICAL_SHARE_TARGET.action}`,
   );
-  add(twa.iconUrl === `${PRODUCTION_ORIGIN}/icon-512.png`, 'icon-url', 'Android icon URL must use the permanent origin');
-  add(twa.maskableIconUrl === `${PRODUCTION_ORIGIN}/icon-maskable-512.png`, 'maskable-icon-url', 'Android maskable icon URL must use the permanent origin');
+  add(twa.iconUrl === CANONICAL_ICON_URL, 'icon-url', 'Android icon URL must use the permanent origin');
+  add(twa.maskableIconUrl === CANONICAL_MASKABLE_ICON_URL, 'maskable-icon-url', 'Android maskable icon URL must use the permanent origin');
 
   return issues;
 }

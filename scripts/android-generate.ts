@@ -1,5 +1,6 @@
 import { spawnSync } from 'node:child_process';
-import { copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import {
@@ -7,6 +8,7 @@ import {
   PRODUCTION_ORIGIN,
   assertWebAndTwaParity,
 } from '../lib/mobile-release-contract';
+import { checkAndroidToolchain, type AndroidToolchainPaths } from './android-toolchain';
 
 interface ChildResult {
   status: number | null;
@@ -23,6 +25,7 @@ export interface BubblewrapUpdateOptions {
   env?: Record<string, string | undefined>;
   run?: (command: string, args: readonly string[], options: BubblewrapSpawnOptions) => ChildResult;
   postprocess?: (repositoryRoot: string) => unknown;
+  validateToolchain?: (env: Record<string, string | undefined>) => AndroidToolchainPaths;
 }
 
 export interface BubblewrapCompatibilityResult {
@@ -227,20 +230,33 @@ export function postprocessGeneratedProject(
 
 export function runBubblewrapUpdate(options: BubblewrapUpdateOptions = {}): number {
   const repositoryRoot = options.repositoryRoot ?? process.cwd();
-  const env = generationEnvironment(options.env ?? process.env);
+  const sourceEnvironment = options.env ?? process.env;
+  const toolchain = (options.validateToolchain ?? (env => checkAndroidToolchain({ env })))(sourceEnvironment);
+  const env = generationEnvironment(sourceEnvironment);
   const cli = path.join(repositoryRoot, 'node_modules', '@bubblewrap', 'cli', 'bin', 'bubblewrap.js');
   const run = options.run ?? ((command, args, spawnOptions) => spawnSync(command, [...args], {
     ...spawnOptions,
     env: spawnOptions.env as NodeJS.ProcessEnv,
   }));
-  const child = run(process.execPath, [cli, 'update', '--skipVersionUpgrade'], {
-    cwd: path.join(repositoryRoot, 'android'),
-    env,
-    stdio: 'inherit',
-  });
-  if (child.status !== 0) return child.status ?? 1;
-  (options.postprocess ?? postprocessGeneratedProject)(repositoryRoot);
-  return 0;
+  const configRoot = mkdtempSync(path.join(tmpdir(), 'pulseblr-bubblewrap-'));
+  const configPath = path.join(configRoot, 'config.json');
+  try {
+    writeFileSync(configPath, `${JSON.stringify({
+      jdkPath: toolchain.javaHome,
+      androidSdkPath: toolchain.sdkRoot,
+    }, null, 2)}\n`, { mode: 0o600 });
+    chmodSync(configPath, 0o600);
+    const child = run(process.execPath, [cli, 'update', '--skipVersionUpgrade', '--config', configPath], {
+      cwd: path.join(repositoryRoot, 'android'),
+      env,
+      stdio: 'inherit',
+    });
+    if (child.status !== 0) return child.status ?? 1;
+    (options.postprocess ?? postprocessGeneratedProject)(repositoryRoot);
+    return 0;
+  } finally {
+    rmSync(configRoot, { recursive: true, force: true });
+  }
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

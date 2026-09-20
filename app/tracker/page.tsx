@@ -299,7 +299,7 @@ export default function TrackerPage() {
   if (unauthorized) {
     return (
       <Shell>
-        <div className="max-w-[520px] mx-auto px-4 pt-24 text-center">
+        <div className="max-w-[520px] mx-auto px-4 pt-24 text-center" data-pulseblr-route="tracker">
           <span aria-hidden="true" className="material-symbols-outlined text-[48px] text-[var(--ink-3)] block mb-3">
             lock
           </span>
@@ -321,7 +321,7 @@ export default function TrackerPage() {
 
   return (
     <Shell>
-      <div className="max-w-[1400px] mx-auto px-4 md:px-8 pt-4">
+      <div className="max-w-[1400px] mx-auto px-4 md:px-8 pt-4" data-pulseblr-route="tracker">
         {/* Header — ruled, sans, same as every other surface. */}
         <div className="rule-b flex flex-wrap items-end justify-between gap-4 mb-5 pb-[var(--s-4)]">
           <div>

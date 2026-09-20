@@ -11,6 +11,8 @@ that a deployment, Android build, signing run, Play installation, or store submi
   never an unpinned package command.
 - Bundletool is **1.18.3** in the GitHub workflows. Its download is SHA-256 checked before an AAB
   verifier can use it.
+- Every external action in every checked-in workflow is pinned to a full commit SHA; repository-local
+  actions, if introduced later, must use an explicit `./` path.
 - JDK 17 is available, but Android SDK 36, platform-tools, and build-tools 36.0.0 are **not ready
   for a release until** `npm run android:toolchain` succeeds in the intended environment.
 - `public/.well-known/assetlinks.json` is deliberately absent. Neither an upload certificate nor a
@@ -39,9 +41,13 @@ Follow this order; each arrow is a stop/go gate, not an assertion that its next 
 1. **Contract** — `npm run android:contract` passes.
 2. **Deploy approval** — Rahul approves deployment of the current web/PWA contract to the permanent
    origin.
-3. **Preflight** — `npm run android:preflight` proves the deployed routes, manifest, and icons; do
-   not generate if it fails.
-4. **Generate** — `npm run android:generate` uses the pinned Bubblewrap dependency without any
+3. **Preflight** — set `PULSEBLR_EXPECTED_RELEASE_COMMIT_SHA` to the exact 40-character commit SHA
+   approved and deployed, then run `npm run android:preflight`. The gate compares that value with
+   `/api/release-identity`, requires a page-specific marker in every route body, and compares the
+   required deployed PNG bytes with the checked-in assets. Do not generate if it fails.
+4. **Generate** — `npm run android:generate` revalidates the configured JDK 17/SDK 36 paths, writes
+   those exact roots to a restrictive one-use Bubblewrap config, passes it with `--config`, and
+   removes it on exit. It does not enter Bubblewrap's prompt/bootstrap/download path and has no
    signing material in scope.
 5. **Verify** — `npm run android:verify-generated` proves the generated project retains the package,
    version, shortcuts, and SDK contract.
@@ -58,23 +64,29 @@ Follow this order; each arrow is a stop/go gate, not an assertion that its next 
 11. **Play-install QA** — install from Play and complete the real-device checklist before any wider
     testing or production action.
 
-For a post-deployment debug build, dispatch **Android TWA debug gate**. It installs exactly platform
-tools, platform 36, and build-tools 36.0.0; validates the pinned Bundletool SHA-256; and uploads only
-a debug AAB plus text diagnostics. It never receives signing material.
+The deployment must expose its build identity through `PULSEBLR_RELEASE_COMMIT_SHA` or Vercel's
+`VERCEL_GIT_COMMIT_SHA`; `/api/release-identity` fails closed if neither is an exact commit SHA. For a
+post-deployment debug build, dispatch **Android TWA debug gate** with that same SHA as
+`expected_release_commit_sha`. It installs exactly platform tools, platform 36, and build-tools
+36.0.0; validates the pinned Bundletool SHA-256; and uploads only a debug AAB plus text diagnostics.
+It never receives signing material.
 
 For a proposed signed bundle, dispatch **Android protected release build** with a new positive
-`version_code`. Its first, unprotected `unsigned-aab` job has no signing secrets or protected
+`version_code` and the same exact `expected_release_commit_sha`. Its first, unprotected
+`unsigned-aab` job has no signing secrets or protected
 environment: it runs `npm ci`, preflight, generation, generated-project verification, and
-`bundleRelease`, then uploads only the unsigned AAB. A fresh secret-free `verify-unsigned-aab` job
-downloads it, SHA-256 checks Bundletool, validates the package/version/SDK metadata, and emits a
-verified intermediate AAB with its SHA-256 identity. Only then does the fresh protected `signed-aab`
-job download that verified intermediate, re-check its identity with the fixed system SHA-256 tool, and
-reconstruct the keystore in runner temporary storage. Passwords are environment-only; the signing step
-validates the SHA-pinned setup-Java output's hosted-toolcache path and invokes its absolute tools rather
-than ambient Java state. Trap-based cleanup removes the keystore immediately with an `always()`
-backstop. A final fresh secret-free `verify-signed-aab` job performs Bundletool metadata and strict
-signature validation before it alone publishes the owner-facing AAB and non-secret diagnostics. No Play
-upload action is present.
+`bundleRelease`, computes its SHA-256, and is the only job that uploads the original unsigned AAB and
+identity. A fresh secret-free `verify-unsigned-aab` job downloads that immutable artifact, checks the
+build-job identity, SHA-256 checks Bundletool, and gates package/version/SDK metadata without uploading
+or re-authoring signable bytes. Only after that success does the fresh protected `signed-aab` job
+download the same original artifact and identity, re-check them with the fixed system SHA-256 tool,
+and reconstruct the keystore in runner temporary storage. Passwords are environment-only; the signing
+step validates the SHA-pinned setup-Java output's hosted-toolcache path and invokes its absolute tools
+rather than ambient Java state. Trap-based cleanup removes the keystore immediately with an `always()`
+backstop. A final fresh secret-free job, also gated by `android-release` so it can independently read
+the expected public certificate identity, performs Bundletool metadata, strict signature, and signer
+fingerprint validation before it alone publishes the owner-facing AAB and non-secret diagnostics. No
+Play upload action is present.
 
 ## Digital Asset Links rollout
 
@@ -87,7 +99,10 @@ npx tsx scripts/generate-assetlinks.ts [--write]
 npx tsx scripts/diag-assetlinks.ts
 ```
 
-Supply owner-held fingerprint variables only in the approved shell/session. With `--write`, the
+Supply owner-held fingerprint variables only in the approved shell/session. The normalized upload
+fingerprint supplied as `PB_UPLOAD_SHA256` for DAL must be the same public certificate identity stored
+as the protected GitHub environment variable `ANDROID_UPLOAD_SHA256`; the workflow checks the selected
+keystore alias before signing and independently checks the final AAB signer before publication. With `--write`, the
 generator creates `public/.well-known/assetlinks.json`; without it, it prints the candidate JSON.
 The diagnostic requires an HTTP 200 JSON response with no redirect and validates the permanent
 origin/package relationship.

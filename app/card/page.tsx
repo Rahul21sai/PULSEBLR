@@ -102,7 +102,7 @@ export default function CardPage() {
   }
 
   return (
-    <div className="fixed inset-0 flex flex-col bg-[var(--surface)]">
+    <div className="fixed inset-0 flex flex-col bg-[var(--surface)]" data-pulseblr-route="card">
       <div
         className="flex items-center justify-between px-3 pb-1"
         style={{ paddingTop: 'max(12px, env(safe-area-inset-top))' }}

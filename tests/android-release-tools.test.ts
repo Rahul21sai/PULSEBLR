@@ -1,4 +1,5 @@
-import { copyFileSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { copyFileSync, existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -137,81 +138,127 @@ afterEach(() => {
 });
 
 describe('Android production-origin preflight', () => {
-  it('rejects redirects and stops before reading redirected content', async () => {
+  const expectedReleaseId = '0123456789abcdef0123456789abcdef01234567';
+  const routeMarkers: Record<string, string> = {
+    '/': 'home',
+    '/scan': 'scan',
+    '/card': 'card',
+    '/tracker': 'tracker',
+    '/calendar': 'calendar',
+    '/add-event': 'add-event',
+    '/privacy': 'privacy',
+    '/delete-account': 'delete-account',
+  };
+
+  function successfulFetch(requests: Array<{ url: string; init?: RequestInit }> = []): typeof fetch {
     const web = readJson('public/manifest.json');
-    const requested: string[] = [];
-    const fetchImpl: typeof fetch = async input => {
+    return async (input, init) => {
       const url = String(input);
-      requested.push(url);
-      if (url.endsWith('/manifest.json')) {
-        return new Response(JSON.stringify(web), {
-          status: 200,
-          headers: { 'content-type': 'application/json' },
-        });
-      }
-      return Response.redirect('https://other.example/', 302);
-    };
-
-    await expect(preflightProductionOrigin(fetchImpl)).rejects.toThrow(/manifest|redirect/i);
-    expect(requested.length).toBeLessThan(12);
-  });
-
-  it.each([
-    ['a non-200 response', new Response('unavailable', { status: 503, headers: { 'content-type': 'text/html' } }), /200/],
-    ['a Location header on status 200', new Response('moved', { status: 200, headers: { 'content-type': 'text/html', location: '/other' } }), /location|redirect/i],
-    ['the wrong media type', new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } }), /content-type|text\/html/i],
-  ])('rejects %s', async (_label, failedResponse, message) => {
-    const web = readJson('public/manifest.json');
-    const fetchImpl: typeof fetch = async input => {
-      if (String(input).endsWith('/manifest.json')) {
-        return new Response(JSON.stringify(web), { status: 200, headers: { 'content-type': 'application/json' } });
-      }
-      return failedResponse.clone();
-    };
-
-    await expect(preflightProductionOrigin(fetchImpl)).rejects.toThrow(message);
-  });
-
-  it('rejects a semantically stale remote manifest', async () => {
-    const web = readJson('public/manifest.json');
-    web.theme_color = '#000000';
-    const fetchImpl: typeof fetch = async input => {
-      if (String(input).endsWith('/manifest.json')) {
-        return new Response(JSON.stringify(web), { status: 200, headers: { 'content-type': 'application/json' } });
-      }
-      throw new Error('preflight should stop at the stale manifest');
-    };
-
-    await expect(preflightProductionOrigin(fetchImpl)).rejects.toThrow(/theme-color|manifest/i);
-  });
-
-  it('accepts only direct successful responses for every required route and asset', async () => {
-    const web = readJson('public/manifest.json');
-    const requests: Array<{ url: string; init?: RequestInit }> = [];
-    const fetchImpl: typeof fetch = async (input, init) => {
-      const url = String(input);
+      const pathname = new URL(url).pathname;
       requests.push({ url, init });
-      if (url.endsWith('/manifest.json')) {
+      if (pathname === '/api/release-identity') {
+        return Response.json({ commitSha: expectedReleaseId }, { headers: { 'cache-control': 'no-store' } });
+      }
+      if (pathname === '/manifest.json') {
         return new Response(JSON.stringify(web), {
           status: 200,
           headers: { 'content-type': 'application/manifest+json; charset=utf-8' },
         });
       }
-      if (url.endsWith('.png')) {
-        return new Response(new Uint8Array([137, 80, 78, 71]), {
+      if (pathname.endsWith('.png')) {
+        return new Response(readFileSync(path.join(root, 'public', pathname.slice(1))), {
           status: 200,
           headers: { 'content-type': 'image/png' },
         });
       }
-      return new Response('<!doctype html><title>PulseBLR</title>', {
+      const marker = routeMarkers[pathname];
+      if (!marker) throw new Error(`unexpected test route ${pathname}`);
+      return new Response(`<!doctype html><main data-pulseblr-route="${marker}"></main>`, {
         status: 200,
         headers: { 'content-type': 'text/html; charset=utf-8' },
       });
     };
+  }
 
-    await expect(preflightProductionOrigin(fetchImpl)).resolves.toEqual({
-      checked: 12,
+  it('requires the caller to supply an immutable expected deployed commit SHA', async () => {
+    let requests = 0;
+    await expect(preflightProductionOrigin({
+      expectedReleaseId: '',
+      fetchImpl: async () => { requests += 1; return new Response(); },
+    })).rejects.toThrow(/expected.*commit|release.*required/i);
+    expect(requests).toBe(0);
+  });
+
+  it('rejects a stale deployed release even when every response is direct and successful', async () => {
+    const fetchImpl = successfulFetch();
+    await expect(preflightProductionOrigin({
+      expectedReleaseId: 'ffffffffffffffffffffffffffffffffffffffff',
+      fetchImpl,
+    })).rejects.toThrow(/deployed.*commit|release.*expected/i);
+  });
+
+  it('rejects a generic 200 fallback body that lacks the route-specific marker', async () => {
+    const baseFetch = successfulFetch();
+    const fetchImpl: typeof fetch = async (input, init) => {
+      const pathname = new URL(String(input)).pathname;
+      if (pathname === '/scan') {
+        return new Response('<!doctype html><main data-pulseblr-route="home"></main>', {
+          status: 200,
+          headers: { 'content-type': 'text/html' },
+        });
+      }
+      return baseFetch(input, init);
+    };
+
+    await expect(preflightProductionOrigin({ expectedReleaseId, fetchImpl })).rejects.toThrow(/scan.*marker|route.*scan/i);
+  });
+
+  it('rejects a PNG response whose bytes differ from the checked-in approved asset', async () => {
+    const baseFetch = successfulFetch();
+    const fetchImpl: typeof fetch = async (input, init) => {
+      if (new URL(String(input)).pathname === '/icon-192.png') {
+        return new Response(new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]), {
+          status: 200,
+          headers: { 'content-type': 'image/png' },
+        });
+      }
+      return baseFetch(input, init);
+    };
+
+    await expect(preflightProductionOrigin({ expectedReleaseId, fetchImpl })).rejects.toThrow(/icon-192.*bytes|SHA-256|approved/i);
+  });
+
+  it('rejects redirects and invalid response metadata before trusting content', async () => {
+    const baseFetch = successfulFetch();
+    const fetchImpl: typeof fetch = async (input, init) => {
+      if (new URL(String(input)).pathname === '/privacy') return Response.redirect('https://other.example/', 302);
+      return baseFetch(input, init);
+    };
+
+    await expect(preflightProductionOrigin({ expectedReleaseId, fetchImpl })).rejects.toThrow(/privacy.*redirect|location/i);
+  });
+
+  it('rejects a semantically stale remote manifest', async () => {
+    const baseFetch = successfulFetch();
+    const staleWeb = readJson('public/manifest.json');
+    staleWeb.theme_color = '#000000';
+    const fetchImpl: typeof fetch = async (input, init) => {
+      if (new URL(String(input)).pathname === '/manifest.json') {
+        return new Response(JSON.stringify(staleWeb), { status: 200, headers: { 'content-type': 'application/json' } });
+      }
+      return baseFetch(input, init);
+    };
+
+    await expect(preflightProductionOrigin({ expectedReleaseId, fetchImpl })).rejects.toThrow(/theme-color|manifest/i);
+  });
+
+  it('accepts only the expected release, route markers, and exact checked-in icon bytes', async () => {
+    const requests: Array<{ url: string; init?: RequestInit }> = [];
+
+    await expect(preflightProductionOrigin({ expectedReleaseId, fetchImpl: successfulFetch(requests) })).resolves.toEqual({
+      checked: 13,
       urls: [
+        'https://pulseblr-u9f1.vercel.app/api/release-identity',
         'https://pulseblr-u9f1.vercel.app/manifest.json',
         'https://pulseblr-u9f1.vercel.app/',
         'https://pulseblr-u9f1.vercel.app/scan',
@@ -503,16 +550,34 @@ describe('Android verification CLI grammar', () => {
 });
 
 describe('deterministic Android command wrappers', () => {
+  const validatedToolchain = {
+    javaHome: path.resolve('controlled', 'jdk-17'),
+    sdkRoot: path.resolve('controlled', 'android-sdk'),
+    java: path.resolve('controlled', 'jdk-17', 'bin', 'java'),
+    platform: path.resolve('controlled', 'android-sdk', 'platforms', 'android-36', 'android.jar'),
+    buildTools: path.resolve('controlled', 'android-sdk', 'build-tools', '36.0.0', 'aapt2'),
+    platformTools: path.resolve('controlled', 'android-sdk', 'platform-tools', 'adb'),
+  };
+
   it('runs only the repository-local pinned Bubblewrap CLI from the generated project', () => {
     const repositoryRoot = temporaryDirectory();
     const controlledEnvironment = { PATH: 'controlled' };
     const calls: Array<{ command: string; args: readonly string[]; options: unknown }> = [];
     const sequence: string[] = [];
+    let configPath = '';
     const status = runBubblewrapUpdate({
       repositoryRoot,
       env: controlledEnvironment,
+      validateToolchain: () => validatedToolchain,
       run: (command, args, options) => {
         sequence.push('update');
+        const configFlag = args.indexOf('--config');
+        expect(configFlag).toBeGreaterThan(0);
+        configPath = args[configFlag + 1];
+        expect(JSON.parse(readFileSync(configPath, 'utf8'))).toEqual({
+          jdkPath: validatedToolchain.javaHome,
+          androidSdkPath: validatedToolchain.sdkRoot,
+        });
         calls.push({ command, args, options });
         return { status: 0 };
       },
@@ -526,25 +591,79 @@ describe('deterministic Android command wrappers', () => {
     expect(sequence).toEqual(['update', 'postprocess']);
     expect(calls).toEqual([{
       command: process.execPath,
-      args: [path.join(repositoryRoot, 'node_modules', '@bubblewrap', 'cli', 'bin', 'bubblewrap.js'), 'update', '--skipVersionUpgrade'],
+      args: [
+        path.join(repositoryRoot, 'node_modules', '@bubblewrap', 'cli', 'bin', 'bubblewrap.js'),
+        'update',
+        '--skipVersionUpgrade',
+        '--config',
+        configPath,
+      ],
       options: {
         cwd: path.join(repositoryRoot, 'android'),
         env: controlledEnvironment,
         stdio: 'inherit',
       },
     }]);
+    expect(existsSync(configPath)).toBe(false);
   });
+
+  it('fails closed before starting Bubblewrap when the required JDK or SDK configuration is absent', () => {
+    let processStarted = false;
+    expect(() => runBubblewrapUpdate({
+      env: {},
+      run: () => { processStarted = true; return { status: 0 }; },
+      postprocess: () => undefined,
+    })).toThrow(/JAVA_HOME|required/i);
+    expect(processStarted).toBe(false);
+  });
+
+  it('loads the real pinned CLI from an explicit config under a fresh home without prompting or downloading', () => {
+    const freshHome = temporaryDirectory();
+    const configPath = path.join(freshHome, 'bubblewrap-config.json');
+    const config = `${JSON.stringify({
+      jdkPath: validatedToolchain.javaHome,
+      androidSdkPath: validatedToolchain.sdkRoot,
+    }, null, 2)}\n`;
+    writeFileSync(configPath, config, { mode: 0o600 });
+    const cliModule = path.join(root, 'node_modules', '@bubblewrap', 'cli', 'dist', 'lib', 'Cli.js');
+    const invokeRealCli = [
+      "const { Cli } = require(process.argv[1]);",
+      "new Cli().run(['help', '--config', process.argv[2]])",
+      "  .then(ok => process.exit(ok ? 0 : 1), error => { console.error(error); process.exit(1); });",
+    ].join('\n');
+
+    const result = spawnSync(process.execPath, ['-e', invokeRealCli, cliModule, configPath], {
+      cwd: freshHome,
+      encoding: 'utf8',
+      input: '',
+      timeout: 45_000,
+      env: {
+        ...process.env,
+        HOME: freshHome,
+        USERPROFILE: freshHome,
+        APPDATA: path.join(freshHome, 'appdata'),
+      },
+    });
+    const output = `${result.stdout}${result.stderr}`;
+
+    expect(result.status, output).toBe(0);
+    expect(output).toMatch(/bubblewrap \[command\]/i);
+    expect(output).not.toMatch(/download|install.*JDK|install.*Android SDK|terms.*conditions|\?\s*$/i);
+    expect(readFileSync(configPath, 'utf8')).toBe(config);
+    expect(existsSync(path.join(freshHome, '.bubblewrap'))).toBe(false);
+  }, 60_000);
 
   it('propagates Bubblewrap launch and command failures without falling back to a mutable executable', () => {
     let postprocessCalls = 0;
     const postprocess = () => { postprocessCalls += 1; };
-    expect(runBubblewrapUpdate({ run: () => ({ status: 9 }), postprocess })).toBe(9);
-    expect(runBubblewrapUpdate({ run: () => ({ status: null }), postprocess })).toBe(1);
+    expect(runBubblewrapUpdate({ validateToolchain: () => validatedToolchain, run: () => ({ status: 9 }), postprocess })).toBe(9);
+    expect(runBubblewrapUpdate({ validateToolchain: () => validatedToolchain, run: () => ({ status: null }), postprocess })).toBe(1);
     expect(postprocessCalls).toBe(0);
   });
 
   it('propagates a compatibility transformation failure after a successful update', () => {
     expect(() => runBubblewrapUpdate({
+      validateToolchain: () => validatedToolchain,
       run: () => ({ status: 0 }),
       postprocess: () => { throw new Error('generated template drift'); },
     })).toThrow(/template drift/);
@@ -564,6 +683,7 @@ describe('deterministic Android command wrappers', () => {
         HTTPS_PROXY: 'https://user:password@proxy.example',
         NODE_OPTIONS: '--require untrusted.js',
       },
+      validateToolchain: () => validatedToolchain,
       run: (_command, _args, options) => {
         childEnvironment = options.env;
         return { status: 0 };

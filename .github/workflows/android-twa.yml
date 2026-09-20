@@ -2,6 +2,11 @@ name: Android TWA debug gate
 
 on:
   workflow_dispatch:
+    inputs:
+      expected_release_commit_sha:
+        description: Exact 40-character commit SHA already deployed to the production origin
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -65,6 +70,8 @@ jobs:
 
       # This is intentionally post-deployment: it reads the permanent public origin.
       - name: Preflight deployed origin
+        env:
+          PULSEBLR_EXPECTED_RELEASE_COMMIT_SHA: ${{ inputs.expected_release_commit_sha }}
         run: npm run android:preflight
 
       - name: Generate Android project

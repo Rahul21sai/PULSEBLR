@@ -1279,7 +1279,7 @@ export default function Home() {
   );
 
   return (
-    <div className="min-h-screen bg-[var(--paper)]">
+    <div className="min-h-screen bg-[var(--paper)]" data-pulseblr-route="home">
       <DesktopNav />
 
       {/* `border-[var(--rule)]`, three times on this page (here, the command bar, and both edges of

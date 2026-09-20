@@ -113,7 +113,7 @@ export default function PrivacyPage() {
   const supportEmail = publicSupportEmail();
 
   return (
-    <div className="min-h-screen bg-[var(--paper)] text-[var(--ink)]">
+    <div className="min-h-screen bg-[var(--paper)] text-[var(--ink)]" data-pulseblr-route="privacy">
       <header className="rule-b">
         <div className="mx-auto flex h-14 max-w-[900px] items-center justify-between px-5 md:px-8">
           <Link href="/" className="text-[15px] font-bold tracking-[-0.02em] text-[var(--ink)]">

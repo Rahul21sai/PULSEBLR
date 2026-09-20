@@ -92,6 +92,9 @@ answers from the deployed behavior—not from generic boilerplate.
   support contact, and all current Console declarations with the account owner.
 - [ ] Upload a protected-workflow signed AAB to **Internal Testing** only after Rahul's explicit
   approval. Install it from Play before treating the build as valid.
+- [ ] Confirm the protected `ANDROID_UPLOAD_SHA256` environment variable exactly matches the
+  normalized `PB_UPLOAD_SHA256` value used for Digital Asset Links before dispatching the signed
+  workflow; both the selected alias and final AAB signer must pass that identity gate.
 - [ ] If this is a qualifying new personal developer account, start and maintain the required closed
   test: 12 testers continuously opted in for 14 days. An opt-out resets that tester's clock.
 - [ ] Retrieve the Play App Signing SHA-256 fingerprint after Internal Testing; add it alongside the

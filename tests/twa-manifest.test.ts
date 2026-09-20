@@ -94,6 +94,39 @@ describe('PulseBLR mobile release contract', () => {
     expect(validateWebAndTwaParity(web, twa)).toContainEqual(expect.objectContaining({ code: 'shortcut-parity' }));
   });
 
+  it('requires the canonical web any-purpose and maskable PNG icons', () => {
+    const web = structuredClone(read<Record<string, unknown>>('public/manifest.json'));
+    const twa = read<Record<string, unknown>>('android/twa-manifest.json');
+    web.icons = (web.icons as Array<{ src: string }>).filter(icon =>
+      icon.src !== '/icon-512.png' && icon.src !== '/icon-maskable-512.png',
+    );
+
+    expect(validateWebAndTwaParity(web, twa)).toContainEqual(expect.objectContaining({ code: 'web-icons' }));
+  });
+
+  it('rejects synchronized shortcut icon drift outside the approved permanent-origin asset', () => {
+    const web = structuredClone(read<Record<string, unknown>>('public/manifest.json'));
+    const twa = structuredClone(read<Record<string, unknown>>('android/twa-manifest.json'));
+    (web.shortcuts as Array<{ icons: Array<{ src: string }> }>).forEach(shortcut => {
+      shortcut.icons[0].src = 'https://cdn.example/other.png';
+    });
+    (twa.shortcuts as Array<{ chosenIconUrl: string }>).forEach(shortcut => {
+      shortcut.chosenIconUrl = 'https://cdn.example/other.png';
+    });
+
+    expect(validateWebAndTwaParity(web, twa)).toContainEqual(expect.objectContaining({ code: 'shortcut-icons' }));
+  });
+
+  it('reports malformed or missing shortcut icons without throwing', () => {
+    const web = structuredClone(read<Record<string, unknown>>('public/manifest.json'));
+    const twa = structuredClone(read<Record<string, unknown>>('android/twa-manifest.json'));
+    (web.shortcuts as Array<Record<string, unknown>>)[0].icons = {};
+    delete (twa.shortcuts as Array<Record<string, unknown>>)[1].chosenIconUrl;
+
+    expect(() => validateWebAndTwaParity(web, twa)).not.toThrow();
+    expect(validateWebAndTwaParity(web, twa)).toContainEqual(expect.objectContaining({ code: 'shortcut-icons' }));
+  });
+
   it.each([
     ['packageId', 'com.example.other', 'package-id'],
     ['themeColor', '#000000', 'theme-color'],

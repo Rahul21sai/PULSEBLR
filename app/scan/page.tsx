@@ -35,9 +35,11 @@ import type { FolderDTO } from '@/lib/contacts/types';
  */
 export default function ScanPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-black" />}>
-      <ScanScreen />
-    </Suspense>
+    <div className="contents" data-pulseblr-route="scan">
+      <Suspense fallback={<div className="min-h-screen bg-black" />}>
+        <ScanScreen />
+      </Suspense>
+    </div>
   );
 }
 

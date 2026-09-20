@@ -17,7 +17,7 @@ export default async function DeleteAccountPage({
   const completed = complete === '1';
 
   return (
-    <main className="mx-auto min-h-screen max-w-[900px] px-5 py-10 text-[var(--ink)] md:px-8 md:py-16">
+    <main className="mx-auto min-h-screen max-w-[900px] px-5 py-10 text-[var(--ink)] md:px-8 md:py-16" data-pulseblr-route="delete-account">
       <p className="ty-meta">PulseBLR account controls</p>
       <h1 className="t-display mt-2">
         {completed ? 'Your account was deleted' : 'Delete your account'}

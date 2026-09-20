@@ -249,7 +249,7 @@ export default function CalendarPage() {
   const daysWithEvents = Object.keys(counts).length;
 
   return (
-    <div className="min-h-screen bg-[var(--paper)]">
+    <div className="min-h-screen bg-[var(--paper)]" data-pulseblr-route="calendar">
       <DesktopNav />
 
       {/* Mobile Header */}

@@ -646,7 +646,7 @@ function AddEventForm() {
 
 export default function AddEventPage() {
   return (
-    <div className="min-h-screen bg-[var(--paper)]">
+    <div className="min-h-screen bg-[var(--paper)]" data-pulseblr-route="add-event">
       <DesktopNav />
 
       {/* Mobile Header */}
