@@ -3,7 +3,11 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { preflightProductionOrigin } from '../scripts/android-preflight';
-import { runBubblewrapUpdate } from '../scripts/android-generate';
+import {
+  postprocessGeneratedProject,
+  renderShortcutUrlResources,
+  runBubblewrapUpdate,
+} from '../scripts/android-generate';
 import { runGradle } from '../scripts/android-gradle.mjs';
 import {
   checkAndroidToolchain,
@@ -59,6 +63,64 @@ function writeGeneratedProject(projectRoot: string): void {
       <shortcut android:shortcutId="calendar"><intent android:data="@string/shortcut_calendar_url"/></shortcut>
     </shortcuts>
   `);
+}
+
+function writeBubblewrapGeneratedRepository(repositoryRoot: string): string {
+  const androidRoot = path.join(repositoryRoot, 'android');
+  const resourceRoot = path.join(androidRoot, 'app', 'src', 'main', 'res');
+  mkdirSync(path.join(repositoryRoot, 'public'), { recursive: true });
+  mkdirSync(path.join(resourceRoot, 'xml'), { recursive: true });
+  writeFileSync(path.join(repositoryRoot, 'public', 'manifest.json'), readFileSync(path.join(root, 'public', 'manifest.json')));
+  writeFileSync(path.join(androidRoot, 'twa-manifest.json'), readFileSync(path.join(root, 'android', 'twa-manifest.json')));
+  writeFileSync(path.join(androidRoot, 'app', 'build.gradle'), `
+import groovy.xml.MarkupBuilder
+
+android {
+    compileSdkVersion 36
+    defaultConfig {
+        applicationId "app.pulseblr.twa"
+        minSdkVersion 21
+        targetSdkVersion 36
+        versionCode 1
+        versionName "1"
+    }
+}
+
+task generateShorcutsFile {
+    assert twaManifest.shortcuts.size() < 5, "You can have at most 4 shortcuts."
+    twaManifest.shortcuts.eachWithIndex { s, i ->
+        assert s.name != null, 'Missing name'
+        assert s.short_name != null, 'Missing short_name'
+        assert s.url != null, 'Missing url'
+        assert s.icon != null, 'Missing icon'
+    }
+
+    def shortcutsFile = new File("$projectDir/src/main/res/xml", "shortcuts.xml")
+    def xmlWriter = new StringWriter()
+    def xmlMarkup = new MarkupBuilder(new IndentPrinter(xmlWriter, "    ", true))
+    xmlMarkup
+        .'shortcuts'('xmlns:android': 'http://schemas.android.com/apk/res/android') {
+            twaManifest.shortcuts.eachWithIndex { s, i ->
+                'shortcut'(
+                        'android:shortcutId': 'shortcut' + i,
+                        'android:enabled': 'true',
+                        'android:icon': '@drawable/' + s.icon,
+                        'android:shortcutShortLabel': '@string/shortcut_short_name_' + i,
+                        'android:shortcutLongLabel': '@string/shortcut_name_' + i) {
+                    'intent'(
+                            'android:action': 'android.intent.action.MAIN',
+                            'android:targetPackage': twaManifest.applicationId,
+                            'android:targetClass': twaManifest.applicationId + '.LauncherActivity',
+                            'android:data': s.url)
+                    'categories'('android:name': 'android.intent.category.LAUNCHER')
+                }
+            }
+        }
+    shortcutsFile.text = xmlWriter.toString() + '\\n'
+}
+  `);
+  writeFileSync(path.join(resourceRoot, 'xml', 'shortcuts.xml'), '<shortcuts xmlns:android="http://schemas.android.com/apk/res/android" />\n');
+  return androidRoot;
 }
 
 afterEach(() => {
@@ -350,16 +412,23 @@ describe('deterministic Android command wrappers', () => {
     const repositoryRoot = temporaryDirectory();
     const controlledEnvironment = { PATH: 'controlled' };
     const calls: Array<{ command: string; args: readonly string[]; options: unknown }> = [];
+    const sequence: string[] = [];
     const status = runBubblewrapUpdate({
       repositoryRoot,
       env: controlledEnvironment,
       run: (command, args, options) => {
+        sequence.push('update');
         calls.push({ command, args, options });
         return { status: 0 };
+      },
+      postprocess: processedRoot => {
+        expect(processedRoot).toBe(repositoryRoot);
+        sequence.push('postprocess');
       },
     });
 
     expect(status).toBe(0);
+    expect(sequence).toEqual(['update', 'postprocess']);
     expect(calls).toEqual([{
       command: process.execPath,
       args: [path.join(repositoryRoot, 'node_modules', '@bubblewrap', 'cli', 'bin', 'bubblewrap.js'), 'update', '--skipVersionUpgrade'],
@@ -372,8 +441,18 @@ describe('deterministic Android command wrappers', () => {
   });
 
   it('propagates Bubblewrap launch and command failures without falling back to a mutable executable', () => {
-    expect(runBubblewrapUpdate({ run: () => ({ status: 9 }) })).toBe(9);
-    expect(runBubblewrapUpdate({ run: () => ({ status: null }) })).toBe(1);
+    let postprocessCalls = 0;
+    const postprocess = () => { postprocessCalls += 1; };
+    expect(runBubblewrapUpdate({ run: () => ({ status: 9 }), postprocess })).toBe(9);
+    expect(runBubblewrapUpdate({ run: () => ({ status: null }), postprocess })).toBe(1);
+    expect(postprocessCalls).toBe(0);
+  });
+
+  it('propagates a compatibility transformation failure after a successful update', () => {
+    expect(() => runBubblewrapUpdate({
+      run: () => ({ status: 0 }),
+      postprocess: () => { throw new Error('generated template drift'); },
+    })).toThrow(/template drift/);
   });
 
   it.each([
@@ -410,5 +489,76 @@ describe('deterministic Android command wrappers', () => {
       return { status: 0 };
     } })).toThrow(/bundleDebug|bundleRelease/);
     expect(called).toBe(false);
+  });
+});
+
+describe('Bubblewrap five-shortcut compatibility postprocessor', () => {
+  it('materializes a verifiable five-shortcut project and patches the later Gradle generator', () => {
+    const repositoryRoot = temporaryDirectory();
+    const androidRoot = writeBubblewrapGeneratedRepository(repositoryRoot);
+
+    const metadata = postprocessGeneratedProject(repositoryRoot);
+
+    expect(metadata).toEqual({
+      shortcutCount: 5,
+      shortcutPaths: ['/scan', '/card', '/', '/tracker', '/calendar'],
+    });
+    expect(verifyGeneratedProject(androidRoot)).toEqual(expect.objectContaining({
+      shortcutCount: 5,
+      shortcutPaths: ['/scan', '/card', '/', '/tracker', '/calendar'],
+    }));
+    const gradle = readFileSync(path.join(androidRoot, 'app', 'build.gradle'), 'utf8');
+    expect(gradle).toContain('assert twaManifest.shortcuts.size() == 5');
+    expect(gradle).toContain("'android:data': '@string/shortcut_url_' + i");
+    expect(gradle).not.toContain("'android:data': s.url");
+  });
+
+  it.each([
+    ['shortcut limit', 'assert twaManifest.shortcuts.size() < 5', 'assert twaManifest.shortcuts.size() < 6'],
+    ['direct URL writer', "'android:data': s.url", "'android:data': s.uri"],
+  ])('rejects upstream drift in the expected %s shape without partially writing artifacts', (_label, expected, drifted) => {
+    const repositoryRoot = temporaryDirectory();
+    const androidRoot = writeBubblewrapGeneratedRepository(repositoryRoot);
+    const gradleFile = path.join(androidRoot, 'app', 'build.gradle');
+    const originalGradle = readFileSync(gradleFile, 'utf8').replace(expected, drifted);
+    writeFileSync(gradleFile, originalGradle);
+
+    expect(() => postprocessGeneratedProject(repositoryRoot)).toThrow(/Bubblewrap 1\.25\.0|template|replacement/i);
+    expect(readFileSync(gradleFile, 'utf8')).toBe(originalGradle);
+    expect(() => readFileSync(path.join(androidRoot, 'app', 'src', 'main', 'res', 'values', 'pulseblr_shortcut_urls.xml'))).toThrow();
+  });
+
+  it('rejects manifest shortcut drift before changing the generated project', () => {
+    const repositoryRoot = temporaryDirectory();
+    const androidRoot = writeBubblewrapGeneratedRepository(repositoryRoot);
+    const twaFile = path.join(androidRoot, 'twa-manifest.json');
+    const twa = JSON.parse(readFileSync(twaFile, 'utf8')) as { shortcuts: unknown[] };
+    twa.shortcuts = twa.shortcuts.slice(0, 4);
+    writeFileSync(twaFile, JSON.stringify(twa));
+    const gradleFile = path.join(androidRoot, 'app', 'build.gradle');
+    const originalGradle = readFileSync(gradleFile, 'utf8');
+
+    expect(() => postprocessGeneratedProject(repositoryRoot)).toThrow(/shortcut/i);
+    expect(readFileSync(gradleFile, 'utf8')).toBe(originalGradle);
+  });
+
+  it('rejects web shortcut query drift even when Task 1 path parity still matches', () => {
+    const repositoryRoot = temporaryDirectory();
+    const androidRoot = writeBubblewrapGeneratedRepository(repositoryRoot);
+    const webFile = path.join(repositoryRoot, 'public', 'manifest.json');
+    const web = JSON.parse(readFileSync(webFile, 'utf8')) as { shortcuts: Array<{ url: string }> };
+    web.shortcuts[0].url = '/scan?unexpected=1';
+    writeFileSync(webFile, JSON.stringify(web));
+    const gradleFile = path.join(androidRoot, 'app', 'build.gradle');
+    const originalGradle = readFileSync(gradleFile, 'utf8');
+
+    expect(() => postprocessGeneratedProject(repositoryRoot)).toThrow(/exact|shortcut|query/i);
+    expect(readFileSync(gradleFile, 'utf8')).toBe(originalGradle);
+  });
+
+  it('XML-escapes resource values deterministically', () => {
+    expect(renderShortcutUrlResources(['https://example.test/<scan>?a=1&b="two"'])).toContain(
+      'https://example.test/&lt;scan&gt;?a=1&amp;b=&quot;two&quot;',
+    );
   });
 });
