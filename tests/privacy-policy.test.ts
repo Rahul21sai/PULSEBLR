@@ -34,6 +34,9 @@ describe('privacy policy', () => {
     expect(text).toMatch(/delete your account/i);
     expect(html).toContain('href="/delete-account"');
     expect(html).toContain('mailto:support@example.test');
+    expect(text).toMatch(/follow-up[^.]*IBM ICA/i);
+    expect(text).not.toMatch(/follow-up[^.]*NVIDIA NIM/i);
+    expect(text).toMatch(/public event listings?[^.]*IBM ICA[^.]*NVIDIA NIM/i);
     expect(text).toMatch(/NVIDIA NIM/i);
     expect(text).toMatch(/Google/i);
     expect(text).toMatch(/Vercel/i);

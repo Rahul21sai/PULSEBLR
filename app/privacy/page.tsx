@@ -42,7 +42,7 @@ const sections = [
         </p>
         <p>
           If you ask PulseBLR to draft a follow-up, the contact details and notes needed for that
-          draft may be sent to NVIDIA NIM, the configured AI provider. The feature runs only when
+          draft may be sent to IBM ICA. The feature runs only when
           you request it; PulseBLR does not publish the draft or send it to the contact for you.
         </p>
       </>
@@ -54,6 +54,8 @@ const sections = [
       <p>
         PulseBLR collects event listings from public event sources and links back to the original
         organiser or ticket page. Public listing data is separate from your private tracker data.
+        Public event listings may be sent to IBM ICA for extraction and to IBM ICA and/or NVIDIA NIM,
+        as configured, for classification and tagging.{' '}
         An event you add for yourself stays private unless you explicitly submit it for review and
         an administrator publishes it.
       </p>
@@ -65,8 +67,9 @@ const sections = [
       <>
         <p>
           PulseBLR uses Google for sign-in, Vercel to host the application, MongoDB Atlas to store
-          application data, and NVIDIA NIM for follow-up drafts you request. If you enable email,
-          Resend processes the message and delivery address. If you enable push, browser push
+          application data, and IBM ICA for follow-up drafts you request and public listing processing.
+          NVIDIA NIM may process configured public listing classification and tagging. If you enable
+          email, Resend processes the message and delivery address. If you enable push, browser push
           providers process a device endpoint and the notification. Calendar providers receive
           the events exposed through the secret subscription URL you add to them.
         </p>

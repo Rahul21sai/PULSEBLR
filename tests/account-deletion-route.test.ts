@@ -70,6 +70,12 @@ describe('DELETE /api/me/account', () => {
     });
     const response = await handler(request('https://pulseblr-u9f1.vercel.app', '{"confirmation":"DELETE"}'));
     expect(response.status).toBe(503);
-    expect(JSON.stringify(await response.json())).not.toContain('secret-host');
+    expect(response.headers.get('cache-control')).toBe('no-store');
+    const body = await response.json();
+    expect(body).toEqual({
+      error: 'Account deletion could not be confirmed. It is safe to retry.',
+    });
+    expect(JSON.stringify(body)).not.toContain('secret-host');
+    expect(JSON.stringify(body)).not.toMatch(/nothing was deleted/i);
   });
 });

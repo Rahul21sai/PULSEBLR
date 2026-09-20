@@ -82,6 +82,13 @@ function deletionCount(result: { deletedCount?: number | null }): number {
   return result.deletedCount ?? 0;
 }
 
+export function ownedEventAuditSnapshotFilter(eventIds: string[]) {
+  return {
+    targetType: { $in: ['event', 'submission'] as const },
+    $or: [{ targetId: { $in: eventIds } }, { targetIds: { $in: eventIds } }],
+  };
+}
+
 function mongooseTransaction(session: ClientSession): AccountDeletionTransaction {
   return {
     async findOwnedEventIds(userId) {
@@ -106,10 +113,10 @@ function mongooseTransaction(session: ClientSession): AccountDeletionTransaction
     },
     async deleteEventAuditSnapshots(eventIds) {
       if (eventIds.length === 0) return 0;
-      return deletionCount(await AuditLog.deleteMany({
-        targetType: 'event',
-        $or: [{ targetId: { $in: eventIds } }, { targetIds: { $in: eventIds } }],
-      }, { session }));
+      return deletionCount(await AuditLog.deleteMany(
+        ownedEventAuditSnapshotFilter(eventIds),
+        { session },
+      ));
     },
     async redactActorAuditRows(userId) {
       const result = await AuditLog.updateMany(

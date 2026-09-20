@@ -38,7 +38,7 @@ export function createDeleteAccountHandler(deps: Dependencies) {
     } catch (error) {
       console.error('Account deletion transaction failed', error instanceof Error ? error.name : 'unknown');
       return NextResponse.json(
-        { error: 'Account deletion is temporarily unavailable. Nothing was deleted.' },
+        { error: 'Account deletion could not be confirmed. It is safe to retry.' },
         { status: 503, headers: { 'Cache-Control': 'no-store' } },
       );
     }

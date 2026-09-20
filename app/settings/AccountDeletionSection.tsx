@@ -6,12 +6,53 @@ import { runAccountDeletion } from '@/lib/account-deletion-client';
 import { purgeOutboxForOwner } from '@/lib/scan/outbox';
 
 const COMPLETION_URL = '/delete-account?complete=1';
+export type AccountDeletionRecoveryKind = 'clear-site-data' | 'sign-out';
+
+export function committedDeletionRecovery(outboxPurged: boolean): AccountDeletionRecoveryKind {
+  return outboxPurged ? 'sign-out' : 'clear-site-data';
+}
+
+export function AccountDeletionRecovery({
+  recovery,
+  signOutAfterDeletion,
+}: {
+  recovery: AccountDeletionRecoveryKind;
+  signOutAfterDeletion(callbackUrl: string): void | Promise<unknown>;
+}) {
+  return (
+    <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4">
+      <p role="alert" className="text-[13px] font-semibold text-red-800">
+        {recovery === 'clear-site-data'
+          ? 'Your account is already deleted, but PulseBLR could not remove all queued data from this browser.'
+          : 'Your account is already deleted, but PulseBLR could not sign this browser out automatically.'}
+      </p>
+      {recovery === 'clear-site-data' ? (
+        <p className="mt-2 text-[12.5px] leading-relaxed text-red-900">
+          Clear this site&apos;s stored data in your browser settings, then use the separate sign-out
+          action below to finish on this device.
+        </p>
+      ) : (
+        <p className="mt-2 text-[12.5px] leading-relaxed text-red-900">
+          Use the separate sign-out action below to finish. The account deletion request will not
+          be sent again.
+        </p>
+      )}
+      <button
+        type="button"
+        onClick={() => void signOutAfterDeletion(COMPLETION_URL)}
+        className="mt-3 rounded-full border border-red-700 px-4 py-2 text-[12.5px] font-semibold text-red-800"
+      >
+        Sign out after deletion
+      </button>
+    </div>
+  );
+}
 
 export default function AccountDeletionSection({ userId }: { userId: string }) {
   const [confirmation, setConfirmation] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [recovery, setRecovery] = useState<'clear-site-data' | 'sign-out' | null>(null);
+  const [recovery, setRecovery] = useState<AccountDeletionRecoveryKind | null>(null);
 
   async function deleteAccount() {
     if (confirmation !== 'DELETE' || busy || recovery) return;
@@ -52,10 +93,8 @@ export default function AccountDeletionSection({ userId }: { userId: string }) {
       });
     } catch (reason) {
       if (serverCommitted) {
-        setRecovery(outboxPurged ? 'sign-out' : 'clear-site-data');
-        setError(outboxPurged
-          ? 'Your account is already deleted, but PulseBLR could not sign this browser out automatically.'
-          : 'Your account is already deleted, but PulseBLR could not remove all queued data from this browser.');
+        setRecovery(committedDeletionRecovery(outboxPurged));
+        setError(null);
       } else {
         setError(reason instanceof Error ? reason.message : 'Account deletion failed');
       }
@@ -72,28 +111,10 @@ export default function AccountDeletionSection({ userId }: { userId: string }) {
       </p>
 
       {recovery ? (
-        <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4">
-          <p role="alert" className="text-[13px] font-semibold text-red-800">
-            {error}
-          </p>
-          {recovery === 'clear-site-data' ? (
-            <p className="mt-2 text-[12.5px] leading-relaxed text-red-900">
-              Do not delete the account again. Clear this site&apos;s stored data in your browser
-              settings, then sign out here to finish on this device.
-            </p>
-          ) : (
-            <p className="mt-2 text-[12.5px] leading-relaxed text-red-900">
-              Do not delete the account again. Use the separate sign-out action below to finish.
-            </p>
-          )}
-          <button
-            type="button"
-            onClick={() => void signOut({ callbackUrl: COMPLETION_URL })}
-            className="mt-3 rounded-full border border-red-700 px-4 py-2 text-[12.5px] font-semibold text-red-800"
-          >
-            Sign out after deletion
-          </button>
-        </div>
+        <AccountDeletionRecovery
+          recovery={recovery}
+          signOutAfterDeletion={callbackUrl => signOut({ callbackUrl })}
+        />
       ) : (
         <>
           <label
