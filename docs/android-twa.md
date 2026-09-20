@@ -94,8 +94,10 @@ the owner provides the real values.
 ## Version and upload-key ownership
 
 Play rejects a reused version code. Start at `1`; every uploaded AAB must use a strictly increasing
-positive integer. The protected workflow's `version_code` changes the generated release bundle only,
-so the checked-in manifest remains the initial contract.
+integer from `1` through Play's maximum `2100000000`. The protected workflow rejects zero, signs,
+decimals, exponent forms, whitespace, leading junk, and values above that bound before checkout or
+generation. Its `version_code` changes the generated release bundle only, so the checked-in manifest
+remains the initial contract.
 
 The upload keystore is release identity material. Keep its external owner-approved backup and the
 relative `./android.keystore` placeholder out of Git. Losing the upload key blocks new updates until

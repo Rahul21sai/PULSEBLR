@@ -26,8 +26,11 @@ jobs:
           VERSION_CODE: ${{ inputs.version_code }}
         run: |
           set -euo pipefail
-          if ! [[ "$VERSION_CODE" =~ ^[1-9][0-9]*$ ]] || ! node -e 'process.exit(Number.isSafeInteger(Number(process.env.VERSION_CODE)) ? 0 : 1)'; then
-            echo 'version_code must be a positive safe integer' >&2
+          max_version_code=2100000000
+          if ! [[ "$VERSION_CODE" =~ ^[1-9][0-9]*$ ]] || \
+            [ "${#VERSION_CODE}" -gt "${#max_version_code}" ] || \
+            { [ "${#VERSION_CODE}" -eq "${#max_version_code}" ] && [[ "$VERSION_CODE" > "$max_version_code" ]]; }; then
+            echo "version_code must be an integer from 1 through $max_version_code" >&2
             exit 1
           fi
           echo "VERSION_CODE=$VERSION_CODE" >> "$GITHUB_ENV"
