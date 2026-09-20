@@ -52,3 +52,4 @@ jobs:
           # deployment has. See auth.ts.
           NEXTAUTH_URL: http://localhost:3000
           NEXTAUTH_SECRET: ci-build-only-not-a-real-secret
+          PULSEBLR_SUPPORT_EMAIL: ci@example.invalid

@@ -7,6 +7,7 @@ import { DesktopNav, MobileBottomNav } from '../components/NavBar';
 import MyCardSection from './MyCardSection';
 import CalendarFeedSection from './CalendarFeedSection';
 import PushSection from './PushSection';
+import AccountDeletionSection from './AccountDeletionSection';
 
 /**
  * /settings — the USER's surface: their account, their digest, what the app is.
@@ -87,6 +88,10 @@ async function signOutAfterPurgingCaches() {
 export default function SettingsPage() {
   const { data: session } = useSession();
   const isAdmin = session?.user?.isAdmin === true;
+  const userId =
+    typeof session?.user?.id === 'string' && session.user.id.trim().length > 0
+      ? session.user.id
+      : null;
 
   // Public counts, so a normal user still gets a sense of the corpus without being shown
   // source health or the scraper.
@@ -371,7 +376,23 @@ export default function SettingsPage() {
                 <dd className="font-semibold text-right">Next.js 16 · MongoDB · NVIDIA NIM</dd>
               </div>
             </dl>
+            <div className="mt-4 flex flex-wrap gap-x-4 gap-y-2 border-t border-[var(--rule)] pt-4">
+              <Link
+                href="/privacy"
+                className="text-[13px] font-semibold text-[var(--accent)] hover:underline"
+              >
+                Privacy policy
+              </Link>
+              <Link
+                href="/delete-account"
+                className="text-[13px] font-semibold text-[var(--accent)] hover:underline"
+              >
+                Account deletion
+              </Link>
+            </div>
           </section>
+
+          {userId && <AccountDeletionSection userId={userId} />}
         </div>
       </main>
 

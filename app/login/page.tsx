@@ -221,7 +221,15 @@ function LoginBody() {
 
           <p className="mt-5 text-[12px] leading-relaxed text-[var(--ink-2)]">
             We store your name, email and profile picture from Google, and the events and
-            contacts you choose to save. Nothing else.
+            contacts you choose to save. Read the{' '}
+            <Link href="/privacy" className="font-semibold text-[var(--accent)] hover:underline">
+              privacy policy
+            </Link>
+            {' '}or learn how to{' '}
+            <Link href="/delete-account" className="font-semibold text-[var(--accent)] hover:underline">
+              delete your account
+            </Link>
+            .
           </p>
         </div>
       </div>

@@ -23,6 +23,7 @@
 import './load-env';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { publicSupportEmail } from '../lib/public-support';
 
 const ROOT = join(import.meta.dirname, '..');
 
@@ -96,6 +97,20 @@ check(
   has('GOOGLE_CLIENT_ID') && has('GOOGLE_CLIENT_SECRET'),
   'The only real sign-in method is gone, so the tracker, dashboard and settings are unreachable.',
   'Authorised redirect URI must be <NEXTAUTH_URL>/api/auth/callback/google — exactly.'
+);
+let supportEmailValid = false;
+try {
+  publicSupportEmail();
+  supportEmailValid = true;
+} catch {
+  // The report names only the variable and requirement; never echo a configured address.
+}
+check(
+  'FATAL',
+  'PULSEBLR_SUPPORT_EMAIL is a valid public address',
+  supportEmailValid,
+  'The public privacy and account-deletion pages cannot provide a working support contact.',
+  'Set PULSEBLR_SUPPORT_EMAIL to the public support inbox.'
 );
 
 // ── SECURITY: it runs, but wrongly ──────────────────────────────────────────

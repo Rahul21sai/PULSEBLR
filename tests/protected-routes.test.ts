@@ -47,7 +47,15 @@ describe('isProtectedPath: PUBLIC pages that must never be gated', () => {
   });
 
   it('leaves the public browsing surface alone', () => {
-    for (const path of ['/', '/login', '/companies', '/calendar', '/events/6a8c75ac']) {
+    for (const path of [
+      '/',
+      '/login',
+      '/companies',
+      '/calendar',
+      '/events/6a8c75ac',
+      '/delete-account',
+      '/delete-account?complete=1',
+    ]) {
       expect(isProtectedPath(path)).toBe(false);
     }
   });
