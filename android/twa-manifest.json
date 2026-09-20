@@ -1,0 +1,90 @@
+{
+  "packageId": "app.pulseblr.twa",
+  "host": "pulseblr-u9f1.vercel.app",
+  "name": "PulseBLR - Bangalore Tech Events Tracker",
+  "launcherName": "PulseBLR",
+  "display": "standalone",
+  "themeColor": "#FAF9F5",
+  "themeColorDark": "#121417",
+  "navigationColor": "#FAF9F5",
+  "navigationColorDark": "#121417",
+  "navigationDividerColor": "#00000000",
+  "navigationDividerColorDark": "#00000000",
+  "backgroundColor": "#FAF9F5",
+  "enableNotifications": true,
+  "startUrl": "/",
+  "iconUrl": "https://pulseblr-u9f1.vercel.app/icon-512.png",
+  "maskableIconUrl": "https://pulseblr-u9f1.vercel.app/icon-maskable-512.png",
+  "splashScreenFadeOutDuration": 300,
+  "signingKey": {
+    "path": "./android.keystore",
+    "alias": "android"
+  },
+  "appVersionCode": 1,
+  "shortcuts": [
+    {
+      "name": "Scan a code",
+      "shortName": "Scan",
+      "url": "https://pulseblr-u9f1.vercel.app/scan",
+      "chosenIconUrl": "https://pulseblr-u9f1.vercel.app/icon-192.png"
+    },
+    {
+      "name": "Show my code",
+      "shortName": "My code",
+      "url": "https://pulseblr-u9f1.vercel.app/card",
+      "chosenIconUrl": "https://pulseblr-u9f1.vercel.app/icon-192.png"
+    },
+    {
+      "name": "View Feed",
+      "shortName": "Feed",
+      "url": "https://pulseblr-u9f1.vercel.app/",
+      "chosenIconUrl": "https://pulseblr-u9f1.vercel.app/icon-192.png"
+    },
+    {
+      "name": "My Tracker",
+      "shortName": "Tracker",
+      "url": "https://pulseblr-u9f1.vercel.app/tracker",
+      "chosenIconUrl": "https://pulseblr-u9f1.vercel.app/icon-192.png"
+    },
+    {
+      "name": "Calendar",
+      "shortName": "Calendar",
+      "url": "https://pulseblr-u9f1.vercel.app/calendar",
+      "chosenIconUrl": "https://pulseblr-u9f1.vercel.app/icon-192.png"
+    }
+  ],
+  "generatorApp": "bubblewrap-cli",
+  "webManifestUrl": "https://pulseblr-u9f1.vercel.app/manifest.json",
+  "fallbackType": "customtabs",
+  "features": {},
+  "alphaDependencies": {
+    "enabled": false
+  },
+  "enableSiteSettingsShortcut": true,
+  "isChromeOSOnly": false,
+  "isMetaQuest": false,
+  "fullScopeUrl": "https://pulseblr-u9f1.vercel.app/",
+  "minSdkVersion": 21,
+  "shareTarget": {
+    "action": "https://pulseblr-u9f1.vercel.app/add-event",
+    "method": "GET",
+    "enctype": "application/x-www-form-urlencoded",
+    "params": {
+      "title": "title",
+      "text": "text",
+      "url": "url"
+    }
+  },
+  "orientation": "portrait-primary",
+  "fingerprints": [],
+  "additionalTrustedOrigins": [],
+  "retainedBundles": [],
+  "protocolHandlers": [],
+  "fileHandlers": [],
+  "launchHandlerClientMode": "",
+  "displayOverride": [
+    "standalone",
+    "minimal-ui"
+  ],
+  "appVersion": "1"
+}
