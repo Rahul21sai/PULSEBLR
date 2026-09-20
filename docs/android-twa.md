@@ -65,11 +65,16 @@ a debug AAB plus text diagnostics. It never receives signing material.
 For a proposed signed bundle, dispatch **Android protected release build** with a new positive
 `version_code`. Its first, unprotected `unsigned-aab` job has no signing secrets or protected
 environment: it runs `npm ci`, preflight, generation, generated-project verification, and
-`bundleRelease`, then uploads only the validated unsigned AAB and text metadata. The fresh protected
-`signed-aab` job downloads that artifact, revalidates the input plus package/version/SDK metadata with
-the SHA-256-checked Bundletool, and only then reconstructs the keystore in runner temporary storage.
-Passwords are environment-only, fixed JDK tools sign and re-inspect the AAB, and trap-based cleanup
-removes the keystore immediately with an `always()` backstop. No Play upload action is present.
+`bundleRelease`, then uploads only the unsigned AAB. A fresh secret-free `verify-unsigned-aab` job
+downloads it, SHA-256 checks Bundletool, validates the package/version/SDK metadata, and emits a
+verified intermediate AAB with its SHA-256 identity. Only then does the fresh protected `signed-aab`
+job download that verified intermediate, re-check its identity with the fixed system SHA-256 tool, and
+reconstruct the keystore in runner temporary storage. Passwords are environment-only; the signing step
+validates the SHA-pinned setup-Java output's hosted-toolcache path and invokes its absolute tools rather
+than ambient Java state. Trap-based cleanup removes the keystore immediately with an `always()`
+backstop. A final fresh secret-free `verify-signed-aab` job performs Bundletool metadata and strict
+signature validation before it alone publishes the owner-facing AAB and non-secret diagnostics. No Play
+upload action is present.
 
 ## Digital Asset Links rollout
 

@@ -52,19 +52,6 @@ jobs:
         shell: bash
         run: echo "ANDROID_SDK_ROOT=${ANDROID_HOME:?setup-android did not expose ANDROID_HOME}" >> "$GITHUB_ENV"
 
-      - name: Download verified Bundletool 1.18.3
-        shell: bash
-        run: |
-          set -euo pipefail
-          bundletool_dir="$RUNNER_TEMP/bundletool"
-          bundletool_jar="$bundletool_dir/bundletool-all-1.18.3.jar"
-          /usr/bin/mkdir -p "$bundletool_dir"
-          /usr/bin/curl --fail --location --proto '=https' --tlsv1.2 \
-            --output "$bundletool_jar" \
-            https://github.com/google/bundletool/releases/download/1.18.3/bundletool-all-1.18.3.jar
-          printf '%s  %s\n' 'a099cfa1543f55593bc2ed16a70a7c67fe54b1747bb7301f37fdfd6d91028e29' "$bundletool_jar" | /usr/bin/sha256sum --check --status
-          echo "BUNDLETOOL_JAR=$bundletool_jar" >> "$GITHUB_ENV"
-
       - name: Install dependencies
         run: npm ci
 
@@ -110,45 +97,29 @@ jobs:
       - name: Build unsigned release AAB
         run: node scripts/android-gradle.mjs bundleRelease
 
-      - name: Validate unsigned release AAB metadata
+      - name: Collect unsigned release AAB
         shell: bash
-        env:
-          VERSION_CODE: ${{ inputs.version_code }}
         run: |
           set -euo pipefail
           aab="$GITHUB_WORKSPACE/android/app/build/outputs/bundle/release/app-release.aab"
-          manifest="$RUNNER_TEMP/unsigned-aab-manifest.xml"
-          java_bin="${JAVA_HOME:?setup-java did not expose JAVA_HOME}/bin/java"
-          bundletool_jar="$BUNDLETOOL_JAR"
-          "$java_bin" -jar "$bundletool_jar" validate --bundle="$aab"
-          "$java_bin" -jar "$bundletool_jar" dump manifest --bundle="$aab" --module=base > "$manifest"
-          manifest_line=$(/usr/bin/grep -E '^<manifest[[:space:]]' "$manifest" || true)
-          sdk_line=$(/usr/bin/grep -E '^[[:space:]]*<uses-sdk[[:space:]]' "$manifest" || true)
-          [[ "$manifest_line" == *'package="app.pulseblr.twa"'* && "$manifest_line" == *"android:versionCode=\"$VERSION_CODE\""* && "$manifest_line" == *'android:versionName="1"'* ]] || { echo 'unsigned AAB manifest identity/version check failed' >&2; exit 1; }
-          [[ "$sdk_line" == *'android:minSdkVersion="21"'* && "$sdk_line" == *'android:targetSdkVersion="36"'* ]] || { echo 'unsigned AAB SDK check failed' >&2; exit 1; }
+          [[ -f "$aab" ]] || { echo 'expected unsigned release AAB is missing' >&2; exit 1; }
           /usr/bin/cp "$aab" "$RUNNER_TEMP/app-release-unsigned.aab"
-          printf 'package=app.pulseblr.twa\nversionCode=%s\nversionName=1\nminSdk=21\ntargetSdk=36\n' "$VERSION_CODE" > "$RUNNER_TEMP/unsigned-aab-metadata.txt"
 
-      - name: Upload unsigned release AAB and diagnostics
+      - name: Upload unsigned release AAB
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: android-release-unsigned-aab-${{ inputs.version_code }}
           if-no-files-found: error
-          path: |
-            ${{ runner.temp }}/app-release-unsigned.aab
-            ${{ runner.temp }}/unsigned-aab-metadata.txt
+          path: ${{ runner.temp }}/app-release-unsigned.aab
 
-  signed-aab:
+  verify-unsigned-aab:
+    # This fresh runner is intentionally secret-free: untrusted AAB parsing ends here.
     needs: unsigned-aab
-    # Required reviewers and signing secrets are configured on this environment.
-    # This is a fresh runner: no GITHUB_ENV/GITHUB_PATH value from unsigned-aab
-    # can influence the tools that receive signing secrets below.
-    environment: android-release
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
     steps:
-      - name: Set up trusted JDK 17
+      - name: Set up JDK 17 for unsigned AAB verification
         uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
         with:
           distribution: temurin
@@ -185,29 +156,95 @@ jobs:
             --output "$bundletool_jar" \
             https://github.com/google/bundletool/releases/download/1.18.3/bundletool-all-1.18.3.jar
           printf '%s  %s\n' 'a099cfa1543f55593bc2ed16a70a7c67fe54b1747bb7301f37fdfd6d91028e29' "$bundletool_jar" | /usr/bin/sha256sum --check --status
+          echo "BUNDLETOOL_JAR=$bundletool_jar" >> "$GITHUB_ENV"
 
-      - name: Inspect untrusted unsigned AAB before signing secrets
+      - name: Verify unsigned AAB metadata and identity
         shell: bash
         env:
           VERSION_CODE: ${{ inputs.version_code }}
         run: |
           set -euo pipefail
           aab="$RUNNER_TEMP/unsigned-aab/app-release-unsigned.aab"
+          verified_aab="$RUNNER_TEMP/app-release-verified.aab"
           manifest="$RUNNER_TEMP/unsigned-aab-manifest.xml"
+          metadata="$RUNNER_TEMP/verified-unsigned-aab-metadata.txt"
+          identity="$RUNNER_TEMP/verified-unsigned-aab.sha256"
           java_bin="${JAVA_HOME:?setup-java did not expose JAVA_HOME}/bin/java"
-          bundletool_jar="$RUNNER_TEMP/bundletool/bundletool-all-1.18.3.jar"
           [[ -f "$aab" ]] || { echo 'expected unsigned AAB artifact is missing' >&2; exit 1; }
-          "$java_bin" -version
-          "$java_bin" -jar "$bundletool_jar" validate --bundle="$aab"
-          "$java_bin" -jar "$bundletool_jar" dump manifest --bundle="$aab" --module=base > "$manifest"
+          "$java_bin" -jar "$BUNDLETOOL_JAR" validate --bundle="$aab"
+          "$java_bin" -jar "$BUNDLETOOL_JAR" dump manifest --bundle="$aab" --module=base > "$manifest"
           manifest_line=$(/usr/bin/grep -E '^<manifest[[:space:]]' "$manifest" || true)
           sdk_line=$(/usr/bin/grep -E '^[[:space:]]*<uses-sdk[[:space:]]' "$manifest" || true)
           [[ "$manifest_line" == *'package="app.pulseblr.twa"'* && "$manifest_line" == *"android:versionCode=\"$VERSION_CODE\""* && "$manifest_line" == *'android:versionName="1"'* ]] || { echo 'unsigned AAB manifest identity/version check failed' >&2; exit 1; }
           [[ "$sdk_line" == *'android:minSdkVersion="21"'* && "$sdk_line" == *'android:targetSdkVersion="36"'* ]] || { echo 'unsigned AAB SDK check failed' >&2; exit 1; }
+          /usr/bin/cp "$aab" "$verified_aab"
+          verified_sha256=$(/usr/bin/sha256sum "$verified_aab" | /usr/bin/awk '{print $1}')
+          printf '%s  %s\n' "$verified_sha256" 'app-release-verified.aab' > "$identity"
+          printf 'package=app.pulseblr.twa\nversionCode=%s\nversionName=1\nminSdk=21\ntargetSdk=36\n' "$VERSION_CODE" > "$metadata"
+
+      - name: Upload verified unsigned release AAB
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: android-release-verified-unsigned-aab-${{ inputs.version_code }}
+          if-no-files-found: error
+          path: |
+            ${{ runner.temp }}/app-release-verified.aab
+            ${{ runner.temp }}/verified-unsigned-aab.sha256
+            ${{ runner.temp }}/verified-unsigned-aab-metadata.txt
+
+  signed-aab:
+    needs: verify-unsigned-aab
+    # Required reviewers and signing secrets are configured on this environment.
+    # The parser ran only on verify-unsigned-aab's separate, secret-free runner.
+    environment: android-release
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Set up trusted JDK 17
+        id: trusted-jdk
+        uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Download verified unsigned release AAB
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: android-release-verified-unsigned-aab-${{ inputs.version_code }}
+          path: ${{ runner.temp }}/verified-unsigned-aab
+
+      - name: Revalidate version code input
+        shell: bash
+        env:
+          VERSION_CODE: ${{ inputs.version_code }}
+        run: |
+          set -euo pipefail
+          max_version_code=2100000000
+          if ! [[ "$VERSION_CODE" =~ ^[1-9][0-9]*$ ]] || \
+            [ "${#VERSION_CODE}" -gt "${#max_version_code}" ] || \
+            { [ "${#VERSION_CODE}" -eq "${#max_version_code}" ] && [[ "$VERSION_CODE" > "$max_version_code" ]]; }; then
+            echo "version_code must be an integer from 1 through $max_version_code" >&2
+            exit 1
+          fi
+
+      - name: Verify verified unsigned AAB identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          artifact_dir="$RUNNER_TEMP/verified-unsigned-aab"
+          aab="$artifact_dir/app-release-verified.aab"
+          identity_file="$artifact_dir/verified-unsigned-aab.sha256"
+          [[ -f "$aab" && -f "$identity_file" ]] || { echo 'verified unsigned AAB identity artifact is incomplete' >&2; exit 1; }
+          identity=$(/usr/bin/tr -d '\r\n' < "$identity_file")
+          [[ "$identity" =~ ^[0-9a-f]{64}\ \ app-release-verified\.aab$ ]] || { echo 'verified unsigned AAB identity is malformed' >&2; exit 1; }
+          expected_sha256="${identity%% *}"
+          printf '%s  %s\n' "$expected_sha256" "$aab" | /usr/bin/sha256sum --check --status
 
       - name: Reconstruct and sign protected release AAB
         shell: bash
         env:
+          TRUSTED_JDK_PATH: ${{ steps.trusted-jdk.outputs.path }}
           ANDROID_UPLOAD_KEYSTORE_BASE64: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_BASE64 }}
           ANDROID_UPLOAD_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_PASSWORD }}
           ANDROID_UPLOAD_KEY_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEY_PASSWORD }}
@@ -219,6 +256,10 @@ jobs:
           printf '::add-mask::%s\n' "$ANDROID_UPLOAD_KEY_PASSWORD"
           printf '::add-mask::%s\n' "$ANDROID_UPLOAD_KEY_ALIAS"
           [[ -n "$ANDROID_UPLOAD_KEYSTORE_BASE64" && -n "$ANDROID_UPLOAD_KEYSTORE_PASSWORD" && -n "$ANDROID_UPLOAD_KEY_PASSWORD" && -n "$ANDROID_UPLOAD_KEY_ALIAS" ]] || { echo 'a required android-release signing secret is empty' >&2; exit 1; }
+          [[ "$TRUSTED_JDK_PATH" =~ ^/opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17[^/]*/x64$ ]] || { echo 'setup-java produced an unexpected trusted JDK path' >&2; exit 1; }
+          keytool_bin="$TRUSTED_JDK_PATH/bin/keytool"
+          jarsigner_bin="$TRUSTED_JDK_PATH/bin/jarsigner"
+          [[ -x "$keytool_bin" && -x "$jarsigner_bin" ]] || { echo 'trusted JDK signing tools are unavailable' >&2; exit 1; }
           umask 077
           keystore_path="$RUNNER_TEMP/pulseblr-upload.keystore"
           signed_aab="$RUNNER_TEMP/app-release-signed.aab"
@@ -226,8 +267,6 @@ jobs:
           trap cleanup EXIT
           printf '%s' "$ANDROID_UPLOAD_KEYSTORE_BASE64" | /usr/bin/base64 --decode > "$keystore_path"
           /usr/bin/chmod 600 "$keystore_path"
-          keytool_bin="${JAVA_HOME:?setup-java did not expose JAVA_HOME}/bin/keytool"
-          jarsigner_bin="${JAVA_HOME:?setup-java did not expose JAVA_HOME}/bin/jarsigner"
           "$keytool_bin" -list -keystore "$keystore_path" -storepass:env ANDROID_UPLOAD_KEYSTORE_PASSWORD -alias "$ANDROID_UPLOAD_KEY_ALIAS" > /dev/null
           "$jarsigner_bin" \
             -sigalg SHA256withRSA \
@@ -236,10 +275,68 @@ jobs:
             -storepass:env ANDROID_UPLOAD_KEYSTORE_PASSWORD \
             -keypass:env ANDROID_UPLOAD_KEY_PASSWORD \
             -signedjar "$signed_aab" \
-            "$RUNNER_TEMP/unsigned-aab/app-release-unsigned.aab" \
+            "$RUNNER_TEMP/verified-unsigned-aab/app-release-verified.aab" \
             "$ANDROID_UPLOAD_KEY_ALIAS"
           cleanup
           trap - EXIT
+
+      - name: Upload signed release AAB intermediate
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: android-release-signed-intermediate-aab-${{ inputs.version_code }}
+          if-no-files-found: error
+          path: ${{ runner.temp }}/app-release-signed.aab
+
+      - name: Remove temporary signing material
+        if: always()
+        shell: bash
+        run: /usr/bin/rm -f -- "$RUNNER_TEMP/pulseblr-upload.keystore"
+
+  verify-signed-aab:
+    # This fresh runner validates the intermediate signed output without secrets.
+    needs: signed-aab
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Set up JDK 17 for signed AAB verification
+        uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Download signed release AAB intermediate
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: android-release-signed-intermediate-aab-${{ inputs.version_code }}
+          path: ${{ runner.temp }}/signed-aab
+
+      - name: Revalidate version code input
+        shell: bash
+        env:
+          VERSION_CODE: ${{ inputs.version_code }}
+        run: |
+          set -euo pipefail
+          max_version_code=2100000000
+          if ! [[ "$VERSION_CODE" =~ ^[1-9][0-9]*$ ]] || \
+            [ "${#VERSION_CODE}" -gt "${#max_version_code}" ] || \
+            { [ "${#VERSION_CODE}" -eq "${#max_version_code}" ] && [[ "$VERSION_CODE" > "$max_version_code" ]]; }; then
+            echo "version_code must be an integer from 1 through $max_version_code" >&2
+            exit 1
+          fi
+
+      - name: Download and hash Bundletool 1.18.3
+        shell: bash
+        run: |
+          set -euo pipefail
+          bundletool_dir="$RUNNER_TEMP/bundletool"
+          bundletool_jar="$bundletool_dir/bundletool-all-1.18.3.jar"
+          /usr/bin/mkdir -p "$bundletool_dir"
+          /usr/bin/curl --fail --location --proto '=https' --tlsv1.2 \
+            --output "$bundletool_jar" \
+            https://github.com/google/bundletool/releases/download/1.18.3/bundletool-all-1.18.3.jar
+          printf '%s  %s\n' 'a099cfa1543f55593bc2ed16a70a7c67fe54b1747bb7301f37fdfd6d91028e29' "$bundletool_jar" | /usr/bin/sha256sum --check --status
+          echo "BUNDLETOOL_JAR=$bundletool_jar" >> "$GITHUB_ENV"
 
       - name: Validate signed release AAB
         shell: bash
@@ -247,15 +344,15 @@ jobs:
           VERSION_CODE: ${{ inputs.version_code }}
         run: |
           set -euo pipefail
-          aab="$RUNNER_TEMP/app-release-signed.aab"
+          aab="$RUNNER_TEMP/signed-aab/app-release-signed.aab"
           manifest="$RUNNER_TEMP/signed-aab-manifest.xml"
           metadata="$RUNNER_TEMP/signed-aab-metadata.txt"
           signature="$RUNNER_TEMP/signed-aab-signature.txt"
           java_bin="${JAVA_HOME:?setup-java did not expose JAVA_HOME}/bin/java"
           jarsigner_bin="${JAVA_HOME:?setup-java did not expose JAVA_HOME}/bin/jarsigner"
-          bundletool_jar="$RUNNER_TEMP/bundletool/bundletool-all-1.18.3.jar"
-          "$java_bin" -jar "$bundletool_jar" validate --bundle="$aab"
-          "$java_bin" -jar "$bundletool_jar" dump manifest --bundle="$aab" --module=base > "$manifest"
+          [[ -f "$aab" ]] || { echo 'expected signed AAB intermediate is missing' >&2; exit 1; }
+          "$java_bin" -jar "$BUNDLETOOL_JAR" validate --bundle="$aab"
+          "$java_bin" -jar "$BUNDLETOOL_JAR" dump manifest --bundle="$aab" --module=base > "$manifest"
           manifest_line=$(/usr/bin/grep -E '^<manifest[[:space:]]' "$manifest" || true)
           sdk_line=$(/usr/bin/grep -E '^[[:space:]]*<uses-sdk[[:space:]]' "$manifest" || true)
           [[ "$manifest_line" == *'package="app.pulseblr.twa"'* && "$manifest_line" == *"android:versionCode=\"$VERSION_CODE\""* && "$manifest_line" == *'android:versionName="1"'* ]] || { echo 'signed AAB manifest identity/version check failed' >&2; exit 1; }
@@ -272,17 +369,12 @@ jobs:
           fi
           printf 'package=app.pulseblr.twa\nversionCode=%s\nversionName=1\nminSdk=21\ntargetSdk=36\n' "$VERSION_CODE" > "$metadata"
 
-      - name: Upload protected release AAB and diagnostics
+      - name: Upload final release AAB and diagnostics
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: android-release-aab-${{ inputs.version_code }}
           if-no-files-found: error
           path: |
-            ${{ runner.temp }}/app-release-signed.aab
+            ${{ runner.temp }}/signed-aab/app-release-signed.aab
             ${{ runner.temp }}/signed-aab-metadata.txt
             ${{ runner.temp }}/signed-aab-signature.txt
-
-      - name: Remove temporary signing material
-        if: always()
-        shell: bash
-        run: /usr/bin/rm -f -- "$RUNNER_TEMP/pulseblr-upload.keystore"

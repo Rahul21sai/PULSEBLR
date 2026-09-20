@@ -19,7 +19,8 @@
     "android:generate": "tsx scripts/android-generate.ts",
     "android:verify-generated": "tsx scripts/android-verify.ts --project android",
     "android:bundle:debug": "node scripts/android-gradle.mjs bundleDebug",
-    "android:verify-aab": "tsx scripts/android-verify.ts --aab"
+    "android:verify-aab": "tsx scripts/android-verify.ts --aab",
+    "validate:android-release-workflow": "node scripts/validate-android-release-workflow.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.106.0",
@@ -51,6 +52,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.3.4",
     "fake-indexeddb": "6.2.5",
+    "js-yaml": "4.3.2",
     "playwright": "^1.61.1",
     "sharp": "0.35.4",
     "tailwindcss": "^4",
