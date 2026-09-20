@@ -29,6 +29,26 @@ describe('PulseBLR mobile release contract', () => {
     ]);
   });
 
+  it('keeps the literal canonical share target and permanent TWA icon URLs', () => {
+    const web = read<Record<string, unknown>>('public/manifest.json');
+    const twa = read<Record<string, unknown>>('android/twa-manifest.json');
+
+    expect(web.share_target).toEqual({
+      action: '/add-event',
+      method: 'GET',
+      enctype: 'application/x-www-form-urlencoded',
+      params: { title: 'title', text: 'text', url: 'url' },
+    });
+    expect(twa.shareTarget).toEqual({
+      action: 'https://pulseblr-u9f1.vercel.app/add-event',
+      method: 'GET',
+      enctype: 'application/x-www-form-urlencoded',
+      params: { title: 'title', text: 'text', url: 'url' },
+    });
+    expect(twa.iconUrl).toBe('https://pulseblr-u9f1.vercel.app/icon-512.png');
+    expect(twa.maskableIconUrl).toBe('https://pulseblr-u9f1.vercel.app/icon-maskable-512.png');
+  });
+
   it('reports a missing Calendar shortcut as a user-visible integration break', () => {
     const web = read<Record<string, unknown>>('public/manifest.json');
     const twa = structuredClone(read<Record<string, unknown>>('android/twa-manifest.json'));
@@ -89,7 +109,27 @@ describe('PulseBLR mobile release contract', () => {
   it('rejects share-target drift', () => {
     const web = read<Record<string, unknown>>('public/manifest.json');
     const twa = structuredClone(read<Record<string, unknown>>('android/twa-manifest.json'));
-    (twa.shareTarget as { action: string }).action = `${PRODUCTION_ORIGIN}/wrong`;
+    (twa.shareTarget as { action: string }).action = 'https://pulseblr-u9f1.vercel.app/wrong';
+    expect(validateWebAndTwaParity(web, twa)).toContainEqual(expect.objectContaining({ code: 'share-target' }));
+  });
+
+  it.each([
+    ['endpoint', (web: Record<string, unknown>, twa: Record<string, unknown>) => {
+      (web.share_target as { action: string }).action = '/wrong';
+      (twa.shareTarget as { action: string }).action = 'https://pulseblr-u9f1.vercel.app/wrong';
+    }],
+    ['method', (web: Record<string, unknown>, twa: Record<string, unknown>) => {
+      (web.share_target as { method: string }).method = 'get';
+      (twa.shareTarget as { method: string }).method = 'get';
+    }],
+    ['parameters', (web: Record<string, unknown>, twa: Record<string, unknown>) => {
+      (web.share_target as { params: Record<string, string> }).params = { title: 'event', text: 'text', url: 'url' };
+      (twa.shareTarget as { params: Record<string, string> }).params = { title: 'event', text: 'text', url: 'url' };
+    }],
+  ])('rejects synchronized canonical share-target %s drift', (_label, mutate) => {
+    const web = structuredClone(read<Record<string, unknown>>('public/manifest.json'));
+    const twa = structuredClone(read<Record<string, unknown>>('android/twa-manifest.json'));
+    mutate(web, twa);
     expect(validateWebAndTwaParity(web, twa)).toContainEqual(expect.objectContaining({ code: 'share-target' }));
   });
 

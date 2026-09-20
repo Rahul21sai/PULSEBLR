@@ -63,11 +63,13 @@ tools, platform 36, and build-tools 36.0.0; validates the pinned Bundletool SHA-
 a debug AAB plus text diagnostics. It never receives signing material.
 
 For a proposed signed bundle, dispatch **Android protected release build** with a new positive
-`version_code`. The protected workflow validates the input, keeps `npm ci`, preflight, generation,
-generated-project verification, and `bundleRelease` secret-free, then reconstructs the keystore in
-runner temporary storage. Passwords are environment-only, the signed AAB is inspected with the
-requested version code, and the temporary keystore is always removed. That workflow does not upload
-anything to Play.
+`version_code`. Its first, unprotected `unsigned-aab` job has no signing secrets or protected
+environment: it runs `npm ci`, preflight, generation, generated-project verification, and
+`bundleRelease`, then uploads only the validated unsigned AAB and text metadata. The fresh protected
+`signed-aab` job downloads that artifact, revalidates the input plus package/version/SDK metadata with
+the SHA-256-checked Bundletool, and only then reconstructs the keystore in runner temporary storage.
+Passwords are environment-only, fixed JDK tools sign and re-inspect the AAB, and trap-based cleanup
+removes the keystore immediately with an `always()` backstop. No Play upload action is present.
 
 ## Digital Asset Links rollout
 

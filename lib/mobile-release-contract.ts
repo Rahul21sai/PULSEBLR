@@ -2,6 +2,12 @@ export const PRODUCTION_ORIGIN = 'https://pulseblr-u9f1.vercel.app';
 export const ANDROID_PACKAGE_ID = 'app.pulseblr.twa';
 export const REQUIRED_ANDROID_SDK = 36;
 export const MIN_ANDROID_SDK = 21;
+export const CANONICAL_SHARE_TARGET = {
+  action: `${PRODUCTION_ORIGIN}/add-event`,
+  method: 'GET',
+  enctype: 'application/x-www-form-urlencoded',
+  params: { title: 'title', text: 'text', url: 'url' },
+} as const;
 
 export interface ReleaseContractIssue {
   code: string;
@@ -91,10 +97,18 @@ function parseShareTarget(value: unknown): ValidShareTarget | undefined {
   return { action, method: value.method, enctype: value.enctype, params };
 }
 
-function sameParams(left: Record<string, string>, right: Record<string, string>): boolean {
+function sameParams(left: Record<string, string>, right: Readonly<Record<string, string>>): boolean {
   const leftKeys = Object.keys(left);
   const rightKeys = Object.keys(right);
-  return leftKeys.length === rightKeys.length && leftKeys.every(key => left[key] === right[key]);
+  return leftKeys.length === rightKeys.length && leftKeys.every(key => Object.hasOwn(right, key) && left[key] === right[key]);
+}
+
+function isCanonicalShareTarget(target: ValidShareTarget | undefined): boolean {
+  return Boolean(target) &&
+    target?.action.href === CANONICAL_SHARE_TARGET.action &&
+    target?.method === CANONICAL_SHARE_TARGET.method &&
+    target?.enctype === CANONICAL_SHARE_TARGET.enctype &&
+    sameParams(target?.params ?? {}, CANONICAL_SHARE_TARGET.params);
 }
 
 export function validateWebAndTwaParity(web: WebManifest, twa: TwaManifest): ReleaseContractIssue[] {
@@ -129,13 +143,9 @@ export function validateWebAndTwaParity(web: WebManifest, twa: TwaManifest): Rel
   const webShare = parseShareTarget(web.share_target);
   const twaShare = parseShareTarget(twa.shareTarget);
   add(
-    Boolean(webShare && twaShare) &&
-      twaShare?.action.href === webShare?.action.href &&
-      twaShare?.method === webShare?.method &&
-      twaShare?.enctype === webShare?.enctype &&
-      sameParams(twaShare?.params ?? {}, webShare?.params ?? {}),
+    isCanonicalShareTarget(webShare) && isCanonicalShareTarget(twaShare),
     'share-target',
-    'web and Android share targets must match',
+    `web and Android share targets must each be ${CANONICAL_SHARE_TARGET.method} ${CANONICAL_SHARE_TARGET.action}`,
   );
   add(twa.iconUrl === `${PRODUCTION_ORIGIN}/icon-512.png`, 'icon-url', 'Android icon URL must use the permanent origin');
   add(twa.maskableIconUrl === `${PRODUCTION_ORIGIN}/icon-maskable-512.png`, 'maskable-icon-url', 'Android maskable icon URL must use the permanent origin');
