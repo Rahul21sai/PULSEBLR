@@ -137,10 +137,11 @@ function mongooseDeletionStore(): AccountDeletionStore {
       let session: ClientSession | undefined;
       try {
         const db = await connectDB();
-        session = await db.startSession();
+        const transactionSession = await db.startSession();
+        session = transactionSession;
         let value: T | undefined;
-        await session.withTransaction(async () => {
-          value = await work(mongooseTransaction(session));
+        await transactionSession.withTransaction(async () => {
+          value = await work(mongooseTransaction(transactionSession));
         });
         if (value === undefined) throw new Error('Deletion transaction produced no result');
         return value;
