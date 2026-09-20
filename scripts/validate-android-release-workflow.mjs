@@ -3,12 +3,45 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { load } from 'js-yaml';
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const workflowDirectory = path.join(root, '.github', 'workflows');
+const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const validationRoot = (() => {
+  if (process.argv.length === 2) return repositoryRoot;
+  if (process.argv.length === 4 && process.argv[2] === '--root' && process.argv[3].length > 0) {
+    return path.resolve(process.argv[3]);
+  }
+  throw new Error('Usage: validate-android-release-workflow.mjs [--root <repository-root>]');
+})();
+const workflowDirectory = path.join(validationRoot, '.github', 'workflows');
 const bundletoolSha256 = 'a099cfa1543f55593bc2ed16a70a7c67fe54b1747bb7301f37fdfd6d91028e29';
 const verifiedUnsignedArtifact = 'android-release-verified-unsigned-aab-${{ inputs.version_code }}';
 const signedIntermediateArtifact = 'android-release-signed-intermediate-aab-${{ inputs.version_code }}';
 const finalReleaseArtifact = 'android-release-aab-${{ inputs.version_code }}';
+const unsignedArtifactPath = '${{ runner.temp }}/app-release-unsigned.aab';
+const unsignedDownloadPath = '${{ runner.temp }}/unsigned-aab';
+const verifiedUnsignedPaths = [
+  '${{ runner.temp }}/app-release-verified.aab',
+  '${{ runner.temp }}/verified-unsigned-aab.sha256',
+  '${{ runner.temp }}/verified-unsigned-aab-metadata.txt',
+];
+const verifiedUnsignedDownloadPath = '${{ runner.temp }}/verified-unsigned-aab';
+const signedIntermediatePath = '${{ runner.temp }}/app-release-signed.aab';
+const signedIntermediateDownloadPath = '${{ runner.temp }}/signed-aab';
+const finalReleasePaths = [
+  '${{ runner.temp }}/signed-aab/app-release-signed.aab',
+  '${{ runner.temp }}/signed-aab-metadata.txt',
+  '${{ runner.temp }}/signed-aab-signature.txt',
+];
+const signerActionAllowlist = new Map([
+  ['Set up trusted JDK 17', 'actions/setup-java'],
+  ['Download verified unsigned release AAB', 'actions/download-artifact'],
+  ['Upload signed release AAB intermediate', 'actions/upload-artifact'],
+]);
+const signerRunStepAllowlist = new Set([
+  'Revalidate version code input',
+  'Verify verified unsigned AAB identity',
+  'Reconstruct and sign protected release AAB',
+  'Remove temporary signing material',
+]);
 
 /** @param {unknown} value @returns {value is Record<string, unknown>} */
 function isRecord(value) {
@@ -57,13 +90,26 @@ function stepName(step) {
 
 /** @param {Record<string, unknown>} step */
 function containsSecret(step) {
-  return stringsIn(step.env).some(value => value.includes('${{ secrets.'));
+  return stringsIn(step).some(value => value.includes('${{ secrets.'));
 }
 
 /** @param {Record<string, unknown>} step */
 function artifactName(step) {
   const withOptions = record(step.with);
   return typeof withOptions.name === 'string' ? withOptions.name : '';
+}
+
+/** @param {Record<string, unknown>} step */
+function artifactPaths(step) {
+  const pathValue = record(step.with).path;
+  return typeof pathValue === 'string'
+    ? pathValue.split('\n').map(value => value.trim()).filter(Boolean)
+    : [];
+}
+
+/** @param {string[]} actual @param {string[]} expected */
+function samePaths(actual, expected) {
+  return actual.length === expected.length && actual.every((value, index) => value === expected[index]);
 }
 
 /** @param {Record<string, unknown>} job */
@@ -106,10 +152,48 @@ function expectedJobArtifacts(job, name) {
   return uploadSteps(job).some(step => artifactName(step) === name);
 }
 
+/** @param {Record<string, unknown>} job @param {string} name @param {string[]} paths */
+function expectedArtifactTransfer(job, action, name, paths) {
+  const transfers = action === 'download' ? downloadSteps(job) : uploadSteps(job);
+  return transfers.length === 1 && artifactName(transfers[0]) === name && samePaths(artifactPaths(transfers[0]), paths);
+}
+
 /** @param {Record<string, unknown>} job */
-function expectedDownloadedArtifact(job, name) {
-  const downloads = downloadSteps(job);
-  return downloads.length === 1 && artifactName(downloads[0]) === name;
+function hasOnlyAllowedSignerSteps(job) {
+  return steps(job).filter(step => {
+    const uses = stepUses(step);
+    const name = stepName(step);
+    if (uses) return signerActionAllowlist.get(name) !== uses.split('@', 1)[0];
+    return !signerRunStepAllowlist.has(name) || stepRun(step).length === 0;
+  });
+}
+
+/** @param {Record<string, unknown>} job */
+function hasVerifiedUnsignedIdentityCheck(job) {
+  const step = steps(job).find(candidate => stepName(candidate) === 'Verify verified unsigned AAB identity');
+  const run = step ? stepRun(step) : '';
+  return run.includes('artifact_dir="$RUNNER_TEMP/verified-unsigned-aab"') &&
+    run.includes('aab="$artifact_dir/app-release-verified.aab"') &&
+    run.includes('identity_file="$artifact_dir/verified-unsigned-aab.sha256"') &&
+    run.includes("identity=$(/usr/bin/tr -d '\\r\\n' < \"$identity_file\")") &&
+    run.includes('[[ "$identity" =~ ^[0-9a-f]{64}\\ \\ app-release-verified\\.aab$ ]]') &&
+    run.includes('expected_sha256="${identity%% *}"') &&
+    run.includes("printf '%s  %s\\n' \"$expected_sha256\" \"$aab\" | /usr/bin/sha256sum --check --status");
+}
+
+/** @param {Record<string, unknown>} jobs */
+function hasBoundedVersionCodeValidation(jobs) {
+  const expectedNames = new Set(['Validate version code input', 'Revalidate version code input']);
+  const validators = Object.values(jobs).flatMap(job => steps(record(job))).filter(step => expectedNames.has(stepName(step)));
+  return validators.length === 4 && validators.every(step => {
+    const environment = record(step.env);
+    const run = stepRun(step);
+    return environment.VERSION_CODE === '${{ inputs.version_code }}' &&
+      run.includes('max_version_code=2100000000') &&
+      run.includes('[[ "$VERSION_CODE" =~ ^[1-9][0-9]*$ ]]') &&
+      run.includes('[ "${#VERSION_CODE}" -gt "${#max_version_code}" ]') &&
+      run.includes('[[ "$VERSION_CODE" > "$max_version_code" ]]');
+  });
 }
 
 /** @param {unknown} value */
@@ -145,8 +229,15 @@ function validateReleaseWorkflow(workflow, errors) {
   if (!jobs['signed-aab']) errors.push('signed-aab job is required');
   if (!jobs['verify-signed-aab']) errors.push('verify-signed-aab job is required');
 
+  if (!hasBoundedVersionCodeValidation(jobs)) {
+    errors.push('every version-code validation step must enforce integer range 1..2100000000');
+  }
+
   if (jobHasSecret(unsigned) || unsigned.environment) {
     errors.push('unsigned-aab must remain secret-free and unprotected');
+  }
+  if (!expectedArtifactTransfer(unsigned, 'upload', 'android-release-unsigned-aab-${{ inputs.version_code }}', [unsignedArtifactPath])) {
+    errors.push('unsigned-aab must publish the unsigned AAB at ${{ runner.temp }}/app-release-unsigned.aab');
   }
   if (jobHasSecret(verified) || verified.environment) {
     errors.push('verify-unsigned-aab must remain secret-free and unprotected');
@@ -154,14 +245,14 @@ function validateReleaseWorkflow(workflow, errors) {
   if (!jobNeeds(verified).includes('unsigned-aab')) {
     errors.push('verify-unsigned-aab must depend on unsigned-aab');
   }
-  if (!expectedDownloadedArtifact(verified, 'android-release-unsigned-aab-${{ inputs.version_code }}')) {
-    errors.push('verify-unsigned-aab must download exactly the unsigned AAB artifact');
+  if (!expectedArtifactTransfer(verified, 'download', 'android-release-unsigned-aab-${{ inputs.version_code }}', [unsignedDownloadPath])) {
+    errors.push('verify-unsigned-aab must download the unsigned AAB artifact to ${{ runner.temp }}/unsigned-aab');
   }
   if (!workflowHasBundletool(verified) || !steps(verified).some(step => stepRun(step).includes(bundletoolSha256))) {
     errors.push('verify-unsigned-aab must hash Bundletool 1.18.3 before validating the unsigned AAB');
   }
-  if (!expectedJobArtifacts(verified, verifiedUnsignedArtifact)) {
-    errors.push('verify-unsigned-aab must publish the verified unsigned AAB intermediate artifact');
+  if (!expectedArtifactTransfer(verified, 'upload', verifiedUnsignedArtifact, verifiedUnsignedPaths)) {
+    errors.push('verify-unsigned-aab must publish the exact verified AAB, identity, and metadata artifact paths');
   }
   if (!steps(verified).some(step => /app-release-verified\.aab/.test(stepRun(step)) && /sha256sum/.test(stepRun(step)))) {
     errors.push('verify-unsigned-aab must publish a SHA-256 identity for the exact verified AAB');
@@ -176,10 +267,14 @@ function validateReleaseWorkflow(workflow, errors) {
   if (!jobNeeds(signer).includes('verify-unsigned-aab')) {
     errors.push('signed-aab must depend on successful verify-unsigned-aab');
   }
-  if (!expectedDownloadedArtifact(signer, verifiedUnsignedArtifact)) {
-    errors.push('signed-aab must download only the verified unsigned AAB intermediate artifact');
+  if (!expectedArtifactTransfer(signer, 'download', verifiedUnsignedArtifact, [verifiedUnsignedDownloadPath])) {
+    errors.push('signed-aab must download the verified unsigned AAB artifact to ${{ runner.temp }}/verified-unsigned-aab');
   }
   const signerSteps = steps(signer);
+  const unallowlistedSignerSteps = hasOnlyAllowedSignerSteps(signer);
+  if (unallowlistedSignerSteps.length > 0) {
+    errors.push(`signed-aab contains an unallowlisted action or step: ${unallowlistedSignerSteps.map(stepName).join(', ')}`);
+  }
   const signerSecretSteps = signerSteps.filter(containsSecret);
   const signerSecretIndex = findSecretStep(signer);
   if (stringsIn(signer.env).some(value => value.includes('${{ secrets.')) || signerSecretSteps.length !== 1 || signerSecretIndex === -1) {
@@ -219,16 +314,14 @@ function validateReleaseWorkflow(workflow, errors) {
   if (jobRunsForbiddenBuildOrParser(signer).length > 0) {
     errors.push('protected signer must not execute Bundletool, repository code, npm, Bubblewrap, or Gradle before/after signing');
   }
-  if (!steps(signer).some(step => stepName(step) === 'Verify verified unsigned AAB identity' &&
-      stepRun(step).includes('/usr/bin/sha256sum --check --status') &&
-      stepRun(step).includes('app-release-verified.aab'))) {
-    errors.push('signed-aab must re-check the verified AAB SHA-256 identity with fixed /usr/bin/sha256sum');
+  if (!hasVerifiedUnsignedIdentityCheck(signer)) {
+    errors.push('signed-aab must validate the exact verified unsigned AAB identity-file semantics before signing');
   }
   if (!steps(signer).some(step => step.if === 'always()' && /pulseblr-upload\.keystore/.test(stepRun(step)))) {
     errors.push('signed-aab must retain an always() keystore cleanup backstop');
   }
-  if (!expectedJobArtifacts(signer, signedIntermediateArtifact)) {
-    errors.push('signed-aab may upload only the signed intermediate AAB artifact');
+  if (!expectedArtifactTransfer(signer, 'upload', signedIntermediateArtifact, [signedIntermediatePath])) {
+    errors.push('signed-aab may upload only the signed intermediate AAB at its exact artifact path');
   }
   if (uploadSteps(signer).some(step => artifactName(step) === finalReleaseArtifact)) {
     errors.push('signed-aab must not publish the final owner-facing release artifact');
@@ -240,18 +333,24 @@ function validateReleaseWorkflow(workflow, errors) {
   if (!jobNeeds(postSign).includes('signed-aab')) {
     errors.push('verify-signed-aab must depend on signed-aab');
   }
-  if (!expectedDownloadedArtifact(postSign, signedIntermediateArtifact)) {
-    errors.push('verify-signed-aab must download exactly the signed intermediate artifact');
+  if (!expectedArtifactTransfer(postSign, 'download', signedIntermediateArtifact, [signedIntermediateDownloadPath])) {
+    errors.push('verify-signed-aab must download the signed intermediate artifact to ${{ runner.temp }}/signed-aab');
   }
   const postSignRuns = steps(postSign).map(stepRun).join('\n');
   if (!postSignRuns.includes(bundletoolSha256) || !/bundletool/i.test(postSignRuns) || !/-verify\s+-verbose\s+-certs\s+-strict/.test(postSignRuns)) {
     errors.push('verify-signed-aab must hash Bundletool and strictly verify the final signed AAB');
   }
   if (!postSignRuns.includes('package="app.pulseblr.twa"') || !postSignRuns.includes('android:minSdkVersion="21"') || !postSignRuns.includes('android:targetSdkVersion="36"')) {
-    errors.push('verify-signed-aab must validate final package, version, and SDK metadata');
+    errors.push('verify-signed-aab must validate final package and SDK metadata');
   }
-  if (!expectedJobArtifacts(postSign, finalReleaseArtifact)) {
-    errors.push('only verify-signed-aab may publish the final owner-facing release AAB and diagnostics');
+  if (!postSignRuns.includes('android:versionCode=\\"$VERSION_CODE\\"')) {
+    errors.push('verify-signed-aab must validate final manifest versionCode against the requested VERSION_CODE');
+  }
+  if (!postSignRuns.includes('android:versionName="1"')) {
+    errors.push('verify-signed-aab must validate final manifest versionName "1"');
+  }
+  if (!expectedArtifactTransfer(postSign, 'upload', finalReleaseArtifact, finalReleasePaths)) {
+    errors.push('only verify-signed-aab may publish the final owner-facing AAB and diagnostics at exact artifact paths');
   }
   const finalPublishers = Object.entries(jobs).filter(([, job]) => expectedJobArtifacts(record(job), finalReleaseArtifact));
   if (finalPublishers.length !== 1 || finalPublishers[0][0] !== 'verify-signed-aab') {
@@ -271,7 +370,7 @@ for (const filename of readdirSync(workflowDirectory).filter(file => /\.ya?ml$/i
   parsedWorkflows.set(filename, workflow);
 }
 
-const dependabot = load(readFileSync(path.join(root, '.github', 'dependabot.yml'), 'utf8'));
+const dependabot = load(readFileSync(path.join(validationRoot, '.github', 'dependabot.yml'), 'utf8'));
 if (!isRecord(dependabot)) errors.push('dependabot.yml must parse as a YAML mapping');
 
 const releaseWorkflow = parsedWorkflows.get('android-release.yml');

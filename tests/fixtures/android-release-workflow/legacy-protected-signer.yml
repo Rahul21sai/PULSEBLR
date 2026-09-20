@@ -1,0 +1,48 @@
+name: Legacy protected release fixture
+
+on:
+  workflow_dispatch:
+
+jobs:
+  unsigned-aab:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Build unsigned release AAB
+        run: echo unsigned
+      - name: Upload unsigned release AAB
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: android-release-unsigned-aab-${{ inputs.version_code }}
+
+  signed-aab:
+    needs: unsigned-aab
+    environment: android-release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up trusted JDK 17
+        uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Download unsigned release AAB
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: android-release-unsigned-aab-${{ inputs.version_code }}
+          path: ${{ runner.temp }}/unsigned-aab
+      - name: Download and hash Bundletool 1.18.3
+        run: |
+          java -jar bundletool-all-1.18.3.jar validate --bundle="$RUNNER_TEMP/unsigned-aab/app-release-unsigned.aab"
+      - name: Inspect untrusted unsigned AAB before signing secrets
+        run: |
+          java -jar bundletool-all-1.18.3.jar dump manifest --bundle="$RUNNER_TEMP/unsigned-aab/app-release-unsigned.aab"
+      - name: Reconstruct and sign protected release AAB
+        env:
+          ANDROID_UPLOAD_KEYSTORE_BASE64: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_BASE64 }}
+          ANDROID_UPLOAD_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_PASSWORD }}
+          ANDROID_UPLOAD_KEY_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEY_PASSWORD }}
+          ANDROID_UPLOAD_KEY_ALIAS: ${{ secrets.ANDROID_UPLOAD_KEY_ALIAS }}
+        run: |
+          keytool_bin="${JAVA_HOME}/bin/keytool"
+          jarsigner_bin="${JAVA_HOME}/bin/jarsigner"
+          "$keytool_bin" -list
+          "$jarsigner_bin" -verify bundle.aab
