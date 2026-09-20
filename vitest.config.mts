@@ -22,8 +22,16 @@ export default defineConfig({
     environment: 'node',
     // A pure-function suite that takes longer than this has hit a real problem.
     testTimeout: 5000,
+    server: {
+      deps: {
+        inline: ['next-auth'],
+      },
+    },
   },
   resolve: {
-    alias: { '@': path.resolve(rootDir, '.') },
+    alias: {
+      '@': path.resolve(rootDir, '.'),
+      'next/server': path.resolve(rootDir, 'node_modules/next/server.js'),
+    },
   },
 });
