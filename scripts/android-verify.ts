@@ -11,6 +11,7 @@ import {
   PRODUCTION_ORIGIN,
   REQUIRED_ANDROID_SDK,
 } from '../lib/mobile-release-contract';
+import { validateJavaVersion } from './android-toolchain';
 
 export interface GeneratedProjectMetadata {
   applicationId: string;
@@ -42,11 +43,17 @@ export interface VerifyAabOptions {
   expectedVersionCode?: number;
   expectedVersionName?: string;
   projectRoot?: string;
-  javaBin?: string;
-  jarsignerBin?: string;
+  env?: Record<string, string | undefined>;
+  javaHome?: string;
+  platform?: NodeJS.Platform;
+  fileExists?: (file: string) => boolean;
   hashFile?: (file: string) => string;
   run?: (command: string, args: readonly string[]) => CommandResult;
 }
+
+export type AndroidVerifyCommand =
+  | { mode: 'project'; projectPath: string }
+  | { mode: 'aab'; aabPath: string; expectedVersionCode?: number };
 
 const bundletoolSha256 = 'a099cfa1543f55593bc2ed16a70a7c67fe54b1747bb7301f37fdfd6d91028e29';
 const bundletoolFilename = 'bundletool-all-1.18.3.jar';
@@ -62,10 +69,14 @@ const initialProjectMetadata: GeneratedProjectMetadata = {
   shortcutPaths: ['/scan', '/card', '/', '/tracker', '/calendar'],
 };
 
-function requiredMatch(source: string, pattern: RegExp, field: string): string {
-  const match = pattern.exec(source);
-  if (!match) throw new Error(`Generated Gradle artifact is missing ${field}`);
-  return match[1];
+function requiredUniqueMatch(source: string, pattern: RegExp, field: string): string {
+  const flags = `${pattern.flags.replaceAll('g', '')}g`;
+  const matches = [...source.matchAll(new RegExp(pattern.source, flags))];
+  if (matches.length === 0) throw new Error(`Generated Gradle artifact is missing ${field}`);
+  if (matches.length !== 1) {
+    throw new Error(`Generated Gradle artifact must assign ${field} exactly once (found ${matches.length})`);
+  }
+  return matches[0][1];
 }
 
 function parseGradle(projectRoot: string): Omit<GeneratedProjectMetadata, 'shortcutCount' | 'shortcutPaths'> {
@@ -73,14 +84,14 @@ function parseGradle(projectRoot: string): Omit<GeneratedProjectMetadata, 'short
   const gradleFile = candidates.find(existsSync);
   if (!gradleFile) throw new Error('Generated project is missing app/build.gradle');
   const source = readFileSync(gradleFile, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
-  const number = (pattern: RegExp, field: string) => Number(requiredMatch(source, pattern, field));
+  const number = (pattern: RegExp, field: string) => Number(requiredUniqueMatch(source, pattern, field));
   return {
-    applicationId: requiredMatch(source, /\bapplicationId\s*(?:=\s*)?["']([^"']+)["']/, 'applicationId'),
+    applicationId: requiredUniqueMatch(source, /\bapplicationId\s*(?:=\s*)?["']([^"']+)["']/, 'applicationId'),
     compileSdk: number(/\bcompileSdk(?:Version)?\s*(?:=\s*)?(\d+)/, 'compileSdk'),
     targetSdk: number(/\btargetSdk(?:Version)?\s*(?:=\s*)?(\d+)/, 'targetSdk'),
     minSdk: number(/\bminSdk(?:Version)?\s*(?:=\s*)?(\d+)/, 'minSdk'),
     versionCode: number(/\bversionCode\s*(?:=\s*)?(\d+)/, 'versionCode'),
-    versionName: requiredMatch(source, /\bversionName\s*(?:=\s*)?["']([^"']+)["']/, 'versionName'),
+    versionName: requiredUniqueMatch(source, /\bversionName\s*(?:=\s*)?["']([^"']+)["']/, 'versionName'),
   };
 }
 
@@ -172,14 +183,20 @@ function parseBundleManifest(xml: string): AabMetadata {
   };
 }
 
-function defaultBundletoolJar(): string {
-  return process.env.BUNDLETOOL_JAR ?? path.join(homedir(), '.cache', 'bundletool', bundletoolFilename);
+function defaultBundletoolJar(env: Record<string, string | undefined>): string {
+  return env.BUNDLETOOL_JAR ?? path.join(homedir(), '.cache', 'bundletool', bundletoolFilename);
 }
 
 export function verifyAab(aabPath: string, options: VerifyAabOptions = {}): AabMetadata {
   if (!existsSync(aabPath)) throw new Error('Android App Bundle does not exist');
-  const bundletoolJar = options.bundletoolJar ?? defaultBundletoolJar();
+  const env = options.env ?? process.env;
+  const bundletoolJar = options.bundletoolJar ?? defaultBundletoolJar(env);
   if (!existsSync(bundletoolJar)) throw new Error(`Bundletool ${bundletoolFilename} is required`);
+
+  const hash = (options.hashFile ?? sha256File)(bundletoolJar);
+  if (hash.toLowerCase() !== bundletoolSha256) {
+    throw new Error(`Bundletool SHA-256 must match the pinned ${bundletoolFilename} digest`);
+  }
 
   const projectMetadata = options.expectedVersionCode === undefined || options.expectedVersionName === undefined
     ? parseGeneratedProject(options.projectRoot ?? path.resolve('android'))
@@ -191,17 +208,22 @@ export function verifyAab(aabPath: string, options: VerifyAabOptions = {}): AabM
   }
   if (!expectedVersionName) throw new Error('Expected AAB versionName must be non-empty');
 
-  const hash = (options.hashFile ?? sha256File)(bundletoolJar);
-  if (hash.toLowerCase() !== bundletoolSha256) {
-    throw new Error(`Bundletool SHA-256 must match the pinned ${bundletoolFilename} digest`);
-  }
-
   const run = options.run ?? ((command, args) => {
     const result = spawnSync(command, [...args], { encoding: 'utf8', windowsHide: true });
     return { status: result.status, stdout: result.stdout ?? '', stderr: result.stderr ?? '' };
   });
-  const java = options.javaBin ?? 'java';
-  const jarsigner = options.jarsignerBin ?? 'jarsigner';
+  const javaHome = options.javaHome ?? env.JAVA_HOME;
+  if (!javaHome) throw new Error('JAVA_HOME is required for AAB verification');
+  const executableSuffix = (options.platform ?? process.platform) === 'win32' ? '.exe' : '';
+  const java = path.join(javaHome, 'bin', `java${executableSuffix}`);
+  const jarsigner = path.join(javaHome, 'bin', `jarsigner${executableSuffix}`);
+  const fileExists = options.fileExists ?? existsSync;
+  if (!fileExists(java) || !fileExists(jarsigner)) {
+    throw new Error('JAVA_HOME must contain both JDK 17 java and jarsigner executables');
+  }
+  const javaVersion = run(java, ['-version']);
+  if (javaVersion.status !== 0) throw new Error('JAVA_HOME java -version failed during AAB verification');
+  validateJavaVersion(`${javaVersion.stdout}\n${javaVersion.stderr}`);
   const validate = run(java, ['-jar', bundletoolJar, 'validate', `--bundle=${aabPath}`]);
   if (validate.status !== 0) throw new Error('Bundletool validate failed');
   const dump = run(java, ['-jar', bundletoolJar, 'dump', 'manifest', `--bundle=${aabPath}`, '--module=base']);
@@ -220,53 +242,75 @@ export function verifyAab(aabPath: string, options: VerifyAabOptions = {}): AabM
     if (received !== value) throw new Error(`Bundle ${field} must be ${value} (received ${received})`);
   }
 
-  const signature = run(jarsigner, ['-verify', '-verbose', '-certs', aabPath]);
+  const signature = run(jarsigner, ['-verify', '-verbose', '-certs', '-strict', aabPath]);
   const signatureOutput = `${signature.stdout}\n${signature.stderr}`;
+  const signatureStatus = signature.status;
+  const selfSignedPolicy =
+    signatureStatus !== null &&
+    signatureStatus > 0 &&
+    (signatureStatus & ~24) === 0 &&
+    (signatureStatus & 16) === 16 &&
+    /signer certificate is self-signed/i.test(signatureOutput);
+  const verified = /\bjar verified(?:, with signer errors)?\./i.test(signatureOutput);
+  const validityFailure = /\b(?:expired|not yet valid|revoked|unsigned|not signed)\b|signature (?:invalid|error)/i.test(signatureOutput);
+  const unapprovedSignerError =
+    /with signer errors/i.test(signatureOutput) && !selfSignedPolicy ||
+    /certificate chain is invalid/i.test(signatureOutput) && !selfSignedPolicy ||
+    /signer certificate is self-signed/i.test(signatureOutput) && !selfSignedPolicy;
   if (
-    signature.status !== 0 ||
-    !/\bjar verified\./i.test(signatureOutput) ||
-    /\b(?:unsigned|not signed|signer error|signature (?:invalid|error))\b/i.test(signatureOutput)
+    (signatureStatus !== 0 && !selfSignedPolicy) ||
+    !verified ||
+    validityFailure ||
+    unapprovedSignerError
   ) {
     throw new Error('AAB signature verification failed or the bundle is unsigned');
   }
   return metadata;
 }
 
-function main(): void {
-  const aabFlag = process.argv.indexOf('--aab');
-  if (aabFlag !== -1) {
-    const aabArgument = process.argv[aabFlag + 1];
-    if (!aabArgument || aabArgument.startsWith('--')) {
-      console.error('Usage: android-verify.ts --aab <bundle> [--expected-version-code <positive-integer>]');
-      process.exitCode = 1;
-      return;
+export function parseAndroidVerifyArgs(args: readonly string[]): AndroidVerifyCommand {
+  if (args[0] === '--project') {
+    if (args.length !== 2 || !args[1] || args[1].startsWith('--')) {
+      throw new Error('Invalid arguments; usage: --project <generated-project>');
     }
-    const expectedFlag = process.argv.indexOf('--expected-version-code');
-    const expectedArgument = expectedFlag === -1 ? undefined : process.argv[expectedFlag + 1];
-    const expectedVersionCode = expectedArgument === undefined ? undefined : Number(expectedArgument);
-    if (expectedArgument !== undefined && (!Number.isInteger(expectedVersionCode) || Number(expectedVersionCode) <= 0)) {
-      console.error('--expected-version-code must be a positive integer');
-      process.exitCode = 1;
-      return;
-    }
-    try {
-      const metadata = verifyAab(path.resolve(aabArgument), { expectedVersionCode });
-      console.log(`Android App Bundle: PASS (${metadata.packageName}, version ${metadata.versionCode})`);
-    } catch (error) {
-      console.error(error instanceof Error ? error.message : String(error));
-      process.exitCode = 1;
-    }
-    return;
+    return { mode: 'project', projectPath: args[1] };
   }
-  const projectFlag = process.argv.indexOf('--project');
-  if (projectFlag === -1 || !process.argv[projectFlag + 1]) {
-    console.error('Usage: android-verify.ts --project <generated-project>');
+  if (args[0] === '--aab') {
+    if ((args.length !== 2 && args.length !== 4) || !args[1] || args[1].startsWith('--')) {
+      throw new Error('Invalid arguments; usage: --aab <bundle> [--expected-version-code <positive-integer>]');
+    }
+    if (args.length === 2) return { mode: 'aab', aabPath: args[1] };
+    if (args[2] !== '--expected-version-code' || !/^[1-9]\d*$/.test(args[3])) {
+      throw new Error('Unknown argument or invalid --expected-version-code positive integer');
+    }
+    const expectedVersionCode = Number(args[3]);
+    if (!Number.isSafeInteger(expectedVersionCode)) {
+      throw new Error('--expected-version-code must be a positive integer');
+    }
+    return { mode: 'aab', aabPath: args[1], expectedVersionCode };
+  }
+  throw new Error('Unknown argument; usage: --project <generated-project> or --aab <bundle>');
+}
+
+function main(): void {
+  let command: AndroidVerifyCommand;
+  try {
+    command = parseAndroidVerifyArgs(process.argv.slice(2));
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
     process.exitCode = 1;
     return;
   }
   try {
-    const metadata = verifyGeneratedProject(path.resolve(process.argv[projectFlag + 1]));
-    console.log(`Generated Android project: PASS (${metadata.applicationId}, version ${metadata.versionCode})`);
+    if (command.mode === 'aab') {
+      const metadata = verifyAab(path.resolve(command.aabPath), {
+        expectedVersionCode: command.expectedVersionCode,
+      });
+      console.log(`Android App Bundle: PASS (${metadata.packageName}, version ${metadata.versionCode})`);
+    } else {
+      const metadata = verifyGeneratedProject(path.resolve(command.projectPath));
+      console.log(`Generated Android project: PASS (${metadata.applicationId}, version ${metadata.versionCode})`);
+    }
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));
     process.exitCode = 1;

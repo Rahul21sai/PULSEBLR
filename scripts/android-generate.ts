@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import {
@@ -30,11 +30,47 @@ export interface BubblewrapCompatibilityResult {
   shortcutPaths: string[];
 }
 
+export interface BubblewrapPostprocessOptions {
+  commitStagedFile?: (staged: string, target: string) => void;
+}
+
 const shortcutPaths = ['/scan', '/card', '/', '/tracker', '/calendar'] as const;
 const generatedLimit = 'assert twaManifest.shortcuts.size() < 5, "You can have at most 4 shortcuts."';
 const compatibleLimit = 'assert twaManifest.shortcuts.size() == 5, "PulseBLR requires exactly 5 shortcuts."';
 const generatedData = "'android:data': s.url)";
 const compatibleData = "'android:data': '@string/shortcut_url_' + i)";
+const bubblewrapEnvironmentAllowlist = new Set([
+  'APPDATA',
+  'CI',
+  'COMSPEC',
+  'FORCE_COLOR',
+  'HOME',
+  'HOMEDRIVE',
+  'HOMEPATH',
+  'LANG',
+  'LC_ALL',
+  'LC_CTYPE',
+  'LOCALAPPDATA',
+  'NO_COLOR',
+  'PATH',
+  'PATHEXT',
+  'SYSTEMROOT',
+  'TEMP',
+  'TERM',
+  'TMP',
+  'TMPDIR',
+  'TZ',
+  'USERPROFILE',
+  'WINDIR',
+]);
+
+function generationEnvironment(source: Record<string, string | undefined>): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(source).filter(([key, value]) =>
+      value !== undefined && bubblewrapEnvironmentAllowlist.has(key.toUpperCase()),
+    ),
+  ) as Record<string, string>;
+}
 
 function readJson(file: string): Record<string, unknown> {
   return JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>;
@@ -111,7 +147,20 @@ function authoritativeShortcutUrls(web: Record<string, unknown>, twa: Record<str
   return exactUrls(twa.shortcuts, 'Android');
 }
 
-export function postprocessGeneratedProject(repositoryRoot: string): BubblewrapCompatibilityResult {
+function assertEmptyUpstreamShortcuts(source: string): void {
+  const artifact = source
+    .replace(/<!--[^]*?-->/g, '')
+    .replace(/<\?xml[^>]*\?>/g, '')
+    .trim();
+  if (!/^<shortcuts\s+xmlns:android=(['"])http:\/\/schemas\.android\.com\/apk\/res\/android\1\s*\/>$/.test(artifact)) {
+    throw new Error('Bubblewrap 1.25.0 upstream shortcuts.xml must have the expected empty shape');
+  }
+}
+
+export function postprocessGeneratedProject(
+  repositoryRoot: string,
+  options: BubblewrapPostprocessOptions = {},
+): BubblewrapCompatibilityResult {
   const androidRoot = path.join(repositoryRoot, 'android');
   const web = readJson(path.join(repositoryRoot, 'public', 'manifest.json'));
   const twa = readJson(path.join(androidRoot, 'twa-manifest.json'));
@@ -127,20 +176,58 @@ export function postprocessGeneratedProject(repositoryRoot: string): BubblewrapC
   const resourceRoot = path.join(androidRoot, 'app', 'src', 'main', 'res');
   const xmlRoot = path.join(resourceRoot, 'xml');
   const valuesRoot = path.join(resourceRoot, 'values');
+  const shortcutsFile = path.join(xmlRoot, 'shortcuts.xml');
+  const resourcesFile = path.join(valuesRoot, 'pulseblr_shortcut_urls.xml');
+  if (!existsSync(xmlRoot) || !existsSync(valuesRoot)) {
+    throw new Error('Bubblewrap 1.25.0 generated resource directories are missing');
+  }
+  const originalShortcuts = readFileSync(shortcutsFile, 'utf8');
+  assertEmptyUpstreamShortcuts(originalShortcuts);
   const shortcutsXml = renderShortcutsXml(urls.length);
   const shortcutResources = renderShortcutUrlResources(urls);
-
-  mkdirSync(xmlRoot, { recursive: true });
-  mkdirSync(valuesRoot, { recursive: true });
-  writeFileSync(gradleFile, compatibleGradle);
-  writeFileSync(path.join(xmlRoot, 'shortcuts.xml'), shortcutsXml);
-  writeFileSync(path.join(valuesRoot, 'pulseblr_shortcut_urls.xml'), shortcutResources);
+  const outputs = [
+    { target: gradleFile, content: compatibleGradle },
+    { target: shortcutsFile, content: shortcutsXml },
+    { target: resourcesFile, content: shortcutResources },
+  ];
+  const originals = outputs.map(output => ({
+    target: output.target,
+    existed: existsSync(output.target),
+    content: existsSync(output.target) ? readFileSync(output.target) : undefined,
+  }));
+  const stageRoot = mkdtempSync(path.join(repositoryRoot, '.pulseblr-android-stage-'));
+  const commitStagedFile = options.commitStagedFile ?? copyFileSync;
+  try {
+    const staged = outputs.map((output, index) => {
+      const file = path.join(stageRoot, String(index));
+      writeFileSync(file, output.content);
+      return { file, target: output.target };
+    });
+    try {
+      for (const output of staged) commitStagedFile(output.file, output.target);
+    } catch (error) {
+      const rollbackErrors: string[] = [];
+      for (const original of originals) {
+        try {
+          if (original.existed && original.content) writeFileSync(original.target, original.content);
+          else rmSync(original.target, { force: true });
+        } catch {
+          rollbackErrors.push(path.basename(original.target));
+        }
+      }
+      const reason = error instanceof Error ? error.message : String(error);
+      const rollback = rollbackErrors.length ? `; rollback failed for ${rollbackErrors.join(', ')}` : '';
+      throw new Error(`Android compatibility commit failed: ${reason}${rollback}`);
+    }
+  } finally {
+    rmSync(stageRoot, { recursive: true, force: true });
+  }
   return { shortcutCount: urls.length, shortcutPaths: [...shortcutPaths] };
 }
 
 export function runBubblewrapUpdate(options: BubblewrapUpdateOptions = {}): number {
   const repositoryRoot = options.repositoryRoot ?? process.cwd();
-  const env = options.env ?? process.env;
+  const env = generationEnvironment(options.env ?? process.env);
   const cli = path.join(repositoryRoot, 'node_modules', '@bubblewrap', 'cli', 'bin', 'bubblewrap.js');
   const run = options.run ?? ((command, args, spawnOptions) => spawnSync(command, [...args], {
     ...spawnOptions,

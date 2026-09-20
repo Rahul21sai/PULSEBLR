@@ -1,4 +1,4 @@
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -14,7 +14,12 @@ import {
   validateAndroidSdk,
   validateJavaVersion,
 } from '../scripts/android-toolchain';
-import { parseGeneratedProject, verifyAab, verifyGeneratedProject } from '../scripts/android-verify';
+import {
+  parseAndroidVerifyArgs,
+  parseGeneratedProject,
+  verifyAab,
+  verifyGeneratedProject,
+} from '../scripts/android-verify';
 
 const root = path.resolve(import.meta.dirname, '..');
 const temporaryDirectories: string[] = [];
@@ -70,6 +75,7 @@ function writeBubblewrapGeneratedRepository(repositoryRoot: string): string {
   const resourceRoot = path.join(androidRoot, 'app', 'src', 'main', 'res');
   mkdirSync(path.join(repositoryRoot, 'public'), { recursive: true });
   mkdirSync(path.join(resourceRoot, 'xml'), { recursive: true });
+  mkdirSync(path.join(resourceRoot, 'values'), { recursive: true });
   writeFileSync(path.join(repositoryRoot, 'public', 'manifest.json'), readFileSync(path.join(root, 'public', 'manifest.json')));
   writeFileSync(path.join(androidRoot, 'twa-manifest.json'), readFileSync(path.join(root, 'android', 'twa-manifest.json')));
   writeFileSync(path.join(androidRoot, 'app', 'build.gradle'), `
@@ -120,6 +126,7 @@ task generateShorcutsFile {
 }
   `);
   writeFileSync(path.join(resourceRoot, 'xml', 'shortcuts.xml'), '<shortcuts xmlns:android="http://schemas.android.com/apk/res/android" />\n');
+  writeFileSync(path.join(resourceRoot, 'values', 'strings.xml'), '<resources />\n');
   return androidRoot;
 }
 
@@ -317,6 +324,15 @@ describe('generated Android project verification', () => {
     writeFileSync(gradleFile, readFileSync(gradleFile, 'utf8').replace('versionCode 1', 'versionCode 2'));
     expect(() => verifyGeneratedProject(projectRoot)).toThrow(/versionCode|1/);
   });
+
+  it('rejects duplicate Gradle assignments that could override verified metadata later', () => {
+    const projectRoot = temporaryDirectory();
+    writeGeneratedProject(projectRoot);
+    const gradleFile = path.join(projectRoot, 'app', 'build.gradle');
+    writeFileSync(gradleFile, `${readFileSync(gradleFile, 'utf8')}\nandroid.defaultConfig.targetSdkVersion 35\n`);
+
+    expect(() => parseGeneratedProject(projectRoot)).toThrow(/targetSdk|duplicate|exactly once/i);
+  });
 });
 
 describe('Android App Bundle verification', () => {
@@ -327,21 +343,24 @@ describe('Android App Bundle verification', () => {
     </manifest>
   `;
 
-  function createBundleInputs(): { aab: string; bundletoolJar: string } {
+  function createBundleInputs(): { aab: string; bundletoolJar: string; javaHome: string } {
     const directory = temporaryDirectory();
     const aab = path.join(directory, 'app-release.aab');
     const bundletoolJar = path.join(directory, 'bundletool-all-1.18.3.jar');
     writeFileSync(aab, 'controlled bundle fixture');
     writeFileSync(bundletoolJar, 'controlled jar fixture');
-    return { aab, bundletoolJar };
+    return { aab, bundletoolJar, javaHome: path.join(directory, 'jdk') };
   }
 
   it('hashes Bundletool before executing it and rejects every non-pinned jar', () => {
-    const { aab, bundletoolJar } = createBundleInputs();
+    const { aab, bundletoolJar, javaHome } = createBundleInputs();
     let commandCount = 0;
 
     expect(() => verifyAab(aab, {
       bundletoolJar,
+      javaHome,
+      platform: 'linux',
+      fileExists: () => true,
       expectedVersionCode: 42,
       expectedVersionName: '2.0.0',
       run: () => {
@@ -353,11 +372,14 @@ describe('Android App Bundle verification', () => {
   });
 
   it('validates, dumps, parses, and signature-checks a bundle with an explicit release version', () => {
-    const { aab, bundletoolJar } = createBundleInputs();
+    const { aab, bundletoolJar, javaHome } = createBundleInputs();
     const commands: Array<{ command: string; args: readonly string[] }> = [];
 
     const metadata = verifyAab(aab, {
       bundletoolJar,
+      javaHome,
+      platform: 'linux',
+      fileExists: () => true,
       expectedVersionCode: 42,
       expectedVersionName: '2.0.0',
       hashFile: file => {
@@ -366,6 +388,7 @@ describe('Android App Bundle verification', () => {
       },
       run: (command, args) => {
         commands.push({ command, args });
+        if (args[0] === '-version') return { status: 0, stdout: '', stderr: 'openjdk version "17.0.11"' };
         if (args.includes('validate')) return { status: 0, stdout: '', stderr: '' };
         if (args.includes('dump')) return { status: 0, stdout: validManifestDump, stderr: '' };
         return { status: 0, stdout: 'jar verified.', stderr: '' };
@@ -379,31 +402,103 @@ describe('Android App Bundle verification', () => {
       minSdk: 21,
       targetSdk: 36,
     });
+    const java = path.join(javaHome, 'bin', 'java');
+    const jarsigner = path.join(javaHome, 'bin', 'jarsigner');
     expect(commands).toEqual([
-      { command: 'java', args: ['-jar', bundletoolJar, 'validate', `--bundle=${aab}`] },
-      { command: 'java', args: ['-jar', bundletoolJar, 'dump', 'manifest', `--bundle=${aab}`, '--module=base'] },
-      { command: 'jarsigner', args: ['-verify', '-verbose', '-certs', aab] },
+      { command: java, args: ['-version'] },
+      { command: java, args: ['-jar', bundletoolJar, 'validate', `--bundle=${aab}`] },
+      { command: java, args: ['-jar', bundletoolJar, 'dump', 'manifest', `--bundle=${aab}`, '--module=base'] },
+      { command: jarsigner, args: ['-verify', '-verbose', '-certs', '-strict', aab] },
     ]);
   });
 
-  it.each([
-    ['Bundletool validation', { validateStatus: 1, dump: validManifestDump, signer: 'jar verified.' }, /validate/i],
-    ['manifest metadata', { validateStatus: 0, dump: validManifestDump.replace('targetSdkVersion="36"', 'targetSdkVersion="35"'), signer: 'jar verified.' }, /targetSdk|36/i],
-    ['unsigned output', { validateStatus: 0, dump: validManifestDump, signer: 'This jar is unsigned.' }, /signed|signature/i],
-    ['ambiguous signer output', { validateStatus: 0, dump: validManifestDump, signer: 'verification completed' }, /signed|signature|verified/i],
-  ])('fails closed on invalid %s', (_label, fixture, message) => {
-    const { aab, bundletoolJar } = createBundleInputs();
-    expect(() => verifyAab(aab, {
+  it('accepts only the explicit Android self-signed certificate policy under strict verification', () => {
+    const { aab, bundletoolJar, javaHome } = createBundleInputs();
+    expect(verifyAab(aab, {
       bundletoolJar,
+      javaHome,
+      platform: 'linux',
+      fileExists: () => true,
       expectedVersionCode: 42,
       expectedVersionName: '2.0.0',
       hashFile: () => 'a099cfa1543f55593bc2ed16a70a7c67fe54b1747bb7301f37fdfd6d91028e29',
       run: (_command, args) => {
+        if (args[0] === '-version') return { status: 0, stdout: '', stderr: 'openjdk version "17.0.11"' };
+        if (args.includes('validate')) return { status: 0, stdout: '', stderr: '' };
+        if (args.includes('dump')) return { status: 0, stdout: validManifestDump, stderr: '' };
+        return {
+          status: 24,
+          stdout: 'jar verified, with signer errors.\nThis jar contains entries whose certificate chain is invalid.\nThis jar contains entries whose signer certificate is self-signed.',
+          stderr: '',
+        };
+      },
+    })).toEqual(expect.objectContaining({ versionCode: 42 }));
+  });
+
+  it('requires the same JAVA_HOME JDK 17 for Bundletool and jarsigner', () => {
+    const { aab, bundletoolJar, javaHome } = createBundleInputs();
+    const common = {
+      bundletoolJar,
+      platform: 'linux' as const,
+      fileExists: () => true,
+      expectedVersionCode: 42,
+      expectedVersionName: '2.0.0',
+      hashFile: () => 'a099cfa1543f55593bc2ed16a70a7c67fe54b1747bb7301f37fdfd6d91028e29',
+    };
+    expect(() => verifyAab(aab, { ...common, env: {} })).toThrow(/JAVA_HOME/);
+    expect(() => verifyAab(aab, {
+      ...common,
+      javaHome,
+      run: () => ({ status: 0, stdout: '', stderr: 'openjdk version "11.0.22"' }),
+    })).toThrow(/17/);
+  });
+
+  it.each([
+    ['Bundletool validation', { validateStatus: 1, dump: validManifestDump, signerStatus: 0, signer: 'jar verified.' }, /validate/i],
+    ['manifest metadata', { validateStatus: 0, dump: validManifestDump.replace('targetSdkVersion="36"', 'targetSdkVersion="35"'), signerStatus: 0, signer: 'jar verified.' }, /targetSdk|36/i],
+    ['unsigned output', { validateStatus: 0, dump: validManifestDump, signerStatus: 0, signer: 'This jar is unsigned.' }, /signed|signature/i],
+    ['ambiguous signer output', { validateStatus: 0, dump: validManifestDump, signerStatus: 0, signer: 'verification completed' }, /signed|signature|verified/i],
+    ['expired signer warning', { validateStatus: 0, dump: validManifestDump, signerStatus: 0, signer: 'jar verified.\nThe signer certificate has expired.' }, /signed|signature|valid|expired/i],
+    ['strict expired status', { validateStatus: 0, dump: validManifestDump, signerStatus: 4, signer: 'jar verified, with signer errors.\nThe signer certificate has expired.' }, /signed|signature|valid|expired/i],
+  ])('fails closed on invalid %s', (_label, fixture, message) => {
+    const { aab, bundletoolJar, javaHome } = createBundleInputs();
+    expect(() => verifyAab(aab, {
+      bundletoolJar,
+      javaHome,
+      platform: 'linux',
+      fileExists: () => true,
+      expectedVersionCode: 42,
+      expectedVersionName: '2.0.0',
+      hashFile: () => 'a099cfa1543f55593bc2ed16a70a7c67fe54b1747bb7301f37fdfd6d91028e29',
+      run: (_command, args) => {
+        if (args[0] === '-version') return { status: 0, stdout: '', stderr: 'openjdk version "17.0.11"' };
         if (args.includes('validate')) return { status: fixture.validateStatus, stdout: '', stderr: '' };
         if (args.includes('dump')) return { status: 0, stdout: fixture.dump, stderr: '' };
-        return { status: 0, stdout: fixture.signer, stderr: '' };
+        return { status: fixture.signerStatus, stdout: fixture.signer, stderr: '' };
       },
     })).toThrow(message);
+  });
+});
+
+describe('Android verification CLI grammar', () => {
+  it('accepts only the documented project and AAB command forms', () => {
+    expect(parseAndroidVerifyArgs(['--project', 'android'])).toEqual({ mode: 'project', projectPath: 'android' });
+    expect(parseAndroidVerifyArgs(['--aab', 'app.aab'])).toEqual({ mode: 'aab', aabPath: 'app.aab' });
+    expect(parseAndroidVerifyArgs(['--aab', 'app.aab', '--expected-version-code', '42'])).toEqual({
+      mode: 'aab',
+      aabPath: 'app.aab',
+      expectedVersionCode: 42,
+    });
+  });
+
+  it.each([
+    ['misspelled release flag', ['--aab', 'app.aab', '--expected-vesion-code', '42']],
+    ['duplicate release flag', ['--aab', 'app.aab', '--expected-version-code', '42', '--expected-version-code', '43']],
+    ['extra project argument', ['--project', 'android', 'extra']],
+    ['mixed modes', ['--aab', 'app.aab', '--project', 'android']],
+    ['unknown mode', ['--verify', 'app.aab']],
+  ])('rejects %s rather than ignoring it', (_label, args) => {
+    expect(() => parseAndroidVerifyArgs(args)).toThrow(/argument|usage|unknown|positive integer/i);
   });
 });
 
@@ -453,6 +548,34 @@ describe('deterministic Android command wrappers', () => {
       run: () => ({ status: 0 }),
       postprocess: () => { throw new Error('generated template drift'); },
     })).toThrow(/template drift/);
+  });
+
+  it('passes Bubblewrap only operational environment variables and strips credentials', () => {
+    let childEnvironment: Record<string, string | undefined> | undefined;
+    expect(runBubblewrapUpdate({
+      env: {
+        Path: 'C:\\Windows\\System32',
+        SystemRoot: 'C:\\Windows',
+        TEMP: 'C:\\Temp',
+        CI: 'true',
+        GITHUB_TOKEN: 'secret-token',
+        AWS_SECRET_ACCESS_KEY: 'secret-key',
+        NPM_TOKEN: 'npm-secret',
+        HTTPS_PROXY: 'https://user:password@proxy.example',
+        NODE_OPTIONS: '--require untrusted.js',
+      },
+      run: (_command, _args, options) => {
+        childEnvironment = options.env;
+        return { status: 0 };
+      },
+      postprocess: () => undefined,
+    })).toBe(0);
+    expect(childEnvironment).toEqual({
+      Path: 'C:\\Windows\\System32',
+      SystemRoot: 'C:\\Windows',
+      TEMP: 'C:\\Temp',
+      CI: 'true',
+    });
   });
 
   it.each([
@@ -526,6 +649,42 @@ describe('Bubblewrap five-shortcut compatibility postprocessor', () => {
     expect(() => postprocessGeneratedProject(repositoryRoot)).toThrow(/Bubblewrap 1\.25\.0|template|replacement/i);
     expect(readFileSync(gradleFile, 'utf8')).toBe(originalGradle);
     expect(() => readFileSync(path.join(androidRoot, 'app', 'src', 'main', 'res', 'values', 'pulseblr_shortcut_urls.xml'))).toThrow();
+  });
+
+  it('rejects a non-empty upstream shortcuts artifact before mutating any generated file', () => {
+    const repositoryRoot = temporaryDirectory();
+    const androidRoot = writeBubblewrapGeneratedRepository(repositoryRoot);
+    const gradleFile = path.join(androidRoot, 'app', 'build.gradle');
+    const shortcutsFile = path.join(androidRoot, 'app', 'src', 'main', 'res', 'xml', 'shortcuts.xml');
+    const originalGradle = readFileSync(gradleFile, 'utf8');
+    const driftedShortcuts = '<shortcuts xmlns:android="http://schemas.android.com/apk/res/android"><shortcut /></shortcuts>\n';
+    writeFileSync(shortcutsFile, driftedShortcuts);
+
+    expect(() => postprocessGeneratedProject(repositoryRoot)).toThrow(/empty|upstream|shortcuts/i);
+    expect(readFileSync(gradleFile, 'utf8')).toBe(originalGradle);
+    expect(readFileSync(shortcutsFile, 'utf8')).toBe(driftedShortcuts);
+    expect(() => readFileSync(path.join(androidRoot, 'app', 'src', 'main', 'res', 'values', 'pulseblr_shortcut_urls.xml'))).toThrow();
+  });
+
+  it('restores every original when a late compatibility commit write fails', () => {
+    const repositoryRoot = temporaryDirectory();
+    const androidRoot = writeBubblewrapGeneratedRepository(repositoryRoot);
+    const gradleFile = path.join(androidRoot, 'app', 'build.gradle');
+    const shortcutsFile = path.join(androidRoot, 'app', 'src', 'main', 'res', 'xml', 'shortcuts.xml');
+    const resourcesFile = path.join(androidRoot, 'app', 'src', 'main', 'res', 'values', 'pulseblr_shortcut_urls.xml');
+    writeFileSync(resourcesFile, '<resources><string name="previous">keep</string></resources>\n');
+    const originals = [gradleFile, shortcutsFile, resourcesFile].map(file => readFileSync(file, 'utf8'));
+    let commits = 0;
+
+    expect(() => postprocessGeneratedProject(repositoryRoot, {
+      commitStagedFile: (staged, target) => {
+        commits += 1;
+        if (commits === 3) throw new Error('simulated disk failure');
+        copyFileSync(staged, target);
+      },
+    })).toThrow(/simulated disk failure|commit/i);
+    expect([gradleFile, shortcutsFile, resourcesFile].map(file => readFileSync(file, 'utf8'))).toEqual(originals);
+    expect(readdirSync(repositoryRoot).filter(name => name.startsWith('.pulseblr-android-stage-'))).toEqual([]);
   });
 
   it('rejects manifest shortcut drift before changing the generated project', () => {
