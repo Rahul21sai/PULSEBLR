@@ -36,6 +36,44 @@ describe('PulseBLR mobile release contract', () => {
     expect(validateWebAndTwaParity(web, twa)).toContainEqual(expect.objectContaining({ code: 'shortcut-parity' }));
   });
 
+  it('rejects jointly missing or non-array shortcut contracts', () => {
+    const missingWeb = structuredClone(read<Record<string, unknown>>('public/manifest.json'));
+    const missingTwa = structuredClone(read<Record<string, unknown>>('android/twa-manifest.json'));
+    delete missingWeb.shortcuts;
+    delete missingTwa.shortcuts;
+    expect(validateWebAndTwaParity(missingWeb, missingTwa)).toContainEqual(expect.objectContaining({ code: 'shortcut-parity' }));
+
+    const invalidWeb = structuredClone(read<Record<string, unknown>>('public/manifest.json'));
+    const invalidTwa = structuredClone(read<Record<string, unknown>>('android/twa-manifest.json'));
+    invalidWeb.shortcuts = {};
+    invalidTwa.shortcuts = {};
+    expect(validateWebAndTwaParity(invalidWeb, invalidTwa)).toContainEqual(expect.objectContaining({ code: 'shortcut-parity' }));
+  });
+
+  it('requires all five shortcuts even when both manifests drift together', () => {
+    const web = structuredClone(read<Record<string, unknown>>('public/manifest.json'));
+    const twa = structuredClone(read<Record<string, unknown>>('android/twa-manifest.json'));
+    web.shortcuts = (web.shortcuts as unknown[]).slice(0, 4);
+    twa.shortcuts = (twa.shortcuts as unknown[]).slice(0, 4);
+    expect(validateWebAndTwaParity(web, twa)).toContainEqual(expect.objectContaining({ code: 'shortcut-parity' }));
+  });
+
+  it('reports malformed shortcut URLs without throwing', () => {
+    const web = structuredClone(read<Record<string, unknown>>('public/manifest.json'));
+    const twa = structuredClone(read<Record<string, unknown>>('android/twa-manifest.json'));
+    (web.shortcuts as Array<Record<string, unknown>>)[0].url = Symbol('not-a-url');
+    (twa.shortcuts as Array<Record<string, unknown>>)[1].url = 'https://[';
+    expect(() => validateWebAndTwaParity(web, twa)).not.toThrow();
+    expect(validateWebAndTwaParity(web, twa)).toContainEqual(expect.objectContaining({ code: 'shortcut-parity' }));
+  });
+
+  it('rejects shortcuts outside the permanent production origin', () => {
+    const web = read<Record<string, unknown>>('public/manifest.json');
+    const twa = structuredClone(read<Record<string, unknown>>('android/twa-manifest.json'));
+    (twa.shortcuts as Array<{ url: string }>)[0].url = 'https://untrusted.example/scan';
+    expect(validateWebAndTwaParity(web, twa)).toContainEqual(expect.objectContaining({ code: 'shortcut-parity' }));
+  });
+
   it.each([
     ['packageId', 'com.example.other', 'package-id'],
     ['themeColor', '#000000', 'theme-color'],
@@ -53,6 +91,30 @@ describe('PulseBLR mobile release contract', () => {
     const twa = structuredClone(read<Record<string, unknown>>('android/twa-manifest.json'));
     (twa.shareTarget as { action: string }).action = `${PRODUCTION_ORIGIN}/wrong`;
     expect(validateWebAndTwaParity(web, twa)).toContainEqual(expect.objectContaining({ code: 'share-target' }));
+  });
+
+  it('reports empty and malformed share targets without throwing', () => {
+    const web = structuredClone(read<Record<string, unknown>>('public/manifest.json'));
+    const twa = structuredClone(read<Record<string, unknown>>('android/twa-manifest.json'));
+    web.share_target = {};
+    twa.shareTarget = {};
+    expect(validateWebAndTwaParity(web, twa)).toContainEqual(expect.objectContaining({ code: 'share-target' }));
+
+    (web.share_target as Record<string, unknown>).action = Symbol('not-a-url');
+    (twa.shareTarget as Record<string, unknown>).action = 'https://[';
+    expect(() => validateWebAndTwaParity(web, twa)).not.toThrow();
+    expect(validateWebAndTwaParity(web, twa)).toContainEqual(expect.objectContaining({ code: 'share-target' }));
+  });
+
+  it('accepts share-target params with the same entries in a different order', () => {
+    const web = read<Record<string, unknown>>('public/manifest.json');
+    const twa = structuredClone(read<Record<string, unknown>>('android/twa-manifest.json'));
+    (twa.shareTarget as { params: Record<string, string> }).params = {
+      url: 'url',
+      text: 'text',
+      title: 'title',
+    };
+    expect(validateWebAndTwaParity(web, twa)).not.toContainEqual(expect.objectContaining({ code: 'share-target' }));
   });
 
   it('keeps the first release reproducible without committing signing material', () => {

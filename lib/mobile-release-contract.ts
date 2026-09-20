@@ -8,14 +8,13 @@ export interface ReleaseContractIssue {
   message: string;
 }
 
-type Shortcut = { name: string; short_name?: string; shortName?: string; url: string };
 type WebManifest = {
   theme_color?: string;
   background_color?: string;
   display?: string;
   orientation?: string;
-  shortcuts?: Shortcut[];
-  share_target?: { action?: string; method?: string; enctype?: string; params?: Record<string, string> };
+  shortcuts?: unknown;
+  share_target?: unknown;
 };
 type TwaManifest = {
   packageId?: string;
@@ -29,9 +28,74 @@ type TwaManifest = {
   appVersion?: string;
   iconUrl?: string;
   maskableIconUrl?: string;
-  shortcuts?: Shortcut[];
-  shareTarget?: { action?: string; method?: string; enctype?: string; params?: Record<string, string> };
+  shortcuts?: unknown;
+  shareTarget?: unknown;
 };
+
+const REQUIRED_SHORTCUT_PATHS = ['/scan', '/card', '/', '/tracker', '/calendar'];
+const PRODUCTION_URL = new URL(PRODUCTION_ORIGIN);
+
+type ResolvedUrl = { href: string; origin: string; pathname: string };
+type ValidShortcut = { name: string; shortName: string; url: ResolvedUrl };
+type ValidShareTarget = {
+  action: ResolvedUrl;
+  method: string;
+  enctype: string;
+  params: Record<string, string>;
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function nonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+function resolveProductionUrl(value: unknown): ResolvedUrl | undefined {
+  if (!nonEmptyString(value)) return undefined;
+
+  try {
+    const url = new URL(value, PRODUCTION_ORIGIN);
+    if (url.origin !== PRODUCTION_URL.origin) return undefined;
+    return { href: url.toString(), origin: url.origin, pathname: url.pathname };
+  } catch {
+    return undefined;
+  }
+}
+
+function parseShortcut(value: unknown): ValidShortcut | undefined {
+  if (!isRecord(value) || !nonEmptyString(value.name)) return undefined;
+  const shortName = value.shortName ?? value.short_name;
+  if (!nonEmptyString(shortName)) return undefined;
+  const url = resolveProductionUrl(value.url);
+  return url ? { name: value.name, shortName, url } : undefined;
+}
+
+function parseShortcuts(value: unknown): ValidShortcut[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const shortcuts = value.map(parseShortcut);
+  return shortcuts.every((shortcut): shortcut is ValidShortcut => shortcut !== undefined) ? shortcuts : undefined;
+}
+
+function parseParams(value: unknown): Record<string, string> | undefined {
+  if (!isRecord(value) || !Object.values(value).every(item => typeof item === 'string')) return undefined;
+  return value as Record<string, string>;
+}
+
+function parseShareTarget(value: unknown): ValidShareTarget | undefined {
+  if (!isRecord(value)) return undefined;
+  const action = resolveProductionUrl(value.action);
+  const params = parseParams(value.params);
+  if (!action || !nonEmptyString(value.method) || !nonEmptyString(value.enctype) || !params) return undefined;
+  return { action, method: value.method, enctype: value.enctype, params };
+}
+
+function sameParams(left: Record<string, string>, right: Record<string, string>): boolean {
+  const leftKeys = Object.keys(left);
+  const rightKeys = Object.keys(right);
+  return leftKeys.length === rightKeys.length && leftKeys.every(key => left[key] === right[key]);
+}
 
 export function validateWebAndTwaParity(web: WebManifest, twa: TwaManifest): ReleaseContractIssue[] {
   const issues: ReleaseContractIssue[] = [];
@@ -40,7 +104,7 @@ export function validateWebAndTwaParity(web: WebManifest, twa: TwaManifest): Rel
   };
 
   add(twa.packageId === ANDROID_PACKAGE_ID, 'package-id', `packageId must be ${ANDROID_PACKAGE_ID}`);
-  add(twa.host === new URL(PRODUCTION_ORIGIN).host, 'host', `host must be ${new URL(PRODUCTION_ORIGIN).host}`);
+  add(twa.host === PRODUCTION_URL.host, 'host', `host must be ${PRODUCTION_URL.host}`);
   add(twa.themeColor === web.theme_color, 'theme-color', 'theme colors must match');
   add(twa.backgroundColor === web.background_color, 'background-color', 'background colors must match');
   add(twa.display === web.display, 'display', 'display modes must match');
@@ -49,18 +113,27 @@ export function validateWebAndTwaParity(web: WebManifest, twa: TwaManifest): Rel
   add(Number.isInteger(twa.appVersionCode) && Number(twa.appVersionCode) > 0, 'version-code', 'appVersionCode must be a positive integer');
   add(typeof twa.appVersion === 'string' && twa.appVersion.length > 0, 'version-name', 'appVersion must be non-empty');
 
-  const webPaths = (web.shortcuts ?? []).map(item => new URL(item.url, PRODUCTION_ORIGIN).pathname);
-  const twaPaths = (twa.shortcuts ?? []).map(item => new URL(item.url, PRODUCTION_ORIGIN).pathname);
-  add(JSON.stringify(twaPaths) === JSON.stringify(webPaths), 'shortcut-parity', 'web and Android shortcuts must have identical ordered paths');
+  const webShortcuts = parseShortcuts(web.shortcuts);
+  const twaShortcuts = parseShortcuts(twa.shortcuts);
+  const shortcutsMatch = webShortcuts !== undefined && twaShortcuts !== undefined &&
+    webShortcuts.length === REQUIRED_SHORTCUT_PATHS.length &&
+    twaShortcuts.length === REQUIRED_SHORTCUT_PATHS.length &&
+    webShortcuts.every((shortcut, index) =>
+      shortcut.url.pathname === REQUIRED_SHORTCUT_PATHS[index] &&
+      twaShortcuts[index].url.pathname === REQUIRED_SHORTCUT_PATHS[index] &&
+      shortcut.name === twaShortcuts[index].name &&
+      shortcut.shortName === twaShortcuts[index].shortName,
+    );
+  add(shortcutsMatch, 'shortcut-parity', 'web and Android must define the exact five permanent-origin shortcuts in order');
 
-  const webShare = web.share_target;
-  const twaShare = twa.shareTarget;
+  const webShare = parseShareTarget(web.share_target);
+  const twaShare = parseShareTarget(twa.shareTarget);
   add(
     Boolean(webShare && twaShare) &&
-      new URL(twaShare?.action ?? '', PRODUCTION_ORIGIN).toString() === new URL(webShare?.action ?? '', PRODUCTION_ORIGIN).toString() &&
+      twaShare?.action.href === webShare?.action.href &&
       twaShare?.method === webShare?.method &&
       twaShare?.enctype === webShare?.enctype &&
-      JSON.stringify(twaShare?.params) === JSON.stringify(webShare?.params),
+      sameParams(twaShare?.params ?? {}, webShare?.params ?? {}),
     'share-target',
     'web and Android share targets must match',
   );
