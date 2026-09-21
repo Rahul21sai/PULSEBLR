@@ -79,6 +79,7 @@ jobs:
         env:
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           NEXTAUTH_SECRET: ${{ secrets.NEXTAUTH_SECRET }}
+          NEXTAUTH_URL: ${{ secrets.NEXTAUTH_URL }}
           EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
         run: |
           missing=0
@@ -86,11 +87,39 @@ jobs:
             echo "::error::RESEND_API_KEY repository secret is not set — no digest can be sent."
             missing=1
           fi
+          # NEXTAUTH_SECRET and NEXTAUTH_URL ARE EASY TO SWAP, AND ONE OF THOSE MISTAKES IS SILENT
+          # AND SEVERE. This check exists because it was made for real: the deployment URL was pasted
+          # into NEXTAUTH_SECRET. A URL is public and guessable, and this variable is an HMAC key that
+          # also signs the Auth.js session JWT — so a URL-shaped value there means anyone who knows
+          # the site address can forge a session cookie, not merely an unsubscribe token. Nothing in
+          # the app would have complained: the HMAC computes fine with a weak key.
+          case "$NEXTAUTH_SECRET" in
+            http://*|https://*)
+              echo "::error::NEXTAUTH_SECRET looks like a URL. That is NEXTAUTH_URL's value."
+              echo "::error::NEXTAUTH_SECRET is an HMAC key and must be high-entropy random — it signs"
+              echo "::error::the session JWT, so a public value means forgeable sessions. Generate one"
+              echo "::error::with: openssl rand -base64 32   (and set the SAME value in Vercel)."
+              missing=1
+              ;;
+          esac
           if [ -z "$NEXTAUTH_SECRET" ]; then
             echo "::error::NEXTAUTH_SECRET repository secret is not set — it signs the unsubscribe link,"
             echo "::error::and the sender refuses to mail anything without a working way off the list."
             echo "::error::It MUST be byte-identical to the value in Vercel: the runner signs the HMAC"
             echo "::error::and Vercel verifies it, so a fresh value ships dead unsubscribe links."
+            missing=1
+          fi
+          # FATAL, and the reasoning differs from the two above. A missing RESEND_API_KEY or
+          # NEXTAUTH_SECRET means the sender returns early and mails NOTHING, so failing here costs
+          # nothing. A missing NEXTAUTH_URL is worse than that: `digest.ts` falls back to
+          # `http://localhost:3000`, so the run SUCCEEDS and delivers a real email in which every
+          # link — including the unsubscribe one — points at the reader's own machine. An email that
+          # cannot be acted on is not a working email, and this is the failure this whole change set
+          # exists to stop being silent.
+          if [ -z "$NEXTAUTH_URL" ]; then
+            echo "::error::NEXTAUTH_URL repository secret is not set. Without it every link in the"
+            echo "::error::digest is built from http://localhost:3000 — the mail sends and is useless."
+            echo "::error::Set it to the deployed origin, e.g. https://pulseblr-u9f1.vercel.app"
             missing=1
           fi
           if [ "$missing" = "1" ]; then

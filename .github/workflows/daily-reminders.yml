@@ -70,6 +70,7 @@ jobs:
         env:
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           NEXTAUTH_SECRET: ${{ secrets.NEXTAUTH_SECRET }}
+          NEXTAUTH_URL: ${{ secrets.NEXTAUTH_URL }}
           EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
         run: |
           missing=0
@@ -77,9 +78,25 @@ jobs:
             echo "::error::RESEND_API_KEY repository secret is not set — no reminder can be sent."
             missing=1
           fi
+          # Same URL-in-the-secret-slot check as daily-digest.yml, for the same reason: it was pasted
+          # for real, and a URL is a public value being used as the key that signs session JWTs.
+          case "$NEXTAUTH_SECRET" in
+            http://*|https://*)
+              echo "::error::NEXTAUTH_SECRET looks like a URL. That is NEXTAUTH_URL's value."
+              echo "::error::Generate a real one with: openssl rand -base64 32 (same value in Vercel)."
+              missing=1
+              ;;
+          esac
           if [ -z "$NEXTAUTH_SECRET" ]; then
             echo "::error::NEXTAUTH_SECRET repository secret is not set — it signs the unsubscribe link."
             echo "::error::It MUST be byte-identical to the value in Vercel, which verifies the HMAC."
+            missing=1
+          fi
+          # Fatal for the same reason as the digest: `reminders.ts` falls back to localhost, so the
+          # run would succeed and deliver mail whose every link points at the reader's own machine.
+          if [ -z "$NEXTAUTH_URL" ]; then
+            echo "::error::NEXTAUTH_URL repository secret is not set — every link would be localhost."
+            echo "::error::Set it to the deployed origin, e.g. https://pulseblr-u9f1.vercel.app"
             missing=1
           fi
           if [ "$missing" = "1" ]; then
