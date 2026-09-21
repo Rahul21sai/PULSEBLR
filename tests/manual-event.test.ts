@@ -158,11 +158,29 @@ describe('validateManualEvent — dates and categories', () => {
     expect(result.issues.map(i => i.field)).toContain('category');
   });
 
-  it('defaults to Meetup — the current taxonomy value, not the retired one', () => {
-    // 'Networking/Meetup' was dropped in the 32 → 22 consolidation, and defaulting to it made every
-    // manual creation fail on the enum.
-    expect(validateManualEvent(VALID).fields?.category).toEqual(['Meetup']);
-    expect(validateManualEvent({ ...VALID, category: [] }).fields?.category).toEqual(['Meetup']);
+  it('DOES NOT default the category at all — it used to, and that was the bug', () => {
+    /**
+     * INVERTED DELIBERATELY, and the most useful thing about this case is that it passed for as long
+     * as the defect existed: the old contract was written down, tested, and wrong.
+     *
+     * The original reasoning was only ever about WHICH value to invent — `'Networking/Meetup'` was
+     * dropped in the 32 → 22 consolidation and defaulting to it made every manual creation fail on
+     * the schema enum, so it became `'Meetup'`. Nobody asked whether to invent one at all.
+     *
+     * `'Meetup'` is excluded from `TECH_FLAG_CATEGORIES` on purpose, so `POST /api/events` derived
+     * `isTechEvent: false` from the invented value and the unconditionally-`techOnly` feed hid the
+     * row. Measured 2026-09-20: 12 of 12 hand-added events owned by a real user stored `["Meetup"]`
+     * with `isTechEvent: false`, and 0 of the 5 future-dated ones matched the feed.
+     *
+     * The route now runs `keywordTagging()` over the title and description and refuses the save when
+     * even that finds no topic, so a category is either chosen by a human or justified from the text.
+     * `tests/manual-event-category.test.ts` pins that; this case pins only that the validator keeps
+     * its hands off.
+     */
+    expect(validateManualEvent(VALID).fields?.category).toEqual([]);
+    expect(validateManualEvent({ ...VALID, category: [] }).fields?.category).toEqual([]);
+    // A value the caller DID choose still survives untouched — the half that was always right.
+    expect(validateManualEvent({ ...VALID, category: ['Meetup'] }).fields?.category).toEqual(['Meetup']);
   });
 
   it('derives isFree from price so the two cannot disagree', () => {

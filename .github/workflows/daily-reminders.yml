@@ -57,6 +57,41 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Same guard as daily-digest.yml, for the same measured reason and the same two secrets:
+      # `sendEventReminders()` preflights RESEND_API_KEY and NEXTAUTH_SECRET and returns BEFORE
+      # `connectDB()`, so `scripts/send-reminders.ts` exits 0 and the run is green. Measured: all 8
+      # scheduled runs from 2026-09-12 to 09-19 succeeded, each spending 1-2 SECONDS in this step,
+      # with `reminderlogs` holding 0 rows — and the log row is CLAIMED BEFORE the send, so zero rows
+      # proves no send was ever attempted rather than that sends failed.
+      #
+      # Two independent senders sharing exactly these two variables, both green, both with no rows, is
+      # what makes a missing shared secret the explanation rather than a per-sender bug.
+      - name: Verify the email secrets are set
+        env:
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          NEXTAUTH_SECRET: ${{ secrets.NEXTAUTH_SECRET }}
+          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+        run: |
+          missing=0
+          if [ -z "$RESEND_API_KEY" ]; then
+            echo "::error::RESEND_API_KEY repository secret is not set — no reminder can be sent."
+            missing=1
+          fi
+          if [ -z "$NEXTAUTH_SECRET" ]; then
+            echo "::error::NEXTAUTH_SECRET repository secret is not set — it signs the unsubscribe link."
+            echo "::error::It MUST be byte-identical to the value in Vercel, which verifies the HMAC."
+            missing=1
+          fi
+          if [ "$missing" = "1" ]; then
+            echo "::error::Add them under Settings → Secrets and variables → Actions → New repository secret."
+            exit 1
+          fi
+          if [ -z "$EMAIL_FROM" ]; then
+            echo "::warning::EMAIL_FROM is not set — falling back to Resend's shared sender, which a"
+            echo "::warning::verified domain will reject with a 403 and leave the ReminderLog row 'failed'."
+          fi
+          echo "Email secrets present ✓"
+
       - name: Send event reminders
         env:
           MONGODB_URI: ${{ secrets.MONGODB_URI }}

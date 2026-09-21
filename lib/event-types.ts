@@ -210,6 +210,37 @@ export const TECH_FLAG_CATEGORIES: ReadonlySet<string> = new Set<string>([
   'Hackathon',
 ]);
 
+/**
+ * `isTechEvent` FROM A CATEGORY ARRAY — THE ONE DERIVATION, BECAUSE FOUR CALL SITES GOT IT WRONG.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────────────────────
+ * The rule "isTechEvent is derived from the categories" was already written down and already
+ * implemented correctly in `POST /api/events`. The defect was everywhere ELSE: three other paths
+ * change `category` and never re-derive the flag, so the two fields silently disagree and the row
+ * becomes invisible in a feed that is unconditionally `techOnly`.
+ *
+ *   · `PATCH /api/admin/submissions` — approve `$unset`s `visibility` and saves. An event submitted
+ *     with no category (stored `['Meetup']`, `isTechEvent: false`) is therefore PUBLISHED invisible,
+ *     and the audit row records success. Measured: 10 of 12 stored rows are in exactly that state.
+ *   · the same route's `applyEdit` — an admin who corrects `['Meetup']` to `['AI/ML']` and saves
+ *     gets `isTechEvent: false` kept, and the response hands the panel back the STALE flag, so the
+ *     screen shows the corrected category beside the wrong verdict.
+ *   · `PUT /api/events/[id]` — `category` and `isTechEvent` are independent fields on its allowlist.
+ *
+ * A one-line `.some()` at four call sites is a rule four authors must remember. A named function is
+ * a rule the compiler helps with, and it is the same arrangement `TRACKER_STATUSES` uses so the list
+ * the API rejects against cannot drift from the list the schema enforces.
+ *
+ * DELIBERATELY NOT the place to decide what happens when `category` is EMPTY. An empty array
+ * answers `false` here, which is arithmetically right and operationally a trap — a caller that
+ * stores an uncategorised event is asserting "not tech" about something nobody classified. The
+ * create path therefore refuses to store one; see `app/api/events/route.ts`.
+ * ─────────────────────────────────────────────────────────────────────────────────────────────
+ */
+export function isTechFromCategories(category: readonly string[] | null | undefined): boolean {
+  return (category ?? []).some(c => TECH_FLAG_CATEGORIES.has(c));
+}
+
 export const GATHERING_CATEGORY_NAMES = [
   'Hackathon',
   'Conference',

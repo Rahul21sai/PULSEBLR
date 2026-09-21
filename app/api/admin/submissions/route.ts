@@ -4,6 +4,9 @@ import connectDB from '@/lib/mongodb';
 import Event, { type IEvent } from '@/lib/models/Event';
 import User from '@/lib/models/User';
 import { requireAdmin } from '@/lib/api-auth';
+// The one derivation of `isTechEvent` from `category`. Both write paths in this file change the
+// category or publish the row, and neither used to re-derive the flag — see its note.
+import { isTechFromCategories } from '@/lib/event-types';
 import { notDeletedClause } from '@/lib/events/query';
 import {
   validateSubmissionEdit,
@@ -239,12 +242,34 @@ export async function PATCH(request: NextRequest) {
       // approved event invisible — the same trap CLAUDE.md records for `spotlightAt`, where
       // unpinning has to send an explicit null because a plain `$set` cannot express `$unset`.
       event.set('visibility', undefined);
+
+      /**
+       * ── RE-DERIVE `isTechEvent` ON APPROVE, OR APPROVAL PUBLISHES AN INVISIBLE EVENT. ──────────
+       *
+       * This was the second half of the reported "I added an event and it never shows up" bug, and it
+       * is nastier than the first because it reports success. Approving `$unset`s `visibility` and
+       * nothing else; if the row was stored with no real category — which every submission made
+       * through `/add-event` was, because the validator used to substitute `'Meetup'` — then
+       * `isTechEvent` is `false`, and the feed it was just approved INTO is unconditionally
+       * `techOnly`. So the reviewer clicks Approve, the audit log records `submission.approve`, and
+       * the event is exactly as invisible as it was before, with a success message on screen.
+       *
+       * Measured on the live corpus: 10 of 12 owned manual rows are in precisely that state —
+       * `visibility` absent (so public to everyone) with `isTechEvent: false` frozen in, which is why
+       * no FUTURE approval can repair them and a backfill is needed as well as this fix.
+       *
+       * Derived rather than trusted: `category` is what a human reviewed, so the flag follows it.
+       * Only meaningful on approve — a reject sets `visibility: 'private'`, where the flag changes
+       * nothing about who can see the row.
+       */
+      event.set('isTechEvent', isTechFromCategories(event.get('category')));
     } else {
       event.visibility = 'private';
     }
-    // `.save()` rather than `findOneAndUpdate`, so the `pre('validate')` key hooks run. They are
-    // no-ops here — both keys already exist and neither derives from `visibility` — but the rule
-    // that every Event write goes through document middleware is worth not breaking for one route.
+    // `.save()` rather than `findOneAndUpdate`, so the `pre('validate')` key hooks run. The key hooks
+    // are no-ops here — both keys already exist and neither derives from `visibility` — but the rule
+    // that every Event write goes through document middleware is worth not breaking for one route,
+    // and the `isTechEvent` re-derivation above genuinely needs the document path.
     await event.save();
 
     /*
@@ -363,6 +388,28 @@ async function applyEdit(
     // `set(key, undefined)` is how a cleared optional field becomes `$unset` — the same mechanism
     // the approve branch uses for `visibility`.
     event.set(key, value);
+  }
+
+  /**
+   * ── AN EDIT TO `category` MUST CARRY `isTechEvent` WITH IT. ────────────────────────────────────
+   *
+   * `category` is on `SUBMISSION_EDIT_FIELDS`, so correcting a mis-categorised submission is exactly
+   * what this function is for — and it was the one repair that could not work. The sequence an admin
+   * would actually perform: open a submission stored `['Meetup']`, change it to `['AI/ML']`, save,
+   * approve. Before this, BOTH steps silently failed to touch the flag, so the event went public
+   * still carrying `isTechEvent: false`, and the response below returns `event.get('isTechEvent')` —
+   * meaning the panel re-rendered the corrected category beside the STALE verdict. Two silent
+   * failures and two success messages.
+   *
+   * Guarded on the key being present rather than run unconditionally: this function also edits
+   * titles and links, and recomputing a derived flag on an edit that never touched its input would
+   * quietly overwrite a deliberate admin override. `PUT /api/events/[id]` exists precisely so an
+   * operator can force `isTechEvent` against the categories — see `lib/events/admin-validate.ts` —
+   * and that override has to survive an unrelated title fix.
+   */
+  if ('category' in update) {
+    before.isTechEvent = event.get('isTechEvent');
+    event.set('isTechEvent', isTechFromCategories(event.get('category')));
   }
 
   try {

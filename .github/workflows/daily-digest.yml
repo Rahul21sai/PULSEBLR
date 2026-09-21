@@ -59,6 +59,54 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # ── WHY THIS STEP EXISTS: NINE GREEN MORNINGS THAT SENT NOTHING. ────────────────────────────
+      #
+      # `sendScheduledDigests()` preflights RESEND_API_KEY and NEXTAUTH_SECRET and RETURNS BEFORE
+      # `connectDB()`, and `scripts/send-digest.ts` then exits 0 — deliberately, because a repo that
+      # has never configured email should not have a red cron every day. The cost of that choice is
+      # that an unset secret is indistinguishable from a quiet morning: measured, every scheduled run
+      # from 2026-09-12 onward reported SUCCESS while `digestlogs` held 0 rows and the send step took
+      # 1-2 SECONDS, which is less than an Atlas TLS handshake. Monday 2026-09-14 a real subscriber
+      # was due and got nothing, green.
+      #
+      # `daily-scrape.yml` already had exactly this guard for MONGODB_URI and is the reason the
+      # scraper's failures were never silent. It was simply never copied to the two workflows that
+      # send email — the ones where silence is the failure mode.
+      #
+      # Deliberately `exit 1`, not `::warning::`: a warning is scrollable, and this went unnoticed for
+      # nine days. Once someone IS opted in, "could not send" must be louder than "nothing to send".
+      - name: Verify the email secrets are set
+        env:
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          NEXTAUTH_SECRET: ${{ secrets.NEXTAUTH_SECRET }}
+          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+        run: |
+          missing=0
+          if [ -z "$RESEND_API_KEY" ]; then
+            echo "::error::RESEND_API_KEY repository secret is not set — no digest can be sent."
+            missing=1
+          fi
+          if [ -z "$NEXTAUTH_SECRET" ]; then
+            echo "::error::NEXTAUTH_SECRET repository secret is not set — it signs the unsubscribe link,"
+            echo "::error::and the sender refuses to mail anything without a working way off the list."
+            echo "::error::It MUST be byte-identical to the value in Vercel: the runner signs the HMAC"
+            echo "::error::and Vercel verifies it, so a fresh value ships dead unsubscribe links."
+            missing=1
+          fi
+          if [ "$missing" = "1" ]; then
+            echo "::error::Add them under Settings → Secrets and variables → Actions → New repository secret."
+            exit 1
+          fi
+          # NOT fatal: lib/notifications/email.ts falls back to Resend's onboarding@resend.dev, which
+          # works for a test and is rejected for a real domain. Worth saying out loud, not worth
+          # blocking a send that may well be going to the operator's own inbox.
+          if [ -z "$EMAIL_FROM" ]; then
+            echo "::warning::EMAIL_FROM is not set — falling back to Resend's shared sender. Expect a"
+            echo "::warning::403 from Resend unless your domain is verified, which marks the DigestLog"
+            echo "::warning::row 'failed' and needs a --retry-failed dispatch to clear."
+          fi
+          echo "Email secrets present ✓"
+
       - name: Send the digest
         env:
           MONGODB_URI: ${{ secrets.MONGODB_URI }}

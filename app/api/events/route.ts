@@ -14,8 +14,16 @@ import {
 import User from '@/lib/models/User';
 import { readPreferences, hasRankingPreferences, type RelevanceContext } from '@/lib/events/relevance';
 import { requireAdmin, requireUser } from '@/lib/api-auth';
-import { TECH_FLAG_CATEGORIES } from '@/lib/event-types';
+import { isTechFromCategories } from '@/lib/event-types';
 import { validateManualEvent, manualEventError } from '@/lib/events/manual-input';
+import { connectionScore } from '@/lib/events/connection-score';
+/**
+ * The KEYWORD FLOOR only — never `tagEvents()`. This is the create path for one event with a person
+ * waiting on the response, so it must not depend on a provider: `keywordTagging` is regex over title
+ * and description, and `lib/llm/tagger.ts` instantiates no SDK at module scope, so importing it here
+ * adds no network call and cannot fail when ICA is down. See the note at the call site.
+ */
+import { keywordTagging } from '@/lib/llm/tagger';
 import { getCurrentUserId } from '@/lib/auth-helpers';
 
 /**
@@ -321,6 +329,67 @@ export async function POST(request: NextRequest) {
   if (!fields) return NextResponse.json(manualEventError(issues), { status: 400 });
 
   /**
+   * ── NO CATEGORY? READ THE TITLE. STILL NOTHING? REFUSE. ──────────────────────────────────────
+   *
+   * `validateManualEvent` no longer invents `'Meetup'` (see its note), so `category` can arrive
+   * empty — and empty is exactly the case that produced the reported bug, because whatever fills it
+   * decides `isTechEvent`, which decides whether the event exists as far as the feed is concerned.
+   *
+   * WHY THE FLOOR RUNS HERE AND NOT IN THE FORM. The common path is the URL importer: a user pastes
+   * a Luma link, `POST /api/scrape-url` fills title, date, venue and image, and returns **no
+   * category** — so the one field that governs visibility is the only one the import cannot supply.
+   * Making the form require a category would break that flow for every import; running
+   * `keywordTagging()` server-side fixes it silently and correctly. Measured against the 12 stored
+   * rows: the floor recovers a real topic for 10 of them from the title alone
+   * (`Hacktoberfest Hack Day Bengaluru` → `[AI/ML, Open Source, Hackathon]`).
+   *
+   * WHY IT STILL REFUSES. `keywordTagging` has its own fallback — `tagger.ts` ends with
+   * `if (chosen.length === 0) chosen.push('Meetup')` — so accepting its output blindly reinstates
+   * the identical fabrication one layer down. And a floor result carrying only NON-tech topics is
+   * the `Dev Days | Bangalore` case, which the floor reads as `[Community/Social]`: a plausible
+   * guess that would store another permanently-invisible row while reporting success.
+   *
+   * So the rule is: the SERVER may fill a category it can justify from the text, and only a HUMAN
+   * may assert a non-tech one. That is not a tech-only gate on the corpus — an explicit
+   * `['Community/Social']` in the body is accepted on the first line below. It refuses exactly one
+   * thing: storing an uncategorised event under a guess nobody made.
+   *
+   * `keywordTagging` is pure and needs no provider: `lib/llm/tagger.ts` instantiates no SDK at
+   * module scope, and the floor is regex over title + description. So this adds no network call and
+   * cannot fail when ICA is down.
+   */
+  let category = fields.category;
+  let tagConfidence = 0.6;
+  if (!category.length) {
+    const floor = keywordTagging({
+      title: fields.title,
+      description: fields.description,
+      venue: fields.venue,
+      onlineLink: fields.onlineLink,
+    });
+    if (!isTechFromCategories(floor.categories)) {
+      // Names what it saw, so the answer is one tap rather than a guessing game. `guessed` is
+      // omitted when the floor only produced its own 'Meetup' fallback — reporting that as a
+      // reading of their event would be the same false assertion in a friendlier voice.
+      const guessed = floor.categories.filter(c => c !== 'Meetup');
+      return NextResponse.json(
+        {
+          error:
+            'Pick at least one category — we could not work out the topic from the title and description.'
+            + (guessed.length ? ` Closest we found: ${guessed.join(', ')}.` : ''),
+          issues: [{ field: 'category', message: 'Choose a category so this event can be found.' }],
+          ...(guessed.length ? { suggestedCategory: guessed } : {}),
+        },
+        { status: 400 }
+      );
+    }
+    category = floor.categories;
+    // The floor's own confidence, not the 0.6 a human-chosen list gets. `diag-recent-writes.ts`
+    // fingerprints keyword tagging on exactly this value, so passing it through keeps that honest.
+    tagConfidence = floor.confidence;
+  }
+
+  /**
    * Publishing straight to the corpus is re-checked against the admin allowlist here, not inferred
    * from the earlier guard. `session.user.isAdmin` exists only to decide whether to draw a nav
    * link — editing it in devtools must buy a 403, which is what `requireAdmin()` gives.
@@ -348,6 +417,9 @@ export async function POST(request: NextRequest) {
     const owned = visibility !== 'public';
     const doc = {
       ...fields,
+      // `category` rather than `fields.category`: the floor above may have resolved it from the
+      // title, and the spread would otherwise put the empty array back.
+      category,
       source: 'manual' as const,
       sourceUrl: fields.sourceUrl ?? 'https://pulseblr.local/manual',
       lastSeenAt: new Date(),
@@ -361,10 +433,39 @@ export async function POST(request: NextRequest) {
        * getting it wrong for free is not a small thing. Derived from the chosen categories against
        * the same `TECH_FLAG_CATEGORIES` set the keyword tagger uses, so the app's two definitions of
        * "tech" cannot drift — that drift already hid `IndiaFOSS 2026` from the default feed once.
+       *
+       * Through `isTechFromCategories()` now rather than an inline `.some()`. The derivation here was
+       * always correct; three OTHER paths that change `category` forgot to repeat it, which is why it
+       * is a named function — see its note in `lib/event-types.ts`.
        */
-      isTechEvent: fields.category.some(c => TECH_FLAG_CATEGORIES.has(c)),
-      // Keyword-floor confidence: a human chose the categories, but nothing verified them.
-      tagConfidence: 0.6,
+      isTechEvent: isTechFromCategories(category),
+      tagConfidence,
+      /**
+       * SCORED, NOT DEFAULTED — and the coincidence that hid this is worth naming.
+       *
+       * `connectionScore` was never computed on this path: `lib/scrapers/normalizer.ts` is the only
+       * runtime caller, so a hand-added event kept the schema default at `lib/models/Event.ts`, which
+       * is `default: 20`. And `connectionScore()` itself opens with `let score = 20 // baseline`, so
+       * the stored placeholder is numerically identical to the score of an event that earns nothing —
+       * which is precisely why twelve rows reading exactly 20 looked computed rather than absent.
+       *
+       * It matters because the default sort is `connections`. An in-person event with a venue and
+       * food scores 80+; leaving it at 20 ranks it below ~190 of 249 upcoming tech events, i.e. page
+       * 7 of a 30-row feed. Fixing `isTechEvent` alone would have made these events *reachable* and
+       * still invisible, so this is the half that answers the actual complaint.
+       *
+       * Additive, not a behaviour change elsewhere: the scorer is pure, takes no clock and no
+       * network, and this is a second call site rather than an edit to the first.
+       */
+      connectionScore: connectionScore({
+        format: fields.format,
+        hasFood: fields.hasFood,
+        category,
+        organizer: fields.organizer,
+        title: fields.title,
+        isFree: fields.isFree,
+        price: fields.price,
+      }),
       ...(owned ? { visibility, createdByUserId: gate.userId } : {}),
     };
 
