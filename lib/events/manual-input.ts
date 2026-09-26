@@ -184,10 +184,37 @@ export function validateManualEvent(body: unknown): ManualEventResult {
       message: `Not a category we know: ${bad.slice(0, 3).join(', ')}.`,
     });
   }
-  // 'Meetup', not the retired 'Networking/Meetup' — that value was dropped in the 32 → 22
-  // consolidation and defaulting to it made every manual creation fail on the enum.
+  /**
+   * AN EMPTY CATEGORY IS PASSED THROUGH AS EMPTY. A VALIDATOR MUST NOT INVENT A CLASSIFICATION.
+   *
+   * ─────────────────────────────────────────────────────────────────────────────────────────────
+   * This line used to read `if (!category.length) category.push('Meetup')`, and that default is the
+   * whole of the "I added an event and it never appears on the home page" bug.
+   *
+   * `'Meetup'` is not a neutral placeholder. It is a GATHERING category deliberately excluded from
+   * `TECH_FLAG_CATEGORIES` — its own comment in `lib/event-types.ts` says "not even arguable: 323
+   * upcoming rows, mostly Toastmasters, board games and treks". So substituting it turns "the user
+   * picked nothing" into a POSITIVE ASSERTION that the event is a non-tech social gathering, the
+   * create path correctly derives `isTechEvent: false` from that assertion, and the feed — which is
+   * unconditionally `techOnly` — correctly hides it. Every layer behaves; the input was a lie.
+   *
+   * Measured on the live corpus: 12 of 12 hand-added events owned by a real user were stored
+   * `category: ["Meetup"]`, `isTechEvent: false`, and 0 of the 5 future-dated ones matched the feed.
+   *
+   * The original comment (kept below, because the hazard it names is real) explains why the value
+   * was `'Meetup'` rather than the retired `'Networking/Meetup'`: that string was dropped in the
+   * 32 → 22 consolidation and defaulting to it made every manual creation fail on the schema enum.
+   * That is an argument about WHICH value to invent, and the answer is none.
+   *
+   * WHO DECIDES INSTEAD: `app/api/events/route.ts`, which runs the keyword floor over the title and
+   * description and refuses the save when that also finds no topic. It has to be the route rather
+   * than here, because this function is pure and the floor is the only thing that can read a title
+   * and tell `Hacktoberfest Hack Day` from `Sunday Jamming`. Note the schema's `required` on an
+   * array rejects `[]`, so a caller that ignores this and writes straight through gets a loud
+   * ValidationError rather than a quiet non-tech row — the failure mode is the right way round now.
+   * ─────────────────────────────────────────────────────────────────────────────────────────────
+   */
   const category = requested.filter(c => allowed.has(c));
-  if (!category.length) category.push('Meetup');
 
   // ── Enums with defaults ───────────────────────────────────────────────────
   const format = FORMATS.includes(input.format as never)

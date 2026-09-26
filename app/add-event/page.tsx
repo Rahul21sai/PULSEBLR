@@ -110,7 +110,24 @@ function AddEventForm() {
           ...formData,
           visibility,
           price: formData.price ? parseFloat(formData.price) : undefined,
-          category: formData.category.length > 0 ? formData.category : ['Meetup'],
+          /**
+           * SENT AS-IS, EVEN WHEN EMPTY. This line used to read
+           * `formData.category.length > 0 ? formData.category : ['Meetup']`, and that substitution —
+           * happening in the BROWSER, before the request — is what actually produced every
+           * permanently-invisible hand-added event. `'Meetup'` is excluded from
+           * `TECH_FLAG_CATEGORIES` on purpose, so the server derived `isTechEvent: false` from it and
+           * the unconditionally-`techOnly` feed correctly hid the row.
+           *
+           * It also made the server-side default unreachable: `input.category` always arrived
+           * non-empty, so `manual-input.ts`'s own `if (!category.length)` never fired for a single
+           * form submission. Two copies of one wrong decision, only one of which was doing anything.
+           *
+           * An empty array now reaches the route, which reads the title and description with the
+           * keyword floor and answers 400 naming `category` if even that finds no topic. That is why
+           * the submit guard below deliberately does NOT require a category: the import path cannot
+           * supply one, and the floor recovers it for most events without asking the user anything.
+           */
+          category: formData.category,
         }),
       });
       if (res.ok) {
@@ -124,6 +141,19 @@ function AddEventForm() {
         }
       } else {
         const data = await res.json();
+        /**
+         * PRE-SELECT WHAT THE SERVER GUESSED, so the retry is one tap rather than a guessing game.
+         *
+         * The route answers 400 with `suggestedCategory` when the keyword floor DID read a topic off
+         * the title but none of them is a tech topic — the `Dev Days | Bangalore` → `Community/Social`
+         * case. Refusing to store that silently is the point (nobody classified it, and a wrong
+         * employer-grade guess is what made these events invisible), but making the user re-derive
+         * the answer we already have would be the obtuse version of being careful. Filling the picker
+         * and letting them press Save again keeps the human as the one asserting it.
+         */
+        if (Array.isArray(data.suggestedCategory) && data.suggestedCategory.length) {
+          setFormData(prev => ({ ...prev, category: data.suggestedCategory as string[] }));
+        }
         alert(data.error || 'Failed to add event');
       }
     } catch {
