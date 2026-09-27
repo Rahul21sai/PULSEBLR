@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { describe, expect, it } from 'vitest';
-import { createDeleteAccountHandler } from '../app/api/me/account/route';
+import { createDeleteAccountHandler } from '../lib/http/delete-account-handler';
 
 const request = (origin: string | null, body: string) => new NextRequest(
   'https://pulseblr-u9f1.vercel.app/api/me/account',

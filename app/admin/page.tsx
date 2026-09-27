@@ -1,5 +1,4 @@
 import { redirect } from 'next/navigation';
-import Link from 'next/link';
 import { auth } from '@/auth';
 import { isAdminConfigured, isAdminEmail } from '@/lib/admin';
 import AdminDashboard from './AdminDashboard';
@@ -37,25 +36,5 @@ export default async function AdminPage() {
       adminName={session.user.name || session.user.email}
       configured={isAdminConfigured()}
     />
-  );
-}
-
-/** Shown by AdminDashboard when a fetch fails; kept here so the import stays server-side. */
-export function AdminUnavailable() {
-  return (
-    <div className="min-h-screen bg-[var(--paper)] flex items-center justify-center p-6">
-      <div className="rounded-[var(--r-flat)] border border-[var(--rule)] p-6 max-w-md text-center">
-        <h1 className="text-[18px] font-bold text-[var(--ink)]">Admin is unavailable</h1>
-        <p className="text-[13.5px] text-[var(--ink-2)] mt-1">
-          Set <code className="font-mono">ADMIN_EMAILS</code> to enable it.
-        </p>
-        <Link
-          href="/"
-          className="inline-block mt-4 px-4 py-2 rounded-full bg-[var(--accent)] text-[var(--accent-ink)] text-[13px] font-semibold"
-        >
-          Back to events
-        </Link>
-      </div>
-    </div>
   );
 }

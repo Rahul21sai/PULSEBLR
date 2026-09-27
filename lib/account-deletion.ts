@@ -128,7 +128,10 @@ function mongooseTransaction(session: ClientSession): AccountDeletionTransaction
             undoneBy: { $cond: [{ $eq: ['$undoneBy', userId] }, DELETED_ACTOR_ID, '$undoneBy'] },
           },
         }],
-        { session },
+        // Mongoose 9 refuses an aggregation-pipeline update without this opt-in. Without it this
+        // threw on every call, so account deletion always answered "temporarily unavailable" -
+        // the unit tests use a fake store and never reach Mongoose, which is how it shipped.
+        { session, updatePipeline: true },
       );
       return result.modifiedCount ?? 0;
     },
