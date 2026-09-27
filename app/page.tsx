@@ -1688,7 +1688,7 @@ export default function Home() {
           <div className="flex items-center justify-between gap-2 pb-0 sm:gap-4 sm:pb-1">
             <div
               ref={chipRowRef}
-              className="flex snap-x snap-mandatory gap-1 overflow-x-auto overscroll-x-contain no-scrollbar -mx-1 px-1"
+              className="flex snap-x snap-mandatory gap-1 overflow-x-auto overscroll-x-contain no-scrollbar -mx-1 px-1 scroll-px-1"
             >
               {/* `!day` IS PART OF "ACTIVE", AND IT IS NOT COSMETIC. With a day selected from the
                   week strip, `when` is `''` — so without this the "All upcoming" chip would render
@@ -2200,7 +2200,7 @@ export default function Home() {
                 <EventGridCard key={event._id} event={event} />
               ))}
             </div>
-            <div className="-mx-4 flex snap-x snap-mandatory gap-3.5 overflow-x-auto overscroll-x-contain px-4 pb-1 no-scrollbar sm:hidden">
+            <div className="-mx-4 flex snap-x snap-mandatory scroll-px-4 gap-3.5 overflow-x-auto overscroll-x-contain px-4 pb-1 no-scrollbar sm:hidden">
               {spotlight.map(event => (
                 <div key={event._id} className="w-[262px] shrink-0 snap-start">
                   <EventGridCard event={event} />

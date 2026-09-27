@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { currentPageTarget, loginHref } from '@/lib/auth-callback-url';
 import { isAdminOnlyPath, isProtectedPath } from '@/lib/protected-routes';
+import { DesktopNav, MobileBottomNav } from './NavBar';
 
 /**
  * Shown to a signed-in user who is not an admin. Deliberately explains WHY rather than just
@@ -122,6 +123,10 @@ export default function ProtectedRouteGate({ children }: { children: React.React
 
   return (
     <div className="min-h-screen bg-[var(--paper)]">
+      {/* The navigation stays. This screen REPLACES the page, and without it an installed iPhone
+          app — which has no browser back button — could leave only through the "browse events"
+          link. Every tab is still one tap away, exactly as on the page the user asked for. */}
+      <DesktopNav />
       <div className="mx-auto max-w-[520px] px-5 pt-24 text-center">
         <span
           aria-hidden="true"
@@ -154,6 +159,7 @@ export default function ProtectedRouteGate({ children }: { children: React.React
           </Link>
         </p>
       </div>
+      <MobileBottomNav />
     </div>
   );
 }

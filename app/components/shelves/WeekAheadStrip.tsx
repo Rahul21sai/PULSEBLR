@@ -159,7 +159,7 @@ export default function WeekAheadStrip({
       <div
         role="group"
         aria-label="Narrow the feed to one day"
-        className="-mx-4 flex snap-x snap-mandatory gap-2 overflow-x-auto overscroll-x-contain px-4 pb-1 no-scrollbar sm:mx-0 sm:grid sm:grid-cols-7 sm:gap-2.5 sm:overflow-visible sm:px-0"
+        className="-mx-4 flex snap-x snap-mandatory scroll-px-4 gap-2 overflow-x-auto overscroll-x-contain px-4 pb-1 no-scrollbar sm:mx-0 sm:grid sm:grid-cols-7 sm:gap-2.5 sm:overflow-visible sm:px-0"
       >
         {days.map(day => {
           const selected = day.key === selectedDay;

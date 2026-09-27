@@ -110,7 +110,7 @@ function CompactRail({
 }) {
   return (
     <div
-      className={`-mx-4 flex snap-x snap-mandatory gap-2.5 overflow-x-auto overscroll-x-contain px-4 pb-1 no-scrollbar ${
+      className={`-mx-4 flex snap-x snap-mandatory scroll-px-4 gap-2.5 overflow-x-auto overscroll-x-contain px-4 pb-1 no-scrollbar ${
         reflowAtSm
           ? 'sm:mx-0 sm:grid sm:grid-cols-2 sm:gap-3 sm:overflow-visible sm:px-0 lg:grid-cols-3'
           : 'sm:hidden'
@@ -263,7 +263,7 @@ export default function EventShelf({
           {compactOnMobile ? (
             <CompactRail events={events} highlight={highlight} reflowAtSm={false} />
           ) : (
-            <div className="-mx-4 flex snap-x snap-mandatory gap-3.5 overflow-x-auto overscroll-x-contain px-4 pb-1 no-scrollbar sm:hidden">
+            <div className="-mx-4 flex snap-x snap-mandatory scroll-px-4 gap-3.5 overflow-x-auto overscroll-x-contain px-4 pb-1 no-scrollbar sm:hidden">
               {events.map(event => (
                 <div key={event._id} className="w-[262px] shrink-0 snap-start">
                   <EventGridCard event={event} />
