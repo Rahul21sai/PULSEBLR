@@ -4,6 +4,8 @@ import Link from 'next/link';
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useSession } from 'next-auth/react';
 import { DesktopNav, MobileBottomNav } from './components/NavBar';
+import Sheet from './components/Sheet';
+import { Banner, Button } from './components/ui';
 import EventRow from './components/EventRow';
 import EventGridCard from './components/EventGridCard';
 import FilterRail, {
@@ -26,6 +28,19 @@ import {
   splitForPreview,
 } from './components/shelves/precedence';
 import { FeedEvent, Pagination } from '@/lib/event-types';
+import {
+  failureLead,
+  fetchJson,
+  type FetchOutcome,
+  type ReadFailure,
+} from '@/lib/fetch-result';
+import {
+  LOAD_MORE_IDLE,
+  nextLoadMore,
+  type LoadMoreEvent,
+  type LoadMoreState,
+  type LoadMoreTrigger,
+} from '@/lib/events/load-more';
 import { MIN_SEARCH_CHARS, resolveDayWindow } from '@/lib/events/query';
 import { preferenceSummary, type UserPreferences } from '@/lib/events/relevance';
 import {
@@ -212,6 +227,40 @@ function sameList(a: string[], b: string[]): boolean {
   return a.length === b.length && a.every((v, i) => v === b[i]);
 }
 
+/** `id` of the mobile filter dialog, so its trigger can carry `aria-controls`. */
+const FILTER_SHEET_ID = 'feed-filter-sheet';
+
+/** What `/api/events` answers. Every field optional: a 2xx is not proof of shape. */
+type EventsPage = { events?: FeedEvent[]; pagination?: Pagination | null; followed?: string[] };
+
+/**
+ * The page cursor, stamped with the request generation it belongs to — see `cursor` in `Home`.
+ */
+type Cursor = { generation: number; page: number; hasMore: boolean };
+
+/**
+ * The sections a failed request takes off the page, in PAGE ORDER, and how the notice names them.
+ *
+ * The Spotlight's pins are deliberately absent. When the pin request fails the Spotlight falls back
+ * to the top of the ranking and its heading changes to say so ("Best for connections right now"), so
+ * the section is already truthful about what it shows. Facets are absent too: `FilterRail` reports
+ * its own failure where the counts are used, and a second voice for one failure is noise.
+ */
+const SHELF_NAMES = {
+  week: 'the week ahead',
+  curated: 'events added by hand',
+  following: 'events from companies you follow',
+  live: 'the full list of what’s happening now',
+} as const;
+type ShelfKey = keyof typeof SHELF_NAMES;
+const SHELF_ORDER = Object.keys(SHELF_NAMES) as ShelfKey[];
+
+/** "a", "a and b", "a, b and c". Not `Intl.ListFormat`: pre-14.1 Safari lacks it. */
+function joinNames(names: string[]): string {
+  if (names.length <= 1) return names.join('');
+  return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+}
+
 export default function Home() {
   const [events, setEvents] = useState<FeedEvent[]>([]);
   /**
@@ -261,8 +310,19 @@ export default function Home() {
   const [facets, setFacets] = useState<FacetsWithCardMeta | null>(null);
   const [pagination, setPagination] = useState<Pagination | null>(null);
   const [loading, setLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  /**
+   * The next-page request, as a state machine rather than a `loadingMore` boolean. A boolean has no
+   * way to say "the last attempt FAILED", and that missing state is exactly what let the scroll
+   * observer re-request a failed page in a tight loop. See `lib/events/load-more.ts`.
+   */
+  const [more, setMore] = useState<LoadMoreState>(LOAD_MORE_IDLE);
+  /** Why the LIST request failed, or null. A kind rather than a message, so the copy can say what to do. */
+  const [error, setError] = useState<ReadFailure | null>(null);
+  /**
+   * Which secondary sections' requests failed for the CURRENT controls. Reported by one notice under
+   * the feed tabs rather than left to vanish silently — see `SHELF_NAMES` and the notice itself.
+   */
+  const [shelfFailures, setShelfFailures] = useState<Partial<Record<ShelfKey, ReadFailure>>>({});
 
   const [searchInput, setSearchInput] = useState('');
   const [query, setQuery] = useState('');
@@ -368,6 +428,29 @@ export default function Home() {
   const [filters, setFilters] = useState<FilterState>(EMPTY_FILTERS);
   const [view, setView] = useState<ViewMode>('rail');
   const [sheetOpen, setSheetOpen] = useState(false);
+  const closeSheet = useCallback(() => setSheetOpen(false), []);
+  /**
+   * CLOSE THE FILTER SHEET IF THE VIEWPORT REACHES `lg` WHILE IT IS OPEN — a tablet rotated to
+   * landscape.
+   *
+   * The hand-built sheet this replaces was `lg:hidden`, so it simply vanished at 1024px and came back
+   * on rotating back. `Sheet` cannot do that: it locks `body` scrolling while open, so a sheet hidden
+   * by CSS but still open would leave the desktop layout — where the filter rail is always on screen —
+   * frozen, with nothing visible to close. Closing is the honest equivalent, and it also releases the
+   * lock and runs the focus restore. `64rem` is Tailwind v4's `lg`, the same breakpoint the trigger
+   * and the rail switch on; `globals.css` defines no custom breakpoints.
+   *
+   * The setState is in the listener, never in the effect body, per the React compiler rules.
+   */
+  useEffect(() => {
+    if (!sheetOpen) return;
+    const wide = window.matchMedia('(min-width: 64rem)');
+    const onChange = (event: MediaQueryListEvent) => {
+      if (event.matches) setSheetOpen(false);
+    };
+    wide.addEventListener('change', onChange);
+    return () => wide.removeEventListener('change', onChange);
+  }, [sheetOpen]);
   /**
    * Has the reader asked to see every live event, rather than the first `LIVE_PREVIEW`?
    *
@@ -615,22 +698,19 @@ export default function Home() {
   const sessionUserId = session?.user?.id ?? null;
   useEffect(() => {
     if (!sessionUserId) return;
-    let live = true;
+    // Aborted, not merely ignored, when the session changes: the request for the previous account
+    // is superseded, and there is no reason to keep downloading it.
+    const controller = new AbortController();
     (async () => {
-      try {
-        const res = await fetch('/api/me/preferences');
-        if (!res.ok) return;
-        const data = await res.json();
-        if (live && data.preferences) {
-          setPreferences({ userId: sessionUserId, value: data.preferences as PreferencesDTO });
-        }
-      } catch {
-        // See above: an enhancement, not content.
-      }
+      const result = await fetchJson<{ preferences?: PreferencesDTO }>('/api/me/preferences', {
+        signal: controller.signal,
+      });
+      // Silent on every failure — see above: an enhancement, not content. The `aborted` re-check
+      // covers an answer that resolved in the same tick the cleanup ran.
+      if (controller.signal.aborted || result.kind !== 'ok' || !result.data.preferences) return;
+      setPreferences({ userId: sessionUserId, value: result.data.preferences });
     })();
-    return () => {
-      live = false;
-    };
+    return () => controller.abort();
   }, [sessionUserId]);
 
   /**
@@ -658,12 +738,18 @@ export default function Home() {
   const dismissPrompt = useCallback(async () => {
     setPromptDismissed(true);
     try {
-      await fetch('/api/me/preferences', {
+      const res = await fetch('/api/me/preferences', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: '{}',
       });
-      setPreferences(prev => (prev ? { ...prev, value: { ...prev.value, onboarded: true } } : prev));
+      // Only record `onboarded` locally when the server did. It used to be set whatever the status,
+      // so a refused PUT left this page believing an answer was stored that never was. Nothing
+      // visible depends on it this visit (`promptDismissed` already hid the banner), which is why a
+      // failure stays silent — but the local copy should not claim what the server denied.
+      if (res.ok) {
+        setPreferences(prev => (prev ? { ...prev, value: { ...prev.value, onboarded: true } } : prev));
+      }
     } catch {
       // Nothing to report: the banner is already gone for this visit.
     }
@@ -752,12 +838,76 @@ export default function Home() {
    */
   const requestGeneration = useRef(0);
 
+  /**
+   * What is in flight, so a newer request can ABORT it rather than merely ignore its answer.
+   *
+   * One object, never replaced, so the unmount cleanup below can capture it once and still see the
+   * latest controllers — reading `ref.current` inside a cleanup is the pattern the hooks lint warns
+   * about, because the ref may have moved on by then.
+   */
+  const inflight = useRef<{ load: AbortController | null; page: AbortController | null }>({
+    load: null,
+    page: null,
+  });
+  useEffect(() => {
+    const requests = inflight.current;
+    return () => {
+      requests.load?.abort();
+      requests.page?.abort();
+    };
+  }, []);
+
+  /**
+   * THE PAGE CURSOR, IN A REF AND STAMPED WITH ITS GENERATION — race 1 above was not actually closed.
+   *
+   * The fix for it was `setPagination(null)` at the start of `load()`, on the theory that a sentinel
+   * that is not rendered cannot fire. But state only changes on the NEXT render, while the observer
+   * is recreated in the passive-effect flush that also schedules `load()`: a notification delivered
+   * between `load()` running and that re-render arrives with a closure still holding the old
+   * `pagination` and `loading: false`, and would request page N+1 — of the OLD cursor — into the new
+   * generation. `loadMore` therefore reads the cursor from here, `load()` clears it synchronously, and
+   * a cursor from any generation but the current one is refused.
+   */
+  const cursor = useRef<Cursor | null>(null);
+
+  /**
+   * The load-more machine's live value. `more` (state) is what renders; this is what DECIDES, because
+   * it is current even inside a stale closure — the double-fire this machine exists to refuse is
+   * precisely a stale closure believing nothing is in flight.
+   */
+  const moreRef = useRef<LoadMoreState>(LOAD_MORE_IDLE);
+  /** Step the machine. Returns whether anything changed — false means "do not send this request". */
+  const moveMore = useCallback((event: LoadMoreEvent): boolean => {
+    const previous = moreRef.current;
+    const next = nextLoadMore(previous, event);
+    if (next === previous) return false;
+    moreRef.current = next;
+    setMore(next);
+    return true;
+  }, []);
+
   const load = useCallback(async () => {
     const generation = ++requestGeneration.current;
+    /*
+     * ABORT WHAT THE PREVIOUS GENERATION STILL HAS IN FLIGHT, not only ignore its answers. The
+     * generation check below always discarded a stale response, but the request itself ran to the
+     * end: seven of them per filter change, and the debounced search starts a new generation every
+     * 280ms of typing — all competing with the request the reader is actually waiting for, on a
+     * conference network. A next-page request goes too: it continues a list that is being replaced.
+     */
+    inflight.current.load?.abort();
+    inflight.current.page?.abort();
+    inflight.current.page = null;
+    const controller = new AbortController();
+    inflight.current.load = controller;
+    const { signal } = controller;
+    cursor.current = null;
+    moveMore({ type: 'reset' });
     setLoading(true);
     setError(null);
-    // Clear pagination up front so the infinite-scroll sentinel cannot fire
-    // loadMore() with a page number belonging to the previous filter set.
+    setShelfFailures({});
+    // Still cleared for RENDERING — the sentinel and the counts read it. The guard against a stale
+    // next-page request is `cursor`, above, because this only lands on the next render.
     setPagination(null);
     try {
       const params = buildParams(1);
@@ -868,64 +1018,70 @@ export default function Home() {
       // readout of the filters — and only a query retires it, because then the page is about results.
       const wantsWeek = !query;
 
-      const [listRes, facetRes, liveRes, pinnedRes, curatedRes, followedRes, weekRes] =
+      /*
+       * `fetchJson` NEVER REJECTS — every outcome is a value — and that is what finally makes each
+       * request independent. The old `Promise.all` of raw `fetch`es rejected as a whole on the FIRST
+       * rejection, so a dropped connection on the week strip's request rendered "Couldn't load
+       * events" over a list whose own request had succeeded, and none of the "an enhancement, a
+       * failure here must leave the feed intact" guards below it ever ran.
+       */
+      const skipped = Promise.resolve(null);
+      const [list, facetsRes, liveRes, pinnedRes, curatedRes, followedRes, weekRes] =
         await Promise.all([
-          fetch(`/api/events?${params.toString()}`),
-          fetch(`/api/events/facets?${params.toString()}`),
-          fetch(`/api/events?${liveParams.toString()}`),
-          wantsSpotlight ? fetch(`/api/events?${pinnedParams.toString()}`) : Promise.resolve(null),
-          wantsSpotlight ? fetch(`/api/events?${curatedParams.toString()}`) : Promise.resolve(null),
-          wantsSpotlight ? fetch(`/api/events?${followedParams.toString()}`) : Promise.resolve(null),
-          wantsWeek ? fetch(`/api/events?${weekParams.toString()}`) : Promise.resolve(null),
+          fetchJson<EventsPage>(`/api/events?${params.toString()}`, { signal }),
+          fetchJson<FacetsWithCardMeta>(`/api/events/facets?${params.toString()}`, { signal }),
+          fetchJson<EventsPage>(`/api/events?${liveParams.toString()}`, { signal }),
+          wantsSpotlight
+            ? fetchJson<EventsPage>(`/api/events?${pinnedParams.toString()}`, { signal })
+            : skipped,
+          wantsSpotlight
+            ? fetchJson<EventsPage>(`/api/events?${curatedParams.toString()}`, { signal })
+            : skipped,
+          wantsSpotlight
+            ? fetchJson<EventsPage>(`/api/events?${followedParams.toString()}`, { signal })
+            : skipped,
+          wantsWeek ? fetchJson<EventsPage>(`/api/events?${weekParams.toString()}`, { signal }) : skipped,
         ]);
-      if (!listRes.ok) throw new Error('Could not load events');
+      // Superseded by a newer filter set (whose `load` also aborted these) — drop every response.
+      // An abort for any other reason is the unmount cleanup, and then nothing is listening.
+      if (generation !== requestGeneration.current || signal.aborted) return;
 
-      const list = await listRes.json();
-      // Superseded by a newer filter set — drop this response entirely.
-      if (generation !== requestGeneration.current) return;
-
-      setEvents(list.events || []);
-      setPagination(list.pagination || null);
-
-      // Also an enhancement: if the pinned request fails or was skipped, the Spotlight simply
-      // falls back to the top of the ranking rather than disappearing.
-      if (pinnedRes?.ok) {
-        const pinned = await pinnedRes.json();
-        if (generation === requestGeneration.current) {
-          setPinnedEvents((pinned.events || []) as FeedEvent[]);
-        }
-      } else if (!wantsSpotlight && generation === requestGeneration.current) {
-        // Clear on a filtered/searched view so a stale pin cannot reappear when filters relax.
-        setPinnedEvents([]);
-      }
-
-      // Same shape as the pins, and for the same reason: an enhancement, cleared rather than
-      // left stale when the view stops being eligible for it.
-      if (curatedRes?.ok) {
-        const curated = await curatedRes.json();
-        if (generation === requestGeneration.current) {
-          setCuratedEvents((curated.events || []) as FeedEvent[]);
-        }
-      } else if (!wantsSpotlight && generation === requestGeneration.current) {
-        setCuratedEvents([]);
+      // THE LIST. Its failure is the page's failure: the error card below says so and retries.
+      if (list.kind === 'ok') {
+        const page = list.data.pagination || null;
+        setEvents(list.data.events || []);
+        setPagination(page);
+        cursor.current = page ? { generation, page: page.page, hasMore: page.hasMore } : null;
+      } else {
+        setError(list.kind === 'failed' ? list.failure : 'error');
+        setEvents([]);
       }
 
       /*
-       * Same contract as the pins and the curated shelf: an enhancement, CLEARED rather than left
-       * stale when the view stops being eligible for it. A stale following shelf is worse than a
-       * missing one — it would sit above a searched page claiming those results are hosted by
-       * companies the reader follows.
+       * EVERY OTHER SECTION IS REPLACED ON EVERY LOAD, NEVER LEFT STANDING.
+       *
+       * The old code cleared a section only when the view stopped being ELIGIBLE for it; when its
+       * request FAILED it kept the previous generation's rows. So after a filter change, a failed
+       * request left "Happening now", the curated shelf, the following shelf, the week strip's counts
+       * and the rail's facet counts all describing the PREVIOUS controls, above a list describing the
+       * new ones — a stale pin labelled "Our pick right now" under a Today window, a week strip
+       * counting events the current filters exclude. A section with no answer for the current
+       * controls is now empty, and `failures` records which, for the notice under the feed tabs.
+       *
+       * The pins record no failure, by design: an empty pin set makes the Spotlight fall back to the
+       * top of the ranking, which is what its heading then says it is showing.
        */
-      if (followedRes?.ok) {
-        const followed = await followedRes.json();
-        if (generation === requestGeneration.current) {
-          setFollowingEvents((followed.events || []) as FeedEvent[]);
-          setFollowedList((followed.followed || []) as string[]);
-        }
-      } else if (!wantsSpotlight && generation === requestGeneration.current) {
-        setFollowingEvents([]);
-        setFollowedList([]);
-      }
+      const failures: Partial<Record<ShelfKey, ReadFailure>> = {};
+      const rowsOf = (outcome: FetchOutcome<EventsPage> | null, key?: ShelfKey): FeedEvent[] => {
+        if (outcome?.kind === 'ok') return outcome.data.events || [];
+        if (outcome?.kind === 'failed' && key) failures[key] = outcome.failure;
+        return [];
+      };
+
+      setPinnedEvents(rowsOf(pinnedRes));
+      setCuratedEvents(rowsOf(curatedRes, 'curated'));
+      setFollowingEvents(rowsOf(followedRes, 'following'));
+      setFollowedList(followedRes?.kind === 'ok' ? followedRes.data.followed || [] : []);
 
       /*
        * The week strip. Bucketed here rather than in the component so the component stays a pure
@@ -935,39 +1091,35 @@ export default function Home() {
        * from `events.length === limit` — the latter cannot tell a week that holds exactly 100 events
        * from one that holds 400, and the strip would report the first as approximate and the second
        * as exact.
+       *
+       * On a failure the strip gets NO days, and `WeekAheadStrip` renders nothing for an empty week.
+       * That silence would read as "a quiet week", which is why the failure is recorded rather than
+       * left to the component — it cannot tell an empty week from an unanswered request.
        */
-      if (weekRes?.ok) {
-        const week = await weekRes.json();
-        if (generation === requestGeneration.current) {
-          const rows = (week.events || []) as FeedEvent[];
-          setWeekDays(bucketWeek(rows));
-          setWeekTruncated((week.pagination?.total ?? 0) > rows.length);
-        }
-      } else if (!wantsWeek && generation === requestGeneration.current) {
-        setWeekDays([]);
-        setWeekTruncated(false);
-      }
+      const weekRows = rowsOf(weekRes, 'week');
+      setWeekDays(weekRes?.kind === 'ok' ? bucketWeek(weekRows) : []);
+      setWeekTruncated(
+        weekRes?.kind === 'ok' && (weekRes.data.pagination?.total ?? 0) > weekRows.length
+      );
 
-      // Live set is an enhancement, not content: a failure here must leave the feed intact.
-      if (liveRes.ok) {
-        const soonest = await liveRes.json();
-        if (generation === requestGeneration.current) {
-          setLiveEvents(
-            ((soonest.events || []) as FeedEvent[]).filter(e =>
-              isHappeningNow(e.startDateTime, e.endDateTime)
-            )
-          );
-        }
-      }
+      setLiveEvents(
+        rowsOf(liveRes, 'live').filter(e => isHappeningNow(e.startDateTime, e.endDateTime))
+      );
 
-      // Facets are decoration, not content — a facet failure must not blank the feed.
-      if (facetRes.ok) {
-        const nextFacets = await facetRes.json();
-        if (generation === requestGeneration.current) setFacets(nextFacets);
-      }
+      /*
+       * Facets: `null` on failure, never the previous set. `FilterRail` treats `!facets && !loading`
+       * as "the counts did not load" and SAYS so, with a retry. Kept stale instead, they were counts
+       * for other filters — enabling options that now match nothing and disabling ones that match.
+       */
+      setFacets(facetsRes.kind === 'ok' ? facetsRes.data : null);
+      setShelfFailures(failures);
     } catch (err) {
+      // Nothing above rejects by design — `fetchJson` returns its failures — so reaching this is a
+      // bug in the processing. It is still reported as a failed load rather than a spinner that
+      // never stops, and logged, because the reader's copy deliberately carries no detail.
       if (generation !== requestGeneration.current) return;
-      setError(err instanceof Error ? err.message : 'Something went wrong');
+      console.error('Feed load failed while applying responses:', err);
+      setError('error');
       setEvents([]);
     } finally {
       if (generation === requestGeneration.current) setLoading(false);
@@ -976,7 +1128,7 @@ export default function Home() {
     // three, so `load` would change anyway. Naming them is not redundant: `wantsSpotlight` reads
     // them DIRECTLY now, and depending on that only transitively means the day someone narrows
     // `buildParams`'s own deps, this callback goes stale with no warning. The lint rule was right.
-  }, [buildParams, query, filters, effectiveSort]);
+  }, [buildParams, query, filters, effectiveSort, moveMore]);
 
   // Deferred by a tick rather than called synchronously. Two reasons: React's
   // compiler rules (correctly) reject a synchronous setState inside an effect, and
@@ -987,31 +1139,83 @@ export default function Home() {
     return () => clearTimeout(timer);
   }, [load]);
 
-  const loadMore = useCallback(async () => {
-    // `loading` is part of the guard on purpose: while a fresh filter set is being
-    // fetched there is no valid page number to continue from.
-    if (loading || loadingMore || !pagination?.hasMore) return;
+  /**
+   * Fetch the next page. `auto` from the scroll observer, `explicit` from a button.
+   *
+   * ─────────────────────────────────────────────────────────────────────────────────────────────
+   * THIS USED TO BE A TIGHT REQUEST LOOP WHENEVER A PAGE FAILED. It did `if (!res.ok) return;` in a
+   * try/finally with no catch, so a failure cleared `loadingMore` and nothing else. That re-render
+   * gave `loadMore` a new identity, the effect below recreated the observer, and a new observer
+   * ALWAYS delivers an initial notification — "intersecting", since nothing had been appended and
+   * the sentinel had not moved. So the same page was requested again, immediately, forever. Offline,
+   * `public/sw.js` answers `/api/events` with an instant 503, and the loop ran at render speed with
+   * the bottom of the feed on screen: a request storm and a battery drain on a phone at an event,
+   * behind a list that had silently stopped growing. A rejected `fetch` did the same thing plus an
+   * unhandled rejection on every turn.
+   *
+   * Three changes, each closing a different way back in:
+   *
+   *   1. FAILURE IS A STATE. The machine in `lib/events/load-more.ts` refuses every `auto` request
+   *      after a failure, however often the observer fires; only the Retry button (`explicit`) or a
+   *      new filter set leaves it. `tests/load-more.test.ts` drives the observer loop against a page
+   *      that always fails and pins the request count at one.
+   *   2. THE GUARDS READ REFS, NOT THE CLOSURE. "Is a request in flight" and "which page comes next"
+   *      are decided from `moreRef` and `cursor`, which are current even in a stale closure. The old
+   *      guard read `loading`/`loadingMore`/`pagination` from whichever render created the observer.
+   *   3. A REQUEST IS OWNED. It is aborted when a new filter set starts, and its answer is applied
+   *      only while `inflight.page` is still this request's controller — so a response for a list
+   *      that has since been replaced can neither append rows nor move the machine.
+   *
+   * There is no automatic retry, with or without backoff: a backoff still spends requests while the
+   * reader is offline, and the Retry button sits exactly where the next page would appear.
+   * ─────────────────────────────────────────────────────────────────────────────────────────────
+   */
+  const loadMore = useCallback(
+    async (trigger: LoadMoreTrigger) => {
+      const at = cursor.current;
+      // Only the current generation's cursor may be continued — see `cursor`.
+      const next = at && at.generation === requestGeneration.current && at.hasMore ? at : null;
+      if (!moveMore({ type: 'request', trigger, hasMore: next !== null }) || !next) return;
 
-    const generation = requestGeneration.current;
-    setLoadingMore(true);
-    try {
-      const res = await fetch(`/api/events?${buildParams(pagination.page + 1).toString()}`);
-      if (!res.ok) return;
-      const data = await res.json();
-      // The filters changed while this page was in flight; appending it now would
-      // mix results from two different queries.
-      if (generation !== requestGeneration.current) return;
+      const controller = new AbortController();
+      inflight.current.page = controller;
+      const result = await fetchJson<EventsPage>(
+        `/api/events?${buildParams(next.page + 1).toString()}`,
+        { signal: controller.signal }
+      );
+      // Disowned: a new filter set aborted this request and reset the machine, so neither its rows
+      // nor its failure belong to the list on screen now.
+      if (inflight.current.page !== controller) return;
+      inflight.current.page = null;
+      if (result.kind === 'aborted') return;
+      if (result.kind === 'failed') {
+        moveMore({ type: 'failed', failure: result.failure });
+        return;
+      }
 
-      // Guard against a duplicate page if the user scrolls fast.
+      const page = result.data.pagination;
+      /*
+       * A 2xx that does not ADVANCE the cursor is a failure, not a page. Treated as success it would
+       * re-arm the observer onto the same page number, and the loop above would be back — arriving
+       * through the success path instead of the failure one. `/api/events` always advances; this is
+       * the contract written down where breaking it would otherwise be silent.
+       */
+      if (!page || page.page <= next.page) {
+        moveMore({ type: 'failed', failure: 'error' });
+        return;
+      }
+
+      // Guard against a duplicate row if the corpus shifted between pages.
       setEvents(prev => {
         const seen = new Set(prev.map(e => e._id));
-        return [...prev, ...(data.events || []).filter((e: FeedEvent) => !seen.has(e._id))];
+        return [...prev, ...(result.data.events || []).filter(e => !seen.has(e._id))];
       });
-      setPagination(data.pagination || null);
-    } finally {
-      setLoadingMore(false);
-    }
-  }, [loading, loadingMore, pagination, buildParams]);
+      setPagination(page);
+      cursor.current = { generation: next.generation, page: page.page, hasMore: page.hasMore };
+      moveMore({ type: 'succeeded' });
+    },
+    [buildParams, moveMore]
+  );
 
   // Infinite scroll via a sentinel element.
   const sentinelRef = useRef<HTMLDivElement | null>(null);
@@ -1020,13 +1224,33 @@ export default function Home() {
     if (!node) return;
     const observer = new IntersectionObserver(
       entries => {
-        if (entries[0]?.isIntersecting) loadMore();
+        // `auto`: refused outright after a failure, and while a page is in flight.
+        if (entries[0]?.isIntersecting) void loadMore('auto');
       },
       { rootMargin: '600px' }
     );
     observer.observe(node);
     return () => observer.disconnect();
-  }, [loadMore]);
+    // `pagination` RE-ARMS the observer after every page, and that is deliberate. A new observer
+    // delivers a fresh initial notification, so a sentinel still inside the margin after a page lands
+    // (a tall screen, a short page) keeps the list filling without a scroll. It is safe to re-arm now
+    // for the reason it was not before: a failure never changes `pagination`, and the machine would
+    // refuse the `auto` request even if it did.
+  }, [loadMore, pagination]);
+
+  /**
+   * After a retry THE READER PRESSED fails, put focus back on Retry.
+   *
+   * Pressing it swapped the button for the loading skeleton, so focus fell to `<body>` and a keyboard
+   * user's next Tab starts from the top of the page. An `auto` failure does NOT move focus: the reader
+   * was reading, and the alert role on the notice already announces it.
+   */
+  const moreFailureRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (more.status === 'failed' && more.trigger === 'explicit') {
+      moreFailureRef.current?.querySelector<HTMLButtonElement>('button')?.focus();
+    }
+  }, [more]);
 
   /**
    * Group events into IST calendar days for the rail, with one exception:
@@ -1101,6 +1325,50 @@ export default function Home() {
    * all of them answer "in what ORDER", and a day grouping overrides the answer.
    */
   const chronological = effectiveSort === 'soonest';
+
+  /**
+   * THE SECTIONS WHOSE REQUEST FAILED AND THAT WOULD OTHERWISE BE ON SCREEN — the notice's contents.
+   *
+   * Every one of these sections renders NOTHING when it has no rows: the week strip returns null for
+   * an empty week, `EventShelf` returns null for an empty shelf. Correct for a quiet week, and a lie
+   * for an unanswered request, because the two are the same pixels. So a failure is named instead of
+   * dropped — but only when the section would have been drawn, or the notice would report a shelf
+   * that this view never shows: curated and following render only on the untouched ranked view (the
+   * same `shelfEligible` the precedence memo uses), and the live list feeds "Happening now" only
+   * under a ranked sort, since `soonest` groups the live rows by day from the list itself.
+   *
+   * Never alongside a failed LIST. The error card already says the page failed and retries all of
+   * it; two voices describing one failure is worse than one.
+   */
+  const shelvesDrawn = !chronological && shelfEligible(query, activeCount);
+  const missingShelves = SHELF_ORDER.filter(
+    key =>
+      shelfFailures[key] !== undefined &&
+      (key === 'week' || (key === 'live' ? !chronological : shelvesDrawn))
+  );
+  const showShelfNotice = !loading && !error && missingShelves.length > 0;
+  /** One shared reason when every missing section failed the same way — "You're offline." */
+  const firstShelfFailure = missingShelves.length ? shelfFailures[missingShelves[0]] : undefined;
+  const sharedShelfFailure = missingShelves.every(key => shelfFailures[key] === firstShelfFailure)
+    ? (firstShelfFailure ?? null)
+    : null;
+  /**
+   * With the week strip missing, a selected day has no control on screen that shows it or clears it
+   * — the strip was both. The feed is still narrowed to that one day, and the readout above the list
+   * says only "N upcoming". So the notice names the day and offers the way back.
+   */
+  const orphanedDay =
+    showShelfNotice && missingShelves.includes('week') && day ? resolveDayWindow(day) : null;
+  /**
+   * The mobile sheet's primary action. It printed `Show 0 events` for the whole of every request and
+   * permanently after a failed one — `total` is `pagination?.total ?? 0` and `load()` nulls
+   * `pagination` up front — which is the "no events" claim a failed fetch must never make.
+   */
+  const sheetFooterLabel = error
+    ? 'Close'
+    : loading
+      ? 'Show events'
+      : `Show ${total.toLocaleString('en-IN')} event${total === 1 ? '' : 's'}`;
 
   /**
    * Split the ranked list into what is ON NOW and what is coming.
@@ -1353,10 +1621,17 @@ export default function Home() {
               )}
             </div>
 
-            {/* Filters: a sheet on mobile, always-on rail on desktop */}
+            {/* Filters: a sheet on mobile, always-on rail on desktop.
+                `aria-haspopup="dialog"` + `aria-expanded` tell a screen reader what pressing this does
+                and whether it has; it announced as a plain "Filters, button" before. `aria-controls`
+                is set only while open, because `Sheet` renders nothing when closed and a reference
+                to an absent id is one a checker rightly flags. */}
             <button
               type="button"
               onClick={() => setSheetOpen(true)}
+              aria-haspopup="dialog"
+              aria-expanded={sheetOpen}
+              aria-controls={sheetOpen ? FILTER_SHEET_ID : undefined}
               className="lg:hidden shrink-0 h-10 px-4 r-touch bg-[var(--surface)] border border-[var(--rule)] text-[13px] font-semibold text-[var(--ink)] flex items-center gap-1.5 hover:bg-[var(--paper)] transition-colors"
             >
               <span aria-hidden="true" className="material-symbols-outlined text-[18px]">tune</span>
@@ -1776,6 +2051,54 @@ export default function Home() {
           )}
         </div>
 
+        {/* ── Sections that did not load ─────────────────────────────────────
+            ONE NOTICE FOR EVERY MISSING SECTION, directly above the first of them. Each of those
+            sections draws nothing when it has no rows, so without this a failed request and a quiet
+            week are the same screen — see `missingShelves`. It names what is missing and says the
+            list is unaffected, because that is the reader's real question: can I trust what I see?
+
+            `warn`, the quietest tone and `role="status"`, not `error`: the page works and the list is
+            complete, so this is a caution, not an alarm — the same register as the rail's own "Filter
+            counts didn't load". Retry is `load`, the page's one request cycle, exactly as the rail's
+            and the error card's are: there is no partial reload to offer, and a second code path to
+            re-fetch one shelf would be a second definition of what that shelf asks for.
+
+            Both buttons paint the 44px floor with `min-h-11` rather than an overlay, since they sit
+            side by side and two overlays would contest the band between them. */}
+        {showShelfNotice && (
+          <div className="max-w-[1240px] mx-auto px-4 md:px-8 pb-6">
+            <Banner tone="warn" className="flex flex-wrap items-center gap-x-4 gap-y-2">
+              <p className="min-w-[11rem] flex-1">
+                <span className="font-semibold text-[var(--ink)]">Part of this page didn’t load</span>
+                {' — '}
+                {joinNames(missingShelves.map(key => SHELF_NAMES[key]))}.
+                {sharedShelfFailure && <> {failureLead(sharedShelfFailure)}</>} The events below are
+                unaffected.
+                {orphanedDay && (
+                  <>
+                    {' '}
+                    Narrowed to{' '}
+                    <span className="font-semibold text-[var(--ink)]">
+                      {dayHeading(orphanedDay.from).replace(/^(Today|Tomorrow)$/, word => word.toLowerCase())}
+                    </span>
+                    .
+                  </>
+                )}
+              </p>
+              <div className="flex shrink-0 flex-wrap items-center gap-2">
+                {orphanedDay && (
+                  <Button tone="quiet" className="min-h-11" onClick={() => selectDay('')}>
+                    Show all upcoming
+                  </Button>
+                )}
+                <Button tone="quiet" className="min-h-11" onClick={() => void load()}>
+                  Try again
+                </Button>
+              </div>
+            </Banner>
+          </div>
+        )}
+
         {/* ── The week ahead ─────────────────────────────────────────────────
             FIRST OF THE SECTIONS, above every shelf, because it is the only one that is NAVIGATION
             rather than content: it answers "what does my week look like" and then lets a reader
@@ -2096,9 +2419,16 @@ export default function Home() {
                  What the reader needs instead is the reassurance that their own work survived — a
                  reader who has just narrowed six filters wants to know whether retrying costs them
                  that — and one button. */
+              /* The reason now comes from `fetchJson`'s classification, so offline says what to do
+                 about being offline. "The request didn't come back" was also wrong for the case where
+                 it DID come back — a 500 is the server answering, not silence. */
               <EmptyState
                 title="Couldn’t load events"
-                body="The request didn’t come back. Your search and filters are still set, so this is safe to retry."
+                body={
+                  error === 'offline'
+                    ? 'You’re offline. Your search and filters are still set, so reconnect and try again.'
+                    : `${failureLead(error)} Your search and filters are still set, so this is safe to retry.`
+                }
                 action={{ label: 'Try again', onClick: load }}
               />
             ) : events.length === 0 ? (
@@ -2326,18 +2656,44 @@ export default function Home() {
 
                  `py-8` alone, not `py-8 flex justify-center`: nothing on this surface is centred, and
                  the Load more button lines up with the rows it extends. */
-              <div ref={sentinelRef} className={loadingMore ? 'pt-1' : 'py-8'}>
-                {loadingMore ? (
+              <div ref={sentinelRef} className={more.status === 'loading' ? 'pt-1' : 'py-8'}>
+                {more.status === 'loading' ? (
                   view === 'grid' ? (
                     <FeedSkeleton view="grid" rows={2} />
                   ) : (
                     <FeedSkeleton view="rail" rows={2} bare />
                   )
+                ) : more.status === 'failed' ? (
+                  /* ── WHERE THE NEXT PAGE WOULD BE, THE REASON IT IS NOT, AND ONE WAY TO GET IT. ──
+                     This slot used to show "Load more" again after a failure — or, while the sentinel
+                     was on screen, nothing at all, because the loop kept it in the loading state. A
+                     reader could not tell a list that had ended from one that had broken.
+
+                     `error` tone, so `role="alert"`: this is the list the reader is reading, and a
+                     screen-reader user otherwise has no signal that it stopped growing. The observer
+                     stays attached; the machine ignores it until Retry. Retry paints 44px with
+                     `min-h-11` (`Button`'s `md` is 40px). */
+                  <div ref={moreFailureRef}>
+                    <Banner tone="error" className="flex flex-wrap items-center gap-x-4 gap-y-2">
+                      <p className="min-w-[11rem] flex-1">
+                        Couldn’t load more events. {failureLead(more.failure)}
+                        {more.failure === 'offline' && ' Reconnect, then try again.'}
+                      </p>
+                      <Button
+                        tone="quiet"
+                        className="min-h-11"
+                        onClick={() => void loadMore('explicit')}
+                      >
+                        Try again
+                      </Button>
+                    </Banner>
+                  </div>
                 ) : (
+                  /* `min-h-11`: `py-2.5` on 14px text painted ~41px, under the 44px floor. */
                   <button
                     type="button"
-                    onClick={loadMore}
-                    className="pressable r-touch px-6 py-2.5 bg-[var(--surface)] border border-[var(--rule)] text-[14px] font-semibold text-[var(--ink)] hover:bg-[var(--paper)] transition-colors"
+                    onClick={() => void loadMore('explicit')}
+                    className="pressable r-touch min-h-11 px-6 py-2.5 bg-[var(--surface)] border border-[var(--rule)] text-[14px] font-semibold text-[var(--ink)] hover:bg-[var(--paper)] transition-colors"
                   >
                     Load more
                   </button>
@@ -2356,62 +2712,48 @@ export default function Home() {
         </div>
       </main>
 
-      {/* ── Mobile filter sheet ──────────────────────────────────────────── */}
-      {sheetOpen && (
-        <div className="lg:hidden fixed inset-0 z-[60] flex items-end">
+      {/* ── Mobile filter sheet ────────────────────────────────────────────
+          `Sheet`, NOT A HAND-BUILT PANEL — and `Sheet`'s own header names this sheet as the one it was
+          written to replace. This was a `fixed` div with a scrim button and nothing else: no
+          `role="dialog"` or `aria-modal`, so a screen reader was never told a dialog had opened; no
+          Escape; no focus trap, so Tab walked straight out into the feed underneath; no scroll lock,
+          so on iOS the page scrolled under the reader's finger; and no focus restore, so closing it
+          dropped focus at the top of the document instead of on the Filters button.
+
+          What the old panel got RIGHT is kept, because `Sheet` does it the same way: a three-row
+          column where ONLY the middle scrolls (the footer used to be `sticky` inside one scroller and
+          sat 100% over the "Event type" heading, measured with a clip-aware overlap probe), and the
+          `--ink`/45 scrim, which `Sheet` now uses for every caller.
+
+          `dialogFrom="lg"` keeps it a bottom sheet up to 1024px, where it has always been one — the
+          trigger is `lg:hidden`, so the centred form is never reached — and the effect beside
+          `sheetOpen` closes it if a rotation crosses that line. `labelledBy` is its own id rather than
+          `Sheet`'s default, which the install prompt also uses. */}
+      <Sheet
+        id={FILTER_SHEET_ID}
+        open={sheetOpen}
+        onClose={closeSheet}
+        title="Filters"
+        labelledBy="filter-sheet-title"
+        dialogFrom="lg"
+        footer={
           <button
             type="button"
-            aria-label="Close filters"
-            onClick={() => setSheetOpen(false)}
-            /* `bg-[var(--ink)]/45`, was `bg-black/40`. A scrim's job is to darken whatever is behind
-               it, so it genuinely needs a near-black — but the nine already contain one, and `--ink`
-               is warm where Tailwind's `black` is neutral, which is visible against this paper. 45%
-               rather than 40% because `--ink` is #121417 and not #000. */
-            className="absolute inset-0 bg-[var(--ink)]/45 backdrop-blur-sm"
-          />
-          {/* Three-row flex column, and ONLY the middle row scrolls.
-              The header and footer used to be `sticky` inside a single scrolling
-              box, which meant the "Show N events" button permanently overlaid the
-              bottom of the filter list — measured with a clip-aware overlap probe,
-              the "Event type" group heading sat 100% underneath it. A sticky
-              element still occupies its place in flow, so no amount of bottom
-              padding fixes that; the footer has to leave the scrollport. */}
-          <div className="relative flex w-full max-h-[85vh] flex-col bg-[var(--paper)]">
-            <div className="shrink-0 bg-[var(--paper)]/97 glass-nav px-5 pt-3 pb-3 flex items-center justify-between border-b border-[var(--rule)]">
-              <span className="ty-body font-semibold text-[var(--ink)]">Filters</span>
-              <button
-                type="button"
-                onClick={() => setSheetOpen(false)}
-                className="w-8 h-8 r-touch bg-[var(--surface)] flex items-center justify-center"
-                aria-label="Close filters"
-              >
-                <span aria-hidden="true" className="material-symbols-outlined text-[18px]">close</span>
-              </button>
-            </div>
-            {/* min-h-0 is required: without it a flex child refuses to shrink below
-                its content height and the panel grows past max-h instead of
-                scrolling. */}
-            <div className="min-h-0 flex-1 overflow-y-auto p-5">
-              <FilterRail
-                facets={facets}
-                filters={filters}
-                onChange={setFilters}
-                loading={loading}
-                onRetry={load}
-              />
-            </div>
-            <div className="shrink-0 bg-[var(--paper)]/97 glass-nav p-4 border-t border-[var(--rule)]">
-              <button
-                type="button"
-                onClick={() => setSheetOpen(false)}
-                className="pressable r-touch w-full py-3 bg-[var(--ink)] text-[var(--accent-ink)] text-[14px] font-semibold"
-              >
-                Show {total.toLocaleString('en-IN')} event{total === 1 ? '' : 's'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+            onClick={closeSheet}
+            className="pressable r-touch w-full min-h-11 py-3 bg-[var(--ink)] text-[var(--accent-ink)] text-[14px] font-semibold"
+          >
+            {sheetFooterLabel}
+          </button>
+        }
+      >
+        <FilterRail
+          facets={facets}
+          filters={filters}
+          onChange={setFilters}
+          loading={loading}
+          onRetry={load}
+        />
+      </Sheet>
 
       <MobileBottomNav />
     </div>

@@ -5,6 +5,7 @@ import Script from "next/script";
 import Providers from "./providers";
 import ProtectedRouteGate from "./components/ProtectedRouteGate";
 import InstallPrompt from "./components/InstallPrompt";
+import OfflineBanner from "./components/OfflineBanner";
 
 /*
  * ══════════════════════════════════════════════════════════════════════════════════════════════
@@ -63,7 +64,14 @@ export const metadata: Metadata = {
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
-    statusBarStyle: "black-translucent",
+    /*
+     * `default`, NOT `black-translucent`. Translucent lets the page run up UNDER the status bar,
+     * and every mobile header here is `fixed top-0` with no `env(safe-area-inset-top)` - about a
+     * dozen of them - so on an installed iPhone the clock sat on top of the nav. `default` makes
+     * iOS reserve that strip itself (the inset becomes 0), which fixes all of them at once. The
+     * cost is a light system bar over the full-bleed dark scan screen; this UI is light otherwise.
+     */
+    statusBarStyle: "default",
     title: "PulseBLR",
   },
   formatDetection: { telephone: false },
@@ -78,7 +86,14 @@ export const viewport: Viewport = {
   themeColor: "#FAF9F5",
   width: "device-width",
   initialScale: 1,
-  maximumScale: 1,
+  /*
+   * NO ZOOM CAP. There was a maximum scale of 1 here, which fails WCAG 1.4.4 (resize text) on the
+   * platform that matters most: Chrome honours it by disabling pinch zoom outright, and the Play
+   * Store build is a TWA running in Chrome. iOS Safari ignores it for pinch zoom but uses it to
+   * suppress the auto-zoom on focusing an input set below 16px — removing it brings that zoom back
+   * on those inputs (the feed search is 14px). The fix for THAT is a 16px input on mobile, not a
+   * zoom lock for everyone. `tests/viewport-zoom.test.ts` keeps the cap from returning.
+   */
   /**
    * `cover` is what makes `env(safe-area-inset-*)` resolve to a real value.
    *
@@ -89,7 +104,8 @@ export const viewport: Viewport = {
    *
    * THIS IS A GLOBAL CHANGE: it activates the inset on every page at once and lets content
    * extend under the notch, so the feed and tracker need re-checking after any edit here.
-   * `appleWebApp.statusBarStyle` is already `black-translucent`, which assumed this all along.
+   * With `statusBarStyle: "default"` (above) iOS keeps the status bar out of the page, so the TOP
+   * inset is 0 in an installed app; the bottom inset (home indicator) is the one this buys.
    */
   viewportFit: "cover",
 };
@@ -159,6 +175,11 @@ export default function RootLayout({
       </head>
       <body className="min-h-full antialiased">
         <Providers>
+        {/* FIRST, so a screen reader meets it where a sighted user does — at the top. A sibling of
+            the gate for the same reason as InstallPrompt below: a signed-out visitor on a
+            protected page, offline, is exactly who needs to know sign-in cannot work right now.
+            Positioned below the header and never at the bottom; see OfflineBanner.tsx. */}
+        <OfflineBanner />
         {/* Inside Providers because it needs the SessionProvider. This replaced the cookie-name
             check in proxy.ts, which had no secret to verify a token with and so could only ask
             "is a cookie present" — no security, and it locked out users whose session was

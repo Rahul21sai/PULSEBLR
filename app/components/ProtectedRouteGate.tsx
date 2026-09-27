@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useSession } from 'next-auth/react';
+import { currentPageTarget, loginHref } from '@/lib/auth-callback-url';
 import { isAdminOnlyPath, isProtectedPath } from '@/lib/protected-routes';
 
 /**
@@ -27,7 +28,7 @@ function AdminOnlyNotice() {
         <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
           <Link
             href="/"
-            className="pressable inline-flex h-11 items-center justify-center rounded-full bg-[var(--accent)] px-6 text-[13.5px] font-semibold text-[var(--accent-ink)] hover:bg-blue-600"
+            className="pressable inline-flex h-11 items-center justify-center rounded-full bg-[var(--accent)] px-6 text-[13.5px] font-semibold text-[var(--accent-ink)] hover:bg-[var(--accent)]"
           >
             Back to events
           </Link>
@@ -94,9 +95,30 @@ export default function ProtectedRouteGate({ children }: { children: React.React
 
   if (status !== 'unauthenticated') return <>{children}</>;
 
-  // Carry the current path so signing in returns here rather than the home page — the whole
-  // point of `lib/auth-callback-url.ts`, which validates it on the way back out.
-  const callbackUrl = `/login?callbackUrl=${encodeURIComponent(pathname || '/')}`;
+  /*
+   * CARRY THE QUERY STRING, NOT JUST THE PATH, so signing in returns to the page actually asked for.
+   *
+   * This used to encode `pathname` alone, and the query is sometimes the whole payload. The PWA's
+   * share target (`public/manifest.json`) opens `/add-event?title=…&text=…&url=…`, and `/add-event`
+   * is protected — so sharing a link into the installed app while signed out went: sign-in wall →
+   * Google → a bare `/add-event`, with the shared title, text and link gone. Nothing on screen said
+   * anything had been lost.
+   *
+   * `window.location`, not `useSearchParams()`: that hook here would need a Suspense boundary
+   * around the gate, which wraps every page. Reading the location is safe because this branch never
+   * renders on the server — `SessionProvider` gets no `session` prop, so `status` is `loading` for
+   * the server render and for hydration, and only a later client render can reach this line. The
+   * `typeof window` test is there so that stays true if that ever changes, rather than crashing.
+   *
+   * `currentPageTarget` also compares the location against the router's `pathname`, because during
+   * a client-side navigation Next renders the new route BEFORE it updates the address bar; the
+   * query of the page being left must not be carried onto this one. `loginHref` then runs the
+   * target through the same `safeCallbackUrl` the login page applies, so the link written here is
+   * always one the login page will honour byte for byte — see `lib/auth-callback-url.ts`.
+   */
+  const signInHref = loginHref(
+    currentPageTarget(typeof window === 'undefined' ? undefined : window.location, pathname)
+  );
 
   return (
     <div className="min-h-screen bg-[var(--paper)]">
@@ -113,9 +135,12 @@ export default function ProtectedRouteGate({ children }: { children: React.React
           when to follow up.
         </p>
 
+        {/* `hover:bg-[var(--accent)]` — a no-op hover, as `ui.tsx`'s Button tones do. It was
+            `hover:bg-blue-600`, a Tailwind palette blue that flashed over the canopy-green accent
+            on every desktop hover: not one of the nine palette values. */}
         <Link
-          href={callbackUrl}
-          className="pressable mt-6 inline-flex h-11 items-center justify-center rounded-full bg-[var(--accent)] px-6 text-[13.5px] font-semibold text-[var(--accent-ink)] hover:bg-blue-600"
+          href={signInHref}
+          className="pressable mt-6 inline-flex h-11 items-center justify-center rounded-full bg-[var(--accent)] px-6 text-[13.5px] font-semibold text-[var(--accent-ink)] hover:bg-[var(--accent)]"
         >
           Sign in with Google
         </Link>

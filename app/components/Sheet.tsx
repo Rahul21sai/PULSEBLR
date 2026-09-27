@@ -23,7 +23,34 @@ import { useEffect, useRef, type ReactNode } from 'react';
  * kills every animation under `prefers-reduced-motion` with
  * `animation-duration: 0.001ms !important` on `*`, so any state conveyed only by movement
  * is invisible to those users. The sheet's position IS the signal.
+ *
+ * ── THE HOME FEED'S FILTER SHEET NOW USES THIS, which is what it was built to replace. ──────────
+ * That sheet was a hand-built `fixed` panel with none of the semantics above: no `role="dialog"`,
+ * no Escape, no trap, no scroll lock, no focus restore. Two props were added for it, and both
+ * default to exactly what every existing caller already rendered, so no caller changes:
+ *
+ *   - `dialogFrom` — where the bottom sheet turns into a centred dialog. `sm` (640px) is the
+ *     default. The feed passes `lg`, because its sheet only exists BELOW `lg` — from 1024px the
+ *     filter rail is always on screen — and between 640 and 1023 a tablet has always had a
+ *     bottom sheet there, not a floating card.
+ *   - `id` — on the dialog element, so a trigger can carry `aria-controls`.
+ *
+ * Two changes do reach every caller, and neither alters a layout: the scrim is `--ink` at 45%
+ * rather than Tailwind's `black` at 40% (the filter sheet's recorded decision — `black` is neutral
+ * where `--ink` is warm, which is visible against `--paper`, and a palette colour is outside the
+ * nine), and the close button's HIT AREA reaches the 44px floor through an overlay while its painted
+ * 32px circle is unchanged.
  */
+
+/**
+ * Literal class strings per breakpoint, never interpolated: Tailwind finds utilities by scanning
+ * source text, so `${bp}:items-center` would compile to nothing.
+ */
+const DIALOG_FROM = {
+  sm: { frame: 'sm:items-center sm:p-4', panel: 'sm:rounded-[22px]' },
+  lg: { frame: 'lg:items-center lg:p-4', panel: 'lg:rounded-[22px]' },
+} as const;
+
 export default function Sheet({
   open,
   onClose,
@@ -32,6 +59,8 @@ export default function Sheet({
   children,
   footer,
   labelledBy = 'sheet-title',
+  id,
+  dialogFrom = 'sm',
 }: {
   open: boolean;
   onClose: () => void;
@@ -41,6 +70,10 @@ export default function Sheet({
   /** Pinned below the scrollport, so primary actions never scroll away. */
   footer?: ReactNode;
   labelledBy?: string;
+  /** On the dialog element, for a trigger's `aria-controls`. */
+  id?: string;
+  /** The breakpoint at which the bottom sheet becomes a centred dialog. See the header. */
+  dialogFrom?: keyof typeof DIALOG_FROM;
 }) {
   const dialogRef = useRef<HTMLDivElement>(null);
 
@@ -105,8 +138,10 @@ export default function Sheet({
 
   if (!open) return null;
 
+  const layout = DIALOG_FROM[dialogFrom];
+
   return (
-    <div className="fixed inset-0 z-[70] flex items-end justify-center p-0 sm:items-center sm:p-4">
+    <div className={`fixed inset-0 z-[70] flex items-end justify-center p-0 ${layout.frame}`}>
       <button
         type="button"
         aria-label="Close"
@@ -117,16 +152,20 @@ export default function Sheet({
          * `backdrop-filter` — `.glass-nav` compiled to an empty rule and the bars had no
          * blur at all — so the blur is applied via a utility that survives, and nothing
          * depends on it.
+         *
+         * `--ink` at 45%, not `black` at 40%: see the header. 45 rather than 40 because `--ink`
+         * is not #000, so the same alpha darkens slightly less.
          */
-        className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+        className="absolute inset-0 bg-[var(--ink)]/45 backdrop-blur-sm"
       />
 
       <div
         ref={dialogRef}
+        id={id}
         role="dialog"
         aria-modal="true"
         aria-labelledby={labelledBy}
-        className="relative flex max-h-[92dvh] w-full max-w-[560px] flex-col rounded-t-[22px] bg-[var(--surface)] card-shadow-lg sm:rounded-[22px]"
+        className={`relative flex max-h-[92dvh] w-full max-w-[560px] flex-col rounded-t-[22px] bg-[var(--surface)] card-shadow-lg ${layout.panel}`}
       >
         {/* Header sits outside the scrollport so it cannot overlay content. */}
         <div className="flex shrink-0 items-start justify-between gap-3 border-b border-[color:var(--hairline)] p-5">
@@ -136,11 +175,16 @@ export default function Sheet({
             </h2>
             {subtitle && <p className="mt-0.5 truncate text-[13px] text-[var(--ink-2)]">{subtitle}</p>}
           </div>
+          {/* The painted circle stays 32px; the `::after` overlay makes the TARGET 44px (6px a
+              side). Safe here, unlike between two adjacent controls: the only neighbour is the title
+              text across a 12px gap, and the header's 20px padding holds the overhang, so the band
+              contests nothing — the failure `docs/design-direction.md` warns about needs a second
+              control inside it. */}
           <button
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[var(--paper)] text-[var(--ink-2)] [touch-action:manipulation]"
+            className="relative grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[var(--paper)] text-[var(--ink-2)] [touch-action:manipulation] after:absolute after:-inset-1.5 after:content-['']"
           >
             <span aria-hidden="true" className="material-symbols-outlined text-[18px]">close</span>
           </button>

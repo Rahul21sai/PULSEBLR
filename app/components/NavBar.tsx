@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import Logo from './Logo';
+import { loginHref } from '@/lib/auth-callback-url';
 
 /**
  * The full navigation, as shown on desktop where there is room for all of it.
@@ -91,6 +92,9 @@ function useIsActive() {
 export function DesktopNav() {
   const isActive = useIsActive();
   const { data: session } = useSession();
+  // Path only, never `window.location`: this renders on the server too, and a query read there
+  // would mismatch on hydration. Signing in from a page returns to that page.
+  const pathname = usePathname();
 
   return (
     <nav className="hidden md:flex fixed top-0 w-full h-14 bg-[var(--surface)]/96 glass-nav z-50 border-b border-black/5">
@@ -170,7 +174,7 @@ export function DesktopNav() {
             </Link>
           ) : (
             <Link
-              href="/login"
+              href={loginHref(pathname)}
               className="text-[13px] font-semibold text-[var(--accent)] hover:underline"
             >
               Sign in

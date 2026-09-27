@@ -25,6 +25,7 @@ import {
   type QueuedFolderRecord,
 } from '@/lib/scan/outbox';
 import type { FolderDTO } from '@/lib/contacts/types';
+import { loginHref } from '@/lib/auth-callback-url';
 
 /**
  * Folders — one per event, each holding the people you met there.
@@ -251,7 +252,7 @@ export default function FoldersPage() {
                     <strong className="tnum">{pending.waiting}</strong> capture
                     {pending.waiting === 1 ? '' : 's'} cannot upload because your session expired.
                     They are safe on this device.{' '}
-                    <Link href="/login" className="font-bold underline">
+                    <Link href={loginHref('/folders')} className="font-bold underline">
                       Sign in again
                     </Link>{' '}
                     and they will go on their own.

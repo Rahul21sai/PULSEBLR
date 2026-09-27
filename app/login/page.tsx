@@ -42,6 +42,14 @@ function LoginBody() {
    *
    * `safeCallbackUrl` is not decoration: the value comes from the URL, so forwarding it
    * unchecked would be an open redirect. See `lib/auth-callback-url.ts`.
+   *
+   * It is written today by `ProtectedRouteGate` and `SaveButton` (both via `loginHref`), and it
+   * can carry a QUERY STRING — a share into the installed app arrives as
+   * `/add-event?title=…&text=…&url=…` and the shared content is nothing but that query.
+   * `searchParams.get()` has already decoded the one layer `loginHref` added, and
+   * `safeCallbackUrl` returns what is left verbatim; `signIn()` then posts it inside a
+   * `URLSearchParams` body, which round-trips exactly. Decoding it anywhere on this path a second
+   * time is what used to drop or split the share, so do not add a `decodeURIComponent` here.
    */
   const callbackUrl = safeCallbackUrl(searchParams.get('callbackUrl'));
 

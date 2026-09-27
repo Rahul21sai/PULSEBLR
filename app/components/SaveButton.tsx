@@ -3,6 +3,8 @@ import Link from 'next/link';
 
 import { useState } from 'react';
 
+import { currentPageTarget, LOGIN_PATH, loginHref } from '@/lib/auth-callback-url';
+
 type State = 'idle' | 'saving' | 'saved' | 'exists' | 'unauthorized' | 'error';
 
 /**
@@ -35,6 +37,20 @@ export default function SaveButton({
   onSaved?: () => void;
 }) {
   const [state, setState] = useState<State>(initiallySaved ? 'saved' : 'idle');
+  /*
+   * WHERE "Sign in to save" RETURNS TO: this page, query string included.
+   *
+   * It was a bare `/login`, and the login page falls back to `/` without a `callbackUrl` — so
+   * tapping Save on an event while signed out, then signing in, landed on the home page with the
+   * event gone and nothing saved. On the feed the query IS the state (`?when=weekend&sort=…`), so
+   * the path alone would still lose the reader's place.
+   *
+   * Captured when the 401 arrives rather than at render, for two reasons: that is the page the
+   * user tried to save FROM, and a click handler runs after any navigation has committed, so
+   * `window.location` is current (see `currentPageTarget` for why a render-time read may not be).
+   * `loginHref` runs it through the same `safeCallbackUrl` the login page applies.
+   */
+  const [signInHref, setSignInHref] = useState<string>(LOGIN_PATH);
 
   /*
    * `initiallySaved` is also honoured while IDLE, not only at mount.
@@ -62,6 +78,7 @@ export default function SaveButton({
       });
 
       if (res.status === 401) {
+        setSignInHref(loginHref(currentPageTarget(window.location)));
         setState('unauthorized');
         return;
       }
@@ -83,7 +100,7 @@ export default function SaveButton({
   if (state === 'unauthorized') {
     return (
       <Link
-        href="/login"
+        href={signInHref}
         onClick={e => e.stopPropagation()}
         className={
           variant === 'full'

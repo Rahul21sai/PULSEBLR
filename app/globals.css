@@ -783,3 +783,18 @@ body {
    composed rather than merely correctly spaced. */
 .rhythm > * + * { margin-top: var(--s-16); }
 @media (min-width: 768px) { .rhythm > * + * { margin-top: var(--s-24); } }
+
+/*
+ * iOS zooms the page when an input under 16px takes focus, and nothing now suppresses it: the
+ * viewport zoom cap was removed for accessibility (see app/layout.tsx). So every text control is
+ * 16px below `md`. UNLAYERED on purpose - Tailwind v4 puts utilities in `@layer utilities`, and
+ * unlayered CSS beats any layer regardless of specificity, so this wins over `text-[14px]` on the
+ * feed search without editing each input. Desktop keeps its designed sizes.
+ */
+@media (max-width: 767.98px) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
