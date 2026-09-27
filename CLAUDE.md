@@ -2147,3 +2147,77 @@ still unverified at **0 of 277** · the 768 two-column facts/verdict band from t
 built, the measured goal having been met without it · and the daily **digest email** (`digest.ts`, 18
 hexes of purple gradient and Chakra slate) is untouched, because a gradient has no counterpart in nine
 values and an email is not a route the direction scopes — an owner's decision, not a sweep's.
+
+### 18. The mobile app (`feat/mobile-app`, 2026-09-27) — Android TWA + installable iOS PWA
+
+Android ships as a Trusted Web Activity (Bubblewrap, `app.pulseblr.twa`, SDK 36); iOS is an
+installable PWA. Release tooling lives in `scripts/android-*.ts` and `docs/android-twa.md`; the Play
+checklist in `docs/play-store-submission.md`. **Where this section and an earlier one disagree, this
+one is current** — in particular `public/sw.js` is **v6**, not v3/v4/v5.
+
+> **`sw.js` v6: EVERY `/api/*` REQUEST IS NETWORK-ONLY, and there is no list.** The `PRIVATE_API`
+> denylist is gone, replaced by `isApiRequest(url)`, because a denylist fails open on the route
+> somebody forgets to add. The matcher follows Next's routing rather than the URL text — it decodes
+> first (production retries a lookup with the decoded path, so `/%61pi/people` IS the People API),
+> folds `\` and `//`, lowercases, and treats a malformed escape as API. `stash()`, the only
+> `cache.put`, refuses `/api/` again at the write point. `tests/sw-policy.test.ts` EXECUTES the real
+> matcher against every directory under `app/api`, so a route added later is covered automatically.
+
+> **A ROUTE FILE MAY EXPORT ONLY HTTP METHODS AND SEGMENT CONFIG — and `tsc --noEmit` does not
+> check this, `next build` does.** Three routes exported their handler factory for testing
+> (`createDeleteAccountHandler`, `createIntakeHandler`, `createPushTestHandler`), and a clean `tsc`
+> coexisted with a failed production build. The factories now live in
+> `lib/http/delete-account-handler.ts`, `lib/contacts/intake-handler.ts` and
+> `lib/notifications/push-test-handler.ts`, and each route is a one-line re-export. Pages have the
+> same rule (an unused `AdminUnavailable` export was removed). **Run `next build` before calling a
+> route change done.**
+
+> **ACCOUNT DELETION NEVER WORKED UNTIL 2026-09-27.** `redactActorAuditRows` is an
+> aggregation-pipeline `updateMany`, and Mongoose 9 throws unless `updatePipeline: true` is passed —
+> so every deletion answered "temporarily unavailable". The suites drive a fake store and never reach
+> Mongoose, which is how it shipped; it was found by running the real cascade against Atlas to clean
+> up QA accounts. `tests/pipeline-updates.test.ts` scans `lib/`, `app/` and `scripts/` and fails on
+> any pipeline update without the opt-in.
+
+> **`next build` REQUIRES `PULSEBLR_SUPPORT_EMAIL`**, by design: `/privacy` and `/delete-account`
+> prerender it and refuse a missing or malformed value rather than invent one (Play needs the real
+> address). Set it in Vercel before deploying this branch. Locally, any valid address for the one
+> process verifies the rest of the build.
+
+> **`pruneStale()` no longer deletes events somebody references** (`lib/scrapers/prune-selection.ts`).
+> It used to delete scraped events a week after they ended regardless; measured 2026-09-27, **12 of
+> 16 tracker entries** already pointed at hard-deleted events. `TrackerEntry`, `Folder` and
+> `Interaction` count as referrers; `ReminderLog`/`DigestLog` deliberately do not (every digest names
+> the day's events, so counting them would switch pruning off). The tracker renders an entry whose
+> event is gone as "no longer listed" instead of dropping it. Takes effect when merged — the cron runs
+> `main`. `scripts/diag-tracker-orphans.ts` measures it.
+
+> **Owners edit and delete their own events** (`/my-events`, `PATCH`/`DELETE /api/events/[id]`,
+> `lib/events/owner-edit.ts`). An edit to an approved public event sends it back to `pending` —
+> otherwise an author could swap the registration link after review. Delete is SOFT when the event is
+> public or anyone else saved it or built a folder for it, else hard. The event DTO (`toEventDetail`)
+> never sends `createdByUserId` — not even to the owner — nor `clusterKey`, which embeds it.
+> `PLACEHOLDER_SOURCE_URL` (`lib/events/placeholder.ts`) is what a link-less manual event stores;
+> `usableLink()` keeps it out of every `href` and both ICS producers.
+
+> **Public intake (`/f/<token>`) is idempotent**: the form mints one v4 key per submission, the
+> server stores it as `intake:<hash(token)>:<key>`, and a replay answers 200 with the first write.
+> The prefix is what stops a stranger's key from landing on one of the owner's own contacts.
+
+> **Calendar text is escaped per RFC 5545 value type** (`lib/calendar/ics.ts`): TEXT, URI and
+> parameter values each have their own function, and "line break" means CR, LF, VT, FF, NEL, U+2028
+> and U+2029 — `ical.js` splits on LF only, so it could not see the lone-CR injection. Log lines go
+> through `toLogLine` (`lib/security/control-chars.ts`), which also neutralises GitHub's `::` and
+> `##[` workflow commands, because the push cron prints push-service error bodies.
+
+> **iOS status bar is `default`, not `black-translucent`.** Translucent let the page run under the
+> status bar, and a dozen `fixed top-0` headers ignore `env(safe-area-inset-top)`. The zoom cap is
+> gone (WCAG 1.4.4), so text inputs are forced to 16px below `md` by an UNLAYERED rule in
+> `globals.css` — iOS zooms on focusing anything smaller.
+
+**Still open:** the Android build is verified only as an UNSIGNED debug AAB — production serves stale
+`main` (its icons 404), so Digital Asset Links, Play App Signing and a signed release are unexercised.
+`android/twa-manifest.json` has no `monochromeIconUrl`, so the Android notification small icon is the
+opaque tile; `public/icon-maskable-512.png` is byte-identical to `icon-512.png`, so adaptive masks may
+crop it. Offline drain runs only on `/scan` and `/folders`, which is why the offline banner promises
+"kept on this device" rather than "will sync".
