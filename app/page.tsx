@@ -6,7 +6,9 @@ import { useSession } from 'next-auth/react';
 import { DesktopNav, MobileBottomNav } from './components/NavBar';
 import Sheet from './components/Sheet';
 import { Banner, Button } from './components/ui';
-import EventRow from './components/EventRow';
+import EventRow from './components/EventRow';
+import SeriesRow from './components/SeriesRow';
+import { groupSeries } from '@/lib/events/series';
 import EventGridCard from './components/EventGridCard';
 import FilterRail, {
   FilterState,
@@ -1509,6 +1511,12 @@ export default function Home() {
     filters,
   ]);
 
+  /*
+   * "Coming up" drawn one row per SERIES — see `lib/events/series.ts`. Presentation only: `comingUp`
+   * itself is untouched, so the counts, the sentinel and every subtraction above still see events.
+   */
+  const comingUpSeries = useMemo(() => groupSeries(comingUp), [comingUp]);
+
   /**
    * The live section, split into what a phone draws and what sits behind the expander.
    *
@@ -1815,7 +1823,7 @@ export default function Home() {
             copy, so it is the one block above the feed that can be tightened without touching an
             event. `sm:pb-7` rather than letting `pb-5` run to `md`, so every width the phone budget is
             not about stays exactly as it was. */}
-        <div className="max-w-[1240px] mx-auto px-4 md:px-8 pt-2 pb-5 sm:pb-7 md:pb-9">
+        <div className="max-w-[1240px] mx-auto px-4 md:px-8 pt-2 pb-4 sm:pb-7 md:pb-9">
           {/* ── THE EYEBROW IS GONE AT EVERY WIDTH, NOT JUST BELOW `sm`. ─────────────────────────
               It was a 32px rule followed by `Meetups · Conferences · Hackathons · Workshops` in
               tracked 11px caps, and it managed to be all three of the patterns
@@ -1828,7 +1836,10 @@ export default function Home() {
               Opening on the headline is the strongest thing the hero has. 26px back at `sm` and up
               (the label plus the `sm:mt-3.5` that only existed to clear it), 0 on a phone, where it
               was already hidden. Measured in the harness: hero 309px -> 283px at 1440x900. */}
-          <h1 className="ty-h1 max-w-[24ch] text-[var(--ink)]">
+          {/* 27px below `sm`: at the scale's 34px the headline took THREE lines on a 390px phone,
+              and with the paragraph under it the first event sat ~1.5 screens down (measured
+              2026-09-27). Two lines is the whole claim, and a phone reader came for the events. */}
+          <h1 className="ty-h1 max-w-[24ch] text-[var(--ink)] max-sm:text-[27px] max-sm:leading-[1.1]">
             Bengaluru tech events, ranked by who you’ll meet
           </h1>
 
@@ -1851,7 +1862,11 @@ export default function Home() {
               a card a phone does not draw is gone from the phone — that rule is why the shelves are
               scrollers rather than shorter lists. It does not reach a sentence: nothing is
               subtracted, nothing becomes unreachable, and the full text is one breakpoint away. */}
-          <p className="ty-body mt-[var(--s-4)] text-[var(--ink-2)]">
+          {/* HIDDEN BELOW `sm` ENTIRELY, a further measured cut on the two-line version described
+              above. On a phone the headline states the claim and the count line below is its
+              evidence; this sentence was the only thing between them and it restated both. Copy,
+              not a card, so nothing becomes unreachable — the rule the note above explains. */}
+          <p className="ty-body mt-[var(--s-4)] hidden text-[var(--ink-2)] sm:block">
             Every{' '}
             <strong className="font-semibold text-[var(--ink)]">
               developer meetup, conference, hackathon and workshop
@@ -1864,7 +1879,7 @@ export default function Home() {
               Scan a badge and keep the people you met.
             </span>
           </p>
-          <div className="ty-meta mt-[var(--s-4)] flex flex-wrap items-center gap-x-4 gap-y-1.5">
+          <div className="ty-meta mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 sm:mt-[var(--s-4)]">
             {/* ── THIS PRINTED "0 upcoming" ON A FAILED FETCH, IN SEMIBOLD INK, AT THE TOP OF THE
                 PAGE. ─────────────────────────────────────────────────────────────────────────────
                 `total` is `pagination?.total ?? 0`, and `load()` sets `setPagination(null)` before
@@ -1917,7 +1932,7 @@ export default function Home() {
             them would make a shared `?feed=for-you` link land on a page with no explanation for why
             it is not personalised — the tab plus one line of copy is a better answer than a missing
             control. */}
-        <div className="max-w-[1240px] mx-auto px-4 md:px-8 pb-6">
+        <div className="max-w-[1240px] mx-auto px-4 md:px-8 pb-4 sm:pb-6">
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2.5">
             <div
               role="group"
@@ -2588,11 +2603,12 @@ export default function Home() {
                       }
                     />
                     <div className="min-w-0">
-                      {comingUp.map(event => (
-                        /* showDate is REQUIRED here. Neither section carries day headings, so without
-                           it the gutter shows a bare "18:30" and the date appears nowhere on the row
-                           — measured at 375px, a reader could not tell tonight from three weeks. */
-                        <EventRow key={event._id} event={event} showDate />
+                      {comingUpSeries.map(group => (
+                        /* SeriesRow draws `showDate` rows, which is REQUIRED here. Neither section
+                           carries day headings, so without it the gutter shows a bare "18:30" and
+                           the date appears nowhere on the row — measured at 375px, a reader could not
+                           tell tonight from three weeks. */
+                        <SeriesRow key={group.key} group={group} />
                       ))}
                     </div>
                   </section>
