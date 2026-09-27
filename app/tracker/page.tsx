@@ -2,7 +2,8 @@
 
 import Link from 'next/link';
 
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
+import { useModalDialog } from '../components/useModalDialog';
 import EditTrackerModal from './components/EditTrackerModal';
 import { DesktopNav, MobileBottomNav } from '../components/NavBar';
 import EventCover from '../components/EventCover';
@@ -192,6 +193,13 @@ export default function TrackerPage() {
     return () => clearTimeout(timer);
   }, []);
   const [selected, setSelected] = useState<TrackerEntry | null>(null);
+  // The detail sheet had no dialog semantics at all — no role, no Escape, no trap, and focus left
+  // behind on the board — so it gets the same contract as every `Sheet`. Keyed on OPEN, not on
+  // `selected`: the status select replaces `selected` with a new object, and that must not re-run
+  // the focus-in and yank focus off the select the user is operating.
+  const detailRef = useRef<HTMLDivElement>(null);
+  const closeDetail = useCallback(() => setSelected(null), []);
+  useModalDialog(detailRef, selected !== null, closeDetail);
   const [editing, setEditing] = useState<TrackerEntry | null>(null);
   /** `${entryId}:${connectionName}` while a follow-up completion is in flight. */
   const [completing, setCompleting] = useState<string | null>(null);
@@ -464,8 +472,11 @@ export default function TrackerPage() {
             <button
               type="button"
               onClick={() => setFolderNote(null)}
-              aria-label="Dismiss"
-              className="shrink-0 text-[var(--accent)]/60 hover:text-[var(--accent)]"
+              aria-label="Dismiss folder notice"
+              // The painted glyph was the whole target: 18x18, under the 24px floor (2.5.8). The
+              // overlay makes it 40x44 without moving a pixel of the banner, and it contests nothing:
+              // 11px sideways stays inside the 12px gap to the paragraph and the 16px padding.
+              className="relative shrink-0 text-[var(--accent)]/60 hover:text-[var(--accent)] after:absolute after:-inset-x-[11px] after:-inset-y-[13px] after:content-['']"
             >
               <span aria-hidden="true" className="material-symbols-outlined text-[18px]">close</span>
             </button>
@@ -658,22 +669,32 @@ export default function TrackerPage() {
             type="button"
             aria-label="Close"
             onClick={() => setSelected(null)}
+            // Pointer-only; the header's Close is the named control. See Sheet.tsx.
+            tabIndex={-1}
+            aria-hidden="true"
             className="absolute inset-0 bg-black/45 backdrop-blur-sm"
           />
-          <div className="relative bg-[var(--surface)] w-full md:max-w-lg rounded-[var(--r-flat)] md:rounded-[var(--r-flat)] max-h-[88vh] overflow-y-auto">
+          <div
+            ref={detailRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="tracker-detail-title"
+            className="relative bg-[var(--surface)] w-full md:max-w-lg rounded-[var(--r-flat)] md:rounded-[var(--r-flat)] max-h-[88vh] overflow-y-auto"
+          >
             <div className="flex justify-center pt-3 pb-1 md:hidden">
               <div className="w-10 h-1 bg-[var(--rule)] rounded-full" />
             </div>
             <div className="p-5 md:p-6">
               <div className="flex items-start justify-between gap-3 mb-4">
-                <h2 className="text-[19px] font-bold leading-snug tracking-[-0.01em] text-[var(--ink)]">
+                <h2 id="tracker-detail-title" className="text-[19px] font-bold leading-snug tracking-[-0.01em] text-[var(--ink)]">
                   {selected.eventId ? selected.eventId.title : orphanTitle(selected)}
                 </h2>
                 <button
                   type="button"
                   onClick={() => setSelected(null)}
                   aria-label="Close"
-                  className="shrink-0 w-8 h-8 rounded-full bg-[var(--paper)] flex items-center justify-center transition-colors"
+                  // 32px painted, 44px target via the overlay, as Sheet.tsx's close button does.
+                  className="relative shrink-0 w-8 h-8 rounded-full bg-[var(--paper)] flex items-center justify-center transition-colors after:absolute after:-inset-1.5 after:content-['']"
                 >
                   <span aria-hidden="true" className="material-symbols-outlined text-[18px]">close</span>
                 </button>
@@ -687,10 +708,14 @@ export default function TrackerPage() {
                 </Banner>
               )}
 
-              <label className="block text-label-sm uppercase tracking-widest text-[var(--ink-2)] mb-2">
+              <label
+                htmlFor="tracker-detail-status"
+                className="block text-label-sm uppercase tracking-widest text-[var(--ink-2)] mb-2"
+              >
                 Status
               </label>
               <select
+                id="tracker-detail-status"
                 value={selected.status}
                 onChange={e => {
                   moveTo(selected._id, e.target.value);
@@ -902,23 +927,38 @@ function TrackerCard({
   const isPast = new Date(event.startDateTime).getTime() < now;
 
   return (
+    /*
+      THE OPENER IS AN INNER ELEMENT, NOT THE CARD, because the card also holds "Move to …".
+      The whole card used to be `role="button"` with that button nested inside it, which failed
+      twice. A button's children are presentational, so a screen reader was handed one "button"
+      whose name ran the title, the date and "Move to Applied →" together; and the card's own
+      Enter/Space handler caught the keydown BUBBLING up from the nested button and called
+      `preventDefault()` on it — so pressing Enter on "Move to …" opened the sheet instead, and the
+      one keyboard alternative to dragging a card did not work from the keyboard.
+
+      The mouse behaviour is unchanged: the card is still the drag source and a click anywhere on
+      it (bar the move button, which stops propagation) still opens the entry. Only the keyboard
+      and accessibility-tree target moved inward, beside the move button rather than around it.
+    */
     <div
       draggable
       data-dragging={dragging}
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
       onClick={onOpen}
-      onKeyDown={e => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          onOpen();
-        }
-      }}
-      role="button"
-      tabIndex={0}
       className="kanban-card bg-[var(--surface)] rounded-[var(--r-flat)] p-3 shadow-[inset_0_0_0_1px_var(--rule)]"
       style={{ borderLeft: `3px solid ${accent}` }}
     >
+      <div
+        role="button"
+        tabIndex={0}
+        onKeyDown={e => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onOpen();
+          }
+        }}
+      >
       <div className="flex gap-2.5">
         <EventCover
           src={event.imageUrl}
@@ -953,6 +993,7 @@ function TrackerCard({
       </div>
 
       <EntryTraces entry={entry} />
+      </div>
 
       {next && (
         <button
@@ -966,7 +1007,7 @@ function TrackerCard({
              `min-h-11` with `flex items-start` reserves the height BELOW the text rather than
              centring it, so the hairline rule and the label stay exactly where they were; the card
              simply grows by ~16px. An `::after` overlay was the alternative and is wrong here: the
-             card itself is `role="button"` with an `onClick`, so an overlay reaching into the
+             card itself carries the "open" `onClick`, so an overlay reaching into the
              card's padding would silently convert "open this entry" taps into status changes. */
           className="flex w-full items-start min-h-11 mt-2.5 pt-2.5 border-t border-[var(--rule)] text-[11.5px] font-semibold text-[var(--accent)] transition-colors text-left"
         >

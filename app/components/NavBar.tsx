@@ -155,17 +155,26 @@ export function DesktopNav() {
            * sat right next to it. A monogram fallback covers the missing image.
            */}
           {session?.user ? (
-            <Link href="/dashboard" className="flex items-center hover:opacity-80 transition-opacity">
+            /* NAMED FOR WHERE IT GOES, not for who you are. The avatar's alt was the user's own name, so
+               a screen reader announced "link, Naga Sai Rahul Vudumula" for what is the Dashboard
+               link — purpose unclear from the name (2.4.4). The monogram fallback put `aria-label`
+               on a bare <span>, where it is not reliably announced at all. The picture is now
+               decorative and the link carries the name. */
+            <Link
+              href="/dashboard"
+              aria-label={`Dashboard${session.user.name ? `, signed in as ${session.user.name}` : ''}`}
+              className="flex items-center hover:opacity-80 transition-opacity"
+            >
               {session.user.image ? (
                 // eslint-disable-next-line @next/next/no-img-element -- Google avatar CDN
                 <img
                   src={session.user.image}
-                  alt={session.user.name || 'Your account'}
+                  alt=""
                   className="w-8 h-8 rounded-full object-cover border border-[var(--rule)]"
                 />
               ) : (
                 <span
-                  aria-label={session.user.name || 'Your account'}
+                  aria-hidden="true"
                   className="grid h-8 w-8 place-items-center rounded-full border border-[var(--rule)] bg-[var(--paper)] text-[12px] font-bold text-[var(--ink-2)]"
                 >
                   {(session.user.name || session.user.email || '?').trim().charAt(0).toUpperCase()}

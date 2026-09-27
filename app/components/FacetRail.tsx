@@ -44,7 +44,7 @@ const CHIP_BASE =
 const CHIP_IDLE =
   'bg-[var(--surface)] text-[color:var(--ink)] shadow-[inset_0_0_0_1px_var(--hairline)] hover:bg-[var(--paper)]';
 /** Zero-count chips stay CLICKABLE and merely quiet — see `FacetRail`'s note on empty buckets. */
-const CHIP_EMPTY = 'bg-[var(--surface)] text-[color:var(--ink-3)] shadow-[inset_0_0_0_1px_var(--hairline)]';
+const CHIP_EMPTY = 'bg-[var(--surface)] text-[color:var(--ink-2)] shadow-[inset_0_0_0_1px_var(--hairline)]';
 
 /**
  * TWO KINDS OF FACT NEED TWO KINDS OF CHIP, and the axis is STRUCTURE rather than hue.
@@ -70,7 +70,7 @@ const CHIP_EMPTY = 'bg-[var(--surface)] text-[color:var(--ink-3)] shadow-[inset_
 export type FacetKind = 'registry' | 'own';
 
 const CHIP_OWN_IDLE = 'bg-[var(--paper)] text-[color:var(--ink-2)] hover:bg-[var(--paper)]';
-const CHIP_OWN_EMPTY = 'bg-[var(--paper)] text-[color:var(--ink-3)]';
+const CHIP_OWN_EMPTY = 'bg-[var(--paper)] text-[color:var(--ink-2)]';
 
 /**
  * A boolean facet: "target companies", "follow-up due".
@@ -99,7 +99,7 @@ export function FacetToggle({
     >
       {label}
       {typeof count === 'number' && (
-        <span className={`tnum ${active ? 'text-[var(--accent-ink)]/60' : 'text-[color:var(--ink-3)]'}`}>{count}</span>
+        <span className={`tnum ${active ? 'text-[var(--accent-ink)]/60' : 'text-[color:var(--ink-2)]'}`}>{count}</span>
       )}
     </button>
   );
@@ -157,7 +157,7 @@ export default function FacetRail({
       */}
       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
         <span className="t-label text-[color:var(--ink)]">{title}</span>
-        {hint && <span className="text-[12px] text-[color:var(--ink-3)] tracking-[0]">{hint}</span>}
+        {hint && <span className="text-[12px] text-[color:var(--ink-2)] tracking-[0]">{hint}</span>}
       </div>
       {/* `gap-y-2` is measured against the 44px overlay — see the file header. */}
       <div className="mt-2 flex flex-wrap gap-x-1.5 gap-y-2">
@@ -198,7 +198,7 @@ export default function FacetRail({
                   ●
                 </span>
               )}
-              <span className={`tnum ${active ? 'text-[var(--accent-ink)]/60' : 'text-[color:var(--ink-3)]'}`}>
+              <span className={`tnum ${active ? 'text-[var(--accent-ink)]/70' : 'text-[color:var(--ink-2)]'}`}>
                 {bucket.count}
               </span>
             </button>

@@ -480,7 +480,7 @@ export default function PushSection() {
             </Banner>
           )}
 
-          <p className="mt-3 text-[12.5px] leading-relaxed text-[var(--ink-3)]">
+          <p className="mt-3 text-[12.5px] leading-relaxed text-[var(--ink-2)]">
             Each device is separate, so turning this on here does not turn it on elsewhere. You will
             get at most a few reminders a day, only about events you saved, and never about anything
             else. This is independent of the reminder emails — turning one off leaves the other alone.

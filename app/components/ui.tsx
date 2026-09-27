@@ -43,7 +43,7 @@ export function PageHeader({
   return (
     <div className={cn('flex flex-wrap items-start justify-between gap-3 mb-5', className)}>
       <div className="min-w-0">
-        {eyebrow && <p className="t-label text-[var(--ink-3)] mb-1.5">{eyebrow}</p>}
+        {eyebrow && <p className="t-label text-[var(--ink-2)] mb-1.5">{eyebrow}</p>}
         <h1 className={size === 'large' ? 't-display text-[var(--ink)]' : 't-title text-[var(--ink)]'}>
           {title}
         </h1>
@@ -273,7 +273,7 @@ export function Chip({
     >
       {children}
       {count !== undefined && (
-        <span className={`tnum ${pressed ? 'text-[var(--accent-ink)]/55' : 'text-[var(--ink-3)]'}`}>{count}</span>
+        <span className={`tnum ${pressed ? 'text-[var(--accent-ink)]/55' : 'text-[var(--ink-2)]'}`}>{count}</span>
       )}
     </button>
   );
@@ -296,7 +296,7 @@ export function Stat({
 }) {
   return (
     <div className={cn(className)}>
-      <p className="t-label text-[var(--ink-3)]">{label}</p>
+      <p className="t-label text-[var(--ink-2)]">{label}</p>
       <p
         /* SANS, not `--font-display`. That variable now resolves to the serif, and a count is the
            product's voice — the one thing on screen that is nothing but a number. Setting it in
@@ -324,7 +324,7 @@ export function Field({
 }) {
   return (
     <div className={cn('flex items-start justify-between gap-4 py-2.5', className)}>
-      <dt className="shrink-0 text-[13px] text-[var(--ink-3)] tracking-[0]">{label}</dt>
+      <dt className="shrink-0 text-[13px] text-[var(--ink-2)] tracking-[0]">{label}</dt>
       <dd className="min-w-0 text-right text-[13.5px] font-medium text-[var(--ink)]">{children}</dd>
     </div>
   );

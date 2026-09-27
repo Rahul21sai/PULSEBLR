@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
+import { useModalDialog } from '@/app/components/useModalDialog';
 
 /**
  * Record what happened at an event: your notes, and the people you met.
@@ -70,22 +71,10 @@ export default function EditTrackerModal({
 
   const dialogRef = useRef<HTMLDivElement>(null);
 
-  // Escape closes, which every dialog should do and this one did not.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
-
-  // Move focus into the dialog on open so a keyboard user is not left behind on the page.
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      dialogRef.current?.querySelector<HTMLElement>('input, textarea, button')?.focus();
-    }, 0);
-    return () => clearTimeout(timer);
-  }, []);
+  // Escape closes and focus moves in on open, as before — and now also a Tab trap and focus
+  // RESTORE on close, which this dialog lacked: Tab walked out onto the board underneath, and
+  // closing dropped focus on <body>. Same initial-focus selector as the code this replaces.
+  useModalDialog(dialogRef, true, onClose, 'input, textarea, button');
 
   function commitDraft() {
     const name = draft.name.trim();
@@ -161,6 +150,9 @@ export default function EditTrackerModal({
         type="button"
         aria-label="Close"
         onClick={onClose}
+        // Pointer-only, as in Sheet.tsx: the header's "Close without saving" is the named control.
+        tabIndex={-1}
+        aria-hidden="true"
         className="absolute inset-0 bg-black/40 backdrop-blur-sm"
       />
 

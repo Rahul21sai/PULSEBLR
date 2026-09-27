@@ -133,7 +133,7 @@ function NewSourceForm({ onCreated }: { onCreated: (name: string) => void }) {
           <select
             value={form.type}
             onChange={e => setForm(prev => ({ ...prev, type: e.target.value }))}
-            className="h-10 w-full rounded-[var(--r-touch)] bg-[var(--surface)] px-3 text-[13px] text-[var(--ink)] shadow-[inset_0_0_0_1px_var(--hairline-strong)] focus:outline-none"
+            className="h-10 w-full rounded-[var(--r-touch)] bg-[var(--surface)] px-3 text-[13px] text-[var(--ink)] shadow-[inset_0_0_0_1px_var(--hairline-strong)] focus:outline-none focus:shadow-[inset_0_0_0_2px_var(--accent)]"
           >
             {SOURCE_TYPES.map(t => (
               <option key={t} value={t}>

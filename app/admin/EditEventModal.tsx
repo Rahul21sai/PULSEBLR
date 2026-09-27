@@ -29,7 +29,8 @@
  * how the admin learns that without having to try.
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useModalDialog } from '@/app/components/useModalDialog';
 import { EVENT_CATEGORIES } from '@/lib/event-types';
 import { toISTInputValue, fromISTInputValue } from '@/lib/ist-datetime-input';
 
@@ -140,14 +141,11 @@ export default function EditEventModal({
     };
   }, [eventId]);
 
-  // Escape closes, which is the one keyboard affordance a modal must have.
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') onClose();
-    }
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  // Escape closes — the one keyboard affordance this modal already had — plus the Tab trap, focus
+  // moving in on open and returning to the "Edit" button on close, which it did not have: Tab
+  // walked out into the admin table behind an `aria-modal` dialog.
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useModalDialog(dialogRef, true, onClose);
 
   const set = useCallback(<K extends keyof Draft>(key: K, value: Draft[K]) => {
     setDraft(prev => ({ ...prev, [key]: value }));
@@ -242,6 +240,7 @@ export default function EditEventModal({
 
   return (
     <div
+      ref={dialogRef}
       role="dialog"
       aria-modal="true"
       aria-label="Edit event"

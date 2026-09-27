@@ -205,7 +205,7 @@ export default function CalendarFeedSection() {
               Subscribe from web.
             </p>
 
-            <p className="mt-2 text-[11.5px] text-[var(--ink-3)]">
+            <p className="mt-2 text-[11.5px] text-[var(--ink-2)]">
               {feed.lastPolledAt ? (
                 <>Last checked by a calendar app {relativeTime(feed.lastPolledAt)}.</>
               ) : (

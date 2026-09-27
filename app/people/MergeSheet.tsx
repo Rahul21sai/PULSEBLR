@@ -325,7 +325,7 @@ export default function MergeSheet({
                     ? 'Two different people can easily share a name, so this is a question rather than a finding — read both records before deciding.'
                     : 'That usually means one person captured twice. Nothing was merged automatically, because a key can still be shared by mistake.'}
                 </p>
-                <p className="mt-2 text-[11.5px] text-[color:var(--ink-3)]">
+                <p className="mt-2 text-[11.5px] text-[color:var(--ink-2)]">
                   Matched on{' '}
                   <code className="r-touch bg-[var(--surface)] px-1.5 py-0.5 text-[11px] text-[color:var(--ink-2)] shadow-[inset_0_0_0_1px_var(--rule)]">
                     {pair.contactKey || 'an unrecognised key'}
@@ -365,7 +365,7 @@ export default function MergeSheet({
                       const chosen = choices[field.key] ?? options[0];
                       return (
                         <div key={field.key}>
-                          <p className="text-[12px] text-[color:var(--ink-3)]">{field.label}</p>
+                          <p className="text-[12px] text-[color:var(--ink-2)]">{field.label}</p>
                           <div className="mt-1 flex flex-wrap gap-x-1.5 gap-y-2">
                             {options.map(option => (
                               <button
@@ -389,7 +389,7 @@ export default function MergeSheet({
                       );
                     })}
                   </div>
-                  <p className="mt-2 text-[12px] leading-relaxed text-[color:var(--ink-3)]">
+                  <p className="mt-2 text-[12px] leading-relaxed text-[color:var(--ink-2)]">
                     Your pick is stored as a correction, so the next scan can’t quietly revert it.
                   </p>
                 </div>
@@ -431,7 +431,7 @@ function CandidateCard({
       </p>
       {/* The sheet's ONE middle-dot string, and it earns it: three counts of the same rank, which is
           the condition `docs/design-direction.md` sets for keeping one. */}
-      <p className="mt-1.5 text-[12px] text-[color:var(--ink-3)]">
+      <p className="mt-1.5 text-[12px] text-[color:var(--ink-2)]">
         <span className="tnum">{candidate.eventCount}</span>{' '}
         {candidate.eventCount === 1 ? 'event' : 'events'} ·{' '}
         <span className="tnum">{candidate.interactionCount}</span>{' '}

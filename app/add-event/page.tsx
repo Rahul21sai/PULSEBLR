@@ -779,7 +779,10 @@ function AddEventForm() {
           // Focusable only from script: a `category` 400 moves focus here, and a screen reader
           // then announces the group, its hint and the error.
           tabIndex={-1}
-          className="min-w-0 focus:outline-none"
+          // No `focus:outline-none`: it never suppressed anything (the global `:focus-visible` ring
+          // is unlayered and outranks a Tailwind utility), and a ring round the group when a 400
+          // lands focus here is the right thing to show.
+          className="min-w-0"
           aria-describedby={[
             `${uid}-category-hint`,
             errorFor('category') ? `${idOf('category')}-error` : '',

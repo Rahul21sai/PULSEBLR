@@ -197,6 +197,7 @@ export default function WeekAheadStrip({
                   sizes actually used. Disabled tiles take `--ink-3` — a disabled control is exempt from the
                   body-text rule, which is the one thing that token is for. */}
               <span
+                // a11y-exempt: --ink-3 only on an `empty` tile, which is a `disabled` button (1.4.3 exempts inactive controls).
                 className={`text-[11px] font-semibold leading-[1.15] tracking-[0] ${
                   selected ? 'text-[var(--accent-ink)]/70' : empty ? 'text-[var(--ink-3)]' : 'text-[var(--ink-2)]'
                 }`}
@@ -231,6 +232,7 @@ export default function WeekAheadStrip({
                   keeps the tile's emphasis by size; this stays semibold so density is still scannable
                   across seven tiles. */}
               <span
+                // a11y-exempt: --ink-3 only on an `empty` tile, which is a `disabled` button (1.4.3 exempts inactive controls).
                 className={`tnum text-[11.5px] font-semibold ${
                   selected ? 'text-[var(--accent-ink)]/80' : empty ? 'text-[var(--ink-3)]' : 'text-[var(--ink)]'
                 }`}

@@ -37,11 +37,11 @@
   */
   --paper:      #FAF9F5;   /* the page ground */
   --surface:    #FFFFFF;   /* raised ONLY: sticky bars, sheets, menus */
-  --ink:        #121417;   /* primary text — 16.4:1 on paper */
-  --ink-2:      #55595F;   /* secondary text, metadata — 6.5:1 */
-  --ink-3:      #8A8F96;   /* 3.15:1 — NEVER body text. Icons, disabled, decorative only. */
+  --ink:        #121417;   /* primary text — 17.5:1 on paper, 18.5:1 on surface */
+  --ink-2:      #55595F;   /* secondary text, metadata — 6.7:1 on paper, 7.1:1 on surface */
+  --ink-3:      #8A8F96;   /* 3.09:1 paper / 3.26:1 surface — NEVER text. Icons, disabled, decorative. */
   --rule:       #E4E2DC;   /* every 1px hairline */
-  --accent:     #12513C;   /* deep canopy green — links, primary action, active — 8.9:1 */
+  --accent:     #12513C;   /* deep canopy green — links, primary action, active — 8.8:1 paper */
   --accent-ink: #FFFFFF;   /* on accent — 9.3:1 */
   --live:       #B4381A;   /* 5.7:1 — URGENT OR DESTRUCTIVE. Both, deliberately: see below. */
 
@@ -513,7 +513,7 @@ body {
 .pill-free   { background: var(--good-wash); color: var(--good); }
 .pill-live   { background: transparent; color: var(--live); box-shadow: inset 0 0 0 1px var(--live); font-weight: 650; }
 .pill-online { background: transparent; color: var(--ink-2); box-shadow: inset 0 0 0 1px var(--hairline); }
-.pill-sold   { background: transparent; color: var(--ink-3); box-shadow: inset 0 0 0 1px var(--hairline); text-decoration: line-through; }
+.pill-sold   { background: transparent; color: var(--ink-2); /* text, so never --ink-3 */ box-shadow: inset 0 0 0 1px var(--hairline); text-decoration: line-through; }
 
 /* ─── Connection meter ─────────────────────────────────────────────────────
    The SIGNATURE element, and the reason this app exists rather than a Luma filter:
@@ -647,6 +647,46 @@ body {
      cost that. Reasoned from the cascade rather than observed: programmatic .focus()
      does not match :focus-visible on a button in Chrome, so it cannot be reproduced
      from a script — only by a real Tab press. */
+}
+
+/* ─── Placeholder text: --ink-2, not Tailwind's half-strength currentColor ──────────────────
+   Preflight paints `::placeholder` as `currentColor` at 50%, which is --ink at half alpha: 3.46:1 on
+   --paper and 3.64:1 on --surface, under the 4.5:1 floor, and it was what most of the ~47 placeholders in app/
+   rendered in (only five said `placeholder:text-[var(--ink-2)]`). Placeholders here carry real
+   instructions — "Limit of 12 tags reached", example formats — so they are text, not decoration.
+   --ink-2 is 6.7:1 on paper and still reads as secondary beside --ink input text.
+   In `@layer base`, AFTER preflight, so it beats preflight by order and a `placeholder:` utility can
+   still override it. */
+@layer base {
+  ::placeholder { color: var(--ink-2); opacity: 1; }
+}
+
+/* ─── Focus not obscured (WCAG 2.4.11): keep a focused control clear of the fixed bars ──────
+   A visible ring is worth nothing if it is under the nav. Every page has a fixed 56px top bar, the
+   phone has a fixed bottom nav, the feed adds the fixed command bar and a sticky day heading, and
+   the event page adds the sticky Register bar above the bottom nav. When Tab moves focus the
+   browser scrolls the target into view against the VIEWPORT, which knows nothing of any of them,
+   so a row focused at the bottom of the screen could land behind the bottom nav and one reached
+   with Shift+Tab behind the top bar.
+
+   `scroll-padding` is the documented fix (WCAG technique C43): it insets the snapport that focus
+   scrolling and in-page anchors both aim at. Derived from the SAME variables the bars are sized
+   from, so it cannot drift from them. `:has()` rather than a class per page, because the chrome a
+   page carries is exactly what its markup already says. The sticky day heading has no variable of
+   its own; 48px covers it with the ring's offset to spare. */
+html { scroll-padding-top: calc(var(--topbar-h) + var(--s-2)); }
+html:has(.feed-main) { scroll-padding-top: calc(var(--feed-offset) + var(--s-12)); }
+@media (max-width: 767.98px) {
+  html { scroll-padding-bottom: calc(var(--bottomnav-h) + var(--s-2)); }
+}
+/* The Register bar (`.sticky-bar`, lg:hidden): 12px + a 48px button + max(12px, inset) below. */
+@media (max-width: 1023.98px) {
+  html:has(.sticky-bar) { scroll-padding-bottom: calc(72px + env(safe-area-inset-bottom) + var(--s-2)); }
+}
+@media (max-width: 767.98px) {
+  html:has(.sticky-bar) {
+    scroll-padding-bottom: calc(var(--bottomnav-h) + 72px + env(safe-area-inset-bottom) + var(--s-2));
+  }
 }
 
 /* ─── Reduced motion ─────────────────────────────────────────────────────── */

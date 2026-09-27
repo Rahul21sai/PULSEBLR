@@ -699,7 +699,7 @@ export default function PersonDetailClient({ id }: { id: string }) {
                         </span>
                       )}
                     </p>
-                    <p className="text-[color:var(--ink-3)]">
+                    <p className="text-[color:var(--ink-2)]">
                       {shortDateIST(contact.scannedAt)}
                       {contact.company ? ` · ${contact.company}` : ''}
                     </p>
@@ -1293,7 +1293,7 @@ function EditPersonSheet({
             autoComplete="off"
             className={FIELD}
           />
-          <span className="mt-1.5 block text-[12px] text-[color:var(--ink-3)]">
+          <span className="mt-1.5 block text-[12px] text-[color:var(--ink-2)]">
             Leave blank to use what your captures say ({person.displayName}).
           </span>
         </label>
@@ -1324,7 +1324,7 @@ function EditPersonSheet({
 
         <div>
           <span className={SHEET_LABEL}>Your tags</span>
-          <p className="mt-1 text-[12px] leading-relaxed text-[color:var(--ink-3)]">
+          <p className="mt-1 text-[12px] leading-relaxed text-[color:var(--ink-2)]">
             For employers the registry doesn&apos;t know, and anything else worth filtering by. These
             stay yours — they are never fed back into the company registry, because a tag counted as
             company evidence once filed a hardware engineer tagged “arm” under the company Arm.

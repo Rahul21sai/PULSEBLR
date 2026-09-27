@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
 import { fullDateIST } from '@/lib/format';
 import {
   dayOffsetIST,
@@ -466,6 +466,10 @@ function TagField({
   suggestions: string[];
 }) {
   const [entry, setEntry] = useState('');
+  // The "Tags" caption and its hint are a <span> and a <p>, so the input had NO accessible name —
+  // only a placeholder, which is not a label and vanishes once you type. Tied together by id.
+  const labelId = useId();
+  const hintId = useId();
 
   const matches = useMemo(() => {
     const typed = canonicalise(entry);
@@ -491,8 +495,8 @@ function TagField({
 
   return (
     <div>
-      <span className="t-label text-[var(--ink-2)]">Tags</span>
-      <p className="mt-0.5 text-[12px] text-[var(--ink-2)]">
+      <span id={labelId} className="t-label text-[var(--ink-2)]">Tags</span>
+      <p id={hintId} className="mt-0.5 text-[12px] text-[var(--ink-2)]">
         Your own labels — an employer we don&apos;t recognise, a team, anything you&apos;ll filter by
         later.
       </p>
@@ -529,6 +533,8 @@ function TagField({
       )}
 
       <input
+        aria-labelledby={labelId}
+        aria-describedby={hintId}
         value={entry}
         onChange={e => setEntry(e.target.value)}
         onKeyDown={e => {

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, type ReactNode } from 'react';
+import { useModalDialog } from './useModalDialog';
 
 /**
  * A bottom sheet on a phone, a centred dialog on a desktop.
@@ -77,54 +78,9 @@ export default function Sheet({
 }) {
   const dialogRef = useRef<HTMLDivElement>(null);
 
-  // Escape closes. Every dialog should, and the pattern this replaces did not until it was
-  // fixed by hand.
-  useEffect(() => {
-    if (!open) return;
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === 'Escape') {
-        onClose();
-        return;
-      }
-      if (event.key !== 'Tab') return;
-
-      // Focus trap. Query on each keypress rather than caching: the capture sheet reveals
-      // and hides fields as you type, so a cached list goes stale immediately.
-      const focusable = dialogRef.current?.querySelectorAll<HTMLElement>(
-        'a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
-      );
-      if (!focusable?.length) return;
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      const active = document.activeElement;
-
-      if (event.shiftKey && active === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && active === last) {
-        event.preventDefault();
-        first.focus();
-      }
-    }
-    document.addEventListener('keydown', onKeyDown);
-    return () => document.removeEventListener('keydown', onKeyDown);
-  }, [open, onClose]);
-
-  // Move focus in on open, and RESTORE it on close — otherwise focus jumps to the top of
-  // the document and a keyboard user loses their place.
-  useEffect(() => {
-    if (!open) return;
-    const previouslyFocused = document.activeElement as HTMLElement | null;
-    const timer = setTimeout(() => {
-      dialogRef.current
-        ?.querySelector<HTMLElement>('input, textarea, select, button')
-        ?.focus();
-    }, 0);
-    return () => {
-      clearTimeout(timer);
-      previouslyFocused?.focus?.();
-    };
-  }, [open]);
+  // Escape, the Tab trap, focus-in and focus-restore. Moved into `useModalDialog` so the
+  // hand-built dialogs elsewhere get the identical contract rather than a subset of it.
+  useModalDialog(dialogRef, open, onClose);
 
   // Lock the page behind the sheet.
   useEffect(() => {
@@ -146,6 +102,14 @@ export default function Sheet({
         type="button"
         aria-label="Close"
         onClick={onClose}
+        /**
+         * OUT OF THE TAB ORDER AND THE ACCESSIBILITY TREE. The backdrop is a pointer affordance
+         * only; the header's own Close button is the keyboard and screen-reader one. Left in, it
+         * sat OUTSIDE the `aria-modal` dialog as a second "Close" button a screen reader had been
+         * told does not exist, and it was the one element Shift+Tab could reach from the page.
+         */
+        tabIndex={-1}
+        aria-hidden="true"
         /**
          * A near-opaque background is the real legibility guarantee and the blur is a bonus.
          * `globals.css` records that Lightning CSS in this toolchain SILENTLY STRIPS a bare
