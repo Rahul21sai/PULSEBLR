@@ -13,6 +13,7 @@ import {
 } from '@/lib/format';
 import SaveButton from './SaveButton';
 import { displayOrganizer } from '@/lib/events/organizer-display';
+import { TIME_TBA, startTimeKnown } from '@/lib/events/time-known';
 
 /**
  * One row of the feed — an EDITORIAL LIST ROW, not a card.
@@ -103,6 +104,8 @@ export default function EventRow({
   footer?: React.ReactNode;
 }) {
   const live = isHappeningNow(event.startDateTime, event.endDateTime);
+  // A date-only source's midnight-UTC start is an invented 05:30 — see `lib/events/time-known.ts`.
+  const timeKnown = startTimeKnown(event);
   const href = `/events/${event._id}`;
   const spanDays = event.endDateTime
     ? istDaysSpanned(event.startDateTime, event.endDateTime)
@@ -153,9 +156,9 @@ export default function EventRow({
                heading, so a per-row badge would say it twice. */
             className={`block font-semibold ${live ? 'text-[var(--live)]' : 'text-[var(--ink)]'}`}
           >
-            {timeIST(event.startDateTime)}
+            {timeKnown ? timeIST(event.startDateTime) : TIME_TBA}
           </span>
-          {event.endDateTime && (
+          {event.endDateTime && (spanDays > 0 || timeKnown) && (
             /*
              * A multi-day event shows how many days it RUNS, not a bare end time.
              *

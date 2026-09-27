@@ -10,6 +10,7 @@ import SaveButton from './SaveButton';
 // threshold already had. It is also what keeps the view toggle honest — grid changes the SHAPE of
 // the list, never what it tells you.
 import { EventFactsLine } from './EventRow';
+import { TIME_TBA, startTimeKnown } from '@/lib/events/time-known';
 
 /**
  * Image-forward card for grid view, the Spotlight and the curated shelf.
@@ -79,7 +80,9 @@ export default function EventGridCard({ event }: { event: FeedEvent }) {
           <span className={`font-semibold ${live ? 'text-[var(--live)]' : 'text-[var(--ink-2)]'}`}>
             {live
               ? 'Happening now'
-              : `${dayLabelIST(event.startDateTime)} at ${timeIST(event.startDateTime)}`}
+              : startTimeKnown(event)
+                ? `${dayLabelIST(event.startDateTime)} at ${timeIST(event.startDateTime)}`
+                : `${dayLabelIST(event.startDateTime)} · ${TIME_TBA}`}
           </span>
           {/* Same as the list row: the feed can only show what you already saved if the flag the
               API sends actually reaches the button. */}

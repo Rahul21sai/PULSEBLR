@@ -48,6 +48,7 @@ import {
 } from '@/lib/format';
 import { RELATED_FETCH, RELATED_SORT, onePerSeries, relatedEventsFilter } from '@/lib/events/related';
 import { displayOrganizer } from '@/lib/events/organizer-display';
+import { TIME_TBA, startTimeKnown } from '@/lib/events/time-known';
 
 /**
  * The event page. A SERVER COMPONENT, and the conversion from a client one is the entire point.
@@ -216,7 +217,7 @@ const loadEvent = cache(async (id: string): Promise<LoadedEvent | null> => {
    * at all, just a visit to any event.
    */
   const related = onePerSeries(await Event.find(relatedEventsFilter(doc, viewerId, new Date()))
-    .select('title startDateTime venue area format imageUrl category isFree price organizer')
+    .select('title source startDateTime venue area format imageUrl category isFree price organizer')
     .sort(RELATED_SORT)
     .limit(RELATED_FETCH)
     .lean());
@@ -596,8 +597,8 @@ export default async function EventDetailPage({ params }: { params: Promise<{ id
                             equals, and there is no room on a 56px-tall row to give any of them
                             its own line. Every other dot string on this page became a comma or a
                             separate row. */}
-                        <p className="text-[12px] text-[color:var(--ink-3)] tnum">
-                          {dayLabelIST(item.startDateTime)} · {timeIST(item.startDateTime)} ·{' '}
+                        <p className="text-[12px] text-[color:var(--ink-2)] tnum">
+                          {dayLabelIST(item.startDateTime)} · {startTimeKnown(item) ? timeIST(item.startDateTime) : TIME_TBA} ·{' '}
                           {locationLabel(item)}
                         </p>
                       </div>
@@ -770,8 +771,14 @@ function EventFacts({ event, isPast }: { event: EventDetail; isPast: boolean }) 
               `relativeTime` is INK, not blue — it is a fact, and blue on this page means "you can
               act on this". */}
           <p className="mt-0.5 text-[13px] leading-[1.4] text-[color:var(--ink-2)] tnum">
-            {timeIST(event.startDateTime)}
-            {event.endDateTime && ` – ${timeIST(event.endDateTime)}`}
+            {startTimeKnown(event) ? (
+              <>
+                {timeIST(event.startDateTime)}
+                {event.endDateTime && ` – ${timeIST(event.endDateTime)}`}
+              </>
+            ) : (
+              'Time to be announced'
+            )}
             {`, ${relativeTime(event.startDateTime)}`}
           </p>
         </Fact>
@@ -863,7 +870,7 @@ function EventFacts({ event, isPast }: { event: EventDetail; isPast: boolean }) 
 function Fact({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <>
-      <dt className="pt-[3px] text-[12.5px] font-semibold leading-[1.3] text-[color:var(--ink-3)]">{label}</dt>
+      <dt className="pt-[3px] text-[12.5px] font-semibold leading-[1.3] text-[color:var(--ink-2)]">{label}</dt>
       <dd className="min-w-0">{children}</dd>
     </>
   );
@@ -917,7 +924,7 @@ function Provenance({ event }: { event: FeedEvent }) {
   const linkable = Boolean(sourceHref);
 
   return (
-    <p className="mt-9 border-t border-[color:var(--hairline)] pt-7 text-[12.5px] leading-[1.5] text-[color:var(--ink-3)]">
+    <p className="mt-9 border-t border-[color:var(--hairline)] pt-7 text-[12.5px] leading-[1.5] text-[color:var(--ink-2)]">
       {isManual ? (
         <>
           Added to PulseBLR by hand rather than scraped.
@@ -1008,7 +1015,7 @@ function EventAgenda({ items }: { items?: FeedEvent['agenda'] }) {
               </p>
               {(item.speakerName || item.speakerCompany) && (
                 /* A comma, not a middle dot: a name and an employer are not a list of equals. */
-                <p className="mt-0.5 text-[12.5px] leading-[1.4] text-[color:var(--ink-3)]">
+                <p className="mt-0.5 text-[12.5px] leading-[1.4] text-[color:var(--ink-2)]">
                   {[item.speakerName, item.speakerCompany].filter(Boolean).join(', ')}
                 </p>
               )}
@@ -1076,7 +1083,7 @@ function EventSpeakers({
               </p>
               {(speaker.title || speaker.company) && (
                 /* A comma, not a middle dot — see the agenda. */
-                <p className="mt-0.5 text-[12.5px] leading-[1.4] text-[color:var(--ink-3)]">
+                <p className="mt-0.5 text-[12.5px] leading-[1.4] text-[color:var(--ink-2)]">
                   {[speaker.title, speaker.company].filter(Boolean).join(', ')}
                 </p>
               )}
@@ -1133,9 +1140,9 @@ function MetBefore({ match }: { match: SpeakerMatch | null }) {
         {/* Commas, not middle dots. `met 3 times` is spelt out rather than set as `met 3×`: the
             multiplication sign reads as a quantity of the event, not a count of meetings. */}
         {where}
-        {when && <span className="tnum font-normal text-[color:var(--ink-3)]">, {when}</span>}
+        {when && <span className="tnum font-normal text-[color:var(--ink-2)]">, {when}</span>}
         {strong && match.eventCount > 1 && (
-          <span className="tnum font-normal text-[color:var(--ink-3)]"> (met {match.eventCount} times)</span>
+          <span className="tnum font-normal text-[color:var(--ink-2)]"> (met {match.eventCount} times)</span>
         )}
       </span>
     </Link>

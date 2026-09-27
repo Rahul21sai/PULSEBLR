@@ -12,6 +12,7 @@ import {
   timeIST,
   todayKeyIST,
 } from '@/lib/format';
+import { TIME_TBA, startTimeKnown } from '@/lib/events/time-known';
 
 interface Event {
   _id: string;
@@ -378,7 +379,7 @@ export default function CalendarPage() {
                               ? 'bg-[var(--paper)] text-[var(--accent)]'
                               : n > 0
                                 ? 'text-[var(--ink)] hover:bg-[var(--paper)]'
-                                : 'text-[var(--ink-3)] hover:bg-[var(--paper)]'
+                                : 'text-[var(--ink-2)] hover:bg-[var(--paper)]'
                         }`}
                       >
                         {dayNumber}
@@ -481,7 +482,7 @@ export default function CalendarPage() {
                       <div className="flex flex-col items-center w-14 shrink-0 pt-1 pb-1">
                         {startsToday ? (
                           <span className="tnum text-label-md font-bold text-[var(--ink)]">
-                            {timeIST(event.startDateTime)}
+                            {startTimeKnown(event) ? timeIST(event.startDateTime) : TIME_TBA}
                           </span>
                         ) : (
                           <>

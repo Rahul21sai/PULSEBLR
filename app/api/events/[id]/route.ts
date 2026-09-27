@@ -86,7 +86,7 @@ export async function GET(
     // guessing at all, just a visit to any event.
     const [related, viewer] = await Promise.all([
       Event.find(relatedEventsFilter(event, viewerId, new Date()))
-        .select('title startDateTime venue area format imageUrl category isFree price organizer')
+        .select('title source startDateTime venue area format imageUrl category isFree price organizer')
         .sort(RELATED_SORT)
         .limit(RELATED_FETCH)
         .lean()
