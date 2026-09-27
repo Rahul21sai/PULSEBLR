@@ -23,15 +23,20 @@
  *      `/_next/static/` request failed, and that no page error fired. Serving a document is
  *      not booting an app.
  *
- *   2. NOTHING PRIVATE AT REST. Fetch the private APIs and an `?_rsc=` url through the
- *      controlling worker, then enumerate EVERY cache and EVERY key and assert none of them
- *      is there. This is the v2/v3/v4/v5 bug in its general form: the leak was never in the
- *      reading, it was in the writing.
+ *   2. NO API RESPONSE AT REST, AT ALL. Since v6 the rule is not "these private routes" but
+ *      "every /api/ route", so the scanner flags ANY Cache Storage key whose path — decoded,
+ *      slashes collapsed, lowercased, the way the worker judges it — is under /api/, plus any
+ *      `?_rsc=` url. This is the v2-v6 bug in its general form: the leak was never in the
+ *      reading, it was in the writing. `/api/people` is fetched by name because it is the v6
+ *      leak, but ANONYMOUSLY it answers 401, which `mayStore()` refused anyway — so it cannot
+ *      fail. The probe that CAN is `/api/companies`: a public 200 with no Cache-Control, which
+ *      v5's network-first branch stored. Control E below insists at least one probe was a 200.
  *
- *   3. ONLY -v5 CACHE NAMES SURVIVE. A stale cache left behind by `activate` is the v5 leak
- *      preserved intact, since v4's dynamic store is where the RSC payloads are.
+ *   3. ONLY CURRENT CACHE NAMES SURVIVE, and the server is serving the worker this script
+ *      expects. A stale `-v5` cache left behind by `activate` is the v6 leak preserved intact —
+ *      it is where the People JSON sits.
  *
- * FOUR CONTROLS THAT MUST FIRE. Every probe failure in this repo's last design pass was a
+ * FIVE CONTROLS THAT MUST FIRE. Every probe failure in this repo's last design pass was a
  * check that silently could not fail (CLAUDE.md §17 lists six), so each of the three checks
  * above is paired with something that proves the instrument discriminates:
  *
@@ -43,8 +48,12 @@
  *   C. A planted `/api/tracker/CANARY` entry must be REPORTED by the same scanner that
  *      declares the caches clean. Written and deleted here; it proves the matcher works
  *      rather than that the regex happened to match nothing.
- *   D. A planted `pulseblr-dynamic-v4` cache must be REPORTED by the version check. Same
- *      argument: "every name ends -v5" is trivially true of an empty list.
+ *   D. A planted `pulseblr-dynamic-v5` cache must be REPORTED by the version check. Same
+ *      argument: "every name is current" is trivially true of an empty list.
+ *   E. At least one /api/ probe must come back 200 through the worker. A 401 or 500 is never
+ *      stored by any version of the worker, so if every probe was refused, check 2 measured
+ *      `mayStore()`, not the v6 rule. (`/api/companies` needs the database — a 500 here usually
+ *      means the verify server has no MONGODB_URI.)
  *
  * READ-ONLY with respect to the app: no database, no sign-in, no writes to the repo. Controls
  * C and D write two throwaway entries into the EPHEMERAL browser profile's Cache Storage and
@@ -64,17 +73,44 @@ import { chromium, type Browser, type BrowserContext, type Page } from 'playwrig
 
 const BASE = (process.env.PB_BASE || 'http://localhost:3200').replace(/\/$/, '');
 
-/** Anything matching one of these must never appear as a Cache Storage key. */
-const MUST_NOT_BE_CACHED = [
-  '/api/events',
+/** The worker version this script expects the server to be serving. Bump with public/sw.js. */
+const EXPECTED_VERSION = 'v6';
+
+/**
+ * Would the worker treat this cache key as an API url? Deliberately written here rather than
+ * lifted out of sw.js: a scanner that shares the worker's matcher shares its blind spots. Same
+ * breadth — decoded, `\` folded, repeated slashes collapsed, lowercased — and an undecodable
+ * key is flagged, since the worker refuses those too.
+ */
+function isApiKey(url: string): boolean {
+  let p = new URL(url).pathname;
+  try {
+    p = decodeURIComponent(p);
+  } catch {
+    return true;
+  }
+  p = p.split('\\').join('/').toLowerCase();
+  while (p.includes('//')) p = p.split('//').join('/');
+  return p === '/api' || p.startsWith('/api/');
+}
+
+/**
+ * Fetched through the controlling worker, online. Only the ones answering 200 can discriminate —
+ * see control E.
+ */
+const API_PROBES = [
+  // THE DISCRIMINATING ONE: public, 200, no Cache-Control. v5 stored exactly this.
+  '/api/companies?includeEmpty=true',
+  // The same handler by a spelling Next decodes to it in production — why isApiRequest() decodes.
+  '/%61pi/companies',
+  // The v6 leak, by name. Anonymous here, so 401: named for the record, not because they can fail.
+  '/api/people',
+  '/api/people/facets',
+  '/api/people/merge',
+  '/api/sources',
+  // Network-only since v4/v3; kept so the older rules are still exercised.
+  '/api/events?limit=1',
   '/api/tracker',
-  '/api/contacts',
-  '/api/folders',
-  '/api/me/',
-  '/api/phase6',
-  '/api/notifications',
-  '/api/admin',
-  '/api/auth',
 ];
 
 /** A route with a nav link from `/` but never OPENED, so its document cannot be cached. */
@@ -115,14 +151,13 @@ function snapshotCaches(page: Page): Promise<CacheSnapshot> {
   });
 }
 
-/** The private/RSC scanner. Shared by check 2 and control C, deliberately. */
+/** The /api/ + RSC scanner. Shared by check 2 and control C, deliberately. */
 function findForbidden(snapshot: CacheSnapshot): string[] {
   const hits: string[] = [];
   for (const { name, keys } of snapshot) {
     for (const url of keys) {
-      const path = new URL(url).pathname;
       const search = new URL(url).search;
-      if (MUST_NOT_BE_CACHED.some((p) => path.startsWith(p))) hits.push(`${name} → ${url}`);
+      if (isApiKey(url)) hits.push(`${name} → ${url}`);
       else if (/[?&]_rsc(=|$|&)/.test(search)) hits.push(`${name} → ${url}`);
     }
   }
@@ -131,7 +166,7 @@ function findForbidden(snapshot: CacheSnapshot): string[] {
 
 /** The version scanner. Shared by check 3 and control D. */
 function findStaleCaches(snapshot: CacheSnapshot): string[] {
-  return snapshot.map((c) => c.name).filter((name) => !name.endsWith('-v5'));
+  return snapshot.map((c) => c.name).filter((name) => !name.endsWith(`-${EXPECTED_VERSION}`));
 }
 
 /** Wait until a service worker is actually in control of this page. */
@@ -194,6 +229,19 @@ async function main(): Promise<void> {
       fail('/sw.js sends no-store', `status ${swRes.status()} cache-control="${swCC || 'absent'}"`);
     }
 
+    // A stale build looks exactly like the fix not working (CLAUDE.md §7), so establish WHICH
+    // worker is being measured before measuring it.
+    const swBody = swRes.ok() ? await swRes.text() : '';
+    const served = swBody.match(/const VERSION\s*=\s*'([^']+)'/)?.[1];
+    if (served === EXPECTED_VERSION) {
+      ok('the server is serving the expected worker', `VERSION ${served}`);
+    } else {
+      fail(
+        'the server is serving the expected worker',
+        `expected ${EXPECTED_VERSION}, got ${served ?? 'no VERSION found'} — rebuild before trusting anything below`
+      );
+    }
+
     const offlineRes = await page.request.get(`${BASE}${'/offline.html'}`);
     if (offlineRes.ok() && (offlineRes.headers()['content-type'] || '').includes('text/html')) {
       ok('/offline.html is served', `${offlineRes.status()}`);
@@ -222,12 +270,11 @@ async function main(): Promise<void> {
     await page.waitForTimeout(1200); // let the amortised cache writes land
 
     // ------------------------------------------------- drive the network-only paths ONLINE
-    section('Private and RSC requests leave nothing behind');
-    const fetchProbe = await page.evaluate(async () => {
+    section('API and RSC requests leave nothing behind');
+    const fetchProbe = await page.evaluate(async (apiProbes) => {
       const results: Record<string, number | string> = {};
       const urls = [
-        '/api/events?limit=1',
-        '/api/tracker',
+        ...apiProbes,
         // The RSC shape: the page's OWN url plus the cache-busting param, and the header.
         // Both signals at once, which is what a real soft navigation sends.
         '/?_rsc=probe1',
@@ -249,16 +296,36 @@ async function main(): Promise<void> {
         results['/?_rsc'] = `threw: ${(err as Error).message}`;
       }
       return results;
-    });
+    }, API_PROBES);
     for (const [url, status] of Object.entries(fetchProbe)) note(`${url} → ${status}`);
+
+    // A TOP-LEVEL NAVIGATION to an API url. Under v5 it reached the network-first navigation
+    // branch and was stored; v6 checks the API rule before that branch.
+    const navProbe = await context.newPage();
+    const navRes = await navProbe
+      .goto(`${BASE}/api/companies?probe=navigate`, { waitUntil: 'domcontentloaded' })
+      .catch(() => null);
+    note(`navigate /api/companies?probe=navigate → ${navRes?.status() ?? 'no response'}`);
+    await navProbe.close();
     await page.waitForTimeout(800);
+
+    // CONTROL E. Only a 200 could ever have been stored; without one, the check below is vacuous.
+    const api200 = API_PROBES.filter((u) => fetchProbe[u] === 200);
+    if (api200.length > 0 || navRes?.status() === 200) {
+      ok('control E: an /api/ probe returned 200, so the scan below can fail', api200.join(', '));
+    } else {
+      fail(
+        'control E: an /api/ probe returned 200, so the scan below can fail',
+        'every probe was refused before a cache could matter — check 2 proves nothing (DB down?)'
+      );
+    }
 
     let snapshot = await snapshotCaches(page);
     const forbidden = findForbidden(snapshot);
     if (forbidden.length === 0) {
-      ok('no private or RSC response is in Cache Storage');
+      ok('no /api/ or RSC response is in Cache Storage');
     } else {
-      for (const hit of forbidden) fail('cached private/RSC response', hit);
+      for (const hit of forbidden) fail('cached /api/ or RSC response', hit);
     }
 
     // CONTROL B. An empty Cache Storage would pass the check above for the wrong reason —
@@ -284,45 +351,57 @@ async function main(): Promise<void> {
     const dplStripped = assetKeys.filter((u) => u.includes('?dpl=')).length;
     note(`build assets carrying ?dpl=: ${dplStripped} (0 is expected without skew protection)`);
 
-    // CONTROL C. Plant something the scanner MUST catch, then remove it.
-    const canary = '/api/tracker/CANARY-diag-offline';
-    await page.evaluate(async (url) => {
-      const cache = await caches.open('pulseblr-dynamic-v5');
-      await cache.put(new Request(url), new Response('canary'));
-    }, canary);
+    // CONTROL C. Plant entries the scanner MUST catch — one plain, one in an encoded spelling so
+    // the scanner's decoding is proved too — then remove them.
+    const canaries = ['/api/tracker/CANARY-diag-offline', '/%61pi/people/CANARY-diag-offline-encoded'];
+    const plantIn = `pulseblr-dynamic-${EXPECTED_VERSION}`;
+    await page.evaluate(
+      async ({ urls, name }) => {
+        const cache = await caches.open(name);
+        for (const url of urls) await cache.put(new Request(url), new Response('canary'));
+      },
+      { urls: canaries, name: plantIn }
+    );
     const planted = findForbidden(await snapshotCaches(page));
-    if (planted.some((h) => h.includes('CANARY-diag-offline'))) {
-      ok('control C: the scanner detects a planted private entry');
+    const caught = canaries.filter((c) => planted.some((h) => h.endsWith(c)));
+    if (caught.length === canaries.length) {
+      ok('control C: the scanner detects planted API entries, encoded spelling included');
     } else {
       fail(
-        'control C: the scanner detects a planted private entry',
-        'the clean result above is not evidence of anything'
+        'control C: the scanner detects planted API entries, encoded spelling included',
+        `caught ${caught.length} of ${canaries.length} — the clean result above is not evidence of anything`
       );
     }
-    await page.evaluate(async (url) => {
-      const cache = await caches.open('pulseblr-dynamic-v5');
-      await cache.delete(new Request(url));
-    }, canary);
+    await page.evaluate(
+      async ({ urls, name }) => {
+        const cache = await caches.open(name);
+        for (const url of urls) await cache.delete(new Request(url));
+      },
+      { urls: canaries, name: plantIn }
+    );
 
     // --------------------------------------------------------------- cache versions
     section('Cache versions');
     snapshot = await snapshotCaches(page);
     const stale = findStaleCaches(snapshot);
     if (stale.length === 0) {
-      ok('every surviving cache is -v5', snapshot.map((c) => c.name).join(', ') || 'none');
+      ok(
+        `every surviving cache is -${EXPECTED_VERSION}`,
+        snapshot.map((c) => c.name).join(', ') || 'none'
+      );
     } else {
-      // v4's dynamic cache is where the accidentally-cache-first RSC payloads live.
+      // v5's dynamic cache is where the People JSON lives on devices that opened /people.
       for (const name of stale) fail('stale cache survived activate', name);
     }
 
-    // CONTROL D. "Every name ends -v5" is trivially true of an empty list.
-    await page.evaluate(() => caches.open('pulseblr-dynamic-v4'));
-    if (findStaleCaches(await snapshotCaches(page)).includes('pulseblr-dynamic-v4')) {
+    // CONTROL D. "Every name is current" is trivially true of an empty list.
+    await page.evaluate(() => caches.open('pulseblr-dynamic-v5'));
+    if (findStaleCaches(await snapshotCaches(page)).includes('pulseblr-dynamic-v5')) {
       ok('control D: the version check detects a planted stale cache');
     } else {
       fail('control D: the version check detects a planted stale cache');
     }
-    await page.evaluate(() => caches.delete('pulseblr-dynamic-v4'));
+    await page.evaluate(() => caches.delete('pulseblr-dynamic-v5'));
 
     // ============================================================ THE CHECK THIS ALL EXISTS FOR
     section('Cold boot with no network');
@@ -441,6 +520,23 @@ async function main(): Promise<void> {
         'the private feed refuses offline instead of serving a cached copy',
         JSON.stringify(offlineApi)
       );
+    }
+
+    // The v6 rule, observed from the READ side: a PUBLIC api that v5 would have answered from
+    // its cached copy must now refuse offline too.
+    const offlineCompanies = await cold.evaluate(async () => {
+      try {
+        const res = await fetch('/api/companies?includeEmpty=true');
+        const body = await res.text();
+        return { status: res.status, offline: body.includes('"offline":true') };
+      } catch (err) {
+        return { status: -1, offline: false, threw: (err as Error).message };
+      }
+    });
+    if (offlineCompanies.status === 503 && offlineCompanies.offline) {
+      ok('a public API refuses offline too — no /api/ copy is served', '503 offline:true');
+    } else {
+      fail('a public API refuses offline too — no /api/ copy is served', JSON.stringify(offlineCompanies));
     }
 
     // And still nothing forbidden landed while offline.

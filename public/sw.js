@@ -1,4 +1,10 @@
 // PulseBLR Service Worker
+//
+// CURRENT: v6. Every /api/ request is NETWORK-ONLY with no list of exceptions, and the one
+// function that writes to Cache Storage refuses API traffic on its own account. See WHY v6
+// at the end of this changelog. The v3-v5 notes below are the history that made it
+// necessary, and some of the rules they describe have since been replaced.
+//
 // v3 — network-first for pages/API so the app shell is NEVER served stale, and
 //      PRIVATE API responses are never written to the cache at all.
 //
@@ -159,7 +165,77 @@
 // unsynced capture is somebody you met and would otherwise lose. Do not add an
 // `indexedDB.deleteDatabase()` here for any reason.
 // ─────────────────────────────────────────────────────────────────────────────
-const VERSION = 'v5';
+// WHY v6 — the SAME LEAK A FOURTH TIME, and the version that stops keeping a list.
+//
+// ── 1. THE PEOPLE SURFACE WAS WRITTEN TO THE SHARED CACHE.
+//
+// PRIVATE_API was a DENYLIST: nine hand-maintained prefixes were network-only, and
+// every OTHER `/api/` GET fell through to network-first + `stash()`. The only thing
+// between an unlisted route and Cache Storage was `mayStore()`, which refuses what the
+// server marks `no-store` or `private` — and the server marks nothing. Traced through
+// the installed Next 16.3.4 rather than assumed: a dynamic route handler is sent with
+// exactly the headers it set (build/templates/app-route.js, the "send response without
+// caching if not ISR" branch), and `getCacheControlHeader()` is applied to ISR entries
+// only. A private route that forgot a header was a private route that got stored.
+//
+// The People stream (CLAUDE.md §14) added seven routes under app/api/people/, and the
+// four the People screens read on every visit send no Cache-Control: `/api/people` and
+// `/api/people/facets` (app/people/page.tsx), `/api/people/[id]` and `/api/people/merge`
+// (app/people/[id]/PersonDetailClient.tsx). None was on the list. Every visit wrote the
+// signed-in user's whole cross-folder contact list — and, per person, the captured
+// emails, phone numbers and encounter timeline — into an ORIGIN-WIDE store, and the
+// next account on the device read it back offline: the v2 bug exactly. The admin-only
+// `/api/sources` and `/api/scrape` were missing from the list too.
+//
+// ── 2. WHY THE FIX IS NO LIST, NOT A LONGER ONE.
+//
+// The list was the bug. v3 introduced it, v4 had to add `/api/events` to it, and v6
+// would have had to add `/api/people` — each time AFTER private data had already been
+// written, because the list lives in a file nobody opens when they add a route. A
+// denylist of private routes is a claim about every route that will ever exist, kept
+// current by whoever happens to remember.
+//
+// So EVERY `/api/` request is network-only now: never written, never served from cache,
+// and the same 503 `{offline:true}` when the network is down.
+//
+//   WHAT IT COSTS, counted rather than assumed: one offline read, of one operator page.
+//   Of the 46 GET handlers under app/api/, the only PUBLIC one whose response v5 could
+//   store at all is `/api/companies`. The feed (`/api/events*`) has been network-only
+//   since v4, and every other unauthenticated route already sends `no-store` or
+//   `private` (the card, both unsubscribe links, the calendar feed, MCP,
+//   release-identity), which `mayStore()` refused. `/api/companies` is read by
+//   /companies alone, an operator view taken out of the public nav on 2026-09-06
+//   (CLAUDE.md §4). The session-gated routes that WERE stored are not a cost of this
+//   fix. They are the leak.
+//
+//   MATCHED ON THE PATH NEXT WILL ROUTE, not on the characters in the URL, because in
+//   production the two differ: Next decodes, so `/%61pi/people` IS the People API, and
+//   it 308-redirects `//api/people`, which `fetch()` follows. A bare
+//   `startsWith('/api/')` would have been the denylist's mistake at a smaller scale — a
+//   rule about spellings rather than about what the server serves. The evidence is on
+//   `isApiRequest()`.
+//
+//   AND REFUSED AT THE ONE PLACE BYTES ENTER CACHE STORAGE. Branch order is what keeps
+//   API traffic away from the caching branches, and order is exactly what a refactor
+//   changes without anyone noticing. `stash()` now refuses API traffic on its own
+//   account, so a future reordering costs an offline copy instead of leaking one.
+//
+// ── 3. THE BUMP IS A FULL ONE, AND WHAT THAT COSTS.
+//
+// v5's dynamic cache is where the People JSON sits on every device that opened /people,
+// so `activate` must delete it. Purging only its `/api/` entries was considered and
+// rejected: a purge that decides which entries are private is the denylist again, one
+// level down — and a spelling that dodged a prefix test would have landed in the STATIC
+// cache through the final cache-first branch, not the dynamic one. Deleting every cache
+// not named for v6 is the only purge that does not depend on knowing what leaked.
+//
+// COST, STATED PLAINLY: returning users lose their cached documents AND their cached
+// build chunks once. This is the first bump to throw away a POPULATED asset cache — v5
+// created it — so the offline cold boot v5 introduced does not work again until the
+// first online visit after the upgrade has re-filled both. The IndexedDB scan queue is
+// untouched, for the reason the v5 note gives.
+// ─────────────────────────────────────────────────────────────────────────────
+const VERSION = 'v6';
 const STATIC_CACHE = `pulseblr-static-${VERSION}`;
 const ASSET_CACHE = `pulseblr-assets-${VERSION}`;
 const DYNAMIC_CACHE = `pulseblr-dynamic-${VERSION}`;
@@ -198,23 +274,44 @@ const ASSET_CACHE_TRIM_TO = 260;
 const SWEEP_EVERY = 25;
 let putsSinceSweep = 0;
 
-// Everything under these prefixes is one user's private data.
-const PRIVATE_API = [
-  // Returns the caller's own private and pending events mixed in with the public feed, so it
-  // cannot be cached in an origin-wide store. See the v4 note above.
-  '/api/events',
-  '/api/tracker',
-  '/api/contacts',
-  '/api/folders',
-  '/api/me/',
-  '/api/phase6',
-  '/api/notifications',
-  '/api/admin',
-  '/api/auth',
-];
-
-function isPrivateApi(pathname) {
-  return PRIVATE_API.some(prefix => pathname.startsWith(prefix));
+/**
+ * Will the server answer this from an API route handler? If so, nothing about it may touch
+ * Cache Storage. This replaced v5's list of private prefixes, and it is deliberately NOT a
+ * list of anything: there is no route to add here and nothing to forget. See WHY v6.
+ *
+ * It judges the path NEXT WILL ROUTE rather than the characters in the URL, because in
+ * production the two differ:
+ *
+ *   - DECODED FIRST. Next retries a failed filesystem lookup with the decoded path
+ *     (server/lib/router-utils/filesystem.js: `items.has(curDecodedItemPath)`, only when
+ *     `!opts.dev` — so this never shows up under `npm run dev`). `/%61pi/people` and
+ *     `/api%2Fpeople` ARE the People API.
+ *   - BACKSLASHES FOLDED, REPEATED SLASHES COLLAPSED. server/base-server.js answers a path
+ *     containing `\` or `//` with a 308 to the cleaned one, and `fetch()` follows it — so
+ *     `//api/people` would be stored under the double-slash key the worker was asked for.
+ *   - LOWERCASED, although Next's own lookup is case-sensitive. Whether `/API/people`
+ *     reaches a handler is decided by whatever proxy or platform router sits in front,
+ *     which this file cannot know; treating it as API costs an offline copy of a path no
+ *     page links to.
+ *   - A MALFORMED ESCAPE COUNTS AS API. `decodeURIComponent` throws, so this worker cannot
+ *     establish what the server will make of the URL, and network-only is the answer that
+ *     is safe whichever way the server reads it.
+ *
+ * No regex literals, on purpose: tests/sw-policy.test.ts strips comments with a scanner
+ * that does not track them, and asserts there are none. The test also EXECUTES this
+ * function against every route directory under app/api, so a new route is covered the
+ * moment it exists.
+ */
+function isApiRequest(url) {
+  let path = url.pathname;
+  try {
+    path = decodeURIComponent(path);
+  } catch {
+    return true;
+  }
+  path = path.split('\\').join('/').toLowerCase();
+  while (path.includes('//')) path = path.split('//').join('/');
+  return path === '/api' || path.startsWith('/api/');
 }
 
 /**
@@ -286,6 +383,7 @@ const STATIC_ASSETS = [
   OFFLINE_URL,
   '/manifest.json',
   '/icon-96.png',
+  '/badge-96.png',
   '/icon-192.png',
   '/icon-512.png',
   '/wasm/zxing_reader.wasm',
@@ -344,8 +442,20 @@ async function trimAssetCache() {
   }
 }
 
-/** Write to a cache off the critical path, then amortised-sweep the asset store. */
+/**
+ * Write to a cache off the critical path, then amortised-sweep the asset store.
+ *
+ * THE ONLY `cache.put` IN THIS FILE, and since v6 it refuses API traffic itself rather than
+ * trusting its callers. Branch ORDER in the fetch handler is what keeps an /api/ request
+ * away from the caching branches, and order is what a refactor changes without anyone
+ * noticing; this check is what turns such a reordering into a lost offline copy instead of
+ * a cross-account leak. The RESPONSE url is checked as well as the request's: `fetch()`
+ * follows redirects while the cache key is the REQUEST, so a redirect from a non-API path
+ * onto an API route would otherwise be stored under the non-API key.
+ */
 function stash(cacheName, request, response) {
+  if (isApiRequest(new URL(request.url))) return;
+  if (response && response.url && isApiRequest(new URL(response.url))) return;
   if (!mayStore(response)) return;
   const clone = response.clone();
   caches
@@ -416,17 +526,25 @@ self.addEventListener('fetch', (event) => {
   // browser, exactly as before.
   if (url.pathname.startsWith('/_next/')) return;
 
-  // ── PRIVATE API → NETWORK ONLY. Never cached, never served from cache, so one
-  // account's data cannot be read back by the next account on this device.
-  if (isPrivateApi(url.pathname)) {
+  // ── EVERY API REQUEST → NETWORK ONLY. Never written, never served from cache, for
+  // every route under /api/ — including the ones written after this line was. There is
+  // no list and there must not be one again; the v6 changelog records the four versions
+  // it took to learn that. UNCONDITIONAL: an exception hung off this `if` is a denylist
+  // with the sign flipped.
+  //
+  // ABOVE the navigation branch on purpose. A top-level navigation to an /api/ url (a
+  // bare download link, a pasted address) is still an API response, and under v5 it fell
+  // into the network-first branch below and was stored.
+  if (isApiRequest(url)) {
     event.respondWith(fetch(request).catch(() => offlineJson()));
     return;
   }
 
-  // ── Navigations (HTML pages) and public API → NETWORK FIRST. Cache is only an
-  // offline fallback, so a fresh page shell always wins. DO NOT make this
-  // cache-first: that was v1, and it poisoned browsers with a stale shell.
-  if (request.mode === 'navigate' || url.pathname.startsWith('/api/')) {
+  // ── Navigations (HTML pages) → NETWORK FIRST. Cache is only an offline fallback,
+  // so a fresh page shell always wins. DO NOT make this cache-first: that was v1, and
+  // it poisoned browsers with a stale shell. (Until v6 this branch also carried every
+  // unlisted /api/ GET, which is how the People data got in.)
+  if (request.mode === 'navigate') {
     event.respondWith(
       fetch(request)
         .then((response) => {
@@ -436,7 +554,6 @@ self.addEventListener('fetch', (event) => {
         .catch(async () => {
           const cached = await caches.match(request);
           if (cached) return cached;
-          if (url.pathname.startsWith('/api/')) return offlineJson();
           // Last resort for a route this device has never opened online. Only ever
           // reached when the network failed AND no real document is cached, so it
           // can never win over genuine content.
@@ -502,12 +619,10 @@ self.addEventListener('message', (event) => {
  *      be raster; the platform does not render SVG here and does not complain. The
  *      PNGs exist (`public/icon-{48..512}.png`).
  *   2. `badge` was the same full-colour 192 tile. A badge is masked to a monochrome
- *      silhouette, so a full-colour square arrives as a grey blob. LIMITATION
- *      STATED RATHER THAN PAPERED OVER: this repo has no dedicated monochrome
- *      badge asset, so `/icon-96.png` is used as the closest fit. It will still be
- *      masked. A purpose-made single-colour glyph is the real fix and is a design
- *      task, not a code one — inventing a filename that does not exist would just
- *      restore bug 1.
+ *      silhouette, so a full-colour square arrives as a grey blob. v6 uses
+ *      `/badge-96.png`: transparent RGBA rendered from `icon-mono.svg`, the pulse
+ *      trace alone, so the mask has a shape to keep. `tests/notification-badge.test.ts`
+ *      pins that it really is transparent with opaque ink.
  *   3. `notificationclick` always called `openWindow`, which in an installed PWA or
  *      a TWA opens a SECOND instance rather than surfacing the one already running.
  *      Now: look for an existing window client, focus it, and only open a new one
@@ -539,7 +654,7 @@ self.addEventListener('push', (event) => {
     // Raster, not SVG — see bug 1 above.
     icon: '/icon-192.png',
     // Masked to a silhouette by the platform — see bug 2 above.
-    badge: '/icon-96.png',
+    badge: '/badge-96.png',
     vibrate: [200, 100, 200],
     data: { url: typeof data.url === 'string' && data.url ? data.url : '/' },
   };

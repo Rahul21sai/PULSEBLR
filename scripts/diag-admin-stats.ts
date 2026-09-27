@@ -18,6 +18,8 @@ import Event from '../lib/models/Event';
 import Source from '../lib/models/Source';
 import TrackerEntry from '../lib/models/TrackerEntry';
 import User from '../lib/models/User';
+// The same scope GET /api/admin/stats uses, so this CLI and the dashboard count one population.
+import { corpusFilter } from '../lib/admin/stats-scope';
 
 let failures = 0;
 function check(label: string, ok: boolean, detail = '') {
@@ -30,13 +32,13 @@ async function main() {
   const now = new Date();
   const dayAgo = new Date(now.getTime() - 24 * 3600 * 1000);
 
-  const total = await Event.countDocuments({});
-  const upcoming = await Event.countDocuments({ startDateTime: { $gte: now } });
-  const tech = await Event.countDocuments({ startDateTime: { $gte: now }, isTechEvent: true });
-  const addedToday = await Event.countDocuments({ createdAt: { $gte: dayAgo } });
-  const withoutClusterKey = await Event.countDocuments({
+  const total = await Event.countDocuments(corpusFilter());
+  const upcoming = await Event.countDocuments(corpusFilter({ startDateTime: { $gte: now } }));
+  const tech = await Event.countDocuments(corpusFilter({ startDateTime: { $gte: now }, isTechEvent: true }));
+  const addedToday = await Event.countDocuments(corpusFilter({ createdAt: { $gte: dayAgo } }));
+  const withoutClusterKey = await Event.countDocuments(corpusFilter({
     $or: [{ clusterKey: { $exists: false } }, { clusterKey: null }, { clusterKey: '' }],
-  });
+  }));
 
   const sources = await Source.find({})
     .select('enabled lastScrapedAt lastEventCount consecutiveEmptyScrapes')
@@ -80,14 +82,14 @@ async function main() {
   // The category and source breakdowns must be non-empty for the bar charts to render
   // as something other than an empty state.
   const byCategory = await Event.aggregate([
-    { $match: { startDateTime: { $gte: now }, isTechEvent: true } },
+    { $match: corpusFilter({ startDateTime: { $gte: now }, isTechEvent: true }) },
     { $unwind: '$category' },
     { $group: { _id: '$category', n: { $sum: 1 } } },
     { $sort: { n: -1 } },
     { $limit: 12 },
   ]);
   const bySource = await Event.aggregate([
-    { $match: { startDateTime: { $gte: now } } },
+    { $match: corpusFilter({ startDateTime: { $gte: now } }) },
     { $group: { _id: '$source', n: { $sum: 1 } } },
     { $sort: { n: -1 } },
   ]);

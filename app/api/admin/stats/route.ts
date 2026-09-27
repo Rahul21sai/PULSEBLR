@@ -5,6 +5,10 @@ import Source from '@/lib/models/Source';
 import TrackerEntry from '@/lib/models/TrackerEntry';
 import User from '@/lib/models/User';
 import { requireAdmin } from '@/lib/api-auth';
+// Every Event query in this route goes through one of these two builders, and
+// tests/admin-stats-scope.test.ts reads this file and fails if one does not. See the module for
+// why "Next up" must never list a user's private event, even to an admin.
+import { corpusFilter, userEventsFilter } from '@/lib/admin/stats-scope';
 
 /**
  * GET /api/admin/stats — everything the admin dashboard needs, in one round trip.
@@ -24,6 +28,8 @@ export async function GET() {
     await connectDB();
     const now = new Date();
     const dayAgo = new Date(now.getTime() - 24 * 3600 * 1000);
+    const upcomingOnly = { startDateTime: { $gte: now } };
+    const techOnly = { isTechEvent: true };
 
     const [
       total,
@@ -38,30 +44,37 @@ export async function GET() {
       trackerEntries,
       users,
       nextEvents,
+      privateUserEvents,
+      pendingSubmissions,
     ] = await Promise.all([
-      Event.countDocuments({}),
-      Event.countDocuments({ startDateTime: { $gte: now } }),
-      Event.countDocuments({ startDateTime: { $gte: now }, isTechEvent: true }),
-      Event.countDocuments({ createdAt: { $gte: dayAgo } }),
+      // CORPUS METRICS: public and not deleted, via corpusFilter(). They used to mix every user's
+      // private and pending rows, and soft-deleted ones, into "the corpus".
+      Event.countDocuments(corpusFilter()),
+      Event.countDocuments(corpusFilter(upcomingOnly)),
+      Event.countDocuments(corpusFilter(upcomingOnly, techOnly)),
+      Event.countDocuments(corpusFilter({ createdAt: { $gte: dayAgo } })),
       // A non-zero count here means something wrote documents with the old schema —
       // usually the daily cron running an older default branch. Surfacing it is the
-      // point: it is invisible otherwise until duplicate cards appear in the feed.
-      Event.countDocuments({
-        $or: [{ clusterKey: { $exists: false } }, { clusterKey: null }, { clusterKey: '' }],
-      }),
+      // point: it is invisible otherwise until duplicate cards appear in the feed. Scoped like
+      // the rest, because "will show as double cards in the feed" is only true of feed rows.
+      Event.countDocuments(
+        corpusFilter({
+          $or: [{ clusterKey: { $exists: false } }, { clusterKey: null }, { clusterKey: '' }],
+        })
+      ),
       // `$type: 'date'` and NOT `$exists`. Unpinning sends an explicit null, because `$set` cannot
       // express `$unset` — under `$exists` that null would be counted as a pin, and the overview
       // would report a Spotlight the home page is not showing.
-      Event.countDocuments({ startDateTime: { $gte: now }, spotlightAt: { $type: 'date' } }),
+      Event.countDocuments(corpusFilter(upcomingOnly, { spotlightAt: { $type: 'date' } })),
       Event.aggregate([
-        { $match: { startDateTime: { $gte: now }, isTechEvent: true } },
+        { $match: corpusFilter(upcomingOnly, techOnly) },
         { $unwind: '$category' },
         { $group: { _id: '$category', n: { $sum: 1 } } },
         { $sort: { n: -1 } },
         { $limit: 12 },
       ]),
       Event.aggregate([
-        { $match: { startDateTime: { $gte: now } } },
+        { $match: corpusFilter(upcomingOnly) },
         { $group: { _id: '$source', n: { $sum: 1 } } },
         { $sort: { n: -1 } },
       ]),
@@ -71,11 +84,16 @@ export async function GET() {
         .lean(),
       TrackerEntry.countDocuments({}),
       User.countDocuments({}),
-      Event.find({ startDateTime: { $gte: now }, isTechEvent: true })
+      // PUBLIC ONLY. This list carries title, venue and organiser; unscoped, it showed an admin
+      // the details of whichever user's private event happened to be soonest.
+      Event.find(corpusFilter(upcomingOnly, techOnly))
         .select('title startDateTime venue organizer connectionScore category')
         .sort({ startDateTime: 1 })
         .limit(5)
         .lean(),
+      // Outside the corpus: NUMBERS ONLY, never listed.
+      Event.countDocuments(userEventsFilter('private')),
+      Event.countDocuments(userEventsFilter('pending')),
     ]);
 
     // Health buckets, defined the same way scripts/diag-events.ts reports them so the
@@ -168,6 +186,10 @@ export async function GET() {
         })),
       },
       users: { total: users, trackerEntries },
+      // NEW and additive: every key above keeps its shape, so the dashboard renders unchanged.
+      // User-added events that the corpus figures above EXCLUDE — all time, deleted rows left
+      // out. `pending` is the same predicate the Submissions tab lists.
+      userEvents: { private: privateUserEvents, pending: pendingSubmissions },
       nextUp: nextEvents.map(e => ({
         id: String(e._id),
         title: e.title,

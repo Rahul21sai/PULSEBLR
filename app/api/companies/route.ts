@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import connectDB from '@/lib/mongodb';
 import Event from '@/lib/models/Event';
 import { COMPANIES, companySlug } from '@/lib/companies/registry';
+// Every `$match` below comes from here. It carries the PUBLIC, NOT-DELETED scope for every
+// caller: this route used to match on date alone and published private events' organiser names
+// in the unmatched-hosts list. The builders live outside this file because Next type-checks a
+// route module's exports against an allow-list, so a helper exported from here breaks the build.
+import { attributedEventsMatch, unmatchedHostsMatch } from '@/lib/companies/directory-scope';
 
 /**
  * GET /api/companies — every company with events, plus their counts.
@@ -24,7 +29,7 @@ export async function GET(request: NextRequest) {
     const sector = params.get('sector');
 
     const rows = await Event.aggregate([
-      { $match: { startDateTime: { $gte: now }, companies: { $ne: [] } } },
+      { $match: attributedEventsMatch(now) },
       { $unwind: '$companies' },
       {
         $group: {
@@ -65,14 +70,11 @@ export async function GET(request: NextRequest) {
     // The unattributed test must cover BOTH shapes. `{ companies: [] }` only matches
     // an explicitly-empty array, so events written before the field existed (where
     // it is absent entirely) were silently excluded and this list came back empty.
+    //
+    // THIS is the stage that leaked: a private or pending hand-added event always has an empty
+    // `companies`, so without the public scope its organiser name appeared here, publicly.
     const unmatchedHosts = await Event.aggregate([
-      {
-        $match: {
-          startDateTime: { $gte: now },
-          organizer: { $nin: [null, ''] },
-          $or: [{ companies: { $size: 0 } }, { companies: { $exists: false } }],
-        },
-      },
+      { $match: unmatchedHostsMatch(now) },
       { $group: { _id: '$organizer', n: { $sum: 1 } } },
       { $sort: { n: -1 } },
       { $limit: 20 },

@@ -90,6 +90,40 @@ const nextConfig: NextConfig = {
           { key: 'Cache-Control', value: 'no-cache, no-store, must-revalidate' },
         ],
       },
+      // THE TWO PUBLIC TOKEN PAGES: somebody's contact card, and a folder's "add yourself"
+      // intake form. Both are reached by a bearer token with no session, both show or collect
+      // another person's details, and both can be REVOKED — a card switched off, an intake
+      // token withdrawn. A cached copy outlives the revocation, in the browser's HTTP cache,
+      // in any intermediary, and in the service worker's navigation cache.
+      //
+      // Today they are safe only by accident of how they render, and NOT because they read the
+      // database: Next cannot see a Mongoose query at all. `/f/<token>` uses no dynamic API
+      // whatsoever; it is rendered per request only because it has a dynamic segment and no
+      // `generateStaticParams` (node_modules/next/dist/docs/.../generate-static-params.md:
+      // "Otherwise, the route will be dynamically rendered"). `/c/<token>` also calls `auth()`.
+      // That is what earns them Next's own
+      // `private, no-cache, no-store, max-age=0, must-revalidate`. Adding an empty
+      // `generateStaticParams` or `dynamic = 'force-static'` — both documented ways to get ISR —
+      // would silently switch the response to `s-maxage=…`, and nothing would report it. This
+      // makes the requirement explicit instead of inherited. (It governs the RESPONSE caches
+      // only; it would not stop such a change freezing the page in Next's own ISR cache.)
+      //
+      // It survives rendering because Next only writes its own Cache-Control when none is set
+      // (server/send-payload.js, and the non-SSG branch of build/templates/app-page-runtime.js
+      // both check `res.getHeader('Cache-Control')` first). `private` as well as `no-store`
+      // because `mayStore()` in public/sw.js refuses either, and says why `private` counts.
+      //
+      // `:path*` and not a bare prefix: tests/sw-policy.test.ts runs these patterns through
+      // Next's own matcher and asserts they do NOT reach `/card` or `/folders`, which share
+      // the first letter and must stay cacheable for offline use.
+      {
+        source: '/c/:path*',
+        headers: [{ key: 'Cache-Control', value: 'private, no-store' }],
+      },
+      {
+        source: '/f/:path*',
+        headers: [{ key: 'Cache-Control', value: 'private, no-store' }],
+      },
     ];
   },
 

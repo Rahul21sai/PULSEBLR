@@ -1,34 +1,44 @@
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
+import { getPathMatch } from 'next/dist/shared/lib/router/utils/path-match';
+import { modifyRouteRegex } from 'next/dist/lib/redirect-status';
+import loadedNextConfig from '../next.config';
+import { stripComments } from './support/strip-comments';
 
 /**
- * The service worker's CACHING POLICY, asserted by reading `public/sw.js` as text.
+ * The service worker's CACHING POLICY, asserted mostly by reading `public/sw.js` as text.
  *
  * THESE ASSERTIONS ARE CRUDE AND THIS FILE SAYS SO UP FRONT. `public/sw.js` is a plain
  * browser script with no exports — it registers listeners on `self` and reaches for
  * `caches`, `clients` and `registration`, none of which exist in Node. It cannot be
- * imported, so nothing here executes a single line of it. A regex over source text cannot
- * tell you the worker WORKS; `scripts/diag-offline.ts` drives a real Chromium for that, and
- * it is the only thing that can.
+ * imported. A regex over source text cannot tell you the worker WORKS; `scripts/diag-offline.ts`
+ * drives a real Chromium for that, and it is the only thing that can.
  *
- * WHAT THIS FILE IS FOR, then, and why it is worth having anyway: the failure it catches is
- * somebody deleting a `PRIVATE_API` prefix, or reordering two branches, during an unrelated
- * refactor. That is not a hypothetical risk in this file — it is the ENTIRE VERSION HISTORY
- * of it. v2 leaked one account's data to the next because a caching rule was broader than
- * anyone had checked; v3 fixed it; v4 was needed because `/api/events` gained private rows
- * and nobody re-asked the question; v5 was needed because RSC payloads had been landing in
- * the cache-first branch all along. Three leaks, all silent, none of which any test would
- * have had to be clever to catch — only present.
+ * ONE EXCEPTION, and it is the v6 fix. `isApiRequest()` is a pure function of a URL, so its text
+ * is lifted out of the (comment-stripped) worker and EXECUTED — against every route directory
+ * that exists under app/api today, plus the spellings Next routes to the same handlers. Whether
+ * `/%61pi/people` is caught is not a question a regex over the function's source can answer.
+ *
+ * WHAT THE REST IS FOR, and why it is worth having anyway: the failure it catches is somebody
+ * reordering two branches, or hanging an exception off a guard, during an unrelated refactor.
+ * That is not a hypothetical risk in this file — it is the ENTIRE VERSION HISTORY of it. v2
+ * leaked one account's data to the next because a caching rule was broader than anyone had
+ * checked; v3 fixed it with a list of private prefixes; v4 was needed because `/api/events`
+ * gained private rows and nobody re-asked the question; v5 because RSC payloads had been landing
+ * in the cache-first branch all along; v6 because seven People routes were written and none of
+ * them reached the list. Four leaks, all silent, none of which any test would have had to be
+ * clever to catch — only present.
  *
  * COMMENTS ARE STRIPPED BEFORE ANY ASSERTION RUNS. Without that, this suite is worse than
- * useless: `sw.js`'s changelog names `ignoreSearch`, `_rsc` and `/_next/static/webpack/`
- * while EXPLAINING them, so a prose mention would satisfy a check about code. Every
- * assertion below reads `swCode`, never `swSource`.
+ * useless: `sw.js`'s changelog names `ignoreSearch`, `_rsc`, `PRIVATE_API` and
+ * `/_next/static/webpack/` while EXPLAINING them, so a prose mention would satisfy a check about
+ * code. Every assertion below reads `swCode`, never `swSource`. The stripper lives in
+ * `tests/support/strip-comments.ts`, with the story of why it is a scanner and not a regex.
  *
- * The ORDERING assertions are the load-bearing ones. A branch that is present but sits
- * after the early return that would have caught the request first is dead code that reads as
- * a fix — the single most likely way this file regresses.
+ * The ORDERING assertions are the load-bearing ones. A branch that is present but sits after
+ * the early return that would have caught the request first is dead code that reads as a fix —
+ * the single most likely way this file regresses.
  */
 
 const ROOT = path.join(import.meta.dirname, '..');
@@ -38,85 +48,9 @@ const offlineHtml = readFileSync(path.join(ROOT, 'public', 'offline.html'), 'utf
 const globalsCss = readFileSync(path.join(ROOT, 'app', 'globals.css'), 'utf8');
 const nextConfig = readFileSync(path.join(ROOT, 'next.config.ts'), 'utf8');
 
-/**
- * Remove comments, keeping strings intact.
- *
- * A CHARACTER SCANNER RATHER THAN TWO REGEXES, and the first draft of this file proves why
- * it has to be. `/\/\*[\s\S]*?\*\//g` looks obviously correct and is not: `sw.js`'s
- * changelog contains the text `/_next/static/webpack/*` inside a `//` line comment, and the
- * `/*` in that path opened a block comment that ran on until the next `*​/` far below —
- * swallowing the three `const …_CACHE` declarations with it. The symptom was two
- * cache-naming assertions failing against a `sw.js` that was perfectly correct, i.e. the
- * instrument reporting a fault in the thing it was measuring. This repo's own rule, recorded
- * in CLAUDE.md §17: when a measurement disagrees with the code, the instrument is the first
- * suspect.
- *
- * Order cannot fix it either — stripping line comments first breaks on any block comment
- * containing `//`. Tracking the state is the only version that is right for both.
- *
- * Strings are preserved deliberately: every assertion below matches on literals like
- * `'/api/events'`, so a stripper that removed string bodies would make the whole suite
- * vacuous. REGEX LITERALS ARE NOT TRACKED — `sw.js` contains none, and the control block
- * below is what keeps that true.
- */
-function stripComments(src: string): string {
-  let out = '';
-  let i = 0;
-  while (i < src.length) {
-    const c = src[i];
-    const next = src[i + 1];
-
-    if (c === '/' && next === '/') {
-      while (i < src.length && src[i] !== '\n') i++;
-      continue;
-    }
-    if (c === '/' && next === '*') {
-      i += 2;
-      while (i < src.length && !(src[i] === '*' && src[i + 1] === '/')) i++;
-      i += 2;
-      continue;
-    }
-    if (c === "'" || c === '"' || c === '`') {
-      const quote = c;
-      out += c;
-      i++;
-      while (i < src.length) {
-        if (src[i] === '\\') {
-          out += src.slice(i, i + 2);
-          i += 2;
-          continue;
-        }
-        out += src[i];
-        if (src[i] === quote) {
-          i++;
-          break;
-        }
-        i++;
-      }
-      continue;
-    }
-    out += c;
-    i++;
-  }
-  return out;
-}
-
 const swCode = stripComments(swSource);
 
-/** The nine prefixes that must never quietly lose a member. */
-const REQUIRED_PRIVATE_PREFIXES = [
-  '/api/events',
-  '/api/tracker',
-  '/api/contacts',
-  '/api/folders',
-  '/api/me/',
-  '/api/phase6',
-  '/api/notifications',
-  '/api/admin',
-  '/api/auth',
-];
-
-/** The body of `self.addEventListener('fetch', …)`, to the end of the file. */
+/** The body of `self.addEventListener('fetch', …)`, to the next listener. */
 function fetchHandler(): string {
   const start = swCode.indexOf("addEventListener('fetch'");
   expect(start, "the fetch listener must exist").toBeGreaterThan(-1);
@@ -125,14 +59,62 @@ function fetchHandler(): string {
   return swCode.slice(start, next === -1 ? undefined : next);
 }
 
+/** A top-level `function name(…) { … }` from the stripped worker, up to its closing brace. */
+function swFunctionText(name: string): string {
+  // Every top-level function in sw.js closes with a `}` in column 0, and nothing inside one
+  // does — the same convention the isImmutableBuildAsset/mayStore assertions below rely on.
+  const found = swCode.match(new RegExp(`(?:async )?function ${name}\\([^)]*\\)[\\s\\S]*?\\n\\}`));
+  expect(found, `sw.js must declare function ${name}`).not.toBeNull();
+  return found![0];
+}
+
+/**
+ * `isApiRequest`, lifted out of the worker and made callable. It uses nothing but `URL`,
+ * `decodeURIComponent` and string methods, all of which Node has, so executing its real text is
+ * honest — this is the function the browser runs, not a copy of it.
+ */
+const isApiRequest = new Function(`${swFunctionText('isApiRequest')}\nreturn isApiRequest;`)() as (
+  url: URL
+) => boolean;
+
+/** Absolute on purpose: `new URL('//api/x', base)` is protocol-RELATIVE and makes `api` a host. */
+const ORIGIN = 'https://pulseblr.test';
+const at = (p: string) => new URL(ORIGIN + p);
+
+/** Every directory under `app/<sub>` holding `file`, turned into the URL path that serves it. */
+function routePaths(sub: string, file: string, skip: (rel: string) => boolean = () => false): string[] {
+  const base = path.join(ROOT, 'app', sub);
+  const out: string[] = [];
+  const walk = (dir: string) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (entry.isDirectory()) walk(path.join(dir, entry.name));
+      else if (entry.name === file) {
+        const rel = path.relative(path.join(ROOT, 'app'), dir).split(path.sep).join('/');
+        if (skip(rel)) continue;
+        // `_private` folders are not routes at all; `(group)` and `@slot` segments add nothing to
+        // the URL. Dynamic segments get a plausible value — the worker never sees brackets.
+        const segments = rel.split('/').filter(Boolean);
+        if (segments.some(s => s.startsWith('_'))) continue;
+        const url = segments
+          .filter(s => !(s.startsWith('(') && s.endsWith(')')) && !s.startsWith('@'))
+          .map(s => (s.startsWith('[') ? 'x1y2z3' : s));
+        out.push(`/${url.join('/')}`);
+      }
+    }
+  };
+  walk(base);
+  return out;
+}
+
 describe('sw.js — the stripper itself (control)', () => {
   it('removes comments but leaves the code', () => {
     // If this fails, every other assertion here is meaningless: either nothing was
     // stripped (so prose can satisfy a code check) or too much was.
     expect(swCode.length).toBeLessThan(swSource.length);
     expect(swSource).toContain('ignoreSearch'); // present in prose
+    expect(swSource).toContain('PRIVATE_API'); // present in prose — the v3-v5 history
     expect(swCode).toContain('isRscRequest');
-    expect(swCode).toContain('PRIVATE_API');
+    expect(swCode).toContain('isApiRequest');
     expect(swCode).toContain("addEventListener('fetch'");
   });
 
@@ -148,9 +130,8 @@ describe('sw.js — the stripper itself (control)', () => {
       'const DYNAMIC_CACHE',
       'const CURRENT_CACHES',
       'const OFFLINE_URL',
-      'const PRIVATE_API',
       'const STATIC_ASSETS',
-      'function isPrivateApi',
+      'function isApiRequest',
       'function isRscRequest',
       'function isImmutableBuildAsset',
       'function mayStore',
@@ -162,9 +143,9 @@ describe('sw.js — the stripper itself (control)', () => {
   });
 
   it('leaves string literals intact', () => {
-    // Every assertion in this file matches on literals like '/api/events'. A stripper
-    // that removed string bodies would make the suite pass vacuously forever.
-    expect(swCode).toContain("'/api/tracker'");
+    // Several assertions in this file match on literals like '/api/'. A stripper that removed
+    // string bodies would make the suite pass vacuously forever.
+    expect(swCode).toContain("'/api/'");
     expect(swCode).toContain("'/offline.html'");
   });
 
@@ -172,14 +153,24 @@ describe('sw.js — the stripper itself (control)', () => {
     // Stated as an assertion rather than a comment: the scanner does not track regex
     // literals, so a future `/…/.test(x)` here could hide a `//` from it.
     expect(swCode).not.toMatch(/=\s*\/[^/*\s][^\n]*\/[gimsuy]*[;.)]/);
+    expect(swCode).not.toMatch(/\.(?:replace|replaceAll|match|split|test|search)\(\s*\/[^/*]/);
+  });
+
+  it('the route enumeration used below finds the real tree (control)', () => {
+    // An enumeration that silently found nothing would make "every route is claimed" and
+    // "no page is claimed" both pass vacuously.
+    expect(routePaths('api', 'route.ts').length).toBeGreaterThanOrEqual(40);
+    expect(routePaths('', 'page.tsx', rel => rel.startsWith('api/')).length).toBeGreaterThanOrEqual(15);
+    expect(routePaths('api', 'route.ts')).toContain('/api/people');
+    expect(routePaths('', 'page.tsx')).toContain('/people');
   });
 });
 
 describe('sw.js — cache naming', () => {
-  it('every cache name ends -v5', () => {
+  it('every cache name ends -v6', () => {
     const names = [...swCode.matchAll(/`pulseblr-[a-z]+-\$\{VERSION\}`/g)];
     expect(names.length).toBeGreaterThanOrEqual(3);
-    expect(swCode).toMatch(/const VERSION\s*=\s*'v5'/);
+    expect(swCode).toMatch(/const VERSION\s*=\s*'v6'/);
   });
 
   it('declares three caches and lists all of them as current', () => {
@@ -192,32 +183,149 @@ describe('sw.js — cache naming', () => {
   });
 
   it('no stale version literal survives anywhere in the code', () => {
-    // A hardcoded 'pulseblr-static-v4' left behind would keep a poisoned cache alive
-    // past activate, which is exactly what the bump exists to prevent.
-    expect(swCode).not.toMatch(/pulseblr-[a-z]+-v[0-4]\b/);
+    // A hardcoded 'pulseblr-dynamic-v5' left behind would keep the People-data cache alive
+    // past activate, which is exactly what the v6 bump exists to prevent.
+    expect(swCode).not.toMatch(/pulseblr-[a-z]+-v[0-5]\b/);
   });
 });
 
-describe('sw.js — private API stays network-only', () => {
-  it('retains all nine PRIVATE_API prefixes', () => {
-    const block = swCode.match(/const PRIVATE_API\s*=\s*\[([\s\S]*?)\]/);
-    expect(block, 'PRIVATE_API must still be a literal array').not.toBeNull();
-    const body = block![1];
-    for (const prefix of REQUIRED_PRIVATE_PREFIXES) {
-      expect(body, `PRIVATE_API lost ${prefix}`).toContain(`'${prefix}'`);
+describe('sw.js — EVERY /api/ request is network-only (the v6 fix)', () => {
+  it('the denylist is gone, not merely unused', () => {
+    // v3-v5 kept a list of private prefixes and every unlisted /api/ route was cached. A list
+    // left behind as dead code is a list somebody will "fix" by adding to it.
+    expect(swCode).not.toContain('PRIVATE_API');
+    expect(swCode).not.toContain('isPrivateApi');
+  });
+
+  it('the API guard is UNCONDITIONAL — no exception can hang off it', () => {
+    // `if (isApiRequest(url) && !isPublic(url))` is a denylist with the sign flipped, and the
+    // way this regresses: one route is "obviously public", then a second.
+    expect(fetchHandler()).toMatch(/\n\s*if \(isApiRequest\(url\)\) \{/);
+  });
+
+  it('the handler makes no API decision of its own', () => {
+    // Every "is this the API" question goes through isApiRequest(), which decodes. A bare
+    // `startsWith('/api/')` reappearing in a branch is a spelling-based rule that
+    // `/%61pi/people` walks past.
+    const handler = fetchHandler();
+    expect(handler).not.toContain("'/api");
+    expect(handler).not.toContain('"/api');
+  });
+
+  it('the API branch goes to the network and never reads or writes a cache', () => {
+    const handler = fetchHandler();
+    const guard = handler.indexOf('if (isApiRequest(url))');
+    expect(guard).toBeGreaterThan(-1);
+    // From the guard to the `return` that closes its block, there must be no cache access
+    // at all — that is what "network only" means, and a cache read here is how one account
+    // reads the previous account's data.
+    const branch = handler.slice(guard, handler.indexOf('return;', guard));
+    expect(branch).toContain('fetch(request)');
+    expect(branch).toContain('offlineJson()');
+    expect(branch).not.toContain('caches.');
+    expect(branch).not.toContain('stash(');
+  });
+
+  it('runs BEFORE the navigation branch and before every branch that stashes a page response', () => {
+    // A top-level navigation to /api/... is still an API response. Under v5 it reached the
+    // network-first navigation branch and was stored.
+    const handler = fetchHandler();
+    const guard = handler.indexOf('if (isApiRequest(url))');
+    expect(guard).toBeGreaterThan(-1);
+    expect(guard).toBeLessThan(handler.indexOf("request.mode === 'navigate'"));
+    expect(guard).toBeLessThan(handler.indexOf('stash(DYNAMIC_CACHE'));
+    expect(guard).toBeLessThan(handler.indexOf('stash(STATIC_CACHE'));
+  });
+
+  it('stash() — the only cache.put — refuses API traffic before it writes', () => {
+    // The structural guarantee: whatever branch calls it, in whatever order, an API request
+    // or an API response url never reaches `cache.put`. Counted as `.put(` under ANY receiver
+    // name, so a second writer spelled `c.put(` is not invisible to this.
+    expect(swCode.match(/\.put\(/g)?.length ?? 0).toBe(1);
+    const stash = swFunctionText('stash');
+    const put = stash.indexOf('cache.put(');
+    expect(put, 'cache.put must live inside stash()').toBeGreaterThan(-1);
+    const byRequest = stash.indexOf('isApiRequest(new URL(request.url))');
+    const byResponse = stash.indexOf('isApiRequest(new URL(response.url))');
+    expect(byRequest).toBeGreaterThan(-1);
+    expect(byResponse).toBeGreaterThan(-1);
+    expect(byRequest).toBeLessThan(put);
+    expect(byResponse).toBeLessThan(put);
+  });
+
+  it('the only other writer is the install precache, and it names no API path', () => {
+    // `cache` and `.add(` sit on separate lines in the install handler, so this counts the
+    // method call, not the spelling.
+    expect(swCode).not.toMatch(/\.addAll\(/);
+    expect(swCode.match(/\.add\(/g)?.length ?? 0).toBe(1);
+    const start = swCode.indexOf("addEventListener('install'");
+    const install = swCode.slice(start, swCode.indexOf("addEventListener('activate'", start));
+    expect(install).toMatch(/\.add\(/);
+    const block = swCode.match(/const STATIC_ASSETS\s*=\s*\[([\s\S]*?)\]/);
+    expect(block).not.toBeNull();
+    expect(block![1]).not.toMatch(/api/i);
+  });
+
+  it('claims every route that exists under app/api', () => {
+    // SELF-UPDATING: a route added tomorrow is in this list the moment its file exists, which is
+    // precisely what the v3-v5 list could never be.
+    const routes = routePaths('api', 'route.ts');
+    const missed = routes.filter(p => !isApiRequest(at(p)));
+    expect(missed, `routes the worker would cache: ${missed.join(', ')}`).toEqual([]);
+  });
+
+  it('claims the spellings Next routes to the same handler', () => {
+    for (const p of [
+      '/api',
+      '/api/',
+      '/api/people/facets?q=razorpay',
+      // Decoded: Next retries its route lookup with the decoded path in production.
+      '/%61pi/people',
+      '/%61%70%69/people/merge',
+      '/api%2Fpeople',
+      // Repeated slashes and backslashes: Next 308s these to the clean path, and fetch follows.
+      '//api/people',
+      '///api//people',
+      '/%5Capi/people',
+      // Case: not something this worker can know a proxy will not fold.
+      '/API/people',
+      '/Api/People/Facets',
+      // Dot segments, resolved by the URL parser before the worker ever sees them.
+      '/%2e%2e/api/people',
+      '/events/%2e%2e/api/people',
+    ]) {
+      expect(isApiRequest(at(p)), p).toBe(true);
     }
   });
 
-  it('the private branch never reads or writes a cache', () => {
-    const handler = fetchHandler();
-    const guard = handler.indexOf('isPrivateApi(url.pathname)');
-    expect(guard).toBeGreaterThan(-1);
-    // From the guard to the `return` that closes its block, there must be no cache
-    // access at all — that is what "network only" means, and a cache read here is how
-    // one account reads the previous account's data.
-    const branch = handler.slice(guard, handler.indexOf('return;', guard));
-    expect(branch).not.toContain('caches.');
-    expect(branch).not.toContain('stash(');
+  it('fails CLOSED on an escape it cannot decode', () => {
+    // It cannot establish what the server will make of the URL, so it refuses to cache it.
+    expect(isApiRequest(at('/api/%E0%A4%A'))).toBe(true);
+    expect(isApiRequest(at('/people/%E0%A4%A'))).toBe(true);
+  });
+
+  it('does NOT claim pages, assets or look-alikes — the negative half is the important half', () => {
+    // Over-matching fails silently the other way: a page claimed here is network-only, so its
+    // document stops rendering offline and nothing reports it.
+    const pages = routePaths('', 'page.tsx', rel => rel.startsWith('api/'));
+    const claimed = pages.filter(p => isApiRequest(at(p)));
+    expect(claimed, `pages the worker would never cache: ${claimed.join(', ')}`).toEqual([]);
+    for (const p of [
+      '/',
+      '/people/api',
+      '/apiary',
+      '/api-docs',
+      '/apis',
+      '/_next/static/chunks/app/api/page-0123abcd.js',
+      '/offline.html',
+      '/manifest.json',
+      '/icon-192.png',
+      '/wasm/zxing_reader.wasm',
+      '/c/abcdef0123456789',
+      '/f/abcdef0123456789',
+    ]) {
+      expect(isApiRequest(at(p)), p).toBe(false);
+    }
   });
 });
 
@@ -357,7 +465,7 @@ describe('sw.js — push handlers', () => {
     const push = swCode.slice(start, swCode.indexOf("addEventListener('notificationclick'", start));
     // Android renders nothing for an SVG notification icon and logs nothing either.
     expect(push).toMatch(/icon:\s*'\/icon-\d+\.png'/);
-    expect(push).toMatch(/badge:\s*'\/icon-\d+\.png'/);
+    expect(push).toMatch(/badge:\s*'\/badge-96\.png'/);
     expect(push).not.toContain('.svg');
     // A malformed payload must not throw inside the handler.
     expect(push).toContain('try');
@@ -438,12 +546,61 @@ describe('offline.html — the fallback document', () => {
   });
 });
 
-describe('next.config.ts — /sw.js must not be HTTP-cached', () => {
+/**
+ * The response headers `next.config.ts` would put on `pathname`, matched by NEXT'S OWN matcher
+ * with the options `next start` uses for a header rule (server/lib/router-utils/filesystem.js,
+ * `buildCustomRoute('header', …)`: strict, unnamed params removed, case-insensitive because
+ * `experimental.caseSensitiveRoutes` defaults to false, and `modifyRouteRegex` allowing one
+ * trailing slash). Later rules override earlier ones for the same key, as the headers() docs
+ * specify.
+ */
+async function configuredHeadersFor(pathname: string): Promise<Record<string, string>> {
+  const rules = (await loadedNextConfig.headers?.()) ?? [];
+  const out: Record<string, string> = {};
+  for (const rule of rules) {
+    const match = getPathMatch(rule.source, {
+      strict: true,
+      removeUnnamedParams: true,
+      sensitive: false,
+      regexModifier: regex => modifyRouteRegex(regex),
+    });
+    if (match(pathname) === false) continue;
+    for (const header of rule.headers) out[header.key.toLowerCase()] = header.value;
+  }
+  return out;
+}
+
+describe('next.config.ts — response headers', () => {
   it('sets no-store on the worker script', () => {
     const headers = nextConfig.match(/async headers\(\)[\s\S]*?\n  \},/);
     expect(headers, 'next.config.ts must declare headers()').not.toBeNull();
     expect(headers![0]).toContain("source: '/sw.js'");
     expect(headers![0]).toMatch(/no-store/);
+  });
+
+  it('the worker script really receives it, by the matcher Next uses', async () => {
+    expect((await configuredHeadersFor('/sw.js'))['cache-control']).toMatch(/no-store/);
+  });
+
+  it('sends private, no-store on the two public token pages', async () => {
+    // A contact card and a folder intake link: another person's details, reachable by a bearer
+    // token, and revocable. Neither may outlive a revocation in any cache.
+    for (const p of ['/c/abcdef0123456789', '/f/abcdef0123456789', '/C/abcdef0123456789']) {
+      const cc = (await configuredHeadersFor(p))['cache-control'] ?? '';
+      expect(cc, p).toContain('private');
+      expect(cc, p).toContain('no-store');
+    }
+  });
+
+  it('does NOT reach the signed-in pages that share their first letter', async () => {
+    // The prefix trap this repo documents for `/c/` and `/card`: `/f/` must not swallow
+    // `/folders` either. A no-store there would stop the worker keeping those documents for
+    // offline use, and nothing would report it. (A bare `/c` or `/f` DOES match `:path*` —
+    // zero segments — and is a 404, so it is deliberately not in this list.)
+    for (const p of ['/card', '/folders', '/folders/x1y2z3', '/', '/people', '/calendar', '/companies']) {
+      const cc = (await configuredHeadersFor(p))['cache-control'];
+      expect(cc, p).toBeUndefined();
+    }
   });
 
   it('leaves the three pre-existing config keys alone', () => {
