@@ -206,6 +206,20 @@ function LoginBody() {
           </button>
           )}
 
+          {!signedIn && (
+            <p className="mt-3 text-center text-[12px] leading-relaxed text-[var(--ink-2)]">
+              By continuing, you agree to the{' '}
+              <Link href="/terms" className="font-semibold text-[var(--accent)] hover:underline">
+                Terms
+              </Link>{' '}
+              and{' '}
+              <Link href="/privacy" className="font-semibold text-[var(--accent)] hover:underline">
+                Privacy Policy
+              </Link>
+              .
+            </p>
+          )}
+
           {error && (
             <p className="mt-3 rounded-xl border-l-2 border-l-[var(--live)] bg-[var(--paper)] px-3.5 py-2.5 text-[12.5px] text-[var(--live)]" role="alert">
               {error}

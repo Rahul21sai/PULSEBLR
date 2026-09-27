@@ -396,7 +396,7 @@ export default function SettingsPage() {
               </div>
               <div className="flex justify-between gap-4">
                 <dt className="text-[var(--ink-2)]">Stack</dt>
-                <dd className="font-semibold text-right">Next.js 16 · MongoDB · NVIDIA NIM</dd>
+                <dd className="font-semibold text-right">Next.js 16 · MongoDB · IBM ICA</dd>
               </div>
             </dl>
             <div className="mt-4 flex flex-wrap gap-x-4 gap-y-2 border-t border-[var(--rule)] pt-4">
@@ -405,6 +405,18 @@ export default function SettingsPage() {
                 className="text-[13px] font-semibold text-[var(--accent)] hover:underline"
               >
                 Privacy policy
+              </Link>
+              <Link
+                href="/terms"
+                className="text-[13px] font-semibold text-[var(--accent)] hover:underline"
+              >
+                Terms of use
+              </Link>
+              <Link
+                href="/cookies"
+                className="text-[13px] font-semibold text-[var(--accent)] hover:underline"
+              >
+                Cookies
               </Link>
               <Link
                 href="/delete-account"

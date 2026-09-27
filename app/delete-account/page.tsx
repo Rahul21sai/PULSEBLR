@@ -39,7 +39,8 @@ export default async function DeleteAccountPage({
       <p className="mt-3 text-[14px] leading-7 text-[var(--ink-2)]">
         PulseBLR cannot recall email already delivered to an inbox or calendar copies already
         imported by another provider. Those copies are controlled by those providers; delete them
-        there.
+        there. Deleting removes scans still waiting to upload on the device you delete from; on any
+        other device you used, clear PulseBLR&apos;s site data to remove them.
       </p>
 
       <div className="mt-8 flex flex-wrap gap-3">
@@ -68,6 +69,18 @@ export default async function DeleteAccountPage({
           {supportEmail}
         </a>{' '}
         from the Google account you used for PulseBLR.
+      </p>
+
+      <p className="mt-4 flex flex-wrap gap-x-4 gap-y-2 text-[13px]">
+        <Link href="/privacy" className="font-semibold text-[var(--accent)] hover:underline">
+          Privacy policy
+        </Link>
+        <Link href="/terms" className="font-semibold text-[var(--accent)] hover:underline">
+          Terms of use
+        </Link>
+        <Link href="/cookies" className="font-semibold text-[var(--accent)] hover:underline">
+          Cookies
+        </Link>
       </p>
     </main>
   );

@@ -89,7 +89,7 @@ export default async function IntakePage({ params }: { params: Promise<{ token: 
 
         <p className="mt-4 px-2 text-center text-[11.5px] leading-relaxed text-[var(--ink-2)]">
           What you enter goes to the person who showed you this code, so they remember who they
-          met. It is not published anywhere and nobody else can read this folder.
+          met. It is not published anywhere and no other PulseBLR user can read this folder.
         </p>
       </div>
     </main>

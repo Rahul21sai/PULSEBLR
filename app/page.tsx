@@ -1867,16 +1867,15 @@ export default function Home() {
               evidence; this sentence was the only thing between them and it restated both. Copy,
               not a card, so nothing becomes unreachable — the rule the note above explains. */}
           <p className="ty-body mt-[var(--s-4)] hidden text-[var(--ink-2)] sm:block">
-            Every{' '}
             <strong className="font-semibold text-[var(--ink)]">
-              developer meetup, conference, hackathon and workshop
+              Developer meetups, conferences, hackathons and workshops
             </strong>{' '}
-            in the city, in one place
+            from across the city, in one place
             <span className="sm:hidden">.</span>
             <span className="hidden sm:inline">
               {' '}
               — sorted by whether you’ll leave with useful contacts, not just by what’s on soonest.
-              Scan a badge and keep the people you met.
+              Scan a LinkedIn or contact QR code and keep the people you met.
             </span>
           </p>
           <div className="ty-meta mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 sm:mt-[var(--s-4)]">

@@ -5,9 +5,9 @@ exists. Re-check every declaration against the deployed build and the current Pl
 
 ## Listing copy
 
-**Short description (ready to copy; 80 characters):**
+**Short description (ready to copy; 77 characters):**
 
-> Find Bengaluru tech events and keep every connection and follow-up in one place.
+> Find Bengaluru tech events, and keep the people you meet and your follow-ups.
 
 **Full description (ready to copy):**
 
@@ -16,13 +16,16 @@ exists. Re-check every declaration against the deployed build and the current Pl
 > track the events you care about; and see them in a calendar.
 >
 > At an event, scan a QR code to capture a connection, keep private notes and follow-up context, and
-> show your own code when someone wants your details. Capture is designed to keep working through a
-> weak venue connection and sync when you are back online. Use the launcher shortcuts for Scan, My
+> show your own code when someone wants your details. If the venue connection drops, a capture is kept
+> on your device and uploads the next time you open Scan or your folders online. Use the launcher shortcuts for Scan, My
 > code, Feed, Tracker and Calendar, or share an event link to add it to PulseBLR.
 >
 > Sign in with Google to keep your private tracker and people records scoped to you. Optional email
 > reminders and push notifications are controlled in Settings. You can delete your account and its
 > associated private data from Settings at any time.
+>
+> Event listings are gathered from public event platforms and link to the original page; check it before
+> you register or pay. PulseBLR is free and sells nothing.
 
 ## Console-owned listing fields
 
@@ -33,6 +36,8 @@ exists. Re-check every declaration against the deployed build and the current Pl
   `https://pulseblr-u9f1.vercel.app/privacy`.
 - [ ] Enter the account-deletion URL:
   `https://pulseblr-u9f1.vercel.app/delete-account`.
+- [ ] The terms of use and cookie list are public at `/terms` and `/cookies`. Play does not ask for them,
+  but the in-app sign-in screen links to `/terms`, so confirm both render on the deployed build.
 - [ ] Upload and preview the checked-in assets below in the current Console slots; confirm their
   rendered text and crops before saving.
 
@@ -47,6 +52,23 @@ exists. Re-check every declaration against the deployed build and the current Pl
 | Phone: topics | `public/screenshots/topics.png` | 1080×1920 PNG |
 | Wide: feed | `public/screenshots/wide-feed.png` | 1920×1080 PNG |
 
+> **Re-shoot before upload (audit 2026-09-28).** The checked-in screenshots are not listing-safe as they
+> stand:
+>
+> - `event.png` is filled by a **third-party cover photograph** (a waterfall, from the listing
+>   "Mahabaleshwar Diaries"). PulseBLR has no licence to that image; a store listing is advertising, which
+>   is a different use from pointing an in-app reader at the source. It is also a travel event, not a tech
+>   one, and shows "Happening now · 3d ago". Re-shoot on an event with no cover (the monogram fallback) or
+>   on a user-added event whose image you own.
+> - `feed.png` and `wide-feed.png` show the old hero line "Every developer meetup, conference, hackathon
+>   and workshop in the city, in one place" and (wide) "Scan a badge". Both overclaim: coverage is not
+>   exhaustive, and conference badge QRs carry no contact data (CLAUDE.md §9). Re-shoot after the hero copy
+>   changes.
+> - `feed-rows.png` and `wide-feed.png` show real event titles and host names (Lyzr AI, AI House, YC x
+>   Moss, BangPypers). Names used factually are low risk, but no logo or cover artwork should appear.
+> - `calendar.png`, `topics.png`, `feature-graphic.png` and the icon contain only PulseBLR's own UI and
+>   artwork.
+
 ## Data Safety inventory to reconcile in Console
 
 The product behavior below is the implementation inventory. Each corresponding Console answer is
@@ -60,9 +82,11 @@ answers from the deployed behavior—not from generic boilerplate.
 | Contacts and scans | QR is decoded in the browser; PulseBLR stores only contact details a person chooses to save, plus optional LinkedIn URL and private context. No continuous camera recording is stored. | - [ ] Declare the applicable personal-info/contact category, collection purpose, and user controls. |
 | Private notes and people/follow-up records | Notes, folder names, follow-up dates, application links, tracker data, and interaction history support the signed-in user's private organiser. | - [ ] Declare applicable personal-info/user-content categories and account-management/functionality purposes. |
 | Capability tokens | Card, calendar, intake, MCP, and related tokens are private capability-like credentials; deletion revokes owned records. | - [ ] Reconcile these credentials with the Console's authentication/security data categories and deletion answers. |
-| Push endpoints | A browser/device push endpoint is stored only when notifications are enabled; browser push providers process the endpoint and notification. | - [ ] Declare the applicable device/identifier category, functionality purpose, optionality, and third-party processing. |
+| Push endpoints | A browser/device push endpoint, its keys and the browser user-agent string are stored only when notifications are enabled; browser push providers process the endpoint and notification. | - [ ] Declare the applicable device/identifier category, functionality purpose, optionality, and third-party processing. |
+| Public card | Only if the person sets up a card: the name, headline, company, role, social links, email and (only if they opt in) phone they choose are shown to anyone who opens their card link or QR. | - [ ] Treat as user-chosen, user-published profile info; confirm it is optional and deletable. |
+| AI assistant (MCP) access | A person may create a token and connect their own AI assistant, which can then read their people and events. Tokens are stored as SHA-256 hashes. The assistant provider is chosen by the person, not by PulseBLR. | - [ ] Decide with the current Console wording whether user-initiated transfer to an assistant they connect counts as sharing; keep consistent with `/privacy`. |
 | Email delivery | If email is enabled, Resend processes the delivery address and message needed for digest/reminder delivery. | - [ ] Declare the email/personal-info category, optional communications purpose, and service-provider processing. |
-| NVIDIA NIM processing | Configured public event-listing classification and tagging may be processed by NVIDIA NIM. It is not the path for private scanned contacts or private notes. | - [ ] Declare this public-listing processing and any applicable sharing/service-provider answer accurately. |
+| NVIDIA NIM processing | Configured public event-listing classification and tagging may be processed by NVIDIA NIM (Anthropic is a further configured fallback in `lib/llm/tagger.ts`, disclosed on `/privacy`). It is not the path for private scanned contacts or private notes. | - [ ] Declare this public-listing processing and any applicable sharing/service-provider answer accurately. |
 | IBM ICA processing — **including private notes** | Two paths, and the second is the one that matters for this form. (1) Public event-listing extraction, classification and tagging. (2) **Follow-up drafts the signed-in person explicitly requests:** the contact's name, company, role and headline, the event title and date, and **the person's private notes about that contact** are sent to IBM ICA to write the draft (`lib/llm/draft-followup.ts`, field allowlist `selectDraftFields()`). The draft is shown only to the requester; PulseBLR never sends it to the contact. `/privacy` already discloses this path. The NVIDIA row above says private notes never reach NVIDIA, which is true; on its own it reads as though they reach no model provider at all, which is false. | - [ ] Declare user-content/personal-info shared with a service provider for app functionality, triggered only by an explicit user action; keep the answer consistent with `/privacy`. |
 
 - [ ] Confirm the deployed `/privacy` and `/delete-account` pages still describe these categories,

@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useRef, useState } from 'react';
 import {
   createIntakeSubmission,
@@ -261,6 +262,19 @@ export default function IntakeForm({
           </label>
         </>
       )}
+
+      {/* THE COLLECTION NOTICE. The person filling this in has no account and never agreed to
+          anything, so what happens to their details has to be said here, before they tap, and not
+          only on a policy page they will never open: who receives it, what for, and how to get it
+          removed (DPDP Act 2023, Rule 3). Above the button, not below it, so it is read first. */}
+      <p className="mt-5 text-[12px] leading-relaxed text-[var(--ink-2)]" data-intake-notice="">
+        Only the person who shared this link receives what you enter. PulseBLR keeps it in their
+        private contacts so they remember who they met. To have it removed, ask them, or see the{' '}
+        <Link href="/privacy#contacts" className="font-semibold text-[var(--accent)] hover:underline">
+          privacy policy
+        </Link>
+        .
+      </p>
 
       <div className="mt-5">
         {/* Beside the button rather than above the fields: after a tap at the bottom of a phone

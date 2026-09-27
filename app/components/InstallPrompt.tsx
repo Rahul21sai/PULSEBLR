@@ -216,7 +216,7 @@ export default function InstallPrompt() {
                 per-platform nuance instead, where a wrap is cheap. */}
             <p className="ty-body font-semibold text-[var(--ink)]">Install PulseBLR</p>
             <p className="ty-meta text-[var(--ink-2)]">
-              {isIOS ? 'Two taps from the share menu.' : 'Opens full screen, works offline.'}
+              {isIOS ? 'Two taps from the share menu.' : 'Opens full screen. Scans save even offline.'}
             </p>
           </div>
           <Button

@@ -60,7 +60,7 @@ const serif = Newsreader({
 
 export const metadata: Metadata = {
   title: "PulseBLR - Bangalore Tech Events",
-  description: "Your curated pipeline for AI, Fintech, and Networking events in Bangalore.",
+  description: "Bengaluru software and hardware engineering events, and the people you meet there.",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
