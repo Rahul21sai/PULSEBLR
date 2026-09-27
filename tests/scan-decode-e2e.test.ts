@@ -193,6 +193,19 @@ describe('codes that must not become contacts', () => {
     const result = await scan('upi://pay?pa=someone@okhdfcbank');
     expect(result.kind).toBe('not-a-person');
   });
+
+  it('refuses an Android Quick Share "Share using QR code" link without keeping its key', async () => {
+    // Shape decoded off a real phone on 2026-09-27; the key here is SYNTHETIC. The real
+    // `#key=` fragment decrypts somebody's files, so it must never reach a contact field.
+    const payload =
+      'https://quickshare.google/qrcode?r=zZ9q#key=AAACsynthTESTkey_0123456789-abcdefghijKLMNOPQRS';
+    const result = await scan(payload);
+    expect(result.kind).toBe('not-a-person');
+    expect(result.isPerson).toBe(false);
+    expect(result.reason).toMatch(/quick share/i);
+    expect(result.person).toEqual({});
+    expect(result.actionUrl).toBeUndefined();
+  });
 });
 
 /* ─────────────── Other real payloads ─────────────── */

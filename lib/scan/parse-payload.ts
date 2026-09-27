@@ -36,6 +36,7 @@ import { parseLinkedInUrl, guessNameFromSlug } from './linkedin';
 import { looksLikeVCard, parseVCard } from './vcard';
 import { looksLikeMeCard, parseMeCard, meCardUrls } from './mecard';
 import { classifyUrlInto, hostOf, handleFromUrl, isBioLinkHost } from './urls';
+import { notAPersonReason, whatsAppPhone } from './not-a-person';
 
 /**
  * Hosts that ticket Indian tech events. A URL here is only called a ticket when it also
@@ -99,6 +100,10 @@ export function parseScanPayload(raw: string): ParsedScan {
   for (const [pattern, reason] of NOT_A_PERSON) {
     if (pattern.test(trimmed)) return base('not-a-person', input, { isPerson: false, reason });
   }
+  // Quick Share links, group invites, meeting links, forms, Bharat QR, Aadhaar — see
+  // `not-a-person.ts`. Checked before email/phone because an EMVCo payload embeds a VPA.
+  const notPerson = notAPersonReason(trimmed);
+  if (notPerson) return base('not-a-person', input, { isPerson: false, reason: notPerson });
 
   /* ── Single-field contact schemes ───────────────────────────────────────── */
   const email = extractEmail(trimmed);
@@ -134,6 +139,13 @@ export function parseScanPayload(raw: string): ParsedScan {
       // A LinkedIn URL that is not /in/<slug>: a company page, a post, a shortlink.
       return personResult('linkedin', input, person, {
         reason: "That's a LinkedIn link but not a personal profile — add their name.",
+      });
+    }
+
+    const waPhone = whatsAppPhone(trimmed);
+    if (waPhone) {
+      return personResult('tel', input, { phone: waPhone }, {
+        reason: "That's a WhatsApp chat link — it gave us their number. Add their name.",
       });
     }
 

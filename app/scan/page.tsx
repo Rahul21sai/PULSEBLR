@@ -207,8 +207,11 @@ function ScanScreen() {
       if (!parsed.isPerson) {
         // Recognised, and definitely not a contact — a ticket, a Wi-Fi code, a UPI code. Say so
         // rather than saving rubbish, and keep scanning.
-        setToast(parsed.reason ?? 'That is not a contact code.');
-        setTimeout(() => setToast(null), 3500);
+        const reason = parsed.reason ?? 'That is not a contact code.';
+        setToast(reason);
+        // Longer reasons ("That's a Quick Share file link, not a contact — someone is sending you
+        // files.") need longer than 3.5 s to read on a phone held up at an event.
+        setTimeout(() => setToast(null), reason.length > 60 ? 5500 : 3500);
         navigator.vibrate?.([20, 60, 20]);
         return;
       }
