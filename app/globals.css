@@ -366,6 +366,10 @@ body {
 /* ─── iOS toggle switch ──────────────────────────────────────────────────── */
 .toggle-wrap { position: relative; display: inline-block; width: 51px; height: 31px; }
 .toggle-wrap input { opacity: 0; width: 0; height: 0; position: absolute; }
+/* The switch paints 31px tall. When the switch IS the label (it has no text row around it), grow its
+   hit area to the 44px floor vertically; a tap on a label's pseudo-element activates its input. The
+   `span.toggle-wrap` form sits inside a full-row label, which is already the target. */
+label.toggle-wrap::after { content: ''; position: absolute; left: 0; right: 0; top: 50%; height: 44px; transform: translateY(-50%); }
 .toggle-track {
   position: absolute; inset: 0;
   background: var(--rule);

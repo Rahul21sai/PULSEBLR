@@ -108,8 +108,10 @@ export default function MyCardSection() {
           </p>
         </div>
         <label className="toggle-wrap shrink-0" title={card?.enabled ? 'Card is on' : 'Card is off'}>
+          {/* `title` on the label is not an accessible name; without this the switch is unnamed. */}
           <input
             type="checkbox"
+            aria-label="My card"
             checked={Boolean(card?.enabled)}
             onChange={e => void patch({ enabled: e.target.checked })}
           />
@@ -220,7 +222,7 @@ export default function MyCardSection() {
           <button
             type="button"
             onClick={() => setConfirmRotate(true)}
-            className="text-[12.5px] font-semibold text-[var(--accent)] hover:underline"
+            className="inline-flex min-h-11 items-center text-[12.5px] font-semibold text-[var(--accent)] hover:underline"
           >
             Replace my card link
           </button>

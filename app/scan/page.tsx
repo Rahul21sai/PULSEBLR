@@ -19,6 +19,7 @@ import {
   type PendingSummary,
 } from '@/lib/scan/outbox';
 import type { FolderDTO } from '@/lib/contacts/types';
+import { dayKeyIST } from '@/lib/format';
 
 /**
  * The scanner.
@@ -92,6 +93,12 @@ function ScanScreen() {
   const folderParam = searchParams.get('folder');
 
   const [folders, setFolders] = useState<FolderDTO[]>([]);
+  /**
+   * Whether `folders` is an ANSWER yet. It started as `[]` and a failed or unfinished fetch left it
+   * there, so the picker told somebody with folders "You have no folders yet. Create one" - while
+   * the list was still loading, and, worse, offline at an event, which is when this screen is used.
+   */
+  const [foldersState, setFoldersState] = useState<'loading' | 'ready' | 'error'>('loading');
   const [folderId, setFolderId] = useState<string | null>(folderParam);
   const [choosingFolder, setChoosingFolder] = useState(false);
   const [mode, setMode] = useState<CaptureMode>('qr');
@@ -148,20 +155,27 @@ function ScanScreen() {
   const loadFolders = useCallback(async () => {
     try {
       const res = await fetch('/api/folders');
-      if (!res.ok) return;
+      if (!res.ok) {
+        setFoldersState('error');
+        return;
+      }
       const data = await res.json();
       const list: FolderDTO[] = data.folders ?? [];
       setFolders(list);
+      setFoldersState('ready');
 
       // No folder chosen: prefer today's, else the most recent. Opening the scanner should
       // never make you pick something before you can point it at anybody.
       if (!folderParam && list.length) {
-        const today = new Date().toISOString().slice(0, 10);
-        const todays = list.find(f => f.eventDate?.slice(0, 10) === today);
+        // Both sides in IST. `toISOString()` is the UTC day, so before 05:30 IST "today" was
+        // yesterday and the scanner preselected the wrong folder at an overnight event.
+        const today = dayKeyIST(new Date());
+        const todays = list.find(f => f.eventDate && dayKeyIST(f.eventDate) === today);
         setFolderId((todays ?? list[0])._id);
       }
     } catch {
       // Offline. The chip will say so and the outbox still works.
+      setFoldersState('error');
     }
   }, [folderParam]);
 
@@ -248,7 +262,14 @@ function ScanScreen() {
    * work, and one sentence about why they matter, and those are the four fields already visible.
    * Showing eleven inputs instead would make the fast path look slow. "More fields" is one tap away.
    */
+  /**
+   * Bumped per typed capture, and used as the fields' `key`. "Save & add next" keeps the sheet
+   * OPEN, so `ContactFields` never remounted and its `autoFocus` never fired again: the second
+   * person onward had to tap Name before typing, on exactly the path built to save that tap.
+   */
+  const [typedSeq, setTypedSeq] = useState(0);
   const startTyping = useCallback(() => {
+    setTypedSeq(n => n + 1);
     setCapture({ via: 'manual' });
     setSheetError(null);
     setShowAllFields(false);
@@ -646,13 +667,18 @@ function ScanScreen() {
           // title asks the question the form is actually asking.
           title={draft.name.trim() || (capture.via === 'qr' ? 'Who was that?' : 'Who did you meet?')}
           subtitle={folder ? `Into ${folder.name}` : undefined}
+          // Typed entry: land in Name, so the keyboard is up on the first tap. A QR capture keeps
+          // the default (Close) - its card is prefilled, and see `autoFocusName` for why.
+          initialFocus={capture.via === 'manual' ? 'input' : undefined}
           labelledBy="capture-title"
           footer={
             <div className="flex items-center gap-2">
               <Button tone="primary" full onClick={() => save(true)} disabled={saving}>
                 {saving ? 'Saving…' : capture.via === 'qr' ? 'Save & scan next' : 'Save & add next'}
               </Button>
-              <Button tone="quiet" onClick={() => save(false)} disabled={saving}>
+              {/* `shrink-0 whitespace-nowrap`: at 390px the full-width primary squeezed this into
+                  two lines ("Save &" / "close") inside a 40px button. */}
+              <Button tone="quiet" className="shrink-0 whitespace-nowrap" onClick={() => save(false)} disabled={saving}>
                 Save & close
               </Button>
             </div>
@@ -701,6 +727,7 @@ function ScanScreen() {
           )}
 
           <ContactFields
+            key={capture.via === 'manual' ? `typed-${typedSeq}` : 'scanned'}
             tagSuggestions={tagVocabulary}
             draft={draft}
             onChange={setDraft}
@@ -727,7 +754,27 @@ function ScanScreen() {
           </ButtonLink>
         }
       >
-        {folders.length === 0 ? (
+        {folders.length === 0 && foldersState === 'loading' ? (
+          <p className="text-[13.5px] leading-relaxed text-[var(--ink-2)]" role="status">
+            Loading your folders…
+          </p>
+        ) : folders.length === 0 && foldersState === 'error' ? (
+          <div className="flex flex-col items-start gap-3">
+            <p className="text-[13.5px] leading-relaxed text-[var(--ink-2)]" role="alert">
+              Could not load your folders — check your connection.
+            </p>
+            <Button
+              tone="quiet"
+              icon="refresh"
+              onClick={() => {
+                setFoldersState('loading');
+                void loadFolders();
+              }}
+            >
+              Try again
+            </Button>
+          </div>
+        ) : folders.length === 0 ? (
           <p className="text-[13.5px] leading-relaxed text-[var(--ink-2)]">
             You have no folders yet. Create one — name it after the event — and come back.
           </p>

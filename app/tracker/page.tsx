@@ -319,6 +319,30 @@ export default function TrackerPage() {
     [entries]
   );
 
+  /**
+   * AFTER "Move to …" ON THE BOARD, FOLLOW THE CARD.
+   *
+   * Measured at 390x844: every column is 290px, so moving a card sends it into the NEXT column,
+   * which is off the right edge. The button the user just pressed unmounts with the card, so the
+   * screen shows the column it left - often now empty - and keyboard focus falls to <body>. Two
+   * frames, because the optimistic `setEntries` has to commit before the card exists in its new
+   * column. Focus goes to the card's own next "Move to" (or its opener at the last column), so a
+   * keyboard user can keep advancing it without hunting for where it went.
+   */
+  const revealEntry = useCallback((entryId: string) => {
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        const card = document.querySelector<HTMLElement>(`[data-entry-id="${CSS.escape(entryId)}"]`);
+        if (!card) return;
+        const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        card.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: reduce ? 'auto' : 'smooth' });
+        const target =
+          card.querySelector<HTMLElement>(':scope > button') ?? card.querySelector<HTMLElement>('[role="button"]');
+        target?.focus({ preventScroll: true });
+      })
+    );
+  }, []);
+
   const remove = useCallback(async (entryId: string) => {
     const previous = entries;
     setEntries(current => current.filter(entry => entry._id !== entryId));
@@ -439,10 +463,13 @@ export default function TrackerPage() {
 
         {/* Stats */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
-          <Stat label="Tracked" value={totals.tracked} />
-          <Stat label="Still upcoming" value={totals.upcoming} />
-          <Stat label="Attended" value={totals.attended} />
-          <Stat label="People met" value={totals.connections} />
+          {/* `loading` passes through so the blocks do not print "0 Tracked" above the board
+              skeleton - on a phone network that is a seconds-long false statement about the
+              user's own data. */}
+          <Stat label="Tracked" value={totals.tracked} loading={loading} />
+          <Stat label="Still upcoming" value={totals.upcoming} loading={loading} />
+          <Stat label="Attended" value={totals.attended} loading={loading} />
+          <Stat label="People met" value={totals.connections} loading={loading} />
         </div>
 
         {error && (
@@ -532,14 +559,16 @@ export default function TrackerPage() {
                       type="button"
                       onClick={() => completeFollowUp(entry._id, connection.name)}
                       disabled={completing === `${entry._id}:${connection.name}`}
-                      className="pressable shrink-0 h-8 px-3 rounded-full bg-[var(--ink)] text-[12px] font-semibold text-[var(--accent-ink)] hover:bg-[var(--ink)] disabled:opacity-50"
+                      // 32px painted; the overlay grows the target to 44px VERTICALLY only, so the
+                      // two buttons cannot contest the 12px gap between them.
+                      className="pressable relative shrink-0 h-8 px-3 rounded-full bg-[var(--ink)] text-[12px] font-semibold text-[var(--accent-ink)] hover:bg-[var(--ink)] disabled:opacity-50 after:absolute after:inset-x-0 after:top-1/2 after:h-11 after:-translate-y-1/2 after:content-['']"
                     >
                       {completing === `${entry._id}:${connection.name}` ? 'Saving…' : 'Done'}
                     </button>
                     <button
                       type="button"
                       onClick={() => setEditing(entry)}
-                      className="pressable shrink-0 h-8 px-3 rounded-full bg-[var(--surface)] text-[12px] font-semibold text-[var(--ink)] shadow-[inset_0_0_0_1px_var(--hairline-strong)] hover:bg-[var(--paper)]"
+                      className="pressable relative after:absolute after:inset-x-0 after:top-1/2 after:h-11 after:-translate-y-1/2 after:content-[''] shrink-0 h-8 px-3 rounded-full bg-[var(--surface)] text-[12px] font-semibold text-[var(--ink)] shadow-[inset_0_0_0_1px_var(--hairline-strong)] hover:bg-[var(--paper)]"
                     >
                       Edit
                     </button>
@@ -641,7 +670,10 @@ export default function TrackerPage() {
                           event={entry.eventId}
                           now={now}
                           {...drag}
-                          onMove={status => moveTo(entry._id, status)}
+                          onMove={status => {
+                            void moveTo(entry._id, status);
+                            revealEntry(entry._id);
+                          }}
                         />
                       ) : (
                         <OrphanCard key={entry._id} entry={entry} {...drag} />
@@ -650,7 +682,10 @@ export default function TrackerPage() {
 
                     {(byColumn[column.id]?.length || 0) === 0 && (
                       <div className="flex items-center justify-center h-[110px] text-[12px] text-[var(--ink-2)]">
-                        Drop here
+                        {/* HTML5 drag-and-drop does not fire from a touch, so on a phone "Drop here"
+                            names an interaction the screen cannot perform. */}
+                        <span className="pointer-coarse:hidden">Drop here</span>
+                        <span className="hidden pointer-coarse:inline">Nothing here yet</span>
                       </div>
                     )}
                   </div>
@@ -684,7 +719,10 @@ export default function TrackerPage() {
             <div className="flex justify-center pt-3 pb-1 md:hidden">
               <div className="w-10 h-1 bg-[var(--rule)] rounded-full" />
             </div>
-            <div className="p-5 md:p-6">
+            {/* The sheet is flush with the bottom edge on a phone, so its last row (Remove) sat
+                under the iOS home indicator - Sheet.tsx pads for the inset, this hand-built one did
+                not. */}
+            <div className="p-5 md:p-6" style={{ paddingBottom: 'max(1.25rem, env(safe-area-inset-bottom))' }}>
               <div className="flex items-start justify-between gap-3 mb-4">
                 <h2 id="tracker-detail-title" className="text-[19px] font-bold leading-snug tracking-[-0.01em] text-[var(--ink)]">
                   {selected.eventId ? selected.eventId.title : orphanTitle(selected)}
@@ -946,6 +984,7 @@ function TrackerCard({
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
       onClick={onOpen}
+      data-entry-id={entry._id}
       className="kanban-card bg-[var(--surface)] rounded-[var(--r-flat)] p-3 shadow-[inset_0_0_0_1px_var(--rule)]"
       style={{ borderLeft: `3px solid ${accent}` }}
     >
@@ -1172,7 +1211,12 @@ function ListView({
         return (
           <div
             key={entry._id}
-            className={`flex items-center gap-3 px-4 py-3 hover:bg-[var(--paper)] transition-colors ${divider}`}
+            /* WRAPS BELOW `sm`. The status select is 16px on a phone (the iOS no-zoom rule in
+               globals.css), which makes the pill ~130px wide, and at 360px that left the title 98px:
+               "BADDIES W…" and "Wed, 30 Sept · …", i.e. neither the event nor where it is. Below
+               `sm` the title takes the whole line beside the cover and the select drops under it,
+               indented to the text; from `sm` up the row is unchanged. */
+            className={`flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3 hover:bg-[var(--paper)] transition-colors sm:flex-nowrap ${divider}`}
           >
             <EventCover
               src={event.imageUrl}
@@ -1189,7 +1233,7 @@ function ListView({
             <button
               type="button"
               onClick={() => onOpen(entry)}
-              className="flex min-h-11 min-w-0 flex-1 flex-col justify-center text-left"
+              className="flex min-h-11 min-w-0 flex-1 basis-[calc(100%-52px)] flex-col justify-center text-left sm:basis-auto"
             >
               <p className="text-[14px] font-semibold text-[var(--ink)] truncate">{event.title}</p>
               <p className="text-[12px] text-[var(--ink-2)] tnum truncate">
@@ -1203,7 +1247,7 @@ function ListView({
                 {entry.connections.length}
               </span>
             )}
-            <label className="shrink-0">
+            <label className="ml-[52px] shrink-0 sm:ml-0">
               <span className="sr-only">Status for {event.title}</span>
               <select
                 value={entry.status}
@@ -1245,10 +1289,14 @@ function ListView({
  * Ruled rather than a white plane: with `card-shadow` composited to nothing, `bg-[var(--surface)]`
  * on `--paper` had no edge at all.
  */
-function Stat({ label, value }: { label: string; value: number }) {
+function Stat({ label, value, loading = false }: { label: string; value: number; loading?: boolean }) {
   return (
     <div className="rounded-[var(--r-flat)] border border-[var(--rule)] px-[var(--s-4)] py-[var(--s-3)]">
-      <p className="tnum text-[24px] font-semibold leading-none tracking-[-0.02em] text-[var(--ink)]">{value}</p>
+      {loading ? (
+        <p aria-hidden="true" className="skeleton h-6 w-8 rounded" />
+      ) : (
+        <p className="tnum text-[24px] font-semibold leading-none tracking-[-0.02em] text-[var(--ink)]">{value}</p>
+      )}
       <p className="ty-meta mt-[var(--s-1)]">{label}</p>
     </div>
   );

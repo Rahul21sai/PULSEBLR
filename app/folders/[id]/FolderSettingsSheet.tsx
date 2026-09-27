@@ -4,6 +4,7 @@ import { useState } from 'react';
 import Sheet from '../../components/Sheet';
 import { Banner, Button } from '../../components/ui';
 import type { FolderDTO } from '@/lib/contacts/types';
+import { dayKeyIST } from '@/lib/format';
 
 /**
  * Rename, re-date, archive or delete a folder.
@@ -46,7 +47,9 @@ export default function FolderSettingsSheet({
   const [venue, setVenue] = useState(folder.venue ?? '');
   const [note, setNote] = useState(folder.note ?? '');
   const [eventDate, setEventDate] = useState(
-    folder.eventDate ? new Date(folder.eventDate).toISOString().slice(0, 10) : ''
+    // IST: a folder auto-created from an event copies its start instant, and an event before
+    // 05:30 IST is the PREVIOUS day in UTC, so `toISOString()` showed (and re-saved) the wrong date.
+    folder.eventDate ? dayKeyIST(folder.eventDate) : ''
   );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);

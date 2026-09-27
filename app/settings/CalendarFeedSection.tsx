@@ -141,8 +141,11 @@ export default function CalendarFeedSection() {
           className="toggle-wrap shrink-0"
           title={feed?.enabled ? 'Subscription is on' : 'Subscription is off'}
         >
+          {/* A `title` on the wrapping label is not an accessible name, and the track span is empty,
+              so this switch was announced as an unnamed checkbox. */}
           <input
             type="checkbox"
+            aria-label="Calendar subscription link"
             checked={Boolean(feed?.enabled)}
             disabled={saving}
             onChange={e => void patch({ enabled: e.target.checked })}
@@ -269,7 +272,7 @@ export default function CalendarFeedSection() {
             <button
               type="button"
               onClick={() => setConfirmRotate(true)}
-              className="text-[12.5px] font-semibold text-[var(--accent)] hover:underline"
+              className="inline-flex min-h-11 items-center text-[12.5px] font-semibold text-[var(--accent)] hover:underline"
             >
               Replace my calendar link
             </button>

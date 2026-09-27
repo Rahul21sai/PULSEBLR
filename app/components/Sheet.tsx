@@ -62,6 +62,7 @@ export default function Sheet({
   labelledBy = 'sheet-title',
   id,
   dialogFrom = 'sm',
+  initialFocus,
 }: {
   open: boolean;
   onClose: () => void;
@@ -75,12 +76,19 @@ export default function Sheet({
   id?: string;
   /** The breakpoint at which the bottom sheet becomes a centred dialog. See the header. */
   dialogFrom?: keyof typeof DIALOG_FROM;
+  /**
+   * Selector for what receives focus on open; defaults to `useModalDialog`'s first control, which
+   * is the header's Close button. A sheet whose whole job is typing (the scanner's typed capture)
+   * passes `input` so the keyboard comes up on the first field - otherwise the focus-in, which runs
+   * a tick after mount, silently overrides that field's own `autoFocus`.
+   */
+  initialFocus?: string;
 }) {
   const dialogRef = useRef<HTMLDivElement>(null);
 
   // Escape, the Tab trap, focus-in and focus-restore. Moved into `useModalDialog` so the
   // hand-built dialogs elsewhere get the identical contract rather than a subset of it.
-  useModalDialog(dialogRef, open, onClose);
+  useModalDialog(dialogRef, open, onClose, initialFocus);
 
   // Lock the page behind the sheet.
   useEffect(() => {

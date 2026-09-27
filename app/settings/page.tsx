@@ -87,7 +87,12 @@ async function signOutAfterPurgingCaches() {
 }
 
 export default function SettingsPage() {
-  const { data: session } = useSession();
+  const { data: session, status } = useSession();
+  // `useSession()` starts as `loading` on every hard navigation, and on a phone network that
+  // window is seconds long (measured ~5 s on a cold dev server). Rendering `session === null` as
+  // "Not signed in" + a Sign in button during it tells a signed-in user they are signed out -
+  // the false-negative class ProtectedRouteGate refuses to create. So loading is its own state.
+  const sessionLoading = status === 'loading';
   const isAdmin = session?.user?.isAdmin === true;
   const userId =
     typeof session?.user?.id === 'string' && session.user.id.trim().length > 0
@@ -160,7 +165,12 @@ export default function SettingsPage() {
                 </div>
               )}
               <div className="flex-1 min-w-0">
-                {session?.user ? (
+                {sessionLoading ? (
+                  <>
+                    <p className="text-[15px] font-semibold text-[var(--ink-2)]">Checking your account…</p>
+                    <p className="text-[13px]" aria-hidden="true">&nbsp;</p>
+                  </>
+                ) : session?.user ? (
                   <>
                     <p className="text-[15px] font-semibold text-[var(--ink)] truncate flex items-center gap-2">
                       {session.user.name || 'Signed in'}
@@ -181,18 +191,18 @@ export default function SettingsPage() {
                   </>
                 )}
               </div>
-              {session?.user ? (
+              {sessionLoading ? null : session?.user ? (
                 <button
                   type="button"
                   onClick={() => void signOutAfterPurgingCaches()}
-                  className="shrink-0 px-4 py-2 rounded-full text-[12.5px] font-semibold text-[var(--live)] bg-[var(--paper)] hover:bg-[var(--paper)] transition-colors"
+                  className="shrink-0 inline-flex items-center min-h-11 px-4 py-2 rounded-full text-[12.5px] font-semibold text-[var(--live)] bg-[var(--paper)] hover:bg-[var(--paper)] transition-colors"
                 >
                   Sign out
                 </button>
               ) : (
                 <Link
                   href={loginHref('/settings')}
-                  className="shrink-0 px-4 py-2 rounded-full text-[12.5px] font-semibold text-[var(--accent-ink)] bg-[var(--accent)] hover:bg-[var(--accent)] transition-colors"
+                  className="shrink-0 inline-flex items-center min-h-11 px-4 py-2 rounded-full text-[12.5px] font-semibold text-[var(--accent-ink)] bg-[var(--accent)] hover:bg-[var(--accent)] transition-colors"
                 >
                   Sign in
                 </Link>
@@ -362,7 +372,7 @@ export default function SettingsPage() {
                   </a>{' '}
                   — it is scoped to your tracker, so it shows only your data.
                 </p>
-              ) : (
+              ) : sessionLoading ? null : (
                 <p className="text-[var(--ink-2)]">Sign in to preview your digest.</p>
               )}
             </div>

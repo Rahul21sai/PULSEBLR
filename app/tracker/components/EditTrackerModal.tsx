@@ -177,7 +177,8 @@ export default function EditTrackerModal({
             type="button"
             onClick={onClose}
             aria-label="Close without saving"
-            className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[var(--paper)] text-[var(--ink-2)] [touch-action:manipulation]"
+            // 32px painted, 44px target via the overlay, as Sheet.tsx's close button does.
+            className="relative grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[var(--paper)] text-[var(--ink-2)] [touch-action:manipulation] after:absolute after:-inset-1.5 after:content-['']"
           >
             <span aria-hidden="true" className="material-symbols-outlined text-[18px]">close</span>
           </button>
@@ -268,7 +269,7 @@ export default function EditTrackerModal({
                           type="button"
                           onClick={() => toggleFollowedUp(index)}
                           aria-pressed={!!conn.followedUp}
-                          className={`rounded-full px-2.5 py-1 text-[11.5px] font-semibold [touch-action:manipulation] ${
+                          className={`inline-flex min-h-11 items-center rounded-full px-3 text-[11.5px] font-semibold [touch-action:manipulation] ${
                             conn.followedUp
                               ? 'bg-[var(--paper)] text-[var(--accent)]'
                               : 'bg-[var(--surface)] text-[var(--ink)] shadow-[inset_0_0_0_1px_var(--hairline-strong)] hover:bg-[var(--paper)]'
@@ -277,12 +278,14 @@ export default function EditTrackerModal({
                           {conn.followedUp ? 'Done' : 'Mark done'}
                         </button>
                       )}
-                      <div className="flex gap-1">
+                      {/* 44px each and no gap: at 28px with a 4px gap, Remove sat one thumb-width
+                          from Edit, and Remove is destructive. */}
+                      <div className="flex">
                         <button
                           type="button"
                           onClick={() => startEdit(index)}
                           aria-label={`Edit ${conn.name}`}
-                          className="grid h-7 w-7 place-items-center rounded-full text-[var(--ink-2)] hover:bg-[var(--surface)] [touch-action:manipulation]"
+                          className="grid h-11 w-11 place-items-center rounded-full text-[var(--ink-2)] hover:bg-[var(--surface)] [touch-action:manipulation]"
                         >
                           <span aria-hidden="true" className="material-symbols-outlined text-[16px]">edit</span>
                         </button>
@@ -290,7 +293,7 @@ export default function EditTrackerModal({
                           type="button"
                           onClick={() => remove(index)}
                           aria-label={`Remove ${conn.name}`}
-                          className="grid h-7 w-7 place-items-center rounded-full text-[var(--live)] hover:bg-[var(--surface)] [touch-action:manipulation]"
+                          className="grid h-11 w-11 place-items-center rounded-full text-[var(--live)] hover:bg-[var(--surface)] [touch-action:manipulation]"
                         >
                           <span aria-hidden="true" className="material-symbols-outlined text-[16px]">delete</span>
                         </button>
@@ -359,7 +362,7 @@ export default function EditTrackerModal({
                   type="button"
                   onClick={commitDraft}
                   disabled={!draft.name.trim()}
-                  className="pressable h-9 flex-1 rounded-full bg-[var(--ink)] text-[13px] font-semibold text-[var(--accent-ink)] hover:bg-[var(--ink)] disabled:opacity-40"
+                  className="pressable h-11 flex-1 rounded-full bg-[var(--ink)] text-[13px] font-semibold text-[var(--accent-ink)] hover:bg-[var(--ink)] disabled:opacity-40"
                 >
                   {editingIndex === null ? 'Add person' : 'Save person'}
                 </button>
@@ -370,7 +373,7 @@ export default function EditTrackerModal({
                     setAdding(false);
                     setEditingIndex(null);
                   }}
-                  className="pressable h-9 rounded-full bg-[var(--surface)] px-4 text-[13px] font-semibold text-[var(--ink)] shadow-[inset_0_0_0_1px_var(--hairline-strong)] hover:bg-[var(--paper)]"
+                  className="pressable h-11 rounded-full bg-[var(--surface)] px-4 text-[13px] font-semibold text-[var(--ink)] shadow-[inset_0_0_0_1px_var(--hairline-strong)] hover:bg-[var(--paper)]"
                 >
                   Cancel
                 </button>
@@ -409,7 +412,11 @@ export default function EditTrackerModal({
         </div>
 
         {/* Footer outside the scrollport, for the same reason as the header. */}
-        <div className="flex shrink-0 gap-2 border-t border-[color:var(--hairline)] p-4">
+        <div
+          className="flex shrink-0 gap-2 border-t border-[color:var(--hairline)] p-4"
+          // Flush with the bottom edge on a phone: keep Save clear of the iOS home indicator.
+          style={{ paddingBottom: 'max(16px, env(safe-area-inset-bottom))' }}
+        >
           <button
             type="button"
             onClick={handleSave}
@@ -463,7 +470,7 @@ function Input({
         onChange={e => onChange(e.target.value)}
         placeholder={placeholder}
         autoComplete={autoComplete}
-        className="h-9 w-full rounded-[var(--r-touch)] bg-[var(--surface)] px-3 text-[13px] text-[var(--ink)] placeholder:text-[var(--ink-2)] shadow-[inset_0_0_0_1px_var(--hairline-strong)] focus:outline-none focus-visible:shadow-[inset_0_0_0_2px_var(--accent)]"
+        className="h-11 w-full rounded-[var(--r-touch)] bg-[var(--surface)] px-3 text-[13px] text-[var(--ink)] placeholder:text-[var(--ink-2)] shadow-[inset_0_0_0_1px_var(--hairline-strong)] focus:outline-none focus-visible:shadow-[inset_0_0_0_2px_var(--accent)]"
       />
     </div>
   );

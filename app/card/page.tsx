@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from 'react';
 import QrCode, { downloadQrPng } from '../components/QrCode';
 import { Banner, Button, ButtonLink } from '../components/ui';
 import type { MyCardDTO } from '@/lib/contacts/types';
+import { TAP_44 } from '../components/scan/ContactFields';
 
 /**
  * "Show my code" — the other direction of the exchange.
@@ -114,7 +115,8 @@ export default function CardPage() {
         >
           <span aria-hidden="true" className="material-symbols-outlined text-[20px]">close</span>
         </Link>
-        <ButtonLink href="/settings#my-card" size="sm" tone="quiet" icon="edit">
+        {/* `sm` is 32px; alone in its corner, so the vertical-only 44px overlay contests nothing. */}
+        <ButtonLink href="/settings#my-card" size="sm" tone="quiet" icon="edit" className={TAP_44}>
           Edit
         </ButtonLink>
       </div>

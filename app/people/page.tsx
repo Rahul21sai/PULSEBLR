@@ -6,6 +6,7 @@ import AppShell from '../components/AppShell';
 import FacetRail, { FacetToggle } from '../components/FacetRail';
 import MergeSheet, { sharedKeyEvidence } from './MergeSheet';
 import { Banner, Button, ButtonLink, Skeleton } from '../components/ui';
+import { TAP_44 } from '../components/scan/ContactFields';
 import { dayHeading, monogram, relativeTime, shortDateIST } from '@/lib/format';
 import {
   INTERACTION_ICON,
@@ -636,9 +637,12 @@ export default function PeoplePage() {
                     <option key={t} value={t} />
                   ))}
                 </datalist>
+                {/* `sm` is 32px; TAP_44 grows the target VERTICALLY only, so these three cannot
+                    contest the 8px gap between them - the one layout where it is safe. */}
                 <Button
                   size="sm"
                   tone="primary"
+                  className={TAP_44}
                   onClick={() => void applyBulkTag('add')}
                   disabled={tagging || !bulkTag.trim()}
                 >
@@ -649,12 +653,13 @@ export default function PeoplePage() {
                 <Button
                   size="sm"
                   tone="quiet"
+                  className={TAP_44}
                   onClick={() => void applyBulkTag('remove')}
                   disabled={tagging || !bulkTag.trim()}
                 >
                   Remove tag
                 </Button>
-                <Button size="sm" tone="quiet" onClick={leaveSelection} disabled={tagging}>
+                <Button size="sm" tone="quiet" className={TAP_44} onClick={leaveSelection} disabled={tagging}>
                   Cancel
                 </Button>
               </div>

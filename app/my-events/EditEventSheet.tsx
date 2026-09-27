@@ -161,7 +161,11 @@ export default function EditEventSheet({
         setError(
           res.status === 404
             ? 'This event is no longer available to edit.'
-            : data?.error || 'Could not save your changes. Nothing was changed.'
+            : // The route's same-origin refusal answers a bare "Forbidden", which told the user
+              // nothing they could act on.
+              res.status === 403
+              ? 'This page could not be verified. Reload it and try again — nothing was changed.'
+              : data?.error || 'Could not save your changes. Nothing was changed.'
         );
         return;
       }

@@ -47,7 +47,9 @@ export default function DeleteEventSheet({
         setError(
           res.status === 404
             ? 'This event is already gone.'
-            : data?.error || 'Could not delete the event. Nothing was changed.'
+            : res.status === 403
+              ? 'This page could not be verified. Reload it and try again — nothing was deleted.'
+              : data?.error || 'Could not delete the event. Nothing was changed.'
         );
         return;
       }

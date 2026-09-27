@@ -590,6 +590,13 @@ export default function FolderPage({ params }: { params: Promise<{ id: string }>
               <ButtonLink href={`/scan?folder=${id}`} tone="primary" icon="qr_code_scanner">
                 Scan
               </ButtonLink>
+              {/* The same screen the morning-after notification opens, reachable without waiting
+                  for it. Only while someone here is still waiting on a follow-up. */}
+              {rows.some(c => !c.followedUp) && (
+                <ButtonLink href={`/follow-ups/${id}`} tone="secondary" icon="send">
+                  Follow up
+                </ButtonLink>
+              )}
               <Button tone="quiet" icon="person_add" onClick={() => setAddingManually(true)}>
                 Add by hand
               </Button>
@@ -1049,7 +1056,7 @@ function ContactCards({
 
             <div className="mt-3 flex items-center justify-between gap-2">
               {/* Links withdrawn while selecting, for the reason the table drops the column. */}
-              {selecting ? <span /> : <ContactLinks contact={contact} />}
+              {selecting ? <span /> : <ContactLinks contact={contact} bare />}
               <span className="ty-meta">{timeIST(contact.scannedAt)}</span>
             </div>
           </div>
@@ -1059,7 +1066,12 @@ function ContactCards({
   );
 }
 
-function ContactLinks({ contact }: { contact: ContactDTO }) {
+/**
+ * `bare`: render nothing when there are no links. The desktop TABLE wants the dash - it is a cell,
+ * and an empty cell reads as a rendering fault. The phone CARD does not: there the dash sat alone on
+ * its own line under every person captured by name only, a mark with no column to explain it.
+ */
+function ContactLinks({ contact, bare = false }: { contact: ContactDTO; bare?: boolean }) {
   const links: Array<{ href: string; icon: string; label: string }> = [];
   if (contact.linkedin) {
     links.push({ href: contact.linkedin, icon: 'person', label: 'LinkedIn' });
@@ -1071,7 +1083,7 @@ function ContactLinks({ contact }: { contact: ContactDTO }) {
     links.push({ href: `https://github.com/${contact.github}`, icon: 'code', label: 'GitHub' });
   }
 
-  if (!links.length) return <span className="text-[12.5px] text-[var(--ink-2)]">—</span>;
+  if (!links.length) return bare ? <span /> : <span className="text-[12.5px] text-[var(--ink-2)]">—</span>;
 
   return (
     /*

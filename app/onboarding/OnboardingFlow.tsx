@@ -4,6 +4,9 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { Button, Card, Chip } from '../components/ui';
+// Chips are 36px in `flex-wrap gap-2` rows; the overlay grows them 4px up and down, inside the
+// 8px row gap, and not sideways, so neighbours cannot contest a tap.
+import { TAP_44 } from '../components/scan/ContactFields';
 import {
   AREA_CHOICES,
   DAY_LABELS,
@@ -224,6 +227,7 @@ export default function OnboardingFlow() {
                 {TOPIC_CHOICES.filter(t => (TECH_CATEGORY_NAMES as readonly string[]).includes(t)).map(
                   topic => (
                     <Chip
+                      className={TAP_44}
                       key={topic}
                       pressed={draft.topics.includes(topic)}
                       onClick={() => setDraft(d => ({ ...d, topics: toggle(d.topics, topic) }))}
@@ -243,6 +247,7 @@ export default function OnboardingFlow() {
                 {TOPIC_CHOICES.filter(t => !(TECH_CATEGORY_NAMES as readonly string[]).includes(t)).map(
                   topic => (
                     <Chip
+                      className={TAP_44}
                       key={topic}
                       pressed={draft.topics.includes(topic)}
                       onClick={() => setDraft(d => ({ ...d, topics: toggle(d.topics, topic) }))}
@@ -264,6 +269,7 @@ export default function OnboardingFlow() {
                 <div className="flex flex-wrap gap-2">
                   {AREA_CHOICES.map(area => (
                     <Chip
+                      className={TAP_44}
                       key={area}
                       pressed={draft.areas.includes(area)}
                       onClick={() => setDraft(d => ({ ...d, areas: toggle(d.areas, area) }))}
@@ -307,6 +313,7 @@ export default function OnboardingFlow() {
                 <div className="flex flex-wrap gap-2">
                   {DAY_ORDER.map(day => (
                     <Chip
+                      className={TAP_44}
                       key={day}
                       pressed={draft.evenings.includes(day)}
                       onClick={() => setDraft(d => ({ ...d, evenings: toggle(d.evenings, day) }))}
@@ -407,7 +414,7 @@ export default function OnboardingFlow() {
             type="button"
             onClick={() => finish('skip')}
             disabled={saving}
-            className="shrink-0 rounded-full px-3 py-2 text-[13px] font-semibold text-[var(--ink-2)] hover:text-[var(--ink)] disabled:opacity-45"
+            className="inline-flex min-h-11 shrink-0 items-center rounded-full px-3 text-[13px] font-semibold text-[var(--ink-2)] hover:text-[var(--ink)] disabled:opacity-45"
           >
             {fromSettings ? 'Cancel' : 'Skip for now'}
           </button>

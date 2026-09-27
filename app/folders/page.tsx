@@ -6,7 +6,7 @@ import AppShell from '../components/AppShell';
 import Sheet from '../components/Sheet';
 import { TAP_44 } from '../components/scan/ContactFields';
 import { Button, ButtonLink, Banner } from '../components/ui';
-import { dayHeading } from '@/lib/format';
+import { dayHeading, dayKeyIST } from '@/lib/format';
 import {
   blockedCaptures,
   discardContact,
@@ -545,7 +545,9 @@ function NewFolderSheet({ onClose, onCreated }: { onClose: () => void; onCreated
   const [name, setName] = useState('');
   // Lazy initial value rather than an effect: defaults to today, because a folder gets made on
   // the morning of the event. The component is mounted per-open, so there is nothing to reset.
-  const [eventDate, setEventDate] = useState(() => new Date().toISOString().slice(0, 10));
+  // IST, not `toISOString()`: that is the UTC day, so a folder made between midnight and 05:30
+  // IST - an overnight hackathon, a late meetup - defaulted to YESTERDAY. Observed at 01:56 IST.
+  const [eventDate, setEventDate] = useState(() => dayKeyIST(new Date()));
   const [venue, setVenue] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
