@@ -3,9 +3,17 @@ import Event, { IEvent } from '../models/Event';
 import Source from '../models/Source';
 import { NormalizedEvent } from './normalizer';
 import { resolveCompanies } from '../companies/resolve';
+import {
+  NEAR_TWIN_QUERY_WINDOW_MS,
+  isDateOnlyStart,
+  istDayGap,
+  pickNearTwin,
+  preciseTimingUpgrade,
+} from './core/event-match';
 // The ONE definition of who may see which event, shared with the feed rather than re-stated here.
 // `lib/events/query.ts` imports nothing, so this cannot create a cycle.
 import { visibilityClause } from '../events/query';
+import { Types } from 'mongoose';
 
 export interface IngestionResult {
   total: number;
@@ -134,6 +142,17 @@ function mergeInto(existing: IEvent, incoming: NormalizedEvent): boolean {
   if (existing.createdByUserId) return false;
 
   let changed = false;
+
+  // A date-only start (developers.events: a DATE stored as UTC midnight, shown as "05:30") is
+  // replaced by a precise start from another source on the SAME IST day — never the reverse, and
+  // never across days. The keys are left alone: the IST day is unchanged, so `clusterKey` still
+  // holds, and `dedupHash` is the first sighting's identity, which its next re-scrape must match.
+  const timing = preciseTimingUpgrade(existing, incoming);
+  if (timing) {
+    existing.startDateTime = timing.startDateTime;
+    if (timing.endDateTime) existing.endDateTime = timing.endDateTime;
+    changed = true;
+  }
 
   const fillIfEmpty: Array<keyof NormalizedEvent & keyof IEvent> = [
     'imageUrl', 'venue', 'address', 'area', 'city', 'organizer', 'hostAvatarUrl',
@@ -357,15 +376,45 @@ export async function ingestEvents(events: NormalizedEvent[]): Promise<Ingestion
         if (existing) matchedBy = 'cluster';
       }
 
+      if (!existing) {
+        // The exact key missed. Look for a NEAR twin: same title once the edition year is
+        // ignored, and — only when one side is date-only — up to one IST day apart. The predicate
+        // and every case it must refuse live in `core/event-match.ts` (tests/event-match.test.ts).
+        // Lean + narrow projection first, full document only for the winner: this runs for every
+        // event the corpus has never seen, and a 4-day window holds ~100 Bengaluru rows.
+        const start = +event.startDateTime;
+        const candidates = await Event.find({
+          ...SCRAPED_ONLY,
+          startDateTime: {
+            $gte: new Date(start - NEAR_TWIN_QUERY_WINDOW_MS),
+            $lte: new Date(start + NEAR_TWIN_QUERY_WINDOW_MS),
+          },
+        })
+          .select('_id title startDateTime source city createdByUserId')
+          .lean<Array<{ _id: Types.ObjectId; title: string; startDateTime: Date; source?: string; city?: string; createdByUserId?: string }>>();
+        const twin = pickNearTwin(event, candidates);
+        if (twin) {
+          existing = await Event.findOne({ ...SCRAPED_ONLY, _id: twin._id });
+          if (existing) matchedBy = 'cluster';
+        }
+      }
+
       if (existing) {
         const changed = mergeInto(existing, event);
 
         // A source-id match means the organiser edited the listing; the incoming
         // title/time are authoritative for that platform's own record.
         if (matchedBy === 'sourceId') {
-          if (existing.title !== event.title || +existing.startDateTime !== +event.startDateTime) {
+          // A date-only re-sighting must not undo a precise time a merge already adopted for the
+          // same IST day — that would put "05:30" back on a card that had its real start.
+          const keepsUpgradedTime =
+            isDateOnlyStart(event.source, event.startDateTime) &&
+            !isDateOnlyStart(existing.source, existing.startDateTime) &&
+            istDayGap(existing.startDateTime, event.startDateTime) === 0;
+          const timeMoved = +existing.startDateTime !== +event.startDateTime && !keepsUpgradedTime;
+          if (existing.title !== event.title || timeMoved) {
             existing.title = event.title;
-            existing.startDateTime = event.startDateTime;
+            if (timeMoved) existing.startDateTime = event.startDateTime;
             existing.dedupHash = event.dedupHash;
             existing.clusterKey = event.clusterKey;
             await existing.save();

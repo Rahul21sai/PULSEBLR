@@ -214,6 +214,17 @@ function parseDate(value: unknown): Date | undefined {
   if (/^\d{4}-\d{2}-\d{2}$/.test(text)) {
     return new Date(`${text}T19:00:00+05:30`);
   }
+  // A date-time with NO zone ("2027-04-26 10:00:00", as developersummit.com publishes) is a wall
+  // time, and `new Date()` reads a zoneless wall time in the PROCESS's zone. So the stored instant
+  // depended on the machine: 10:00 IST from a laptop in Bengaluru, 15:30 IST from the UTC GitHub
+  // runner the daily cron uses. Measured on the live GIDS row: 2027-04-26T10:00:00Z, shown as
+  // "15:30". Every event here is in Bengaluru, so the wall time is IST; pin it rather than let the
+  // runner decide. Values carrying `Z` or an offset never match this and are unchanged.
+  const zoneless = /^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?)$/.exec(text);
+  if (zoneless) {
+    const pinned = new Date(`${zoneless[1]}T${zoneless[2]}+05:30`);
+    return Number.isNaN(pinned.getTime()) ? undefined : pinned;
+  }
   const parsed = new Date(text);
   return Number.isNaN(parsed.getTime()) ? undefined : parsed;
 }
