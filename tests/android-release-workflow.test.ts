@@ -47,33 +47,62 @@ function expectWorkflowRejected(filename: string, workflow: string, diagnostic: 
   expect(output).toContain(diagnostic);
 }
 
-function currentReleaseWorkflow(): string {
-  return readFileSync(path.join(root, '.github', 'workflows', 'android-release.yml'), 'utf8');
+/**
+ * Every mutation snippet in this file is LF, and so is the workflow GitHub actually parses:
+ * git stores these files LF (`git ls-files --eol` reports `i/lf`). A Windows checkout under
+ * `core.autocrlf=true` writes them to disk as CRLF (`w/crlf`), and a snippet spanning a line
+ * break then cannot match. That broke two tests at once, differently: `mutate()` failed its
+ * `toContain` on the signing-secret test, while `missingOriginalDigestViolation` (which then
+ * returned its input when the snippet was absent) handed the validator an unmutated workflow
+ * and failed as a baffling "validation: PASS". Normalise where workflow text enters, so
+ * every checkout tests the bytes GitHub sees.
+ */
+function readWorkflowText(file: string): string {
+  return readFileSync(file, 'utf8').replace(/\r\n/g, '\n');
 }
 
+function currentReleaseWorkflow(): string {
+  return readWorkflowText(path.join(root, '.github', 'workflows', 'android-release.yml'));
+}
+
+function occurrences(source: string, snippet: string): number {
+  return source.split(snippet).length - 1;
+}
+
+function indexOfOnly(source: string, marker: string): number {
+  expect(occurrences(source, marker), `marker must occur exactly once: ${JSON.stringify(marker)}`).toBe(1);
+  return source.indexOf(marker);
+}
+
+/**
+ * Apply one mutation and prove it landed where it was aimed. A snippet that has drifted from
+ * the workflow must fail HERE, naming the snippet, instead of passing the validator an
+ * unmutated workflow — so no helper may fall back to returning its input. A snippet must also
+ * name exactly ONE place, or the mutation silently lands on whichever occurrence comes first.
+ * Spliced by index rather than `String#replace`, which would expand `$&`, `$'` and friends in
+ * a replacement written as shell text.
+ */
 function mutate(source: string, before: string, after: string): string {
+  expect(source.includes('\r'), 'mutate() needs LF text: read workflows through readWorkflowText()').toBe(false);
   expect(source).toContain(before);
-  return source.replace(before, after);
+  expect(after, 'a mutation must change the workflow').not.toBe(before);
+  const index = indexOfOnly(source, before);
+  return `${source.slice(0, index)}${after}${source.slice(index + before.length)}`;
 }
 
 function mutateSignedManifestValidation(source: string, before: string, after: string): string {
-  const marker = '      - name: Validate signed release AAB';
-  const markerIndex = source.indexOf(marker);
-  expect(markerIndex).toBeGreaterThanOrEqual(0);
-  const prefix = source.slice(0, markerIndex);
-  return `${prefix}${mutate(source.slice(markerIndex), before, after)}`;
+  const markerIndex = indexOfOnly(source, '      - name: Validate signed release AAB');
+  return `${source.slice(0, markerIndex)}${mutate(source.slice(markerIndex), before, after)}`;
 }
 
 function mutateJob(source: string, start: string, end: string, before: string, after: string): string {
-  const startIndex = source.indexOf(start);
-  const endIndex = source.indexOf(end, startIndex + start.length);
-  expect(startIndex).toBeGreaterThanOrEqual(0);
+  const startIndex = indexOfOnly(source, start);
+  const endIndex = indexOfOnly(source, end);
   expect(endIndex).toBeGreaterThan(startIndex);
   return `${source.slice(0, startIndex)}${mutate(source.slice(startIndex, endIndex), before, after)}${source.slice(endIndex)}`;
 }
 
 function parserRepublishViolation(source: string): string {
-  if (source.includes('      - name: Upload verified unsigned release AAB')) return source;
   return mutate(source, '\n  signed-aab:', `
       - name: Upload parser-rewritten unsigned AAB
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -85,15 +114,18 @@ function parserRepublishViolation(source: string): string {
 }
 
 function missingOriginalDigestViolation(source: string): string {
-  const protectedPair = `          path: |
+  return mutateJob(
+    source,
+    '  unsigned-aab:',
+    '  verify-unsigned-aab:',
+    `          path: |
             \${{ runner.temp }}/app-release-unsigned.aab
-            \${{ runner.temp }}/app-release-unsigned.aab.sha256`;
-  if (!source.includes(protectedPair)) return source;
-  return mutate(source, protectedPair, '          path: ${{ runner.temp }}/app-release-unsigned.aab');
+            \${{ runner.temp }}/app-release-unsigned.aab.sha256`,
+    '          path: ${{ runner.temp }}/app-release-unsigned.aab',
+  );
 }
 
 function substitutedSignerArtifactViolation(source: string): string {
-  if (source.includes('name: android-release-verified-unsigned-aab-${{ inputs.version_code }}')) return source;
   return mutateJob(
     source,
     '  signed-aab:',
@@ -104,24 +136,27 @@ function substitutedSignerArtifactViolation(source: string): string {
 }
 
 function missingSelectedAliasFingerprintViolation(source: string): string {
-  const comparison = '[[ "$actual_upload_sha256" == "$expected_upload_sha256" ]] || { echo \'selected upload certificate does not match ANDROID_UPLOAD_SHA256\' >&2; exit 1; }';
-  return source.includes(comparison)
-    ? mutate(source, comparison, '[[ -n "$actual_upload_sha256" ]]')
-    : source;
+  return mutate(
+    source,
+    '[[ "$actual_upload_sha256" == "$expected_upload_sha256" ]] || { echo \'selected upload certificate does not match ANDROID_UPLOAD_SHA256\' >&2; exit 1; }',
+    '[[ -n "$actual_upload_sha256" ]]',
+  );
 }
 
 function missingFinalSignerFingerprintViolation(source: string): string {
-  const comparison = '[[ "$signed_aab_sha256" == "$expected_upload_sha256" ]] || { echo \'signed AAB certificate does not match ANDROID_UPLOAD_SHA256\' >&2; exit 1; }';
-  return source.includes(comparison)
-    ? mutate(source, comparison, '[[ -n "$signed_aab_sha256" ]]')
-    : source;
+  return mutate(
+    source,
+    '[[ "$signed_aab_sha256" == "$expected_upload_sha256" ]] || { echo \'signed AAB certificate does not match ANDROID_UPLOAD_SHA256\' >&2; exit 1; }',
+    '[[ -n "$signed_aab_sha256" ]]',
+  );
 }
 
 function missingExpectedReleaseViolation(source: string): string {
-  const binding = 'PULSEBLR_EXPECTED_RELEASE_COMMIT_SHA: ${{ inputs.expected_release_commit_sha }}';
-  return source.includes(binding)
-    ? mutate(source, binding, "PULSEBLR_EXPECTED_RELEASE_COMMIT_SHA: '0000000000000000000000000000000000000000'")
-    : source;
+  return mutate(
+    source,
+    'PULSEBLR_EXPECTED_RELEASE_COMMIT_SHA: ${{ inputs.expected_release_commit_sha }}',
+    "PULSEBLR_EXPECTED_RELEASE_COMMIT_SHA: '0000000000000000000000000000000000000000'",
+  );
 }
 
 afterEach(() => {
@@ -161,10 +196,8 @@ describe('Android protected release workflow boundary', () => {
   });
 
   it('validates action SHA pins in every workflow, including normal CI and scheduled jobs', () => {
-    const ci = readFileSync(path.join(root, '.github', 'workflows', 'ci.yml'), 'utf8');
-    const unpinned = ci.includes('actions/checkout@v4')
-      ? ci
-      : mutate(ci, 'actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683', 'actions/checkout@v4');
+    const ci = readWorkflowText(path.join(root, '.github', 'workflows', 'ci.yml'));
+    const unpinned = mutate(ci, 'actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683', 'actions/checkout@v4');
     expectWorkflowRejected('ci.yml', unpinned, 'ci.yml:verify:actions/checkout@v4 must use a full 40-character action SHA pin');
   });
 
@@ -181,8 +214,10 @@ describe('Android protected release workflow boundary', () => {
 
   it('rejects a signing secret expression outside the one secret-bearing step env', () => {
     expectRejected(
-      mutate(
+      mutateJob(
         currentReleaseWorkflow(),
+        '  signed-aab:',
+        '  verify-signed-aab:',
         '          if-no-files-found: error\n          path: ${{ runner.temp }}/app-release-signed.aab',
         '          if-no-files-found: error\n          retention-days: ${{ secrets.ANDROID_UPLOAD_KEY_PASSWORD }}\n          path: ${{ runner.temp }}/app-release-signed.aab',
       ),
@@ -240,7 +275,7 @@ describe('Android protected release workflow boundary', () => {
 
   it('rejects a version validator with a reduced release-code bound', () => {
     expectRejected(
-      mutate(currentReleaseWorkflow(), 'max_version_code=2100000000', 'max_version_code=210000000'),
+      mutateJob(currentReleaseWorkflow(), '  unsigned-aab:', '  verify-unsigned-aab:', 'max_version_code=2100000000', 'max_version_code=210000000'),
       'every version-code validation step must enforce integer range 1..2100000000',
     );
   });

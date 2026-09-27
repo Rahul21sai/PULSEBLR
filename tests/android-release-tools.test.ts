@@ -1,28 +1,51 @@
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { copyFileSync, existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { preflightProductionOrigin } from '../scripts/android-preflight';
 import {
+  LOCAL_DEBUG_FLAG,
+  assertLocalDebugAllowed,
+  changedJsonPaths,
+  localDebugTwaManifest,
+  parseGenerateArgs,
   postprocessGeneratedProject,
   renderShortcutUrlResources,
   runBubblewrapUpdate,
+  runLocalDebugGeneration,
+  startLocalAssetServer,
 } from '../scripts/android-generate';
-import { runGradle } from '../scripts/android-gradle.mjs';
+import {
+  LOCAL_DEBUG_MARKER as GRADLE_LOCAL_DEBUG_MARKER,
+  gradleMemoryArgs,
+  runGradle,
+} from '../scripts/android-gradle.mjs';
 import {
   checkAndroidToolchain,
   validateAndroidSdk,
   validateJavaVersion,
 } from '../scripts/android-toolchain';
 import {
+  BUBBLEWRAP_ASSETS,
+  BUBBLEWRAP_ICON_RENDERS,
+  GRADLE_DISTRIBUTION_SHA256,
+  LOCAL_DEBUG_MARKER,
+  RELEASE_CONTEXT_VARIABLES,
+  expectedEmbeddedWebManifest,
   parseAndroidVerifyArgs,
   parseGeneratedProject,
+  releaseContextReasons,
+  stripGradleComments,
   verifyAab,
+  verifyGeneratedIcons,
   verifyGeneratedProject,
+  verifyOriginAssets,
 } from '../scripts/android-verify';
 
 const root = path.resolve(import.meta.dirname, '..');
+const template = path.join(root, 'node_modules', '@bubblewrap', 'core', 'template_project');
 const temporaryDirectories: string[] = [];
 
 function temporaryDirectory(): string {
@@ -35,22 +58,53 @@ function readJson(file: string): Record<string, unknown> {
   return JSON.parse(readFileSync(path.join(root, file), 'utf8')) as Record<string, unknown>;
 }
 
-function writeGeneratedProject(projectRoot: string): void {
+const productionWebManifestResValue = `resValue "string", "webManifestUrl", 'https://pulseblr-u9f1.vercel.app/manifest.json'`;
+
+/** The checked-in inputs a generated project is compared against: public/manifest.json and twa-manifest.json. */
+function writeRepositoryInputs(repositoryRoot: string): string {
+  const androidRoot = path.join(repositoryRoot, 'android');
+  mkdirSync(path.join(repositoryRoot, 'public'), { recursive: true });
+  mkdirSync(androidRoot, { recursive: true });
+  for (const asset of BUBBLEWRAP_ASSETS) copyFileSync(path.join(root, asset.file), path.join(repositoryRoot, asset.file));
+  copyFileSync(path.join(root, 'android', 'twa-manifest.json'), path.join(androidRoot, 'twa-manifest.json'));
+  return androidRoot;
+}
+
+/**
+ * A minimal project in the shape the postprocess LEAVES: build-tools pinned, jcenter gone, the
+ * Gradle checksum present, the real template wrapper jar, the production webManifestUrl and a
+ * byte-exact embedded web manifest. Returns the android/ directory.
+ */
+function writeGeneratedProject(repositoryRoot: string): string {
+  const projectRoot = writeRepositoryInputs(repositoryRoot);
   const resourceRoot = path.join(projectRoot, 'app', 'src', 'main', 'res');
   mkdirSync(path.join(resourceRoot, 'xml'), { recursive: true });
   mkdirSync(path.join(resourceRoot, 'values'), { recursive: true });
+  mkdirSync(path.join(resourceRoot, 'raw'), { recursive: true });
+  mkdirSync(path.join(projectRoot, 'gradle', 'wrapper'), { recursive: true });
   writeFileSync(path.join(projectRoot, 'app', 'build.gradle'), `
     android {
       compileSdkVersion 36
+      buildToolsVersion "36.0.0"
       defaultConfig {
         applicationId "app.pulseblr.twa"
         minSdkVersion 21
         targetSdkVersion 36
         versionCode 1
         versionName "1"
+        ${productionWebManifestResValue}
       }
     }
   `);
+  writeFileSync(path.join(projectRoot, 'build.gradle'), 'buildscript { repositories { google()\n mavenCentral() } }\nallprojects { repositories { google()\n mavenCentral() } }\n');
+  writeFileSync(path.join(projectRoot, 'gradle', 'wrapper', 'gradle-wrapper.properties'), [
+    'distributionBase=GRADLE_USER_HOME',
+    'distributionUrl=https\\://services.gradle.org/distributions/gradle-8.11.1-bin.zip',
+    `distributionSha256Sum=${GRADLE_DISTRIBUTION_SHA256}`,
+    '',
+  ].join('\n'));
+  copyFileSync(path.join(template, 'gradle', 'wrapper', 'gradle-wrapper.jar'), path.join(projectRoot, 'gradle', 'wrapper', 'gradle-wrapper.jar'));
+  writeFileSync(path.join(resourceRoot, 'raw', 'web_app_manifest.json'), expectedEmbeddedWebManifest(repositoryRoot, '/'));
   writeFileSync(path.join(resourceRoot, 'values', 'strings.xml'), `
     <resources>
       <string name="shortcut_scan_url">https://pulseblr-u9f1.vercel.app/scan</string>
@@ -69,16 +123,26 @@ function writeGeneratedProject(projectRoot: string): void {
       <shortcut android:shortcutId="calendar"><intent android:data="@string/shortcut_calendar_url"/></shortcut>
     </shortcuts>
   `);
+  return projectRoot;
 }
 
-function writeBubblewrapGeneratedRepository(repositoryRoot: string): string {
-  const androidRoot = path.join(repositoryRoot, 'android');
+/**
+ * The shape Bubblewrap 1.25.0 leaves BEFORE the postprocess. The top-level build.gradle and the
+ * gradle/wrapper files are copied from the real pinned template, so the jcenter/checksum pins are
+ * tested against upstream's actual bytes rather than a hand-written approximation.
+ */
+function writeBubblewrapGeneratedRepository(repositoryRoot: string, webManifestResValue = productionWebManifestResValue): string {
+  const androidRoot = writeRepositoryInputs(repositoryRoot);
   const resourceRoot = path.join(androidRoot, 'app', 'src', 'main', 'res');
-  mkdirSync(path.join(repositoryRoot, 'public'), { recursive: true });
   mkdirSync(path.join(resourceRoot, 'xml'), { recursive: true });
   mkdirSync(path.join(resourceRoot, 'values'), { recursive: true });
-  writeFileSync(path.join(repositoryRoot, 'public', 'manifest.json'), readFileSync(path.join(root, 'public', 'manifest.json')));
-  writeFileSync(path.join(androidRoot, 'twa-manifest.json'), readFileSync(path.join(root, 'android', 'twa-manifest.json')));
+  mkdirSync(path.join(resourceRoot, 'raw'), { recursive: true });
+  mkdirSync(path.join(androidRoot, 'gradle', 'wrapper'), { recursive: true });
+  copyFileSync(path.join(template, 'build.gradle'), path.join(androidRoot, 'build.gradle'));
+  for (const file of ['gradle-wrapper.properties', 'gradle-wrapper.jar']) {
+    copyFileSync(path.join(template, 'gradle', 'wrapper', file), path.join(androidRoot, 'gradle', 'wrapper', file));
+  }
+  writeFileSync(path.join(resourceRoot, 'raw', 'web_app_manifest.json'), expectedEmbeddedWebManifest(repositoryRoot, '/'));
   writeFileSync(path.join(androidRoot, 'app', 'build.gradle'), `
 import groovy.xml.MarkupBuilder
 
@@ -90,6 +154,7 @@ android {
         targetSdkVersion 36
         versionCode 1
         versionName "1"
+        ${webManifestResValue}
     }
 }
 
@@ -280,8 +345,7 @@ describe('Android production-origin preflight', () => {
 
 describe('generated Android project verification', () => {
   it('parses Gradle metadata and resolves shortcut URLs from string resources', () => {
-    const projectRoot = temporaryDirectory();
-    writeGeneratedProject(projectRoot);
+    const projectRoot = writeGeneratedProject(temporaryDirectory());
 
     expect(parseGeneratedProject(projectRoot)).toEqual({
       applicationId: 'app.pulseblr.twa',
@@ -351,20 +415,18 @@ describe('generated Android project verification', () => {
   });
 
   it('rejects direct or unresolved shortcut URLs instead of trusting IDs and counts', () => {
-    const projectRoot = temporaryDirectory();
-    writeGeneratedProject(projectRoot);
+    const projectRoot = writeGeneratedProject(temporaryDirectory());
     const shortcutsFile = path.join(projectRoot, 'app', 'src', 'main', 'res', 'xml', 'shortcuts.xml');
     writeFileSync(shortcutsFile, readFileSync(shortcutsFile, 'utf8').replace('@string/shortcut_scan_url', 'https://pulseblr-u9f1.vercel.app/scan'));
     expect(() => parseGeneratedProject(projectRoot)).toThrow(/@string|resource/i);
 
-    writeGeneratedProject(projectRoot);
+    writeGeneratedProject(path.dirname(projectRoot));
     writeFileSync(shortcutsFile, readFileSync(shortcutsFile, 'utf8').replace('@string/shortcut_scan_url', '@string/missing_url'));
     expect(() => parseGeneratedProject(projectRoot)).toThrow(/missing_url|resource/i);
   });
 
   it('requires the checked generated project to remain at initial version 1 and SDK 36', () => {
-    const projectRoot = temporaryDirectory();
-    writeGeneratedProject(projectRoot);
+    const projectRoot = writeGeneratedProject(temporaryDirectory());
     expect(verifyGeneratedProject(projectRoot)).toEqual(expect.objectContaining({ versionCode: 1, targetSdk: 36 }));
 
     const gradleFile = path.join(projectRoot, 'app', 'build.gradle');
@@ -373,8 +435,7 @@ describe('generated Android project verification', () => {
   });
 
   it('rejects duplicate Gradle assignments that could override verified metadata later', () => {
-    const projectRoot = temporaryDirectory();
-    writeGeneratedProject(projectRoot);
+    const projectRoot = writeGeneratedProject(temporaryDirectory());
     const gradleFile = path.join(projectRoot, 'app', 'build.gradle');
     writeFileSync(gradleFile, `${readFileSync(gradleFile, 'utf8')}\nandroid.defaultConfig.targetSdkVersion 35\n`);
 
@@ -384,11 +445,43 @@ describe('generated Android project verification', () => {
 
 describe('Android App Bundle verification', () => {
   const validManifestDump = `
-    <manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    <manifest xmlns:android="http://schemas.android.com/apk/res/android" android:compileSdkVersion="36"
       package="app.pulseblr.twa" android:versionCode="42" android:versionName="2.0.0">
       <uses-sdk android:minSdkVersion="21" android:targetSdkVersion="36"/>
+      <application android:label="@string/appName"/>
     </manifest>
   `;
+  const debuggableManifestDump = validManifestDump.replace('<application ', '<application android:debuggable="true" ');
+  const origin = 'https://pulseblr-u9f1.vercel.app';
+  /** Shaped like `bundletool dump resources --values` output measured on the real debug bundle. */
+  function resourceDump(overrides: Record<string, string> = {}, extraNames: string[] = []): string {
+    const strings: Record<string, string> = {
+      hostName: 'pulseblr-u9f1.vercel.app',
+      launchUrl: `${origin}/`,
+      webManifestUrl: `${origin}/manifest.json`,
+      shortcut_url_0: `${origin}/scan`,
+      shortcut_url_1: `${origin}/card`,
+      shortcut_url_2: `${origin}/`,
+      shortcut_url_3: `${origin}/tracker`,
+      shortcut_url_4: `${origin}/calendar`,
+      ...overrides,
+    };
+    const lines = ['Package \'app.pulseblr.twa\':'];
+    let id = 0x7f0f0000;
+    for (const [name, value] of Object.entries(strings)) {
+      lines.push(`0x${(id++).toString(16)} - string/${name}`, `\t(default) - [STR] "${value}"`);
+    }
+    for (const name of ['mipmap/ic_launcher', 'mipmap/ic_maskable', 'drawable/splash', 'drawable/ic_notification_icon',
+      'drawable/shortcut_0', 'drawable/shortcut_1', 'drawable/shortcut_2', 'drawable/shortcut_3', 'drawable/shortcut_4', ...extraNames]) {
+      lines.push(`0x${(id++).toString(16)} - ${name}`, '\t(default) - [FILE] res/x.png');
+    }
+    return lines.join('\n');
+  }
+  const bundleCommand = (manifest: string, resources = resourceDump()) => (args: readonly string[]) => {
+    if (args.includes('resources')) return { status: 0, stdout: resources, stderr: '' };
+    if (args.includes('dump')) return { status: 0, stdout: manifest, stderr: '' };
+    return undefined;
+  };
 
   function createBundleInputs(): { aab: string; bundletoolJar: string; javaHome: string } {
     const directory = temporaryDirectory();
@@ -437,8 +530,7 @@ describe('Android App Bundle verification', () => {
         commands.push({ command, args });
         if (args[0] === '-version') return { status: 0, stdout: '', stderr: 'openjdk version "17.0.11"' };
         if (args.includes('validate')) return { status: 0, stdout: '', stderr: '' };
-        if (args.includes('dump')) return { status: 0, stdout: validManifestDump, stderr: '' };
-        return { status: 0, stdout: 'jar verified.', stderr: '' };
+        return bundleCommand(validManifestDump)(args) ?? { status: 0, stdout: 'jar verified.', stderr: '' };
       },
     });
 
@@ -448,6 +540,11 @@ describe('Android App Bundle verification', () => {
       versionName: '2.0.0',
       minSdk: 21,
       targetSdk: 36,
+      compileSdk: 36,
+      hostName: 'pulseblr-u9f1.vercel.app',
+      shortcutUrls: [`${origin}/scan`, `${origin}/card`, `${origin}/`, `${origin}/tracker`, `${origin}/calendar`],
+      debuggable: false,
+      signed: true,
     });
     const java = path.join(javaHome, 'bin', 'java');
     const jarsigner = path.join(javaHome, 'bin', 'jarsigner');
@@ -455,6 +552,7 @@ describe('Android App Bundle verification', () => {
       { command: java, args: ['-version'] },
       { command: java, args: ['-jar', bundletoolJar, 'validate', `--bundle=${aab}`] },
       { command: java, args: ['-jar', bundletoolJar, 'dump', 'manifest', `--bundle=${aab}`, '--module=base'] },
+      { command: java, args: ['-jar', bundletoolJar, 'dump', 'resources', `--bundle=${aab}`, '--values'] },
       { command: jarsigner, args: ['-verify', '-verbose', '-certs', '-strict', aab] },
     ]);
   });
@@ -472,8 +570,7 @@ describe('Android App Bundle verification', () => {
       run: (_command, args) => {
         if (args[0] === '-version') return { status: 0, stdout: '', stderr: 'openjdk version "17.0.11"' };
         if (args.includes('validate')) return { status: 0, stdout: '', stderr: '' };
-        if (args.includes('dump')) return { status: 0, stdout: validManifestDump, stderr: '' };
-        return {
+        return bundleCommand(validManifestDump)(args) ?? {
           status: 24,
           stdout: 'jar verified, with signer errors.\nThis jar contains entries whose certificate chain is invalid.\nThis jar contains entries whose signer certificate is self-signed.',
           stderr: '',
@@ -520,10 +617,64 @@ describe('Android App Bundle verification', () => {
       run: (_command, args) => {
         if (args[0] === '-version') return { status: 0, stdout: '', stderr: 'openjdk version "17.0.11"' };
         if (args.includes('validate')) return { status: fixture.validateStatus, stdout: '', stderr: '' };
-        if (args.includes('dump')) return { status: 0, stdout: fixture.dump, stderr: '' };
-        return { status: fixture.signerStatus, stdout: fixture.signer, stderr: '' };
+        return bundleCommand(fixture.dump)(args) ?? { status: fixture.signerStatus, stdout: fixture.signer, stderr: '' };
       },
     })).toThrow(message);
+  });
+
+  // jarsigner -verbose output for the real AGP 8.9.1 app-debug.aab, measured 2026-09-27.
+  const measuredUnsignedOutput = [
+    '  s = signature was verified ',
+    '  m = entry is listed in manifest',
+    '  k = at least one certificate was found in keystore',
+    '',
+    'no manifest.',
+    '',
+    'jar is unsigned.',
+  ].join('\n');
+
+  function verifyWith(options: { manifest?: string; resources?: string; signer?: { status: number; stdout: string }; allowUnsignedDebug?: boolean }) {
+    const { aab, bundletoolJar, javaHome } = createBundleInputs();
+    return verifyAab(aab, {
+      bundletoolJar,
+      javaHome,
+      platform: 'linux',
+      fileExists: () => true,
+      expectedVersionCode: 42,
+      expectedVersionName: '2.0.0',
+      allowUnsignedDebug: options.allowUnsignedDebug,
+      hashFile: () => 'a099cfa1543f55593bc2ed16a70a7c67fe54b1747bb7301f37fdfd6d91028e29',
+      run: (_command, args) => {
+        if (args[0] === '-version') return { status: 0, stdout: '', stderr: 'openjdk version "17.0.11"' };
+        if (args.includes('validate')) return { status: 0, stdout: '', stderr: '' };
+        return bundleCommand(options.manifest ?? validManifestDump, options.resources ?? resourceDump())(args) ??
+          { ...(options.signer ?? { status: 0, stdout: 'jar verified.' }), stderr: '' };
+      },
+    });
+  }
+
+  it('accepts the measured unsigned debug bundle only with --unsigned-debug and only when debuggable', () => {
+    const unsigned = { status: 0, stdout: measuredUnsignedOutput };
+    expect(verifyWith({ manifest: debuggableManifestDump, signer: unsigned, allowUnsignedDebug: true }))
+      .toEqual(expect.objectContaining({ debuggable: true, signed: false }));
+    expect(() => verifyWith({ manifest: debuggableManifestDump, signer: unsigned })).toThrow(/signature|unsigned/i);
+    expect(() => verifyWith({ manifest: validManifestDump, signer: unsigned, allowUnsignedDebug: true })).toThrow(/debuggable/);
+    expect(() => verifyWith({ manifest: debuggableManifestDump, signer: { status: 0, stdout: 'jar verified.' }, allowUnsignedDebug: true })).toThrow(/wholly unsigned/);
+  });
+
+  it.each([
+    ['a loopback webManifestUrl', resourceDump({ webManifestUrl: 'http://127.0.0.1:5555/manifest.json' }), /webManifestUrl/],
+    ['a different host', resourceDump({ hostName: 'evil.example' }), /hostName/],
+    ['a shortcut on another path', resourceDump({ shortcut_url_0: `${origin}/other` }), /shortcut_url_0/],
+    ['a sixth shortcut', resourceDump({ shortcut_url_5: `${origin}/extra` }), /exactly 5/],
+    ['loopback anywhere in resources', resourceDump({ appName: 'see http://localhost:1' }), /loopback/],
+    ['a missing icon family', resourceDump().replace('drawable/ic_notification_icon', 'drawable/other'), /ic_notification_icon/],
+  ])('fails the bundle on %s', (_label, resources, message) => {
+    expect(() => verifyWith({ resources })).toThrow(message);
+  });
+
+  it('fails the bundle on a compileSdk other than 36', () => {
+    expect(() => verifyWith({ manifest: validManifestDump.replace('compileSdkVersion="36"', 'compileSdkVersion="35"') })).toThrow(/compileSdk/);
   });
 });
 
@@ -536,6 +687,9 @@ describe('Android verification CLI grammar', () => {
       aabPath: 'app.aab',
       expectedVersionCode: 42,
     });
+    expect(parseAndroidVerifyArgs(['--aab', 'app.aab', '--unsigned-debug'])).toEqual({ mode: 'aab', aabPath: 'app.aab', unsignedDebug: true });
+    expect(() => parseAndroidVerifyArgs(['--aab', 'app.aab', '--unsigned'])).toThrow(/argument|usage/i);
+    expect(() => parseAndroidVerifyArgs(['--aab', 'app.aab', '--unsigned-debug', '--expected-version-code'])).toThrow(/argument|usage|positive/i);
   });
 
   it.each([
@@ -617,6 +771,20 @@ describe('deterministic Android command wrappers', () => {
     expect(processStarted).toBe(false);
   });
 
+  // A ceiling for a hang, not a performance claim. Measured 2026-09-27 on the Windows dev
+  // machine (Defender real-time scanning, other dev servers and tsc running): `require()` of
+  // Cli.js loads 1,628 modules / 23.9 MB even for `help`, because every command module and
+  // @bubblewrap/core are imported eagerly. That took 5.2-6.7 s once those files had been read
+  // recently, but 57 s, 88 s and 117 s for the first process to read them after a pause;
+  // `Cli.run(['help', ...])` itself took 8-12 ms every time. The previous 45 s budget sat below
+  // the cold figure, so spawnSync killed the child mid-require() and the test reported
+  // "expected null to be +0", which reads as a behaviour change and was not one. Nothing below
+  // is relaxed: prompting, downloading and config fallback are asserted on the output and the
+  // filesystem, and a genuine hang still fails at this ceiling. The vitest timeout must sit
+  // ABOVE it: vitest fails a synchronous test that returns late, so a slow success would
+  // otherwise surface as a generic timeout instead of the spawn diagnostics.
+  const REAL_CLI_BUDGET_MS = 240_000;
+
   it('loads the real pinned CLI from an explicit config under a fresh home without prompting or downloading', () => {
     const freshHome = temporaryDirectory();
     const configPath = path.join(freshHome, 'bubblewrap-config.json');
@@ -636,7 +804,7 @@ describe('deterministic Android command wrappers', () => {
       cwd: freshHome,
       encoding: 'utf8',
       input: '',
-      timeout: 45_000,
+      timeout: REAL_CLI_BUDGET_MS,
       env: {
         ...process.env,
         HOME: freshHome,
@@ -646,12 +814,13 @@ describe('deterministic Android command wrappers', () => {
     });
     const output = `${result.stdout}${result.stderr}`;
 
+    expect(result.error, `real Bubblewrap CLI spawn failed or exceeded the ${REAL_CLI_BUDGET_MS} ms budget (signal ${result.signal})\n${output}`).toBeUndefined();
     expect(result.status, output).toBe(0);
     expect(output).toMatch(/bubblewrap \[command\]/i);
     expect(output).not.toMatch(/download|install.*JDK|install.*Android SDK|terms.*conditions|\?\s*$/i);
     expect(readFileSync(configPath, 'utf8')).toBe(config);
     expect(existsSync(path.join(freshHome, '.bubblewrap'))).toBe(false);
-  }, 60_000);
+  }, REAL_CLI_BUDGET_MS + 30_000);
 
   it('propagates Bubblewrap launch and command failures without falling back to a mutable executable', () => {
     let postprocessCalls = 0;
@@ -713,9 +882,13 @@ describe('deterministic Android command wrappers', () => {
         return { status: 0 };
       },
     })).toBe(0);
+    const jvmArgs = '-Dorg.gradle.jvmargs=-Xmx1024m -XX:MaxMetaspaceSize=512m';
     expect(calls).toEqual([{
-      command: wrapper,
-      args: ['--no-daemon', 'bundleRelease'],
+      // Absolute and quoted on Windows: cmd.exe skips the working directory when
+      // NoDefaultCurrentDirectoryInExePath=1, which is set on the development machine.
+      command: shell ? `"${path.join(repositoryRoot, 'android', wrapper)}"` : wrapper,
+      // The .bat wrapper goes through a shell, so the one space-bearing argument is quoted there.
+      args: ['--no-daemon', shell ? `"${jvmArgs}"` : jvmArgs, '-Dorg.gradle.workers.max=2', 'bundleRelease'],
       options: {
         cwd: path.join(repositoryRoot, 'android'),
         env: { PATH: 'controlled' },
@@ -839,5 +1012,307 @@ describe('Bubblewrap five-shortcut compatibility postprocessor', () => {
     expect(renderShortcutUrlResources(['https://example.test/<scan>?a=1&b="two"'])).toContain(
       'https://example.test/&lt;scan&gt;?a=1&amp;b=&quot;two&quot;',
     );
+  });
+
+  it('pins the Gradle checksum, replaces both jcenter() repositories and pins build-tools 36.0.0', () => {
+    const repositoryRoot = temporaryDirectory();
+    const androidRoot = writeBubblewrapGeneratedRepository(repositoryRoot);
+    postprocessGeneratedProject(repositoryRoot);
+    const wrapper = readFileSync(path.join(androidRoot, 'gradle', 'wrapper', 'gradle-wrapper.properties'), 'utf8');
+    expect(wrapper).toContain(`distributionSha256Sum=${GRADLE_DISTRIBUTION_SHA256}`);
+    expect(readFileSync(path.join(androidRoot, 'build.gradle'), 'utf8')).not.toMatch(/jcenter\(\)/);
+    expect(readFileSync(path.join(androidRoot, 'app', 'build.gradle'), 'utf8')).toContain('buildToolsVersion "36.0.0"');
+  });
+
+  it('restores the embedded webManifestUrl from the local-debug origin to production', () => {
+    const repositoryRoot = temporaryDirectory();
+    const origin = 'http://127.0.0.1:43210';
+    const androidRoot = writeBubblewrapGeneratedRepository(
+      repositoryRoot,
+      `resValue "string", "webManifestUrl", '${origin}/manifest.json'`,
+    );
+    postprocessGeneratedProject(repositoryRoot, { localDebugAssetOrigin: origin });
+    expect(readFileSync(path.join(androidRoot, 'app', 'build.gradle'), 'utf8')).toContain(productionWebManifestResValue);
+    expect(verifyGeneratedProject(androidRoot, { env: {} }).buildMode).toBe('deployed-origin');
+  });
+
+  it('rejects template drift in the jcenter count before writing anything', () => {
+    const repositoryRoot = temporaryDirectory();
+    const androidRoot = writeBubblewrapGeneratedRepository(repositoryRoot);
+    const rootGradle = path.join(androidRoot, 'build.gradle');
+    writeFileSync(rootGradle, readFileSync(rootGradle, 'utf8').replace('jcenter()', 'mavenCentral()'));
+    const appGradle = path.join(androidRoot, 'app', 'build.gradle');
+    const before = readFileSync(appGradle, 'utf8');
+    expect(() => postprocessGeneratedProject(repositoryRoot)).toThrow(/jcenter/);
+    expect(readFileSync(appGradle, 'utf8')).toBe(before);
+  });
+});
+
+describe('local-debug generation', () => {
+  it('parses only the documented generation flags', () => {
+    expect(parseGenerateArgs([])).toEqual({ mode: 'deployed-origin' });
+    expect(parseGenerateArgs([LOCAL_DEBUG_FLAG])).toEqual({ mode: 'local-debug' });
+    expect(() => parseGenerateArgs(['--local'])).toThrow(/usage/i);
+    expect(() => parseGenerateArgs([LOCAL_DEBUG_FLAG, 'extra'])).toThrow(/usage/i);
+  });
+
+  it.each([
+    ['GitHub Actions', { GITHUB_ACTIONS: 'true' }],
+    ['CI', { CI: 'true' }],
+    ['lower-case Windows env name', { ci: '1' }],
+    ...RELEASE_CONTEXT_VARIABLES.map(name => [`${name} (even empty)`, { [name]: '' }] as [string, Record<string, string>]),
+  ])('refuses --local-debug in a release context: %s', (_label, env) => {
+    expect(() => assertLocalDebugAllowed(env, '/android', () => [])).toThrow(/Refusing --local-debug/);
+  });
+
+  it('refuses --local-debug when a keystore is present in android/', () => {
+    expect(() => assertLocalDebugAllowed({}, '/android', () => ['twa-manifest.json', 'android.keystore'])).toThrow(/android\.keystore/);
+    expect(() => assertLocalDebugAllowed({ CI: 'false', PATH: 'x' }, '/android', () => ['twa-manifest.json'])).not.toThrow();
+  });
+
+  it('refuses before starting the toolchain check, the server or Bubblewrap', async () => {
+    const repositoryRoot = temporaryDirectory();
+    writeRepositoryInputs(repositoryRoot);
+    let touched = false;
+    await expect(runLocalDebugGeneration({
+      repositoryRoot,
+      env: { ANDROID_UPLOAD_KEYSTORE_PASSWORD: 'x' },
+      validateToolchain: () => { touched = true; throw new Error('unreachable'); },
+      run: async () => { touched = true; return { status: 0 }; },
+    })).rejects.toThrow(/Refusing --local-debug/);
+    expect(touched).toBe(false);
+    expect(existsSync(path.join(repositoryRoot, 'android', LOCAL_DEBUG_MARKER))).toBe(false);
+  });
+
+  it('moves only the asset URL fields to loopback and keeps host, package, start URL and shortcuts', () => {
+    const twa = readJson('android/twa-manifest.json');
+    const local = localDebugTwaManifest(twa, 'http://127.0.0.1:5555');
+    expect(changedJsonPaths(twa, local).sort()).toEqual([
+      'iconUrl', 'maskableIconUrl', 'shortcuts.0.chosenIconUrl', 'shortcuts.1.chosenIconUrl',
+      'shortcuts.2.chosenIconUrl', 'shortcuts.3.chosenIconUrl', 'shortcuts.4.chosenIconUrl', 'webManifestUrl',
+    ]);
+    expect(local.iconUrl).toBe('http://127.0.0.1:5555/icon-512.png');
+    for (const field of ['host', 'packageId', 'startUrl', 'fullScopeUrl', 'shareTarget', 'appVersionCode']) {
+      expect(local[field]).toEqual(twa[field]);
+    }
+    expect((local.shortcuts as Array<{ url: string }>).map(s => s.url)).toEqual((twa.shortcuts as Array<{ url: string }>).map(s => s.url));
+  });
+
+  it('rejects a non-loopback asset origin and asset URLs outside the served table', () => {
+    const twa = readJson('android/twa-manifest.json');
+    expect(() => localDebugTwaManifest(twa, 'http://0.0.0.0:5555')).toThrow(/127\.0\.0\.1/);
+    expect(() => localDebugTwaManifest(twa, 'https://evil.example')).toThrow(/127\.0\.0\.1/);
+    expect(() => localDebugTwaManifest({ ...twa, iconUrl: 'https://pulseblr-u9f1.vercel.app/icon-96.png' }, 'http://127.0.0.1:5555')).toThrow(/served asset/);
+    expect(() => localDebugTwaManifest({ ...twa, iconUrl: 'https://other.example/icon-512.png' }, 'http://127.0.0.1:5555')).toThrow(/served asset/);
+    expect(() => localDebugTwaManifest({ ...twa, monochromeIconUrl: 'https://pulseblr-u9f1.vercel.app/icon-512.png' }, 'http://127.0.0.1:5555')).toThrow(/monochromeIconUrl/);
+  });
+
+  it('serves exactly the checked-in bytes on 127.0.0.1 and records every other request', async () => {
+    const server = await startLocalAssetServer(root);
+    try {
+      expect(server.origin).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/);
+      for (const asset of BUBBLEWRAP_ASSETS) {
+        const response = await fetch(`${server.origin}${asset.route}`);
+        expect(response.status).toBe(200);
+        expect(response.headers.get('content-type')).toBe(asset.contentType);
+        expect(Buffer.from(await response.arrayBuffer()).equals(readFileSync(path.join(root, asset.file)))).toBe(true);
+      }
+      expect((await fetch(`${server.origin}/sw.js`)).status).toBe(404);
+      expect((await fetch(`${server.origin}/icon-512.png?x=1`)).status).toBe(404);
+      expect((await fetch(`${server.origin}/icon-512.png`, { method: 'POST' })).status).toBe(405);
+      expect(server.unexpected).toEqual(['GET /sw.js', 'GET /icon-512.png?x=1', 'POST /icon-512.png']);
+    } finally {
+      await server.close();
+    }
+  });
+
+  const toolchain = {
+    javaHome: '/jdk', sdkRoot: '/sdk', java: '/jdk/bin/java', platform: '/p', buildTools: '/b', platformTools: '/t',
+  };
+
+  async function fakeBubblewrap(args: readonly string[], extraPath?: string, skip?: string): Promise<{ status: number }> {
+    const manifest = JSON.parse(readFileSync(args[args.indexOf('--manifest') + 1], 'utf8')) as Record<string, unknown>;
+    const urls = [manifest.iconUrl, manifest.maskableIconUrl, manifest.webManifestUrl,
+      ...(manifest.shortcuts as Array<{ chosenIconUrl: string }>).map(s => s.chosenIconUrl)] as string[];
+    for (const url of urls.filter(url => !skip || !url.endsWith(skip))) await (await fetch(url)).arrayBuffer();
+    if (extraPath) await (await fetch(new URL(extraPath, String(manifest.iconUrl)))).arrayBuffer();
+    return { status: 0 };
+  }
+
+  it('hands Bubblewrap a temporary manifest, marks the output and passes the loopback origin to the postprocess', async () => {
+    const repositoryRoot = temporaryDirectory();
+    const androidRoot = writeRepositoryInputs(repositoryRoot);
+    const checkedIn = readFileSync(path.join(androidRoot, 'twa-manifest.json'));
+    let postprocessOrigin: string | undefined;
+    let verified = false;
+    expect(await runLocalDebugGeneration({
+      repositoryRoot,
+      env: { PATH: 'x' },
+      validateToolchain: () => toolchain,
+      run: async (_command, args) => {
+        expect(args[args.indexOf('--manifest') + 1]).not.toBe(path.join(androidRoot, 'twa-manifest.json'));
+        expect(existsSync(path.join(androidRoot, LOCAL_DEBUG_MARKER))).toBe(true);
+        return fakeBubblewrap(args);
+      },
+      postprocess: (_root, options) => { postprocessOrigin = options.localDebugAssetOrigin; },
+      verify: () => { verified = true; },
+      log: () => undefined,
+    })).toBe(0);
+    expect(postprocessOrigin).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/);
+    expect(verified).toBe(true);
+    expect(readFileSync(path.join(androidRoot, 'twa-manifest.json')).equals(checkedIn)).toBe(true);
+    expect(JSON.parse(readFileSync(path.join(androidRoot, LOCAL_DEBUG_MARKER), 'utf8'))).toEqual(expect.objectContaining({ mode: 'local-debug', releaseArtifact: false }));
+  });
+
+  it.each([
+    ['an unexpected request', '/sw.js', undefined, /outside the local-debug table/],
+    ['an asset Bubblewrap never fetched', undefined, '/manifest.json', /never fetched/],
+  ])('fails closed on %s', async (_label, extraPath, skip, message) => {
+    const repositoryRoot = temporaryDirectory();
+    writeRepositoryInputs(repositoryRoot);
+    let postprocessed = false;
+    await expect(runLocalDebugGeneration({
+      repositoryRoot,
+      env: {},
+      validateToolchain: () => toolchain,
+      run: async (_command, args) => fakeBubblewrap(args, extraPath, skip),
+      postprocess: () => { postprocessed = true; },
+      verify: () => undefined,
+      log: () => undefined,
+    })).rejects.toThrow(message);
+    expect(postprocessed).toBe(false);
+  });
+});
+
+describe('origin asset bytes before deployed-origin generation', () => {
+  function originFetch(override: (route: string) => Response | undefined = () => undefined, manifestCrlf = false): typeof fetch {
+    return async input => {
+      const route = new URL(String(input)).pathname;
+      const custom = override(route);
+      if (custom) return custom;
+      const asset = BUBBLEWRAP_ASSETS.find(candidate => candidate.route === route);
+      if (!asset) return new Response('', { status: 404 });
+      let bytes = readFileSync(path.join(root, asset.file));
+      if (route === '/manifest.json') {
+        const lf = bytes.toString('utf8').replace(/\r\n/g, '\n');
+        bytes = Buffer.from(manifestCrlf ? lf.replace(/\n/g, '\r\n') : lf);
+      }
+      return new Response(bytes, { status: 200, headers: { 'content-type': asset.contentType } });
+    };
+  }
+
+  it('accepts origin bytes equal to the checked-in files (manifest compared as git stores it, LF)', async () => {
+    expect(await verifyOriginAssets({ repositoryRoot: root, fetchImpl: originFetch() })).toHaveLength(4);
+    expect(await verifyOriginAssets({ repositoryRoot: root, fetchImpl: originFetch(undefined, true) })).toHaveLength(4);
+  });
+
+  it.each([
+    ['a different icon', (route: string) => route === '/icon-192.png' ? new Response(new Uint8Array([137, 80, 78, 71]), { headers: { 'content-type': 'image/png' } }) : undefined, /SHA-256/],
+    ['a stale manifest', (route: string) => route === '/manifest.json' ? new Response('{}', { headers: { 'content-type': 'application/json' } }) : undefined, /SHA-256/],
+    ['a 404 icon (stale deploy)', (route: string) => route === '/icon-512.png' ? new Response('', { status: 404 }) : undefined, /200/],
+    ['a redirect', (route: string) => route === '/icon-maskable-512.png' ? new Response(null, { status: 302, headers: { location: 'https://evil.example/' } }) : undefined, /redirect/],
+    ['an HTML fallback', (route: string) => route === '/icon-512.png' ? new Response('<html>', { headers: { 'content-type': 'text/html' } }) : undefined, /image\/png/],
+  ])('fails closed on %s', async (_label, override, message) => {
+    await expect(verifyOriginAssets({ repositoryRoot: root, fetchImpl: originFetch(override) })).rejects.toThrow(message);
+  });
+});
+
+describe('generated project build integrity and embedded bytes', () => {
+  function mutateFile(file: string, before: string | RegExp, after: string): void {
+    const source = readFileSync(file, 'utf8');
+    const next = source.replace(before, after);
+    expect(next, `mutation did not land in ${file}`).not.toBe(source);
+    writeFileSync(file, next);
+  }
+
+  it.each([
+    ['missing Gradle checksum', 'gradle/wrapper/gradle-wrapper.properties', /distributionSha256Sum=.*\n/, '', /distributionSha256Sum/],
+    ['wrong Gradle checksum', 'gradle/wrapper/gradle-wrapper.properties', GRADLE_DISTRIBUTION_SHA256, '0'.repeat(64), /distributionSha256Sum/],
+    ['another Gradle distribution', 'gradle/wrapper/gradle-wrapper.properties', '8.11.1', '8.12', /distributionUrl/],
+    ['jcenter() still present', 'build.gradle', 'mavenCentral() } }\nallprojects', 'jcenter() } }\nallprojects', /jcenter/],
+    ['unpinned build-tools', 'app/build.gradle', /\s*buildToolsVersion "36\.0\.0"/, '', /buildToolsVersion/],
+    ['other build-tools', 'app/build.gradle', 'buildToolsVersion "36.0.0"', 'buildToolsVersion "35.0.0"', /buildToolsVersion/],
+    ['loopback webManifestUrl', 'app/build.gradle', 'https://pulseblr-u9f1.vercel.app/manifest.json', 'http://127.0.0.1:5555/manifest.json', /webManifestUrl/],
+    ['loopback elsewhere', 'app/src/main/res/values/strings.xml', '</resources>', '<string name="x">http://localhost:1/</string></resources>', /loopback/],
+    ['a stale embedded manifest', 'app/src/main/res/raw/web_app_manifest.json', '#FAF9F5', '#000000', /web_app_manifest/],
+  ])('rejects %s', (_label, file, before, after, message) => {
+    const projectRoot = writeGeneratedProject(temporaryDirectory());
+    expect(verifyGeneratedProject(projectRoot, { env: {} }).buildMode).toBe('deployed-origin');
+    mutateFile(path.join(projectRoot, file), before, after);
+    expect(() => verifyGeneratedProject(projectRoot, { env: {} })).toThrow(message);
+  });
+
+  it('rejects a wrapper jar that is not the pinned official Gradle jar', () => {
+    const projectRoot = writeGeneratedProject(temporaryDirectory());
+    writeFileSync(path.join(projectRoot, 'gradle', 'wrapper', 'gradle-wrapper.jar'), 'not the wrapper');
+    expect(() => verifyGeneratedProject(projectRoot, { env: {} })).toThrow(/wrapper jar/);
+  });
+
+  it('keeps URLs inside Gradle strings while stripping real comments', () => {
+    expect(stripGradleComments(`a 'https://x.test/y' // gone\nb "c//d" /* gone */ e`)).toBe(`a 'https://x.test/y' \nb "c//d"  e`);
+  });
+
+  it('reports local-debug and refuses it in a release or CI context', () => {
+    const projectRoot = writeGeneratedProject(temporaryDirectory());
+    writeFileSync(path.join(projectRoot, LOCAL_DEBUG_MARKER), '{}');
+    expect(verifyGeneratedProject(projectRoot, { env: {} }).buildMode).toBe('local-debug');
+    expect(() => verifyGeneratedProject(projectRoot, { env: { GITHUB_ACTIONS: 'true' } })).toThrow(/LOCAL-DEBUG/);
+    expect(() => verifyGeneratedProject(projectRoot, { env: { ANDROID_UPLOAD_SHA256: 'x' } })).toThrow(/LOCAL-DEBUG/);
+    expect(releaseContextReasons({ CI: 'false' })).toEqual([]);
+  });
+
+  const fakeRender = (source: Buffer, size: number, bg: string | undefined) =>
+    Promise.resolve(Buffer.from(`${createHash('sha256').update(source).digest('hex')}:${size}:${bg ?? ''}`));
+  const expectedFake = (route: string, size: number, bg: string | undefined) => {
+    const asset = BUBBLEWRAP_ASSETS.find(candidate => candidate.route === route)!;
+    return Buffer.from(`${createHash('sha256').update(readFileSync(path.join(root, asset.file))).digest('hex')}:${size}:${bg ?? ''}`);
+  };
+
+  it('requires every embedded PNG to be the rendering of the checked-in source, and no other PNG', async () => {
+    const repositoryRoot = temporaryDirectory();
+    const projectRoot = writeGeneratedProject(repositoryRoot);
+    for (const icon of BUBBLEWRAP_ICON_RENDERS) {
+      for (const [file, size] of icon.outputs) {
+        mkdirSync(path.dirname(path.join(projectRoot, file)), { recursive: true });
+        writeFileSync(path.join(projectRoot, file), expectedFake(icon.route, size, icon.withBackground ? '#FAF9F5' : undefined));
+      }
+    }
+    expect(await verifyGeneratedIcons(projectRoot, repositoryRoot, { renderIcon: fakeRender })).toBe(46);
+
+    const splash = path.join(projectRoot, 'app/src/main/res/drawable-xxhdpi/splash.png');
+    const original = readFileSync(splash);
+    writeFileSync(splash, expectedFake('/icon-192.png', 900, '#FAF9F5'));
+    await expect(verifyGeneratedIcons(projectRoot, repositoryRoot, { renderIcon: fakeRender })).rejects.toThrow(/splash\.png/);
+    writeFileSync(splash, original);
+
+    writeFileSync(path.join(projectRoot, 'app/src/main/res/drawable-mdpi/unexpected.png'), 'x');
+    await expect(verifyGeneratedIcons(projectRoot, repositoryRoot, { renderIcon: fakeRender })).rejects.toThrow(/unexpected\.png/);
+  });
+});
+
+describe('Gradle runner memory bounds and local-debug refusal', () => {
+  it('shares the local-debug marker name with the verifier', () => {
+    expect(GRADLE_LOCAL_DEBUG_MARKER).toBe(LOCAL_DEBUG_MARKER);
+  });
+
+  it('refuses bundleRelease on a local-debug project but still allows bundleDebug', () => {
+    const repositoryRoot = temporaryDirectory();
+    mkdirSync(path.join(repositoryRoot, 'android'));
+    writeFileSync(path.join(repositoryRoot, 'android', LOCAL_DEBUG_MARKER), '{}');
+    let calls = 0;
+    const run = () => { calls += 1; return { status: 0 }; };
+    expect(() => runGradle('bundleRelease', { repositoryRoot, platform: 'linux', env: {}, run })).toThrow(/LOCAL-DEBUG/);
+    expect(calls).toBe(0);
+    expect(runGradle('bundleDebug', { repositoryRoot, platform: 'linux', env: {}, run })).toBe(0);
+    expect(calls).toBe(1);
+  });
+
+  it('bounds the build JVM by default and honours validated overrides', () => {
+    expect(gradleMemoryArgs({})).toEqual(['-Dorg.gradle.jvmargs=-Xmx1024m -XX:MaxMetaspaceSize=512m', '-Dorg.gradle.workers.max=2']);
+    expect(gradleMemoryArgs({ PULSEBLR_GRADLE_JVMARGS: '-Xmx768m', PULSEBLR_GRADLE_WORKERS_MAX: '1' }))
+      .toEqual(['-Dorg.gradle.jvmargs=-Xmx768m', '-Dorg.gradle.workers.max=1']);
+    expect(() => gradleMemoryArgs({ PULSEBLR_GRADLE_JVMARGS: '-XX:+UseG1GC' })).toThrow(/-Xmx/);
+    expect(() => gradleMemoryArgs({ PULSEBLR_GRADLE_JVMARGS: '-Xmx1g\n-Dx=1' })).toThrow(/single line/);
+    expect(() => gradleMemoryArgs({ PULSEBLR_GRADLE_WORKERS_MAX: '0' })).toThrow(/positive/);
   });
 });

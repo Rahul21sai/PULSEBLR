@@ -48,9 +48,20 @@ Follow this order; each arrow is a stop/go gate, not an assertion that its next 
 4. **Generate** — `npm run android:generate` revalidates the configured JDK 17/SDK 36 paths, writes
    those exact roots to a restrictive one-use Bubblewrap config, passes it with `--config`, and
    removes it on exit. It does not enter Bubblewrap's prompt/bootstrap/download path and has no
-   signing material in scope.
+   signing material in scope. **Immediately before Bubblewrap runs** it re-downloads the four assets
+   Bubblewrap is about to embed (`icon-512.png`, `icon-192.png`, `icon-maskable-512.png`,
+   `manifest.json`) and requires the SHA-256 of the checked-in `public/` file, refusing redirects,
+   non-200s and wrong media types. `manifest.json` is compared with CRLF folded to LF, because git
+   stores it LF and a Windows checkout has it CRLF; that is the only normalisation.
 5. **Verify** — `npm run android:verify-generated` proves the generated project retains the package,
-   version, shortcuts, and SDK contract.
+   version, shortcuts, and SDK contract, the build-integrity pins below, and the **embedded bytes**:
+   `res/raw/web_app_manifest.json` must equal `JSON.stringify` of `public/manifest.json` with
+   `start_url` set to the TWA `startUrl` (Bubblewrap re-serialises it, so it is never byte-identical
+   to the source, but it is a deterministic function of it), and every one of the 46 launcher,
+   splash, shortcut, adaptive and notification PNGs must equal what Bubblewrap's own `ImageHelper`
+   renders from the checked-in source, with no other PNG present. This closes the window a deploy
+   between preflight and generation used to slip through. It also fails on any loopback address in
+   the generated sources and requires the embedded `webManifestUrl` to be the production URL.
 6. **Debug build** — `npm run android:bundle:debug`, then the AAB inspection gate, runs only with
    the installed SDK tooling.
 7. **Signing approval** — the `android-release` GitHub environment approval unlocks owner-provided
@@ -70,6 +81,76 @@ post-deployment debug build, dispatch **Android TWA debug gate** with that same 
 `expected_release_commit_sha`. It installs exactly platform tools, platform 36, and build-tools
 36.0.0; validates the pinned Bundletool SHA-256; and uploads only a debug AAB plus text diagnostics.
 It never receives signing material.
+
+## Build-integrity pins (applied by the postprocess, asserted by verify-generated)
+
+| Pin | Value | Provenance |
+| --- | --- | --- |
+| Gradle distribution | `gradle-8.11.1-bin.zip`, `distributionSha256Sum=f397b287023acdba1e9f6fc5ea72d22dd63669d59ed4a289a29b1a76eee151c6` | Gradle's published checksum, <https://services.gradle.org/distributions/gradle-8.11.1-bin.zip.sha256>, fetched 2026-09-27. Bubblewrap 1.25.0's template sets no checksum at all. |
+| Wrapper jar | SHA-256 `3dc39ad6...edf9f` | The template ships the official Gradle **5.3-5.6.4** wrapper jar (matched against every release's `wrapperChecksumUrl` in <https://services.gradle.org/versions/all>), not the 8.11.1 one. It bootstraps 8.11.1 and honours the checksum, so it is pinned rather than replaced. |
+| Repositories | `google()` + `mavenCentral()` | The template's two `jcenter()` entries are replaced. JCenter is read-only and removed in Gradle 9; the debug build resolved every dependency without it. |
+| Build tools | `buildToolsVersion "36.0.0"` | Without it AGP 8.9.1 picks its own default and downloads it, so `android:toolchain` would be checking a component the build never used. |
+
+## Local-debug generation (before the mobile branch is deployed)
+
+`npm run android:generate -- --local-debug` exists for one purpose: building a **debug** bundle while
+the production origin still serves the old build (at the time of writing its PNG icons 404, so a
+normal generation correctly refuses). It:
+
+- serves exactly the four checked-in files above from a server bound to `127.0.0.1` on an ephemeral
+  port that the script starts and stops. Any other request is a 404/405, is recorded, and fails the
+  generation, and so does an asset Bubblewrap never fetched;
+- gives Bubblewrap a **temporary** copy of `twa-manifest.json` via `--manifest`, in which only
+  `iconUrl`, `maskableIconUrl`, `webManifestUrl` and the five `chosenIconUrl`s point at that server.
+  A diff proves nothing else changed. `host`, `packageId`, `startUrl`, the shortcut targets and the
+  share target stay as checked in, so **the app still opens `https://pulseblr-u9f1.vercel.app`**. The
+  checked-in `android/twa-manifest.json` is never written;
+- restores the one asset URL Bubblewrap also embeds at runtime (`webManifestUrl`) to production;
+- writes `android/pulseblr-local-debug.json` before Bubblewrap starts and prints a loud banner from
+  generate, verify-generated and verify-aab.
+
+**It is refused** (a tested rule) whenever `GITHUB_ACTIONS=true` or `CI` is set, whenever any of
+`ANDROID_UPLOAD_KEYSTORE_BASE64`, `ANDROID_UPLOAD_KEYSTORE_PASSWORD`, `ANDROID_UPLOAD_KEY_PASSWORD`,
+`ANDROID_UPLOAD_KEY_ALIAS`, `ANDROID_UPLOAD_SHA256`, `PB_UPLOAD_SHA256`, `TRUSTED_JDK_PATH` or
+`PULSEBLR_EXPECTED_RELEASE_COMMIT_SHA` is present (even empty), and whenever a `*.keystore`, `*.jks`,
+`*.p12` or `*.pfx` sits in `android/`. A marked project also fails verify-generated in those
+contexts, and `android-gradle.mjs bundleRelease` refuses it outright.
+
+What it **proves**: the checked-in contract generates, postprocesses and builds into a bundle whose
+package, SDK, version, shortcuts, embedded icons and web manifest are exactly the checked-in ones.
+What it **does not**: it is not a release artifact. It says nothing about what the deployed origin
+serves, so the routes the app opens may not exist there yet. **It is unsigned**: measured
+2026-09-27, AGP 8.9.1's `bundleDebug` writes `app-debug.aab` with no JAR manifest at all (jarsigner:
+`no manifest.` / `jar is unsigned.`). So Digital Asset Links cannot verify it (no `assetlinks.json`
+exists, and a debug fingerprint must never be put in one), the app would show the browser URL bar,
+and Play rejects it as both unsigned and `debuggable`. To install on a device, build an APK from it
+with Bundletool and your own local debug key; that is outside this pipeline. Regenerate without the
+flag after deployment. A successful deployed-origin generation removes the marker.
+
+Verify it with `npm run android:verify-aab -- android/app/build/outputs/bundle/debug/app-debug.aab --unsigned-debug`.
+The flag accepts an unsigned bundle **only** if its manifest says `android:debuggable="true"` and
+jarsigner reports it wholly unsigned; a release bundle is never debuggable, so the flag cannot admit
+one. Without the flag, an unsigned bundle fails as before. The AAB gate also checks compileSdk 36,
+`hostName`, `launchUrl`, `webManifestUrl`, exactly five production shortcut URLs, no loopback string
+in any resource, and the presence of every icon family.
+
+## Local toolchain notes
+
+- **Android command-line tools 23+ upload usage metrics.** In cmdline-tools 23.0 `sdkmanager` is a
+  shim over the new Android CLI: `--licenses` is a no-op, metrics are sent unless `--no-metrics` is
+  passed, and the shim rejects that flag. Its launcher also downloads the CLI itself from
+  `dl.google.com/android/cli/latest/`. Locally, call the CLI directly with `--no-metrics` and set
+  `ANDROID_USER_HOME` to an isolated directory. CI does not use it: **Android TWA debug gate** pins
+  setup-android to cmdline-tools 16.0 (build 12266719, the classic sdkmanager, no metrics), then
+  fails the job if the resolved `sdkmanager` is anything else, including the shim. It accepts
+  licences with a bounded `printf` instead of `yes |`, which exits 141 under `pipefail`.
+  `android-release.yml` still has the old `yes | sdkmanager --licenses` step and implicit
+  cmdline-tools version; it needs the same change, owned separately.
+- **Gradle memory.** `android-gradle.mjs` runs `--no-daemon` with
+  `-Dorg.gradle.jvmargs=-Xmx1024m -XX:MaxMetaspaceSize=512m -Dorg.gradle.workers.max=2`, which
+  override the template's `-Xmx1536m`. Override per process with `PULSEBLR_GRADLE_JVMARGS` (it must
+  contain an `-Xmx` bound) and `PULSEBLR_GRADLE_WORKERS_MAX`. Check free memory before a build; the
+  debug build was run only with at least 1.8 GB available.
 
 For a proposed signed bundle, dispatch **Android protected release build** with a new positive
 `version_code` and the same exact `expected_release_commit_sha`. Its first, unprotected

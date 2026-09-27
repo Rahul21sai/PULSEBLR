@@ -29,14 +29,50 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      # Every input is explicit, not left to the action's defaults. At this SHA (v3.2.2),
+      # setup-android defaults to cmdline-tools build 12266719 (16.0), installs it under
+      # $ANDROID_SDK_ROOT/cmdline-tools/16.0 and prepends its bin to PATH. 16.0's sdkmanager is the
+      # classic Java tool: `--licenses` really accepts licences and it sends no usage metrics.
+      # cmdline-tools 23.0 (build 16111833, the current "latest" in Google's repository2-3.xml)
+      # replaced sdkmanager with a shim over the new Android CLI: `--licenses` becomes a no-op,
+      # usage metrics are uploaded unless `--no-metrics` is passed (the shim rejects that flag), and
+      # its launcher downloads an unpinned binary from dl.google.com/android/cli/latest/. Leaving the
+      # version implicit would let a Dependabot bump of this action switch to that silently, so it is
+      # pinned here and the next step refuses anything else. packages is empty so the action does
+      # not also install the obsolete `tools` package; the exact packages are installed below.
       - name: Set up Android SDK
         uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3.2.2
+        with:
+          cmdline-tools-version: '12266719'
+          accept-android-sdk-licenses: 'true'
+          log-accepted-android-sdk-licenses: 'false'
+          packages: ''
 
       # setup-android exposes ANDROID_HOME. Persist the identical path under the
       # name consumed by PulseBLR's deterministic toolchain check.
       - name: Set Android SDK root
         shell: bash
         run: echo "ANDROID_SDK_ROOT=${ANDROID_HOME:?setup-android did not expose ANDROID_HOME}" >> "$GITHUB_ENV"
+
+      # Fail closed unless the sdkmanager on PATH is the pinned classic 16.0 inside this SDK root.
+      # The Android CLI shim is recognised both by its `android` launcher sibling and by the shim
+      # script's own text, so a 23+ tree cannot pass by having a matching directory name.
+      - name: Verify pinned Android command-line tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdkmanager_bin=$(command -v sdkmanager)
+          tools_dir=$(dirname "$(dirname "$sdkmanager_bin")")
+          case "$tools_dir" in
+            "$ANDROID_SDK_ROOT"/cmdline-tools/*) ;;
+            *) echo "sdkmanager resolved outside \$ANDROID_SDK_ROOT/cmdline-tools: $sdkmanager_bin" >&2; exit 1 ;;
+          esac
+          grep -qx 'Pkg.Revision=16.0' "$tools_dir/source.properties" || { echo 'cmdline-tools must be the pinned classic 16.0' >&2; exit 1; }
+          if [[ -e "$tools_dir/bin/android" ]] || grep -q 'Android CLI' "$sdkmanager_bin"; then
+            echo 'sdkmanager is the cmdline-tools 23+ Android CLI shim (licence no-op, metrics on, unpinned download); refusing' >&2
+            exit 1
+          fi
+          echo "SDKMANAGER_BIN=$sdkmanager_bin" >> "$GITHUB_ENV"
 
       # Bundletool is fetched only from Google's published release URL. Its digest is
       # verified before BUNDLETOOL_JAR is exported for the AAB inspection command.
@@ -56,11 +92,20 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # `yes | sdkmanager` under pipefail exits 141 when sdkmanager closes the pipe and `yes` takes
+      # SIGPIPE; a bounded printf finishes writing before sdkmanager reads, so a real sdkmanager
+      # failure is the only non-zero status. An unaccepted licence still fails the install below.
       - name: Accept Android SDK licenses
-        run: yes | sdkmanager --licenses > /dev/null
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf 'y\n%.0s' $(seq 1 32) | "$SDKMANAGER_BIN" --licenses > /dev/null
 
       - name: Install Android SDK 36 tooling
-        run: sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$SDKMANAGER_BIN" --install "platform-tools" "platforms;android-36" "build-tools;36.0.0"
 
       - name: Check Android toolchain
         run: npm run android:toolchain
@@ -83,8 +128,11 @@ jobs:
       - name: Build debug AAB
         run: npm run android:bundle:debug
 
+      # AGP 8.9.1's bundleDebug writes an UNSIGNED app-debug.aab, so the strict signature policy
+      # could never pass here. --unsigned-debug accepts it only if the bundle is debuggable and
+      # wholly unsigned; every metadata, URL and icon assertion still applies.
       - name: Verify debug AAB
-        run: npm run android:verify-aab -- android/app/build/outputs/bundle/debug/app-debug.aab
+        run: npm run android:verify-aab -- android/app/build/outputs/bundle/debug/app-debug.aab --unsigned-debug
 
       - name: Collect Android diagnostics
         if: always()
