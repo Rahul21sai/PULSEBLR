@@ -78,6 +78,13 @@ import {
 import { offCityReason } from './core/geo';
 import { normalizeEvents } from './normalizer';
 import { ingestEvents, IngestionResult, updateSource } from './ingestion';
+import {
+  PRUNE_BATCH_SIZE,
+  chunk,
+  splitByReference,
+  staleDeleteFilter,
+  staleEventFilter,
+} from './prune-selection';
 
 export interface PipelineOptions {
   /** Skip the LLM and use keyword tagging only (fast local runs). */
@@ -1277,45 +1284,64 @@ async function flushHealth(collector: Collector, ledger: GateLedger): Promise<vo
 }
 
 /**
- * Delete events that have gone stale: their start time has passed AND no source
- * has reported them for a week. Past events are kept for a while on purpose —
- * the tracker references them and users look back at what they attended.
- */
-/**
- * Delete past events no source has reported for a week.
+ * Delete past SCRAPED events no source has reported for a week — unless a user still points at one.
  *
  * ─────────────────────────────────────────────────────────────────────────────────────────────
- * `createdByUserId: { $exists: false }` IS WHAT STOPS THIS DELETING EVERY HAND-ENTERED EVENT.
+ * TWO EXCLUSIONS, AND EACH EXISTS BECAUSE ITS ABSENCE DELETED SOMEBODY'S HISTORY.
  *
- * The predicate is "old AND not seen recently", and `lastSeenAt` is only ever refreshed by
- * `ingestEvents()`. Nothing re-reports an event somebody typed in themselves — there is no
- * upstream to report it — so its `lastSeenAt` is frozen at the moment of creation. For the normal
- * case, where the event is entered more than a week before it happens, BOTH arms are already true
- * the instant it ends: the row is deleted exactly at the 7-day mark, and no re-scrape can recover
- * it because there is nothing to re-scrape.
+ * 1. `createdByUserId: { $exists: false }` (inside `staleEventFilter`) keeps every HAND-ENTERED
+ *    event. The predicate is "old AND not seen recently", and `lastSeenAt` is only ever refreshed by
+ *    `ingestEvents()`. Nothing re-reports an event somebody typed in — there is no upstream — so its
+ *    `lastSeenAt` is frozen at creation, and in the normal case (entered more than a week ahead) BOTH
+ *    arms are already true the instant it ends. User events are kept indefinitely: a hand-entered
+ *    event is more like a `Folder` than a listing, and deleting one is theirs to do.
  *
- * The user would see no error. `TrackerEntry.eventId` is `required` and `app/tracker/page.tsx`
- * DROPS entries whose populate came back null — so the tracked entry and its status, notes and
- * connections would simply vanish from the kanban with no message at all.
+ * 2. The REFERENCE CHECK (`splitByReference`) keeps every scraped event that a `TrackerEntry`, a
+ *    `Folder` or an `Interaction` still points at. Without it this deleted attended events a week
+ *    after they happened, and because `TrackerEntry.eventId` is `required` the entry was stranded
+ *    rather than removed: status, notes and people pointing at nothing, on a page that used to hide
+ *    such entries outright. Measured 2026-09-27 by `scripts/diag-tracker-orphans.ts`: 12 of 16
+ *    tracker entries already pointed at an event this function had deleted, as did the folders for 8
+ *    of 11 linked events and the interactions for 5 of 6. Spared, never repointed — there is no
+ *    surviving twin to repoint to. Once the last referrer goes, the next run prunes it as before.
  *
- * Note what this does to the sentence in `PipelineOptions.onlySources`: pruning is no longer "any
- * past event no source has reported for a week", because events now exist that no source ever
- * reports. That docblock is corrected accordingly.
+ * Note what both do to the sentence in `PipelineOptions.onlySources`: pruning is no longer "any past
+ * event no source has reported for a week", because some events are never reported and some are kept
+ * on purpose. The load-bearing half of that note stands: a partial run must never reach this function.
  *
- * User events are kept indefinitely and deliberately. A hand-entered event is a record of
- * something the user chose to remember, more like a `Folder` than a scraped listing, and deleting
- * one is theirs to do.
+ * ── QUERY COST ────────────────────────────────────────────────────────────────────────────────
+ * Was one `deleteMany`. Now one `find` of candidate ids over the same predicate (the index scan the
+ * delete already did), three `distinct`s per batch of `PRUNE_BATCH_SIZE` candidates (one IXSCAN and
+ * two scans of the small Folder and Interaction collections — see `findReferencesByReferrer`), then
+ * one `deleteMany` by `_id` per batch. A daily run is one batch: five round trips instead of one.
+ *
+ * Fails CLOSED: a reference lookup that throws propagates to the pipeline's `prune failed:` report,
+ * and no candidate it did not clear is deleted. The delete repeats the stale predicate, so a row a
+ * concurrent ingest re-sighted after the candidates were read survives too (`staleDeleteFilter`).
  * ─────────────────────────────────────────────────────────────────────────────────────────────
  */
 async function pruneStale(): Promise<number> {
   await connectDB();
-  const cutoff = new Date(Date.now() - 7 * 24 * 3600 * 1000);
-  const outcome = await Event.deleteMany({
-    startDateTime: { $lt: cutoff },
-    lastSeenAt: { $lt: cutoff },
-    createdByUserId: { $exists: false },
-  });
-  return outcome.deletedCount || 0;
+  // ONE `now` for the read and the delete, so both apply the same cutoff.
+  const now = new Date();
+  const candidates = (
+    await Event.find(staleEventFilter(now)).select('_id').lean<Array<{ _id: unknown }>>()
+  ).map(row => String(row._id));
+  if (candidates.length === 0) return 0;
+
+  const { deletable, spared } = await splitByReference(candidates);
+  if (spared.length > 0) {
+    console.log(
+      `  Prune: kept ${spared.length} past event(s) a user tracked, filed a folder for, or met someone at.`
+    );
+  }
+
+  let deleted = 0;
+  for (const batch of chunk(deletable, PRUNE_BATCH_SIZE)) {
+    const outcome = await Event.deleteMany(staleDeleteFilter(now, batch));
+    deleted += outcome.deletedCount || 0;
+  }
+  return deleted;
 }
 
 export async function runPipeline(options: PipelineOptions = {}): Promise<PipelineResult> {

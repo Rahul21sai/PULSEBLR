@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import connectDB from '@/lib/mongodb';
 import TrackerEntry from '@/lib/models/TrackerEntry';
 import Event from '@/lib/models/Event';
+import Folder from '@/lib/models/Folder';
 import { getCurrentUserId } from '@/lib/auth-helpers';
 import {
   validateTrackerInput,
@@ -9,8 +10,25 @@ import {
   isSchemaRejection,
 } from '@/lib/tracker/validate';
 import { canViewEvent } from '@/lib/events/visibility';
+import {
+  TRACKER_EVENT_SELECT,
+  orphanedEventIds,
+  shapeTrackerEntries,
+  shapeTrackerEntry,
+} from '@/lib/tracker/entry-view';
 
-// GET /api/tracker — list entries for the signed-in user
+/**
+ * GET /api/tracker — list entries for the signed-in user.
+ *
+ * AN EXPLICIT JOIN, NOT `.populate('eventId')`, and the difference is what lets a lost event keep
+ * its name. `populate` replaces a missing ref with `null` and the id goes with it; here the raw id is
+ * still in hand, so an entry whose event is gone can be matched to the user's own folder for that
+ * event, which remembers the title (`lastKnown`). Same two queries `populate` issues underneath, plus
+ * one more — user-scoped, and only when some entry's event can no longer be shown.
+ *
+ * Every event goes out through `shapeTrackerEntries`: nine fields, visibility re-decided on this read,
+ * `createdByUserId` never sent. See lib/tracker/entry-view.ts.
+ */
 export async function GET(request: NextRequest) {
   const userId = await getCurrentUserId();
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -23,12 +41,22 @@ export async function GET(request: NextRequest) {
     const status = request.nextUrl.searchParams.get('status');
     if (status) filter.status = { $in: status.split(',') };
 
-    const entries = await TrackerEntry.find(filter)
-      .populate('eventId')
-      .sort({ updatedAt: -1 })
-      .lean();
+    const entries = await TrackerEntry.find(filter).sort({ updatedAt: -1 }).lean();
 
-    return NextResponse.json({ entries });
+    const eventIds = [...new Set(entries.map(entry => String(entry.eventId)))];
+    const events = eventIds.length
+      ? await Event.find({ _id: { $in: eventIds } }).select(TRACKER_EVENT_SELECT).lean()
+      : [];
+
+    const orphanIds = orphanedEventIds(entries, events, userId);
+    const folders = orphanIds.length
+      ? await Folder.find({ userId, eventId: { $in: orphanIds } })
+          .select('_id userId eventId name eventDate')
+          .sort({ updatedAt: -1 })
+          .lean()
+      : [];
+
+    return NextResponse.json({ entries: shapeTrackerEntries(entries, events, folders, userId) });
   } catch (error) {
     console.error('Error fetching tracker entries:', error);
     return NextResponse.json({ error: 'Failed to fetch tracker entries' }, { status: 500 });
@@ -66,7 +94,9 @@ export async function POST(request: NextRequest) {
   try {
     await connectDB();
 
-    const event = await Event.findById(eventId);
+    // TRACKER_EVENT_SELECT carries `visibility`, `createdByUserId` and `deletedAt` — the three fields
+    // `canViewEvent` reads. Drop one and the guard below admits every event it was meant to refuse.
+    const event = await Event.findById(eventId).select(TRACKER_EVENT_SELECT).lean();
     if (!event) return NextResponse.json({ error: 'Event not found' }, { status: 404 });
 
     /**
@@ -100,9 +130,10 @@ export async function POST(request: NextRequest) {
 
     // userId last: a body cannot claim someone else's entry by supplying its own.
     const entry = await TrackerEntry.create({ ...input, userId });
-    const populated = await TrackerEntry.findById(entry._id).populate('eventId');
 
-    return NextResponse.json(populated, { status: 201 });
+    // Shaped from the event already in hand, which saves the re-read-and-populate this used to do —
+    // and that populate sent the whole event document back, `createdByUserId` included.
+    return NextResponse.json(shapeTrackerEntry(entry.toObject(), event, userId), { status: 201 });
   } catch (error) {
     const err = error as { code?: number };
     console.error('Error creating tracker entry:', error);

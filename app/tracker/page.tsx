@@ -6,10 +6,19 @@ import { useEffect, useState, useCallback, useMemo } from 'react';
 import EditTrackerModal from './components/EditTrackerModal';
 import { DesktopNav, MobileBottomNav } from '../components/NavBar';
 import EventCover from '../components/EventCover';
-import { dayLabelIST, timeIST, relativeTime, categoryAccent, locationLabel } from '@/lib/format';
+import { Banner, Button, ButtonLink } from '../components/ui';
+import {
+  dayLabelIST,
+  timeIST,
+  relativeTime,
+  categoryAccent,
+  locationLabel,
+  shortDateIST,
+} from '@/lib/format';
 // From the PURE validator module, not lib/contacts/service.ts — this is a client component and
 // service.ts imports mongoose.
 import { FOLDER_ON_TRACKER_STATUS } from '@/lib/tracker/validate';
+import { loginHref } from '@/lib/auth-callback-url';
 
 interface Connection {
   name: string;
@@ -21,31 +30,47 @@ interface Connection {
   followedUp?: boolean;
 }
 
+/**
+ * Exactly the event fields `/api/tracker` sends — `TRACKER_EVENT_FIELDS` in
+ * lib/tracker/entry-view.ts. Reading a field that is not in that list gets `undefined`, silently, so a
+ * new one belongs there first.
+ */
 interface TrackedEvent {
   _id: string;
   title: string;
-  description?: string;
   startDateTime: string;
-  endDateTime?: string;
   venue?: string;
   area?: string;
   city?: string;
   format: string;
   category: string[];
-  sourceUrl: string;
   imageUrl?: string;
-  organizer?: string;
+}
+
+/** What the user's own folder still says about an event PulseBLR no longer lists. */
+interface LastKnownEvent {
+  title: string;
+  startDateTime?: string;
+  folderId: string;
 }
 
 interface TrackerEntry {
   _id: string;
+  /**
+   * NULL WHEN THE EVENT IS NO LONGER LISTED — deleted from the corpus, or no longer visible to this
+   * user. The entry itself is still the user's: its status, notes and people are real, and are drawn
+   * by `OrphanCard` / `OrphanRow` instead of being dropped.
+   */
   eventId: TrackedEvent | null;
+  /** Only on an entry whose `eventId` is null, and only when the user has a folder for that event. */
+  lastKnown?: LastKnownEvent;
   status: string;
   notes?: string;
   appliedAt?: string;
   outcome?: string;
   connections: Connection[];
   updatedAt: string;
+  createdAt?: string;
 }
 
 /**
@@ -77,6 +102,48 @@ const COLUMN_IDS = COLUMNS.map(c => c.id) as readonly string[];
  * to find out was to guess the right column.
  */
 const FOLDER_COLUMNS = new Set<string>(FOLDER_ON_TRACKER_STATUS);
+
+/** The event's start in ms, or null for an entry whose event is no longer listed. */
+function startMs(entry: TrackerEntry): number | null {
+  return entry.eventId ? new Date(entry.eventId.startDateTime).getTime() : null;
+}
+
+/**
+ * Soonest first, and every entry whose event is no longer listed AFTER every dated one, most
+ * recently touched first. They have no start to sort by, and putting them last leaves the dated
+ * entries exactly where they always were.
+ */
+function byEventStart(a: TrackerEntry, b: TrackerEntry): number {
+  const aStart = startMs(a);
+  const bStart = startMs(b);
+  if (aStart !== null && bStart !== null) return aStart - bStart;
+  if (aStart !== null) return -1;
+  if (bStart !== null) return 1;
+  return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+}
+
+/** The heading for an entry whose event is gone: its name from the user's folder, when there is one. */
+function orphanTitle(entry: TrackerEntry): string {
+  return entry.lastKnown?.title ?? 'This event is no longer listed';
+}
+
+/**
+ * The line under that heading. When the name came from a folder, the heading no longer says the
+ * event is gone, so this line has to; otherwise the heading says it and this dates the entry.
+ */
+function orphanMeta(entry: TrackerEntry): string {
+  if (entry.lastKnown) {
+    // No "was": an event an admin removed before it happened still has its date ahead of it.
+    const when = entry.lastKnown.startDateTime;
+    return when ? `No longer listed · ${dayLabelIST(when)}` : 'No longer listed';
+  }
+  return entry.createdAt ? `Saved ${shortDateIST(entry.createdAt)}` : 'Your status and notes are kept';
+}
+
+/** For sentences like "Met at …". */
+function eventName(entry: TrackerEntry): string {
+  return entry.eventId?.title ?? entry.lastKnown?.title ?? 'an event that is no longer listed';
+}
 
 type ViewMode = 'board' | 'list';
 
@@ -142,9 +209,18 @@ export default function TrackerPage() {
       }
       if (!res.ok) throw new Error('Could not load your tracker');
       const data = await res.json();
-      // A tracked event can be deleted upstream by the pruner, leaving a dangling
-      // reference. Drop those rather than crashing on entry.eventId.title.
-      setEntries((data.entries || []).filter((e: TrackerEntry) => e.eventId));
+      /*
+       * EVERY ENTRY IS KEPT, including those whose event is gone.
+       *
+       * This used to drop any entry whose `eventId` came back null, to avoid crashing on
+       * `entry.eventId.title`. But a null event is the normal result of the event leaving the
+       * corpus — the nightly pruner deleted tracked events a week after they happened — and the
+       * entry is the only place the user's status, notes and people for it exist. Measured
+       * 2026-09-27: 12 of 16 tracker entries were in that state, so the board showed a quarter of
+       * what people had saved, with nothing to say the rest existed. They are now drawn as "no
+       * longer listed" rows, and every read of `eventId` below is null-safe.
+       */
+      setEntries(data.entries || []);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong');
     } finally {
@@ -256,27 +332,19 @@ export default function TrackerPage() {
       // An unrecognised status must still be reachable, so it lands in New.
       (groups[entry.status] ?? groups.New).push(entry);
     }
-    for (const key of Object.keys(groups)) {
-      groups[key].sort(
-        (a, b) =>
-          new Date(a.eventId!.startDateTime).getTime() -
-          new Date(b.eventId!.startDateTime).getTime()
-      );
-    }
+    for (const key of Object.keys(groups)) groups[key].sort(byEventStart);
     return groups;
   }, [entries]);
 
   /** Follow-ups whose date has arrived and that aren't marked done. */
   const dueFollowUps = useMemo(() => {
-    const due: Array<{ entry: TrackerEntry; connection: Connection }> = [];
+    // `followUpAt` is carried out separately so the render below needs no non-null assertion.
+    const due: Array<{ entry: TrackerEntry; connection: Connection; followUpAt: string }> = [];
     for (const entry of entries) {
       for (const connection of entry.connections || []) {
-        if (
-          connection.followUpAt &&
-          !connection.followedUp &&
-          new Date(connection.followUpAt).getTime() <= now
-        ) {
-          due.push({ entry, connection });
+        const followUpAt = connection.followUpAt;
+        if (followUpAt && !connection.followedUp && new Date(followUpAt).getTime() <= now) {
+          due.push({ entry, connection, followUpAt });
         }
       }
     }
@@ -285,9 +353,11 @@ export default function TrackerPage() {
 
   const totals = useMemo(() => {
     const connections = entries.reduce((sum, e) => sum + (e.connections?.length || 0), 0);
-    const upcoming = entries.filter(
-      e => new Date(e.eventId!.startDateTime).getTime() > now
-    ).length;
+    // An entry whose event is no longer listed has no date, so it is never "still upcoming".
+    const upcoming = entries.filter(e => {
+      const start = startMs(e);
+      return start !== null && start > now;
+    }).length;
     return {
       tracked: entries.length,
       upcoming,
@@ -309,7 +379,7 @@ export default function TrackerPage() {
             private to your account.
           </p>
           <Link
-            href="/login"
+            href={loginHref('/tracker')}
             className="inline-block mt-6 px-6 py-2.5 rounded-full bg-[var(--accent)] text-[var(--accent-ink)] text-label-md font-semibold hover:bg-[var(--accent)] transition-colors"
           >
             Sign in with Google
@@ -414,7 +484,7 @@ export default function TrackerPage() {
                 {dueFollowUps.length} follow-up{dueFollowUps.length === 1 ? '' : 's'} due
               </h2>
               <div className="flex flex-col gap-2">
-                {dueFollowUps.slice(0, 5).map(({ entry, connection }, index) => (
+                {dueFollowUps.slice(0, 5).map(({ entry, connection, followUpAt }, index) => (
                   <div
                     key={`${entry._id}-${connection.name}-${index}`}
                     className="flex items-center gap-3 bg-[var(--paper)] rounded-xl px-3 py-2.5"
@@ -427,8 +497,7 @@ export default function TrackerPage() {
                         )}
                       </p>
                       <p className="text-[12px] text-[var(--ink-2)] truncate">
-                        Met at {entry.eventId!.title} · due{' '}
-                        {relativeTime(connection.followUpAt!)}
+                        Met at {eventName(entry)} · due {relativeTime(followUpAt)}
                       </p>
                     </div>
                     {connection.linkedin && (
@@ -538,25 +607,35 @@ export default function TrackerPage() {
                   </div>
 
                   <div className="flex flex-col gap-2 px-2.5 pb-2.5 min-h-[140px]">
-                    {byColumn[column.id]?.map(entry => (
-                      <TrackerCard
-                        key={entry._id}
-                        entry={entry}
-                        now={now}
-                        dragging={dragId === entry._id}
-                        onDragStart={e => {
+                    {byColumn[column.id]?.map(entry => {
+                      // One set of drag handlers for both card kinds, so an entry whose event is
+                      // gone can still be moved between columns like any other.
+                      const drag = {
+                        dragging: dragId === entry._id,
+                        onDragStart: (e: React.DragEvent) => {
                           setDragId(entry._id);
                           e.dataTransfer.setData('text/plain', entry._id);
                           e.dataTransfer.effectAllowed = 'move';
-                        }}
-                        onDragEnd={() => {
+                        },
+                        onDragEnd: () => {
                           setDragId(null);
                           setOverColumn(null);
-                        }}
-                        onOpen={() => setSelected(entry)}
-                        onMove={status => moveTo(entry._id, status)}
-                      />
-                    ))}
+                        },
+                        onOpen: () => setSelected(entry),
+                      };
+                      return entry.eventId ? (
+                        <TrackerCard
+                          key={entry._id}
+                          entry={entry}
+                          event={entry.eventId}
+                          now={now}
+                          {...drag}
+                          onMove={status => moveTo(entry._id, status)}
+                        />
+                      ) : (
+                        <OrphanCard key={entry._id} entry={entry} {...drag} />
+                      );
+                    })}
 
                     {(byColumn[column.id]?.length || 0) === 0 && (
                       <div className="flex items-center justify-center h-[110px] text-[12px] text-[var(--ink-2)]">
@@ -571,8 +650,9 @@ export default function TrackerPage() {
         )}
       </div>
 
-      {/* Detail sheet */}
-      {selected && selected.eventId && (
+      {/* Detail sheet. Opens for an entry whose event is no longer listed as well — this sheet is
+          where such an entry's notes and people are read, and where it is removed. */}
+      {selected && (
         <div className="fixed inset-0 z-[60] flex items-end md:items-center justify-center">
           <button
             type="button"
@@ -587,7 +667,7 @@ export default function TrackerPage() {
             <div className="p-5 md:p-6">
               <div className="flex items-start justify-between gap-3 mb-4">
                 <h2 className="text-[19px] font-bold leading-snug tracking-[-0.01em] text-[var(--ink)]">
-                  {selected.eventId.title}
+                  {selected.eventId ? selected.eventId.title : orphanTitle(selected)}
                 </h2>
                 <button
                   type="button"
@@ -598,6 +678,14 @@ export default function TrackerPage() {
                   <span aria-hidden="true" className="material-symbols-outlined text-[18px]">close</span>
                 </button>
               </div>
+
+              {!selected.eventId && (
+                <Banner tone="warn" className="mb-5">
+                  PulseBLR no longer lists this event, so its details are gone
+                  {selected.lastKnown ? ' — the name above comes from your folder for it' : ''}. Your
+                  status, notes and the people you met are kept here.
+                </Banner>
+              )}
 
               <label className="block text-label-sm uppercase tracking-widest text-[var(--ink-2)] mb-2">
                 Status
@@ -617,23 +705,37 @@ export default function TrackerPage() {
                 ))}
               </select>
 
-              <div className="bg-[var(--paper)] rounded-xl p-4 mb-5 flex flex-col gap-2 text-[13.5px] text-[var(--ink-2)]">
-                <span className="flex items-center gap-2">
+              {selected.eventId ? (
+                <div className="bg-[var(--paper)] rounded-xl p-4 mb-5 flex flex-col gap-2 text-[13.5px] text-[var(--ink-2)]">
+                  <span className="flex items-center gap-2">
+                    <span aria-hidden="true" className="material-symbols-outlined text-[16px] text-[var(--ink-2)]">
+                      calendar_month
+                    </span>
+                    <span className="tnum">
+                      {dayLabelIST(selected.eventId.startDateTime)} ·{' '}
+                      {timeIST(selected.eventId.startDateTime)}
+                    </span>
+                  </span>
+                  <span className="flex items-center gap-2">
+                    <span aria-hidden="true" className="material-symbols-outlined text-[16px] text-[var(--ink-2)]">
+                      location_on
+                    </span>
+                    {locationLabel(selected.eventId)}
+                  </span>
+                </div>
+              ) : selected.lastKnown?.startDateTime ? (
+                // `lastKnown` carries the folder's date and nothing about the venue, so the date alone.
+                // No "Was": an event an admin removed before it happened has a date still ahead.
+                <div className="bg-[var(--paper)] rounded-xl p-4 mb-5 flex items-center gap-2 text-[13.5px] text-[var(--ink-2)]">
                   <span aria-hidden="true" className="material-symbols-outlined text-[16px] text-[var(--ink-2)]">
                     calendar_month
                   </span>
                   <span className="tnum">
-                    {dayLabelIST(selected.eventId.startDateTime)} ·{' '}
-                    {timeIST(selected.eventId.startDateTime)}
+                    {dayLabelIST(selected.lastKnown.startDateTime)} ·{' '}
+                    {timeIST(selected.lastKnown.startDateTime)}
                   </span>
-                </span>
-                <span className="flex items-center gap-2">
-                  <span aria-hidden="true" className="material-symbols-outlined text-[16px] text-[var(--ink-2)]">
-                    location_on
-                  </span>
-                  {locationLabel(selected.eventId)}
-                </span>
-              </div>
+                </div>
+              ) : null}
 
               {selected.notes && (
                 <div className="mb-5">
@@ -686,31 +788,71 @@ export default function TrackerPage() {
                 </div>
               )}
 
-              <div className="flex flex-wrap gap-2">
-                <Link
-                  href={`/events/${selected.eventId._id}`}
-                  className="flex-1 min-w-[120px] text-center bg-[var(--ink)] text-[var(--accent-ink)] text-label-md font-semibold py-3 rounded-full hover:bg-[var(--ink)] transition-colors"
-                >
-                  View event
-                </Link>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setEditing(selected);
-                    setSelected(null);
-                  }}
-                  className="flex-1 min-w-[120px] bg-[var(--paper)] text-[var(--ink)] text-label-md font-semibold py-3 rounded-full transition-colors"
-                >
-                  Edit notes & people
-                </button>
-                <button
-                  type="button"
-                  onClick={() => remove(selected._id)}
-                  className="px-5 py-3 rounded-full text-label-md font-semibold text-[var(--live)] bg-[var(--paper)] hover:bg-[var(--paper)] transition-colors"
-                >
-                  Remove
-                </button>
-              </div>
+              {selected.eventId ? (
+                <div className="flex flex-wrap gap-2">
+                  <Link
+                    href={`/events/${selected.eventId._id}`}
+                    className="flex-1 min-w-[120px] text-center bg-[var(--ink)] text-[var(--accent-ink)] text-label-md font-semibold py-3 rounded-full hover:bg-[var(--ink)] transition-colors"
+                  >
+                    View event
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditing(selected);
+                      setSelected(null);
+                    }}
+                    className="flex-1 min-w-[120px] bg-[var(--paper)] text-[var(--ink)] text-label-md font-semibold py-3 rounded-full transition-colors"
+                  >
+                    Edit notes & people
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => remove(selected._id)}
+                    className="px-5 py-3 rounded-full text-label-md font-semibold text-[var(--live)] bg-[var(--paper)] hover:bg-[var(--paper)] transition-colors"
+                  >
+                    Remove
+                  </button>
+                </div>
+              ) : (
+                <>
+                  {/* No "View event": there is no event page to go to. The folder, when there is
+                      one, is where the people scanned there live. `lg` is 48px, over the 44px floor,
+                      and `gap-2` is safe because none of these grows its target with an overlay. */}
+                  <div className="flex flex-wrap gap-2">
+                    {selected.lastKnown && (
+                      <ButtonLink
+                        href={`/folders/${selected.lastKnown.folderId}`}
+                        tone="primary"
+                        size="lg"
+                        icon="folder"
+                        className="flex-1 min-w-[120px]"
+                      >
+                        Open folder
+                      </ButtonLink>
+                    )}
+                    <Button
+                      tone="quiet"
+                      size="lg"
+                      className="flex-1 min-w-[120px]"
+                      onClick={() => {
+                        setEditing(selected);
+                        setSelected(null);
+                      }}
+                    >
+                      Edit notes & people
+                    </Button>
+                    <Button tone="danger" size="lg" onClick={() => remove(selected._id)}>
+                      Remove from tracker
+                    </Button>
+                  </div>
+                  {(selected.notes || selected.connections.length > 0) && (
+                    <p className="mt-3 text-[12.5px] text-[var(--ink-2)]">
+                      Removing it also deletes the notes and people above.
+                    </p>
+                  )}
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -719,7 +861,7 @@ export default function TrackerPage() {
       {editing && (
         <EditTrackerModal
           entryId={editing._id}
-          eventTitle={editing.eventId?.title}
+          eventTitle={editing.eventId?.title ?? editing.lastKnown?.title}
           currentNotes={editing.notes}
           currentConnections={editing.connections}
           onClose={() => setEditing(null)}
@@ -735,6 +877,7 @@ export default function TrackerPage() {
 
 function TrackerCard({
   entry,
+  event,
   now,
   dragging,
   onDragStart,
@@ -743,6 +886,8 @@ function TrackerCard({
   onMove,
 }: {
   entry: TrackerEntry;
+  /** `entry.eventId`, already known to be present — an entry without one renders `OrphanCard`. */
+  event: TrackedEvent;
   /** Passed in rather than read here, so rendering stays a pure function of props. */
   now: number;
   dragging: boolean;
@@ -751,7 +896,6 @@ function TrackerCard({
   onOpen: () => void;
   onMove: (status: string) => void;
 }) {
-  const event = entry.eventId!;
   const accent = categoryAccent(event.category?.[0]);
   const currentIndex = COLUMN_IDS.indexOf(entry.status);
   const next = currentIndex >= 0 ? COLUMNS[currentIndex + 1] : undefined;
@@ -808,22 +952,7 @@ function TrackerCard({
         </div>
       </div>
 
-      {(entry.connections.length > 0 || entry.notes) && (
-        <div className="flex items-center gap-3 mt-2 text-[11px] text-[var(--ink-2)]">
-          {entry.connections.length > 0 && (
-            <span className="inline-flex items-center gap-1 text-[var(--accent)] font-semibold">
-              <span aria-hidden="true" className="material-symbols-outlined text-[13px]">group</span>
-              {entry.connections.length}
-            </span>
-          )}
-          {entry.notes && (
-            <span className="inline-flex items-center gap-1">
-              <span aria-hidden="true" className="material-symbols-outlined text-[13px]">notes</span>
-              Notes
-            </span>
-          )}
-        </div>
-      )}
+      <EntryTraces entry={entry} />
 
       {next && (
         <button
@@ -848,6 +977,135 @@ function TrackerCard({
   );
 }
 
+/** The people and notes an entry carries, as the two small marks under a board card. */
+function EntryTraces({ entry }: { entry: TrackerEntry }) {
+  if (!(entry.connections.length > 0 || entry.notes)) return null;
+  return (
+    <div className="flex items-center gap-3 mt-2 text-[11px] text-[var(--ink-2)]">
+      {entry.connections.length > 0 && (
+        <span className="inline-flex items-center gap-1 text-[var(--accent)] font-semibold">
+          <span aria-hidden="true" className="material-symbols-outlined text-[13px]">group</span>
+          {entry.connections.length}
+        </span>
+      )}
+      {entry.notes && (
+        <span className="inline-flex items-center gap-1">
+          <span aria-hidden="true" className="material-symbols-outlined text-[13px]">notes</span>
+          Notes
+        </span>
+      )}
+    </div>
+  );
+}
+
+/** Where the cover would be, for an event that is no longer listed. The dashed edge reads as "absent". */
+function GoneTile({ className }: { className: string }) {
+  return (
+    <span
+      aria-hidden="true"
+      className={`flex shrink-0 items-center justify-center rounded-lg border border-dashed border-[var(--rule)] bg-[var(--paper)] ${className}`}
+    >
+      <span className="material-symbols-outlined text-[18px] text-[var(--ink-3)]">event_busy</span>
+    </span>
+  );
+}
+
+/**
+ * A board card for an entry whose event is no longer listed.
+ *
+ * Quieter than `TrackerCard` — a dashed tile where the cover was, a neutral edge instead of the
+ * category accent, and no "Move to" shortcut, since with no event behind it the next pipeline step is
+ * rarely the thing to do. It is still the same size of target, still draggable between columns, and
+ * still opens the detail sheet, which is where its notes and people are read and where it is removed.
+ */
+function OrphanCard({
+  entry,
+  dragging,
+  onDragStart,
+  onDragEnd,
+  onOpen,
+}: {
+  entry: TrackerEntry;
+  dragging: boolean;
+  onDragStart: (e: React.DragEvent) => void;
+  onDragEnd: () => void;
+  onOpen: () => void;
+}) {
+  return (
+    <div
+      draggable
+      data-dragging={dragging}
+      onDragStart={onDragStart}
+      onDragEnd={onDragEnd}
+      onClick={onOpen}
+      onKeyDown={e => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onOpen();
+        }
+      }}
+      role="button"
+      tabIndex={0}
+      className="kanban-card bg-[var(--surface)] rounded-[var(--r-flat)] p-3 shadow-[inset_0_0_0_1px_var(--rule)] border-l-[3px] border-l-[var(--rule)]"
+    >
+      <div className="flex gap-2.5">
+        <GoneTile className="w-11 h-11" />
+        <div className="min-w-0 flex-1">
+          <p className="text-[13px] font-semibold leading-snug text-[var(--ink)] line-clamp-2">
+            {orphanTitle(entry)}
+          </p>
+          <p className="text-[11.5px] tnum mt-0.5 text-[var(--ink-2)]">{orphanMeta(entry)}</p>
+        </div>
+      </div>
+      <EntryTraces entry={entry} />
+    </div>
+  );
+}
+
+/**
+ * A list row for an entry whose event is no longer listed.
+ *
+ * ONE target: the whole row opens the detail sheet (44px tall, `--r-touch` for its focus ring). The
+ * status is shown as text rather than as the select a normal row carries — it can still be changed
+ * from the sheet, and a row that is mostly a record should not lead with a control.
+ */
+function OrphanRow({
+  entry,
+  className,
+  onOpen,
+}: {
+  entry: TrackerEntry;
+  className: string;
+  onOpen: () => void;
+}) {
+  const column = COLUMNS.find(c => c.id === entry.status);
+  const people = entry.connections.length;
+  const traces = [
+    people > 0 ? `${people} ${people === 1 ? 'person' : 'people'}` : null,
+    entry.notes ? 'notes' : null,
+  ].filter(Boolean);
+  return (
+    <div className={`flex items-center gap-3 px-4 py-3 hover:bg-[var(--paper)] transition-colors ${className}`}>
+      <GoneTile className="w-10 h-10" />
+      <button
+        type="button"
+        onClick={onOpen}
+        className="flex min-h-11 min-w-0 flex-1 items-center gap-3 r-touch text-left"
+      >
+        <span className="flex min-w-0 flex-1 flex-col justify-center">
+          <span className="block truncate text-[14px] font-semibold text-[var(--ink)]">{orphanTitle(entry)}</span>
+          <span className="block truncate text-[12px] tnum text-[var(--ink-2)]">
+            {[orphanMeta(entry), ...traces].join(' · ')}
+          </span>
+        </span>
+        <span className="shrink-0 text-[12px] font-semibold text-[var(--ink-2)]">
+          {column?.label ?? entry.status}
+        </span>
+      </button>
+    </div>
+  );
+}
+
 function ListView({
   entries,
   onOpen,
@@ -857,22 +1115,23 @@ function ListView({
   onOpen: (entry: TrackerEntry) => void;
   onMove: (id: string, status: string) => void;
 }) {
-  const sorted = [...entries].sort(
-    (a, b) =>
-      new Date(a.eventId!.startDateTime).getTime() - new Date(b.eventId!.startDateTime).getTime()
-  );
+  const sorted = [...entries].sort(byEventStart);
 
   return (
     <div className="rounded-[var(--r-flat)] border border-[var(--rule)] overflow-hidden">
       {sorted.map((entry, index) => {
-        const event = entry.eventId!;
+        const divider = index > 0 ? 'border-t border-[var(--rule)]' : '';
+        const event = entry.eventId;
+        if (!event) {
+          return (
+            <OrphanRow key={entry._id} entry={entry} className={divider} onOpen={() => onOpen(entry)} />
+          );
+        }
         const column = COLUMNS.find(c => c.id === entry.status);
         return (
           <div
             key={entry._id}
-            className={`flex items-center gap-3 px-4 py-3 hover:bg-[var(--paper)] transition-colors ${
-              index > 0 ? 'border-t border-[var(--rule)]' : ''
-            }`}
+            className={`flex items-center gap-3 px-4 py-3 hover:bg-[var(--paper)] transition-colors ${divider}`}
           >
             <EventCover
               src={event.imageUrl}

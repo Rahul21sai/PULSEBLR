@@ -4,8 +4,18 @@
  *
  * User-approved scope (2026-07-27): "Past-dated only". Removes events whose end
  * (or start, when no end) is before now. Leaves seed stubs and all upcoming
- * events untouched. Uses the SAME filter as scripts/cleanup-dryrun.ts so the
- * count deleted here matches the dry-run's "PAST-DATED" bucket exactly.
+ * events untouched. Uses the SAME filter as scripts/cleanup-dryrun.ts, so the
+ * dry-run's "PAST-DATED" bucket is exactly what is deleted here PLUS what is kept
+ * below — both counts are printed so the two reconcile.
+ *
+ * NEVER A ROW A USER STILL POINTS AT. A past event somebody tracked, filed a folder
+ * for, or met someone at is their history: `TrackerEntry.eventId` is required, so
+ * deleting the event strands the entry's status, notes and people rather than
+ * removing them. Those rows are KEPT and named in the output, exactly as the nightly
+ * `pruneStale()` keeps them. The check is `splitByReference` from
+ * lib/scrapers/prune-selection.ts, imported rather than mirrored, so this script and
+ * the pruner cannot drift on what "referenced" means. Untrack the event, or delete
+ * its folder, and the next run removes it.
  *
  * Run: npx tsx scripts/cleanup-past.ts
  */
@@ -13,6 +23,7 @@ import './load-env';
 import mongoose from 'mongoose';
 import connectDB from '../lib/mongodb';
 import Event from '../lib/models/Event';
+import { PRUNE_BATCH_SIZE, chunk, splitByReference } from '../lib/scrapers/prune-selection';
 
 // A hand-entered event is never a candidate for automated deletion.
 //
@@ -53,16 +64,36 @@ async function main() {
     .select('title startDateTime endDateTime source')
     .lean();
 
-  console.log(`\n🗑️  Deleting ${doomed.length} past-dated events:\n`);
-  for (const e of doomed) {
+  // A user's own record outranks a date heuristic. SPARED, never repointed: a lone delete has no
+  // surviving twin to repoint to. Fails closed — a lookup error aborts before anything is deleted.
+  const { deletable, spared } = await splitByReference(doomed, { idOf: e => String(e._id) });
+
+  if (spared.length > 0) {
+    console.log(
+      `\nKeeping ${spared.length} past event(s) a user tracked, filed a folder for, or met someone at:\n`
+    );
+    for (const e of spared) {
+      console.log(`   • ${fmt(e.startDateTime)}  [${e.source}]  ${e.title.slice(0, 50)}`);
+    }
+  }
+
+  console.log(`\n🗑️  Deleting ${deletable.length} past-dated events:\n`);
+  for (const e of deletable) {
     console.log(`   • ${fmt(e.startDateTime)}  [${e.source}]  ${e.title.slice(0, 50)}`);
   }
 
-  const res = await Event.deleteMany(pastFilter);
+  let deletedCount = 0;
+  for (const batch of chunk(deletable.map(e => String(e._id)), PRUNE_BATCH_SIZE)) {
+    // `pastFilter` is repeated alongside the ids, so a row that stopped matching after it was read
+    // (re-dated, or claimed by an owner) is not deleted on a verdict about its old state.
+    const res = await Event.deleteMany({ ...pastFilter, _id: { $in: batch } });
+    deletedCount += res.deletedCount || 0;
+  }
   const remaining = await Event.countDocuments({});
 
   console.log('\n' + '═'.repeat(70));
-  console.log(`✅ Deleted: ${res.deletedCount}`);
+  console.log(`✅ Deleted: ${deletedCount}`);
+  console.log(`   Kept because a user points at them: ${spared.length}`);
   console.log(`📊 Events remaining in DB: ${remaining}`);
   console.log('═'.repeat(70) + '\n');
 

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import connectDB from '@/lib/mongodb';
 import TrackerEntry from '@/lib/models/TrackerEntry';
+import Event from '@/lib/models/Event';
 import mongoose from 'mongoose';
 import { getCurrentUserId } from '@/lib/auth-helpers';
 import {
@@ -9,8 +10,17 @@ import {
   isSchemaRejection,
 } from '@/lib/tracker/validate';
 import { ensureFolderForEvent, FOLDER_ON_TRACKER_STATUS } from '@/lib/contacts/service';
+import { canViewEvent } from '@/lib/events/visibility';
+import { TRACKER_EVENT_SELECT, shapeTrackerEntry } from '@/lib/tracker/entry-view';
 
-// GET /api/tracker/[id]
+/**
+ * GET /api/tracker/[id]
+ *
+ * The event goes out through `shapeTrackerEntry`, like the list: nine fields, visibility re-decided,
+ * `createdByUserId` never sent. `eventId` is null when the event is no longer listed. No `lastKnown`
+ * here — that folder lookup is the board's, in `GET /api/tracker`, and nothing reads this route's
+ * event.
+ */
 export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -24,9 +34,10 @@ export async function GET(
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return NextResponse.json({ error: 'Invalid ID' }, { status: 400 });
     }
-    const entry = await TrackerEntry.findOne({ _id: id, userId }).populate('eventId');
+    const entry = await TrackerEntry.findOne({ _id: id, userId }).lean();
     if (!entry) return NextResponse.json({ error: 'Not found' }, { status: 404 });
-    return NextResponse.json(entry);
+    const event = await Event.findById(entry.eventId).select(TRACKER_EVENT_SELECT).lean();
+    return NextResponse.json(shapeTrackerEntry(entry, event, userId));
   } catch (error) {
     console.error(error);
     return NextResponse.json({ error: 'Failed to fetch tracker entry' }, { status: 500 });
@@ -79,10 +90,24 @@ export async function PUT(
     const entry = await TrackerEntry.findOneAndUpdate(
       { _id: id, userId },
       { $set: update },
-      { new: true, runValidators: true }
-    ).populate('eventId');
+      { returnDocument: 'after', runValidators: true }
+    ).lean();
 
     if (!entry) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+
+    /*
+     * RE-DECIDED ON EVERY WRITE, not trusted from tracking time.
+     *
+     * `POST /api/tracker` refuses to track an event the caller cannot see, but that is one check,
+     * made once. An admin can soft-delete the event afterwards, or a submission can revert to its
+     * author's `private` — and moving this entry to Confirmed would then copy that event's title,
+     * date and venue into a folder the caller owns, a durable copy no later access change can claw
+     * back (CLAUDE.md §12). An event the caller may no longer see is treated exactly like a deleted
+     * one: no folder, and `eventId: null` in the response. The select carries the three guard fields
+     * `canViewEvent` reads; without them it fails OPEN.
+     */
+    const event = await Event.findById(entry.eventId).select(TRACKER_EVENT_SELECT).lean();
+    const visibleEvent = event && canViewEvent(event, userId) ? event : null;
 
     /*
      * Confirming an event gets you a folder to scan people into.
@@ -106,17 +131,10 @@ export async function PUT(
     if (
       nextStatus &&
       (FOLDER_ON_TRACKER_STATUS as readonly string[]).includes(nextStatus) &&
-      entry.eventId
+      visibleEvent
     ) {
       try {
-        const event = entry.eventId as unknown as {
-          _id: mongoose.Types.ObjectId;
-          title?: string;
-          startDateTime?: Date;
-          venue?: string | null;
-          area?: string | null;
-        };
-        const result = await ensureFolderForEvent(userId, event);
+        const result = await ensureFolderForEvent(userId, visibleEvent);
         folder = {
           _id: String(result.folder._id),
           name: result.folder.name,
@@ -128,7 +146,8 @@ export async function PUT(
     }
 
     // `folder` is present only when one was ensured, so the client can link straight to it.
-    return NextResponse.json(folder ? { ...entry.toObject(), folder } : entry);
+    const shaped = shapeTrackerEntry(entry, event, userId);
+    return NextResponse.json(folder ? { ...shaped, folder } : shaped);
   } catch (error) {
     console.error('Error updating tracker entry:', error);
     // Unreachable while the validator and the schema agree; a 400 rather than a 500 if they
