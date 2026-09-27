@@ -5,6 +5,7 @@ import connectDB from '@/lib/mongodb';
 import Event from '@/lib/models/Event';
 import { isIndexableEvent } from '@/lib/events/seo';
 import { fullDateIST, timeIST } from '@/lib/format';
+import { displayOrganizer } from '@/lib/events/organizer-display';
 
 /**
  * The share card for an event — GENERATED, never the scraped cover.
@@ -186,7 +187,7 @@ function EventCard({ event }: { event: CardEvent }) {
   const titleSize = title.length > 62 ? 56 : title.length > 40 ? 66 : 76;
 
   const when = `${fullDateIST(event.startDateTime).toUpperCase()} · ${timeIST(event.startDateTime)} IST`;
-  const footer = [clamp(where, 40), event.organizer ? clamp(event.organizer, 34) : null]
+  const footer = [clamp(where, 40), event.organizer ? clamp(displayOrganizer(event.organizer), 34) : null]
     .filter(Boolean)
     .join('  ·  ');
 

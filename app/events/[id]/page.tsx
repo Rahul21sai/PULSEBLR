@@ -47,6 +47,7 @@ import {
   stripMarkdown,
 } from '@/lib/format';
 import { RELATED_FETCH, RELATED_SORT, onePerSeries, relatedEventsFilter } from '@/lib/events/related';
+import { displayOrganizer } from '@/lib/events/organizer-display';
 
 /**
  * The event page. A SERVER COMPONENT, and the conversion from a client one is the entire point.
@@ -827,7 +828,7 @@ function EventFacts({ event, isPast }: { event: EventDetail; isPast: boolean }) 
                 />
               )}
               <p className="text-[14.5px] font-semibold leading-[1.3] text-[var(--ink)] min-w-0 truncate">
-                {event.organizer}
+                {displayOrganizer(event.organizer)}
               </p>
             </div>
           </Fact>
