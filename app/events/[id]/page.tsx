@@ -8,7 +8,7 @@ import connectDB from '@/lib/mongodb';
 import Event from '@/lib/models/Event';
 import { getCurrentUserId } from '@/lib/auth-helpers';
 import { canViewEvent } from '@/lib/events/visibility';
-import { DETAIL_SELECT, publicEventScope } from '@/lib/events/query';
+import { DETAIL_SELECT } from '@/lib/events/query';
 import { toEventDetail, toFeedEvents, type EventDetail } from '@/lib/events/serialize';
 import { loadViewerStates } from '@/lib/events/viewer-state';
 import { usableLink } from '@/lib/events/placeholder';
@@ -46,6 +46,7 @@ import {
   isHappeningNow,
   stripMarkdown,
 } from '@/lib/format';
+import { RELATED_FETCH, RELATED_SORT, onePerSeries, relatedEventsFilter } from '@/lib/events/related';
 
 /**
  * The event page. A SERVER COMPONENT, and the conversion from a client one is the entire point.
@@ -213,18 +214,11 @@ const loadEvent = cache(async (id: string): Promise<LoadedEvent | null> => {
    * appear as suggestions at the bottom of every public event page — a leak needing no id guessing
    * at all, just a visit to any event.
    */
-  const related = await Event.find({
-    _id: { $ne: doc._id },
-    startDateTime: { $gte: new Date() },
-    category: { $in: doc.category?.length ? doc.category : ['Networking/Meetup'] },
-    // `publicEventScope`, NOT `visibilityClause` -- see the note on that function. It is what also
-    // keeps a soft-deleted event from reappearing here as a suggestion.
-    ...publicEventScope(viewerId),
-  })
+  const related = onePerSeries(await Event.find(relatedEventsFilter(doc, viewerId, new Date()))
     .select('title startDateTime venue area format imageUrl category isFree price organizer')
-    .sort({ startDateTime: 1 })
-    .limit(6)
-    .lean();
+    .sort(RELATED_SORT)
+    .limit(RELATED_FETCH)
+    .lean());
 
   return {
     event: toEventDetail(doc, null),

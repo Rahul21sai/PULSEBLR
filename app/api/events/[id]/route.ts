@@ -7,7 +7,7 @@ import mongoose from 'mongoose';
 import { requireAdmin, requireUser } from '@/lib/api-auth';
 import { getCurrentUserId } from '@/lib/auth-helpers';
 import { canViewEvent } from '@/lib/events/visibility';
-import { DETAIL_SELECT, notDeletedClause, publicEventScope } from '@/lib/events/query';
+import { DETAIL_SELECT, notDeletedClause } from '@/lib/events/query';
 import { validateEventUpdate, eventValidationError } from '@/lib/events/admin-validate';
 import { validateOwnerEdit, resolveOwnerEdit, ownerDeleteMode } from '@/lib/events/owner-edit';
 import { toEventDetail } from '@/lib/events/serialize';
@@ -18,6 +18,7 @@ import { loadViewerStates } from '@/lib/events/viewer-state';
  * It sits in `lib/account-deletion.ts` today and belongs in `lib/canonical-origin.ts`.
  */
 import { hasExactCanonicalOrigin } from '@/lib/account-deletion';
+import { RELATED_FETCH, RELATED_SORT, onePerSeries, relatedEventsFilter } from '@/lib/events/related';
 
 /**
  * Same-origin, failing CLOSED. `canonicalOrigin()` throws in production when `NEXTAUTH_URL` is unset;
@@ -84,18 +85,12 @@ export async function GET(
     // appear as suggestions at the bottom of every public event page — a leak that needs no id
     // guessing at all, just a visit to any event.
     const [related, viewer] = await Promise.all([
-      Event.find({
-        _id: { $ne: event._id },
-        startDateTime: { $gte: new Date() },
-        category: { $in: event.category?.length ? event.category : ['Networking/Meetup'] },
-        // `publicEventScope`, NOT `visibilityClause`: this hand-rolled filter must also exclude
-        // soft-deleted rows, and would not have inherited that from `buildEventFilter`.
-        ...publicEventScope(viewerId),
-      })
+      Event.find(relatedEventsFilter(event, viewerId, new Date()))
         .select('title startDateTime venue area format imageUrl category isFree price organizer')
-        .sort({ startDateTime: 1 })
-        .limit(6)
-        .lean(),
+        .sort(RELATED_SORT)
+        .limit(RELATED_FETCH)
+        .lean()
+        .then(rows => onePerSeries(rows)),
       loadViewerStates([event], viewerId),
     ]);
 
