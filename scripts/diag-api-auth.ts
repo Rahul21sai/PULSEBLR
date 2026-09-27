@@ -225,6 +225,20 @@ const MUST_REFUSE: Case[] = [
   },
   { method: 'DELETE', path: '/api/me/push', body: { endpoint: 'x' }, why: 'switch off somebody’s notifications' },
   { method: 'POST', path: '/api/me/push/test', why: 'fire test pushes at another user’s devices' },
+  // The morning-after follow-up nudge. The PUT is probed with a deliberately INVALID body, so a 400
+  // here would mean validation outran the guard.
+  { method: 'GET', path: '/api/me/follow-up-nudges', why: 'read somebody’s follow-up notification setting' },
+  {
+    method: 'PUT',
+    path: '/api/me/follow-up-nudges',
+    body: { enabled: 'nope' },
+    why: 'switch off another user’s follow-up notifications',
+  },
+  {
+    method: 'GET',
+    path: `/api/follow-ups/${GHOST}`,
+    why: 'list who somebody met at an event, with their LinkedIn and email',
+  },
   {
     method: 'DELETE',
     path: '/api/me/account',
@@ -316,6 +330,8 @@ const CLIENT_GATED = [
   '/people',
   '/scan',
   '/card',
+  // The morning-after follow-up screen: a thin server shell that renders only the id it was given.
+  `/follow-ups/${GHOST}`,
 ];
 
 /**

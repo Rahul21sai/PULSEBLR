@@ -112,6 +112,15 @@ export interface IUser extends Document {
    */
   contactTags: string[];
   /**
+   * The morning-after follow-up push ("You met 4 people at GIDS…"). ABSENT MEANS ON; only an explicit
+   * `false` turns it off. Read by `followUpNudgesEnabled()` in
+   * `lib/notifications/followup-nudge-policy.ts`, which records why default-on is not a silent opt-in
+   * (the precondition is a `PushSubscription` row, i.e. a click plus an OS permission grant). Written
+   * only by `PUT /api/me/follow-up-nudges`. Top-level rather than inside `preferences`, because that
+   * sub-document is owned by the onboarding stream's validator and this is not an onboarding answer.
+   */
+  pushFollowUpNudges?: boolean;
+  /**
    * What this user told us in onboarding, plus how they want to be contacted.
    *
    * ── SHAPE LIVES IN `lib/events/relevance.ts`, NOT HERE. ──────────────────────────────────────
@@ -282,6 +291,12 @@ const UserSchema = new Schema<IUser>(
      * disagrees. RESTART `npm run dev` after pulling this, or verify from a fresh `tsx` process.
      */
     preferences: { type: UserPreferencesSchema, default: () => ({ ...DEFAULT_PREFERENCES }) },
+    /**
+     * NO DEFAULT, deliberately: absence is the "never touched the switch" state and reads as on.
+     * ⚠ A FIELD ADDED TO AN EXISTING MODEL — restart `npm run dev` after pulling, or a server holding
+     * the old schema drops the write in silence (the warning at the top of CLAUDE.md).
+     */
+    pushFollowUpNudges: { type: Boolean },
   },
   { timestamps: true }
 );

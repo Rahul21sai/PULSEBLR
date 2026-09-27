@@ -28,6 +28,15 @@ name: Daily Push Reminders
 # THIS IS INERT UNTIL IT IS ON THE DEFAULT BRANCH. GitHub runs `schedule` triggers only from the
 # default branch, so while this file sits on a feature branch no push reminder is sent by it.
 #
+# TWO PASSES IN ONE STEP. The same script then sends the MORNING-AFTER FOLLOW-UP NUDGE ("You met 4
+# people at GIDS. Draft follow-ups?") for events that ended yesterday with people still to follow up
+# (lib/notifications/followup-nudge.ts). No new workflow, no new step, no new secret: it needs exactly
+# the four variables above, the preflight below already covers them, and 09:00 IST is the right hour
+# for it too. It runs AFTER the reminders because the two share one daily budget per phone. Its rows
+# are a separate ReminderLog kind, so the same at-most-once argument below holds for it.
+# `--no-followups` exists for a reminders-only run from a laptop; there is deliberately no dispatch
+# input for it, because a dry-run dispatch (the default) already shows both passes and sends nothing.
+#
 # SAFE TO RE-RUN AND SAFE TO OVERLAP. The script claims a ReminderLog row per event BEFORE sending,
 # under a unique index, so a second run the same day (or a manual dispatch beside the schedule)
 # finds every event already claimed and sends nothing.

@@ -38,6 +38,7 @@ export async function POST(request: Request) {
 
     if (typeof body.contactId === 'string' && body.contactId) {
       const contact = await completeContactFollowUp(userId, body.contactId);
+      if (!contact) return NextResponse.json({ error: 'Not found' }, { status: 404 });
       return NextResponse.json({ contact });
     }
 

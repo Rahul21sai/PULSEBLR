@@ -123,6 +123,13 @@ function sections(supportEmail: string): LegalSection[] {
             and a private calendar subscription URL.
           </p>
           <p>
+            If push notifications are on, they are used for two things: a reminder before an event you
+            saved, and, the morning after an event where you saved people you have not yet followed up
+            with, one notification saying how many. That notification names the event or folder and
+            gives a count; it never includes anyone&apos;s name or your notes. You can switch the
+            follow-up notification off on its own in Settings.
+          </p>
+          <p>
             If you ask PulseBLR to draft a follow-up, the contact details and notes needed for that
             draft may be sent to IBM ICA: the contact&apos;s name, company, role and headline, the
             event and date you met, and your notes about them. The feature runs only when you request

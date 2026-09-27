@@ -460,11 +460,15 @@ describe('the daily frequency cap is scoped by kind on BOTH channels', () => {
     expect(filter).toContain('sentAt');
   });
 
-  it('scopes the push cap query by kind', () => {
+  it('scopes the push cap query by kind — every PUSH kind, and no email kind', () => {
+    // Since the morning-after follow-up nudge landed, the push cap is one budget for every kind that
+    // reaches the lock screen (`PUSH_CHANNEL_KINDS`). What must still hold is that it is SCOPED: the
+    // email kind is not in that list, which `tests/followup-nudge.test.ts` pins on the constant.
     const source = fs.readFileSync(path.join(REPO, 'lib/notifications/push.ts'), 'utf8');
     const call = source.slice(source.indexOf("ReminderLog.distinct('batchId'"));
     const filter = call.slice(0, call.indexOf('});') + 3);
-    expect(filter).toContain('kind: PUSH_REMINDER_KIND');
+    expect(filter).toContain('kind: { $in: [...PUSH_CHANNEL_KINDS] }');
+    expect(filter).not.toContain('REMINDER_KIND,');
   });
 });
 

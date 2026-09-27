@@ -177,6 +177,53 @@ export default function PushSection() {
   const [busy, setBusy] = useState(false);
   const [testing, setTesting] = useState(false);
   const [status, setStatus] = useState<{ tone: Tone; text: string } | null>(null);
+  /**
+   * The morning-after follow-up switch. `null` until read. It is a per-ACCOUNT setting, unlike the
+   * device subscription above, so it is shown whenever push is usable here, subscribed or not.
+   * Default ON when absent — see `followUpNudgesEnabled()` for why that is not a silent opt-in.
+   */
+  const [followUps, setFollowUps] = useState<boolean | null>(null);
+  const [followUpsBusy, setFollowUpsBusy] = useState(false);
+  const [followUpsError, setFollowUpsError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch('/api/me/follow-up-nudges');
+        if (!res.ok || cancelled) return;
+        const data = (await res.json()) as { enabled?: unknown };
+        if (!cancelled && typeof data.enabled === 'boolean') setFollowUps(data.enabled);
+      } catch {
+        // Leaves the switch hidden rather than guessing its state.
+      }
+    }, 0);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, []);
+
+  async function toggleFollowUps() {
+    if (followUps === null) return;
+    const next = !followUps;
+    setFollowUpsBusy(true);
+    setFollowUpsError(null);
+    setFollowUps(next); // Optimistic; rolled back below on failure.
+    try {
+      const res = await fetch('/api/me/follow-up-nudges', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: next }),
+      });
+      if (!res.ok) throw new Error(String(res.status));
+    } catch {
+      setFollowUps(!next);
+      setFollowUpsError('Could not save that. Nothing was changed — try again.');
+    } finally {
+      setFollowUpsBusy(false);
+    }
+  }
 
   /** POST whatever subscription this browser currently holds. Idempotent; never prompts. */
   const syncSubscription = useCallback(async (subscription: PushSubscription) => {
@@ -385,10 +432,10 @@ export default function PushSection() {
       id="notifications"
       className="rounded-[var(--r-flat)] border border-[var(--rule)] p-5"
     >
-      <h2 className="text-[16px] font-bold text-[var(--ink)]">Event reminders</h2>
+      <h2 className="text-[16px] font-bold text-[var(--ink)]">Notifications</h2>
       <p className="mt-0.5 text-[13px] text-[var(--ink-2)]">
-        A notification the day before an event you saved, on this device — it arrives whether or not
-        PulseBLR is open.
+        A reminder the day before an event you saved, and a nudge the morning after an event where you
+        met people — on this device, whether or not PulseBLR is open.
       </p>
 
       {support === 'checking' && (
@@ -480,10 +527,57 @@ export default function PushSection() {
             </Banner>
           )}
 
+          {followUps !== null && (
+            <div className="rule-t mt-4 pt-4">
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <p id="followup-nudge-label" className="text-[14px] font-semibold text-[var(--ink)]">
+                    Morning-after follow-ups
+                  </p>
+                  <p id="followup-nudge-help" className="mt-0.5 text-[12.5px] leading-relaxed text-[var(--ink-2)]">
+                    The day after an event where you captured people, one notification — &ldquo;You met 4
+                    people at GIDS&rdquo; — opening a list with a drafted follow-up for each. Only the
+                    event name and a count are in it, never anybody&apos;s name. At most once per event.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={followUps}
+                  aria-labelledby="followup-nudge-label"
+                  aria-describedby="followup-nudge-help"
+                  disabled={followUpsBusy}
+                  onClick={() => void toggleFollowUps()}
+                  className="relative inline-flex h-11 w-[60px] shrink-0 items-center justify-center pressable disabled:opacity-45 [touch-action:manipulation]"
+                >
+                  <span
+                    aria-hidden="true"
+                    className={`relative h-7 w-12 rounded-full transition-colors ${
+                      followUps ? 'bg-[var(--accent)]' : 'bg-[var(--rule)]'
+                    }`}
+                  >
+                    <span
+                      className={`absolute top-0.5 h-6 w-6 rounded-full bg-[var(--surface)] shadow-[0_1px_2px_rgba(0,0,0,0.25)] transition-[left] ${
+                        followUps ? 'left-[22px]' : 'left-0.5'
+                      }`}
+                    />
+                  </span>
+                </button>
+              </div>
+              {followUpsError && (
+                <Banner tone="error" className="mt-3">
+                  {followUpsError}
+                </Banner>
+              )}
+            </div>
+          )}
+
           <p className="mt-3 text-[12.5px] leading-relaxed text-[var(--ink-2)]">
-            Each device is separate, so turning this on here does not turn it on elsewhere. You will
-            get at most a few reminders a day, only about events you saved, and never about anything
-            else. This is independent of the reminder emails — turning one off leaves the other alone.
+            Each device is separate, so turning notifications on here does not turn them on elsewhere;
+            the follow-up switch above is for your whole account. You will get at most three
+            notifications a day, all of them about events you saved or people you met, and never about
+            anything else. This is independent of the reminder emails — turning one off leaves the
+            other alone.
           </p>
         </>
       )}

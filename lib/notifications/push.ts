@@ -55,6 +55,7 @@ import {
   isReminderDue,
   istDayStart,
   pushEventsThisRun,
+  PUSH_CHANNEL_KINDS,
   PUSH_REMINDER_KIND,
   REMINDABLE_TRACKER_STATUSES,
   type ReminderEventView,
@@ -489,10 +490,14 @@ export async function sendPushReminders(
      * include the email channel's batches and every push would spend one of the two daily EMAIL
      * slots — which is the bug that was fixed in `reminders.ts` in the same change that added this
      * file. One batch per notification here (see below), so this counts notifications exactly.
+     *
+     * `$in: PUSH_CHANNEL_KINDS`, NOT the bare reminder kind, since the follow-up nudge landed: both
+     * kinds reach the same lock screen, so they share one "three a day" budget. The EMAIL kind is not
+     * in that list and must never be — see `PUSH_CHANNEL_KINDS` in `./reminder-policy.ts`.
      */
     const batchIds = await ReminderLog.distinct('batchId', {
       userId,
-      kind: PUSH_REMINDER_KIND,
+      kind: { $in: [...PUSH_CHANNEL_KINDS] },
       sentAt: { $gte: istDayStart(now) },
     });
     perUser.pushesSentToday = batchIds.length;

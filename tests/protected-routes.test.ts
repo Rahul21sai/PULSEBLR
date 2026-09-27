@@ -96,6 +96,33 @@ describe('isProtectedPath: /my-events', () => {
   });
 });
 
+/**
+ * `/follow-ups/<folderId>` — the screen the morning-after push opens. PRIVATE, and it sits beside two
+ * things it must not be confused with: the public `/f/<token>` intake page (a stranger adding
+ * themselves to a folder, no account) and the private `/folders`, which does NOT cover it by prefix.
+ */
+describe('isProtectedPath: /follow-ups', () => {
+  it('gates the landing screen, bare and with the id a notification carries', () => {
+    expect(isProtectedPath('/follow-ups')).toBe(true);
+    expect(isProtectedPath('/follow-ups/6a8c75ac1d13c5f121502f3c')).toBe(true);
+    expect(isProtectedPath('/follow-ups/6a8c75ac1d13c5f121502f3c?from=push')).toBe(true);
+  });
+
+  it('is listed in its own right — /folders does not cover it', () => {
+    expect(PROTECTED_PATHS).toContain('/follow-ups');
+    expect('/follow-ups/x'.startsWith('/folders')).toBe(false);
+  });
+
+  it('does NOT gate the public intake page or a same-prefix look-alike', () => {
+    expect(isProtectedPath('/f/some-token')).toBe(false);
+    expect(isProtectedPath('/follow-ups-guide')).toBe(false);
+  });
+
+  it('is signed-in only, not admin-only', () => {
+    expect(isAdminOnlyPath('/follow-ups/6a8c75ac1d13c5f121502f3c')).toBe(false);
+  });
+});
+
 describe('isAdminOnlyPath: the operator-only pages', () => {
   /**
    * `/add-event` IS NO LONGER ADMIN-ONLY, and this assertion is inverted on purpose.

@@ -8,6 +8,20 @@
  *   npx tsx scripts/send-push-reminders.ts --only=me@example.com
  *   npx tsx scripts/send-push-reminders.ts --lead=24 --max-per-day=1 --max-per-run=1
  *   npx tsx scripts/send-push-reminders.ts --retry-failed
+ *   npx tsx scripts/send-push-reminders.ts --no-followups       # reminders only
+ *   npx tsx scripts/send-push-reminders.ts --max-nudges=1        # follow-up nudges per account per run
+ *
+ * TWO PASSES, ONE PROCESS. First the saved-event reminders; then the MORNING-AFTER FOLLOW-UP NUDGE
+ * (`lib/notifications/followup-nudge.ts`): "You met 4 people at GIDS. Draft follow-ups?" for an event
+ * that ended yesterday with people still to follow up. A second pass here rather than a second
+ * workflow, because it needs exactly the same four secrets, the same preflight and the same 09:00 IST
+ * slot, and because the two share one daily budget per phone (`PUSH_CHANNEL_KINDS`) — running the
+ * reminders first in the same process is what lets them spend it first. A failure or crash in one
+ * pass does not stop the other; either failing exits 1.
+ *
+ * `--max-per-day` is the shared phone budget and applies to both passes; `--max-per-run` and `--lead`
+ * are the reminder pass's; `--max-nudges` is the follow-up pass's. `--only`, `--dry` and
+ * `--retry-failed` apply to both.
  *
  * THIS IS A SIBLING OF `send-reminders.ts`, NOT A REPLACEMENT. The two channels write `ReminderLog`
  * rows under different `kind` values, so running both on the same morning is correct: neither
@@ -26,6 +40,10 @@
 
 import './load-env'; // MUST be first — populates process.env from .env.local
 import { sendPushReminders, type SendPushRemindersReport } from '../lib/notifications/push';
+import {
+  sendFollowUpNudges,
+  type SendFollowUpNudgesReport,
+} from '../lib/notifications/followup-nudge';
 import { toLogLine } from '../lib/security/control-chars';
 
 function flag(name: string): boolean {
@@ -114,6 +132,51 @@ function summarise(report: SendPushRemindersReport): void {
   }
 }
 
+/**
+ * The follow-up pass's report. Its labels deliberately do NOT begin "accounts with a subscription":
+ * the workflow preflight reads the FIRST line with that label to count subscribers, and a second
+ * matching line would be a second number for one question.
+ */
+function summariseNudges(report: SendFollowUpNudgesReport): void {
+  console.log('');
+  console.log('── Morning-after follow-up nudges ──');
+  console.log(`follow-up accounts considered  ${report.usersWithSubscriptions}`);
+  console.log(`follow-up opted out            ${report.optedOut}`);
+  console.log(`follow-up nudges sent          ${report.notificationsSent}`);
+  console.log(`follow-up nudges failed        ${report.notificationsFailed}`);
+  console.log(`follow-up endpoints pruned     ${report.endpointsPruned}`);
+
+  const active = report.perUser.filter(row => row.outcome !== 'nothing-due' || row.candidates > 0);
+  if (active.length === 0) return;
+  console.log('');
+  console.log('follow-ups per account:');
+  for (const row of active) {
+    const bits = [
+      `devices ${row.devices}`,
+      `candidates ${row.candidates}`,
+      `already ${row.alreadyLogged}`,
+      `claimed ${row.claimed}`,
+      row.deferred ? `deferred ${row.deferred}` : null,
+      row.raced ? `raced ${row.raced}` : null,
+      `delivered ${row.delivered}`,
+      row.deviceFailures ? `device-fail ${row.deviceFailures}` : null,
+      row.pruned ? `pruned ${row.pruned}` : null,
+      `today ${row.pushesSentToday}`,
+    ]
+      .filter(Boolean)
+      .join(' · ');
+    const email = toLogLine(row.email, 254);
+    console.log(`  ${row.outcome.padEnd(16)} ${email.padEnd(32)} ${bits}`);
+    // A folder name is text the user typed, so it is sanitised like every other printed string.
+    for (const nudge of row.nudges) {
+      console.log(
+        `                   · ${toLogLine(nudge.title, 80)} — met ${nudge.metCount}, to do ${nudge.pendingCount}`
+      );
+    }
+    if (row.error) console.log(`                   ↳ ${toLogLine(row.error, 500)}`);
+  }
+}
+
 async function main() {
   const dryRun = flag('dry') || flag('dry-run');
 
@@ -122,6 +185,31 @@ async function main() {
     `PulseBLR Push Reminders${dryRun ? ' — DRY RUN, nothing will be written or sent' : ''}`
   );
   console.log('='.repeat(62));
+
+  /*
+   * The follow-up pass, run after the reminder pass has reported. Its own try, so a crash in one pass
+   * is reported without hiding the other's result. Returns the number of failed notifications, or -1
+   * for a crash.
+   */
+  async function followUpPass(): Promise<number> {
+    if (flag('no-followups')) return 0;
+    try {
+      const nudges = await sendFollowUpNudges({
+        dryRun,
+        maxPushesPerDay: numeric('max-per-day'),
+        maxNudgesPerRun: numeric('max-nudges'),
+        retryFailed: flag('retry-failed'),
+        onlyEmail: value('only'),
+      });
+      summariseNudges(nudges);
+      return nudges.notificationsFailed;
+    } catch (error) {
+      console.error('');
+      console.error('❌ Fatal error sending follow-up nudges:');
+      console.error(error);
+      return -1;
+    }
+  }
 
   try {
     const report = await sendPushReminders({
@@ -149,11 +237,16 @@ async function main() {
 
     summarise(report);
 
-    if (report.notificationsFailed > 0) {
+    const nudgeFailures = await followUpPass();
+
+    if (report.notificationsFailed > 0 || nudgeFailures !== 0) {
+      const failed = report.notificationsFailed + Math.max(0, nudgeFailures);
       console.log('');
       console.log(
-        `❌ ${report.notificationsFailed} notification(s) failed. Their ReminderLog rows are marked ` +
-          "'failed' and are NOT retried automatically — a failure reported by this side does not " +
+        (failed > 0
+          ? `❌ ${failed} notification(s) failed${nudgeFailures < 0 ? ', and the follow-up pass crashed (above)' : ''}. Their ReminderLog rows are marked 'failed' `
+          : "❌ The follow-up pass crashed (above). Any row it claimed stays 'pending' ") +
+          'and is NOT retried automatically — a failure reported by this side does not ' +
           'prove the message was undelivered, and re-sending on a false negative is the duplicate ' +
           'this design refuses (and the fastest way to have a notification permission revoked). Run ' +
           'with --retry-failed once you have decided.'
@@ -168,6 +261,8 @@ async function main() {
     console.error('');
     console.error('❌ Fatal error sending push reminders:');
     console.error(error);
+    // The reminder pass crashed; the follow-up pass is independent and still gets its morning.
+    await followUpPass();
     process.exit(1);
   }
 }

@@ -1,3 +1,4 @@
+import { Types } from 'mongoose';
 import connectDB from '../mongodb';
 import TrackerEntry from '../models/TrackerEntry';
 import Contact from '../models/Contact';
@@ -226,11 +227,19 @@ export async function getPendingFollowUps(
  * The precise version, and the reason `Contact` is a collection: it addresses ONE row, so a
  * second person with the same name is no longer unreachable.
  */
+/**
+ * Returns `null` when the id is malformed or names no contact of this user's. It used to THROW,
+ * and the route's catch-all turned both into a 500 — a client retrying "server fault" for what is
+ * really "not yours / not there". The route maps `null` to 404, never 403, so a stranger's id and
+ * a typo are indistinguishable.
+ */
 export async function completeContactFollowUp(userId: string, contactId: string) {
+  // A malformed id would reach Mongoose as a CastError, which is the same 500 by another route.
+  if (!Types.ObjectId.isValid(contactId)) return null;
   await connectDB();
   // Ownership in the filter, never fetch-then-compare.
   const contact = await Contact.findOne({ _id: contactId, userId });
-  if (!contact) throw new Error('Contact not found');
+  if (!contact) return null;
   contact.followedUp = true;
   // `.save()` rather than an update, so `pre('validate')` runs — see lib/models/Contact.ts.
   await contact.save();

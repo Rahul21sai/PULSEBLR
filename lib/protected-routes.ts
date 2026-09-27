@@ -68,6 +68,16 @@ export const PROTECTED_PATHS = [
    * with `/my-events`.
    */
   '/my-events',
+  /**
+   * The morning-after follow-up screen, opened from a push notification. Every byte behind it is
+   * `requireUser()` (`GET /api/follow-ups/[folderId]`, the draft endpoints, the follow-ups API), so an
+   * anonymous visitor would only reach a list that 401s — the gate turns that into a sign-in.
+   *
+   * Safe against the prefix trap above, checked from BOTH sides: it cannot capture the public
+   * `/f/<token>` (`'/f/x'` does not start with `/follow-ups`), and it is not captured by `/folders`
+   * (`'/follow-ups/x'` does not start with `/folders`), so it needed its own entry.
+   */
+  '/follow-ups',
 ] as const;
 
 /** Does this path require a signed-in user? */

@@ -73,6 +73,33 @@ export const REMINDER_KIND = 'event-reminder';
 export const PUSH_REMINDER_KIND = 'event-reminder-push';
 
 /**
+ * The `kind` for the MORNING-AFTER FOLLOW-UP NUDGE — "You met 4 people at GIDS. Draft follow-ups?"
+ * (`lib/notifications/followup-nudge.ts`). The third kind, and the first one that is not about an
+ * upcoming event.
+ *
+ * ITS `eventId` IS A SUBJECT ID, NOT ALWAYS AN EVENT ID. The unique key is `{ userId, eventId, kind }`,
+ * and "once per event per user" needs an id for events the corpus has never seen: most folders are
+ * made by hand at the event and carry `eventId: null` (CLAUDE.md §9). So a linked folder is keyed on
+ * its `Event` id and an unlinked one on its own `Folder` id. ObjectIds are unique across collections
+ * in practice (timestamp + machine/process + counter), so the two cannot collide, and nothing reads
+ * through this field after the send — `ReminderLog`'s header already calls it a soft link.
+ */
+export const FOLLOWUP_NUDGE_KIND = 'followup-nudge-push';
+
+/**
+ * Every kind that lands on the PHONE. The push daily cap counts all of them together.
+ *
+ * WHY ONE BUDGET FOR TWO PUSH KINDS, WHEN EMAIL AND PUSH MUST NEVER SHARE ONE. The rule the cap
+ * protects is "the number a recipient would count if they were annoyed". Email and push land in
+ * different places, so spending one channel's allowance on the other was a bug (see
+ * `PUSH_REMINDER_KIND`). A reminder and a follow-up nudge land in the SAME place — the notification
+ * shade — so counting them separately would let a busy morning put six interruptions on one lock
+ * screen under a "three a day" promise. Same channel, same budget; different channel, different
+ * budget. The email kind is deliberately absent, and `tests/followup-nudge.test.ts` asserts that.
+ */
+export const PUSH_CHANNEL_KINDS: readonly string[] = [PUSH_REMINDER_KIND, FOLLOWUP_NUDGE_KIND];
+
+/**
  * How far ahead a saved event earns a reminder.
  *
  * 36 hours, not 24, and the reason is the schedule rather than taste: the workflow runs at
