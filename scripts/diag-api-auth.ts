@@ -207,6 +207,31 @@ const MUST_REFUSE: Case[] = [
     why: 'rewrite feed preferences and opt somebody into mail',
   },
 
+  // -- Added on feat/mobile-app. Each is guard-first, so signed-out must be 401 before any body,
+  // Origin or rate-limit logic runs. --
+  { method: 'GET', path: '/api/me/calendar-feed', why: 'read the secret URL of somebody’s calendar feed' },
+  {
+    method: 'PUT',
+    path: '/api/me/calendar-feed',
+    body: { action: 'rotate' },
+    why: 'rotate (and so break) another user’s calendar subscription',
+  },
+  { method: 'GET', path: '/api/me/push', why: 'list somebody’s registered push devices' },
+  {
+    method: 'POST',
+    path: '/api/me/push',
+    body: { endpoint: 'https://fcm.googleapis.com/fcm/send/diag', keys: { p256dh: 'x', auth: 'y' } },
+    why: 'register an attacker endpoint to receive another user’s reminders',
+  },
+  { method: 'DELETE', path: '/api/me/push', body: { endpoint: 'x' }, why: 'switch off somebody’s notifications' },
+  { method: 'POST', path: '/api/me/push/test', why: 'fire test pushes at another user’s devices' },
+  {
+    method: 'DELETE',
+    path: '/api/me/account',
+    body: { confirmation: 'DELETE' },
+    why: 'DELETE ANOTHER USER’S ACCOUNT - the most destructive route in the app',
+  },
+
   // -- The control room. Global effects, so these need requireAdmin, not merely a session. --
   { method: 'GET', path: '/api/admin/audit', why: 'the full audit log - who changed what, with before/after' },
   {
@@ -327,6 +352,11 @@ const MUST_BE_PUBLIC_404: Case[] = [
     method: 'GET',
     path: '/api/card/0000000000000000000000',
     why: 'a card page must resolve for a stranger; an unknown token is simply not found',
+  },
+  {
+    method: 'GET',
+    path: '/api/calendar/00000000000000000000000000000000000000000000/feed.ics',
+    why: 'a calendar client polls with no session; an unknown token is 404, never 401',
   },
   {
     method: 'POST',

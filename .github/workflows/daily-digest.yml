@@ -150,7 +150,13 @@ jobs:
           # USER_EMAIL IS DELIBERATELY ABSENT. The old sender mailed that one hardcoded address every
           # morning regardless of anybody's preference; recipients now come from the User collection
           # and their own stored cadence. Use the `only_email` input above to restrict a run.
-        run: >-
-          npx tsx scripts/send-digest.ts
-          ${{ (github.event_name == 'workflow_dispatch' && inputs.dry_run) && '--dry' || '' }}
-          ${{ inputs.only_email && format('--only={0}', inputs.only_email) || '' }}
+          # Dispatch inputs arrive as ENVIRONMENT VARIABLES, never pasted into the command.
+          # An expression inside `run:` is spliced into the script before bash parses
+          # it, so an input like `x; curl … $MONGODB_URI` would run with every secret above in scope.
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+          ONLY_EMAIL: ${{ github.event_name == 'workflow_dispatch' && inputs.only_email || '' }}
+        run: |
+          args=()
+          if [ "$DRY_RUN" = "true" ]; then args+=(--dry); fi
+          if [ -n "$ONLY_EMAIL" ]; then args+=("--only=$ONLY_EMAIL"); fi
+          npx tsx scripts/send-digest.ts "${args[@]}"
