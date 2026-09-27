@@ -26,6 +26,7 @@
 
 import './load-env'; // MUST be first — populates process.env from .env.local
 import { sendPushReminders, type SendPushRemindersReport } from '../lib/notifications/push';
+import { toLogLine } from '../lib/security/control-chars';
 
 function flag(name: string): boolean {
   return process.argv.includes(`--${name}`);
@@ -80,8 +81,18 @@ function summarise(report: SendPushRemindersReport): void {
         .join(' · ');
       // The address is printed because this is an operator tool run against their own data, and
       // "which account did nothing happen for" is the first question every time.
-      console.log(`  ${row.outcome.padEnd(16)} ${row.email.padEnd(32)} ${bits}`);
-      if (row.error) console.log(`                   ↳ ${row.error}`);
+      //
+      // BOTH STRINGS GO THROUGH `toLogLine` AT PRINT TIME, although `sendToDevice` already sanitises
+      // every `error` it produces. `row.error` can hold a push service's response body, and the
+      // endpoint that answered is a URL any signed-in user registered, so it may be the attacker's
+      // own server (CWE-117). Printed raw, a CR/LF forged report lines, ESC drove this terminal, and
+      // `::` or `##[` became a workflow command if this ever runs in Actions. Sanitising where the
+      // text is BORN only holds while every writer remembers to do it. This is the last point
+      // before a terminal, so it holds regardless. 500 and 254 are the `ReminderLog.error` cap and
+      // the longest valid address, so neither cuts a legitimate value.
+      const email = toLogLine(row.email, 254);
+      console.log(`  ${row.outcome.padEnd(16)} ${email.padEnd(32)} ${bits}`);
+      if (row.error) console.log(`                   ↳ ${toLogLine(row.error, 500)}`);
     }
   }
 

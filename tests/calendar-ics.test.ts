@@ -1,13 +1,19 @@
 import { describe, it, expect } from 'vitest';
+import ICAL from 'ical.js';
+import { PLACEHOLDER_SOURCE_URL } from '../lib/events/placeholder';
 import {
   ICS_CRLF,
   buildCalendarFeed,
+  buildEventIcs,
   calendarFeedPath,
   escapeIcsText,
   foldLine,
   icsEtag,
+  icsParamValue,
+  icsUri,
   toIcsUtc,
   toWebcalUrl,
+  type DownloadEvent,
   type FeedEvent,
 } from '@/lib/calendar/ics';
 
@@ -149,6 +155,27 @@ describe('escapeIcsText', () => {
   it('turns real newlines into the literal two-character escape', () => {
     expect(escapeIcsText('one\ntwo')).toBe('one\\ntwo');
     expect(escapeIcsText('one\r\ntwo')).toBe('one\\ntwo');
+  });
+
+  it('turns EVERY line-break form into that escape, not only \\r?\\n (CWE-93)', () => {
+    // The lone CR is the security finding: ical4j (Android's ICSx5 and DAVx5) ends a content line on
+    // it, and `stripHtml` decodes `&#13;` into one, so any scraped description can carry it. The rest
+    // are line terminators to Python's `str.splitlines()`, measured.
+    for (const brk of ['\r', '\u{2028}', '\u{2029}', '\x85', '\v', '\f']) {
+      expect(escapeIcsText(`one${brk}two`)).toBe('one\\ntwo');
+    }
+  });
+
+  it('removes every control TEXT forbids, and keeps HTAB, which TEXT allows', () => {
+    // C0 (NUL, ESC, FS), DEL and C1 (CSI). A strict parser rejects the whole feed over one of these.
+    expect(escapeIcsText('a\x00b\x1bc\x1cd\x7fe\x9bf')).toBe('abcdef');
+    expect(escapeIcsText('a\tb')).toBe('a\tb');
+  });
+
+  it('never doubles the backslash of an escape it inserted for a new break form', () => {
+    // Backslashes are escaped BEFORE breaks become `\n`. The other order turns a CR into `\\n`, which
+    // reads back as a literal backslash and an `n`.
+    expect(escapeIcsText('a\rb\\c')).toBe('a\\nb\\\\c');
   });
 });
 
@@ -394,6 +421,282 @@ describe('buildCalendarFeed — hostile scraped text', () => {
   });
 });
 
+/* ── Line injection (CWE-93): every content line, in both producers ─────────────────────────── */
+
+/**
+ * WHAT WAS MUTATION-CHECKED, AND HOW. These were run against the three pre-fix sinks: the old
+ * `escapeIcsText`, a raw `URL:`, and the organiser TEXT-escaped inside `CN=`. 122 of the 179 tests in
+ * this file failed. That was every security row EXCEPT the 20 CRLF and LF rows whose field reaches
+ * only TEXT, and those pass there too, because `\r?\n` was always handled.
+ *
+ * The 20 were then checked by stripping `escapeIcsText` of BOTH break normalisation and control
+ * removal, which fails all 20. Disabling the normalisation ALONE fails none of them, because
+ * `stripControlChars` deletes CR and LF by itself. That is measured, not assumed: the fix has two
+ * layers, and breaking one still leaves the output inert.
+ *
+ * The rows marked "(control)" are meant to pass either way.
+ */
+
+/**
+ * Every character SOME parser in circulation ends a line on, not just CRLF.
+ *
+ *   · CR: ical4j, behind Android's ICSx5 and DAVx5 (the security panel's finding)
+ *   · LF: ical.js, measured in its `_eachLine`
+ *   · VT, FF, FS, GS, RS, NEL, U+2028, U+2029: Python's `str.splitlines()`, measured
+ *
+ * A check that split on CRLF alone would agree with the builder about where every line ends, and
+ * see nothing wrong. That is exactly how a lone CR went unnoticed.
+ */
+const ANY_BREAK = /\r\n|[\n\v\f\r\x1c-\x1e\x85\u{2028}\u{2029}]/u;
+
+/** What the most permissive of those parsers would see: RFC-unfolded, then split on ANY_BREAK. */
+const hostileLines = (body: string) => unfold(body).split(ANY_BREAK).filter(line => line !== '');
+
+/**
+ * A body's shape: each line's property name, with BEGIN and END kept whole, so a forged component
+ * shows up as an extra `BEGIN:VEVENT` and not as one more anonymous `BEGIN`.
+ */
+const skeleton = (body: string) =>
+  hostileLines(body).map(line => {
+    const name = /^[A-Z][A-Z0-9-]*/.exec(line)?.[0];
+    if (!name) return `<not a property: ${JSON.stringify(line.slice(0, 24))}>`;
+    return name === 'BEGIN' || name === 'END' ? line : name;
+  });
+
+/** Anything TEXT forbids (C0 but HTAB, and DEL), plus C1 and LS/PS, anywhere outside the CRLF delimiters. */
+const STRAY_CONTROL = /[\x00-\x08\x0a-\x1f\x7f-\x9f\u{2028}\u{2029}]/u;
+const hasStrayControl = (body: string) => STRAY_CONTROL.test(unfold(body).split(ICS_CRLF).join(''));
+
+/** The UID lines a permissive parser would see. The attack's payoff is a second one, naming another event. */
+const uidLines = (body: string) => hostileLines(body).filter(line => line.startsWith('UID:'));
+
+const BREAKS: [string, string][] = [
+  ['a lone CR', '\r'],
+  ['CRLF', '\r\n'],
+  ['a lone LF', '\n'],
+  ['U+2028', '\u{2028}'],
+  ['U+2029', '\u{2029}'],
+  ['NEL (U+0085)', '\x85'],
+  ['VT, a C0 control Python splits on', '\v'],
+  ['FS, a C0 control Python splits on', '\x1c'],
+  ['ESC, a C0 control no parser splits on but TEXT forbids', '\x1b'],
+  ['NUL', '\x00'],
+];
+
+/** Close this event, open a forged one claiming another event's UID, and give it a title. */
+const forgedText = (brk: string) =>
+  ['Evil', 'END:VEVENT', 'BEGIN:VEVENT', 'UID:other@pulseblr', 'SUMMARY:pwned'].join(brk);
+
+/** The security panel's exploit shape: the same forgery riding on a URL. */
+const forgedUrl = (brk: string) =>
+  ['https://example.com/x', 'END:VEVENT', 'BEGIN:VEVENT', 'UID:other@pulseblr', 'SUMMARY:pwned'].join(brk);
+
+/** A fixed clock for the per-event download, whose DTSTAMP is the moment it was built. */
+const NOW = new Date('2026-09-27T06:00:00.000Z');
+
+const baseDownload: DownloadEvent = {
+  id: baseEvent.id,
+  title: baseEvent.title,
+  description: baseEvent.description,
+  startDateTime: baseEvent.startDateTime,
+  endDateTime: baseEvent.endDateTime,
+  venue: baseEvent.venue,
+  area: baseEvent.area,
+  city: baseEvent.city,
+  organizer: baseEvent.organizer,
+  sourceUrl: baseEvent.sourceUrl,
+};
+
+/**
+ * One hostile input field. `set(null)` gives the CLEAN stand-in the expected shape is built from:
+ * ordinary text for a text field, and absence for a URL field, because a refused URL must look
+ * exactly like no URL at all.
+ */
+interface Field<E> {
+  label: string;
+  kind: 'text' | 'url';
+  set: (value: string | null) => Partial<E>;
+}
+
+const FEED_FIELDS: Field<FeedEvent>[] = [
+  { label: 'title (SUMMARY and the alarm)', kind: 'text', set: v => ({ title: v ?? 'Clean' }) },
+  { label: 'description (DESCRIPTION)', kind: 'text', set: v => ({ description: v ?? 'Clean' }) },
+  { label: 'venue (LOCATION)', kind: 'text', set: v => ({ venue: v ?? 'Clean' }) },
+  { label: 'organizer (DESCRIPTION, Host:)', kind: 'text', set: v => ({ organizer: v ?? 'Clean' }) },
+  { label: 'onlineLink (DESCRIPTION, Join:)', kind: 'url', set: v => ({ onlineLink: v }) },
+  // With no eventUrl, sourceUrl is what reaches the URL: line.
+  { label: 'sourceUrl (URL and Source:)', kind: 'url', set: v => ({ sourceUrl: v, eventUrl: null }) },
+  { label: 'eventUrl (URL and Details:)', kind: 'url', set: v => ({ eventUrl: v }) },
+];
+
+const DOWNLOAD_FIELDS: Field<DownloadEvent>[] = [
+  { label: 'title (SUMMARY and the alarm)', kind: 'text', set: v => ({ title: v ?? 'Clean' }) },
+  { label: 'description (DESCRIPTION)', kind: 'text', set: v => ({ description: v ?? 'Clean' }) },
+  { label: 'venue (LOCATION)', kind: 'text', set: v => ({ venue: v ?? 'Clean' }) },
+  { label: 'organizer (ORGANIZER;CN= and Host:)', kind: 'text', set: v => ({ organizer: v ?? 'Clean' }) },
+  { label: 'onlineLink (DESCRIPTION, Join:)', kind: 'url', set: v => ({ onlineLink: v }) },
+  { label: 'sourceUrl (URL and Source:)', kind: 'url', set: v => ({ sourceUrl: v }) },
+];
+
+/**
+ * Every field × every break, through one producer. Three assertions, and each catches something the
+ * others do not:
+ *   · skeleton: no line was added or removed, which catches a forged property or component whatever
+ *     break carried it
+ *   · uidLines: the attack's actual payoff, a second UID, is absent
+ *   · hasStrayControl: nothing TEXT forbids is left, which catches ESC and NUL. Those break no
+ *     line, but a strict parser rejects the whole calendar over them.
+ */
+function injectionMatrix<E>(producer: string, build: (overrides: Partial<E>) => string, fields: Field<E>[]) {
+  describe(`${producer}: no input can start a content line`, () => {
+    for (const field of fields) {
+      const expected = skeleton(build(field.set(null)));
+      for (const [breakLabel, brk] of BREAKS) {
+        it(`${field.label}, ${breakLabel}`, () => {
+          const body = build(field.set(field.kind === 'url' ? forgedUrl(brk) : forgedText(brk)));
+          expect(skeleton(body)).toEqual(expected);
+          expect(uidLines(body)).toEqual([`UID:${baseEvent.id}@pulseblr`]);
+          expect(hasStrayControl(body)).toBe(false);
+        });
+      }
+    }
+  });
+}
+
+injectionMatrix<FeedEvent>(
+  'buildCalendarFeed',
+  overrides => feedOf([{ ...baseEvent, ...overrides }]),
+  FEED_FIELDS
+);
+injectionMatrix<DownloadEvent>(
+  'buildEventIcs',
+  overrides => buildEventIcs({ ...baseDownload, ...overrides }, NOW),
+  DOWNLOAD_FIELDS
+);
+
+describe("the security panel's exploit, verbatim", () => {
+  // A scraped sourceUrl of `https://example.com/x` CR `END:VEVENT` CR `BEGIN:VEVENT` CR
+  // `UID:other@pulseblr` and so on: a second event that a client applies to whichever real event
+  // owns that UID.
+  const exploit = [
+    'https://example.com/x',
+    'END:VEVENT',
+    'BEGIN:VEVENT',
+    'UID:other@pulseblr',
+    'DTSTART:20260920T133000Z',
+    'SUMMARY:pwned',
+  ].join('\r');
+
+  it('yields exactly one VEVENT from the feed, to a parser that ends lines on CR', () => {
+    for (const body of [
+      feedOf([{ ...baseEvent, sourceUrl: exploit }]),
+      feedOf([{ ...baseEvent, sourceUrl: exploit, eventUrl: null }]),
+      feedOf([{ ...baseEvent, eventUrl: exploit }]),
+    ]) {
+      expect(hostileLines(body).filter(line => line === 'BEGIN:VEVENT')).toHaveLength(1);
+      expect(uidLines(body)).toEqual([`UID:${baseEvent.id}@pulseblr`]);
+    }
+  });
+
+  it('yields exactly one VEVENT from the per-event download too', () => {
+    const body = buildEventIcs({ ...baseDownload, sourceUrl: exploit }, NOW);
+    expect(hostileLines(body).filter(line => line === 'BEGIN:VEVENT')).toHaveLength(1);
+    expect(uidLines(body)).toEqual([`UID:${baseEvent.id}@pulseblr`]);
+  });
+
+  it('and a REAL parser agrees, for the LF and CRLF forms the old code fell to', () => {
+    // ical.js (installed) splits on LF only, so it cannot see the CR form. That is why the checks
+    // above use a permissive splitter rather than trusting a parser as the oracle. For LF and CRLF it
+    // IS an independent witness. Against the route's old inline code it parsed TWO VEVENTs, the second
+    // with UID other@pulseblr, and the real event's ORGANIZER landed inside the forged one.
+    for (const brk of ['\n', '\r\n']) {
+      for (const body of [
+        buildEventIcs({ ...baseDownload, sourceUrl: forgedUrl(brk) }, NOW),
+        feedOf([{ ...baseEvent, eventUrl: forgedUrl(brk) }]),
+      ]) {
+        const events = new ICAL.Component(ICAL.parse(body)).getAllSubcomponents('vevent');
+        expect(events.map(event => event.getFirstPropertyValue('uid'))).toEqual([
+          `${baseEvent.id}@pulseblr`,
+        ]);
+      }
+    }
+    const download = buildEventIcs({ ...baseDownload, sourceUrl: forgedUrl('\n') }, NOW);
+    const vevent = new ICAL.Component(ICAL.parse(download)).getFirstSubcomponent('vevent');
+    expect(vevent?.getFirstProperty('organizer')?.getParameter('cn')).toBe('React Bangalore');
+  });
+});
+
+describe('icsUri: a URI cannot be escaped, so it is validated', () => {
+  it('passes a canonical URL through unchanged (control)', () => {
+    expect(icsUri(baseEvent.sourceUrl)).toBe(baseEvent.sourceUrl);
+    expect(icsUri(baseEvent.eventUrl)).toBe(baseEvent.eventUrl);
+  });
+
+  it('refuses the exploit rather than repairing it', () => {
+    // The repair it refuses: WHATWG parsing silently DELETES CR, LF and TAB, so the attack comes back
+    // as a "valid" URL with its line breaks filed off.
+    expect(new URL(forgedUrl('\r')).href).toContain('xEND:VEVENT');
+    for (const [, brk] of BREAKS) expect(icsUri(forgedUrl(brk))).toBeNull();
+  });
+
+  it('trims surrounding whitespace, since a trailing newline is an ordinary scraping artefact', () => {
+    expect(icsUri('https://meetup.com/x/events/1\n')).toBe('https://meetup.com/x/events/1');
+    expect(icsUri('  https://meetup.com/x/events/1\r\n')).toBe('https://meetup.com/x/events/1');
+  });
+
+  it('refuses anything that is not an absolute http(s) URL', () => {
+    for (const bad of ['javascript:alert(1)', 'data:text/html,x', '/events/123', 'not a url', '', '   ', null, undefined]) {
+      expect(icsUri(bad)).toBeNull();
+    }
+  });
+
+  it('emits the parsed, percent-encoded href', () => {
+    expect(icsUri('https://example.com')).toBe('https://example.com/');
+    expect(icsUri('https://example.com/a b')).toBe('https://example.com/a%20b');
+  });
+});
+
+describe('icsParamValue: a parameter is not TEXT', () => {
+  it('quotes a name containing a colon, comma or semicolon, so a parser keeps it whole', () => {
+    // Measured with ical.js against the route's old inline code: CN parsed as "Tech", and the rest of
+    // the name, `Bengaluru\, Koramangala\; "HQ"`, became the ORGANIZER's calendar ADDRESS.
+    const body = buildEventIcs({ ...baseDownload, organizer: 'Tech: Bengaluru, Koramangala; "HQ"' }, NOW);
+    const organizer = new ICAL.Component(ICAL.parse(body))
+      .getFirstSubcomponent('vevent')
+      ?.getFirstProperty('organizer');
+    expect(organizer?.getParameter('cn')).toBe("Tech: Bengaluru, Koramangala; 'HQ'");
+    expect(organizer?.getFirstValue()).toBe('MAILTO:noreply@pulseblr.local');
+  });
+
+  it('turns breaks into spaces and drops controls, since a parameter can carry neither', () => {
+    expect(icsParamValue('React\rBangalore\u{2028}Chapter\x00')).toBe('React Bangalore Chapter');
+  });
+
+  it('leaves an ordinary name exactly as it was (control)', () => {
+    // The common case must not change a byte: no quotes added, nothing escaped.
+    expect(icsParamValue('React Bangalore')).toBe('React Bangalore');
+    expect(icsParamValue("GDG Cloud (Bengaluru) & friends' club")).toBe(
+      "GDG Cloud (Bengaluru) & friends' club"
+    );
+  });
+});
+
+describe('buildEventIcs: the per-event download, now testable', () => {
+  it('emits the SAME UID line as the feed, so subscribing and downloading merge (control)', () => {
+    // This was a comment in both files. With both producers pure it can be an assertion.
+    expect(uidLines(buildEventIcs(baseDownload, NOW))).toEqual(uidLines(feedOf([baseEvent])));
+  });
+
+  it('keeps METHOD:PUBLISH, a DTSTAMP from `now`, the URL and the organiser (control)', () => {
+    const body = unfold(buildEventIcs(baseDownload, NOW));
+    expect(body).toContain('METHOD:PUBLISH');
+    expect(body).toContain(`DTSTAMP:${toIcsUtc(NOW)}`);
+    expect(body).toContain(`URL:${baseEvent.sourceUrl}`);
+    expect(body).toContain('ORGANIZER;CN=React Bangalore:MAILTO:noreply@pulseblr.local');
+    expect(body).toContain('TRIGGER:-PT2H');
+  });
+});
+
 describe('the subscription URL', () => {
   it('ends in .ics, which several clients sniff before the Content-Type', () => {
     expect(calendarFeedPath('abc123')).toBe('/api/calendar/abc123/feed.ics');
@@ -407,5 +710,27 @@ describe('the subscription URL', () => {
       'webcal://localhost:3000/api/calendar/t/feed.ics'
     );
     expect(toWebcalUrl('ftp://example.com/x')).toBe('ftp://example.com/x');
+  });
+});
+
+describe('the manual-event placeholder never reaches a calendar', () => {
+  // A hand-added event with no link stores PLACEHOLDER_SOURCE_URL. It is not a page anybody can
+  // open, so neither producer may print it as `Source:` nor emit it as the URL property.
+  const placeholder = PLACEHOLDER_SOURCE_URL;
+
+  it('the per-event download omits it', () => {
+    const body = unfold(buildEventIcs({ ...baseDownload, sourceUrl: placeholder }, NOW));
+    expect(body).not.toContain(placeholder);
+    expect(body).not.toMatch(/^URL[:;]/m);
+  });
+
+  it('the feed falls back to the app link, never the placeholder', () => {
+    const body = unfold(feedOf([{ ...baseEvent, sourceUrl: placeholder }]));
+    expect(body).not.toContain(placeholder);
+    expect(body).toContain(`URL:${baseEvent.eventUrl}`);
+  });
+
+  it('a real source link is still printed (control)', () => {
+    expect(unfold(buildEventIcs(baseDownload, NOW))).toContain(`Source: ${baseDownload.sourceUrl}`);
   });
 });

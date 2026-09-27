@@ -11,7 +11,31 @@
  * The three were extracted VERBATIM in one commit, then `foldLine` was fixed in the next. That
  * order is deliberate: the per-event route's output cannot be pinned by a vitest golden test (it
  * needs mongoose and a session), so byte-identity for the ASCII case had to come from not
- * changing the code rather than from a test proving it unchanged.
+ * changing the code rather than from a test proving it unchanged. (That route's content lines have
+ * since moved here as `buildEventIcs`, so its output CAN now be pinned. See the next section.)
+ *
+ * ── LINE INJECTION (CWE-93): EVERY CONTENT LINE, IN BOTH PRODUCERS ───────────────────────────
+ * Found by a security review in September 2026. Three separate gaps:
+ *   · `escapeIcsText` neutralised `\r?\n` and nothing else, so a lone CR went out raw
+ *   · both `URL:` lines were written raw, with no protection at all. In the per-event download a
+ *     scraped `sourceUrl` reached it. In the feed it was latent, because the feed route always
+ *     passes an app-minted `eventUrl`, which takes precedence.
+ *   · the per-event route put the organiser into a PARAMETER using TEXT escaping, which has no
+ *     meaning there
+ * Event text is scraped from third-party pages or typed by any signed-in user. Through any of the
+ * three, it could start a new content line in a subscriber's calendar, and so forge a whole VEVENT
+ * whose `UID` names another event's `<id>@pulseblr`.
+ *
+ * The fix is one function per VALUE TYPE, because RFC 5545 gives the three types three different
+ * rules:
+ *
+ *   TEXT       `escapeIcsText`   every break → `\n` escape, every other control removed
+ *   parameter  `icsParamValue`   break → space, controls removed, DQUOTE → `'`, quoted on `:` `;` `,`
+ *   URI        `icsUri`          emitted only if it parses as http(s) with no control in it
+ *
+ * The per-event download's lines moved here as `buildEventIcs`, so `tests/calendar-ics.test.ts`
+ * can run the same hostile inputs through both producers. What counts as a break, measured per
+ * parser, and why C1 is removed although the RFC allows it, is in `lib/security/control-chars.ts`.
  *
  * ── THE FOLD BUG, MEASURED ───────────────────────────────────────────────────────────────────
  * RFC 5545 §3.1 folds at 75 **octets**. The original sliced by JavaScript string index, which is
@@ -46,6 +70,8 @@
  * shipping a segmenter to a calendar file.
  */
 import crypto from 'crypto';
+import { hasControlChars, replaceLineBreaks, stripControlChars } from '../security/control-chars';
+import { isPlaceholderSourceUrl } from '../events/placeholder';
 
 /** RFC 5545 §3.1: "Lines of text SHOULD NOT be longer than 75 octets, excluding the line break." */
 const MAX_LINE_OCTETS = 75;
@@ -60,13 +86,96 @@ const CONTINUATION_OCTETS = MAX_LINE_OCTETS - 1;
 /** ICS is CRLF-delimited, everywhere, including between folded segments. */
 export const ICS_CRLF = '\r\n';
 
-/** RFC 5545 requires escaping these characters inside TEXT values. */
+/**
+ * A TEXT value (RFC 5545 §3.3.11): backslash, semicolon and comma escaped, and EVERY line break too.
+ *
+ * ── A LINE BREAK IS NOT JUST `\r?\n` (CWE-93). ───────────────────────────────────────────────
+ * This used to handle `\r?\n` only, so a LONE CR went out raw. ical4j, behind Android's ICSx5 and
+ * DAVx5, ends a content line on a bare CR, so everything after one in a title, description, venue
+ * or organiser became a line of its own. That could be a property, or `END:VEVENT`, `BEGIN:VEVENT`
+ * and a `UID` naming some other event's `<id>@pulseblr`, which a client applies as an update to
+ * THAT event. The text is hostile by provenance: scraped from third-party pages, or typed by any
+ * signed-in user. And `stripHtml` (`lib/scrapers/core/text.ts`) decodes `&#13;` into exactly that
+ * CR. So every break form that any parser reads, including U+2028, NEL and VT, becomes the `\n`
+ * escape, and every other control is removed. Removing them matters for availability too. A
+ * strict parser rejects a control inside TEXT (TSAFE-CHAR excludes them), and a client that fails
+ * to parse a feed usually disables the whole subscription (the empty-feed test records this). So
+ * one bad title can take every event with it.
+ *
+ * Order is load-bearing. Backslashes are escaped FIRST, so the backslash inside each inserted
+ * `\n`, `\;` and `\,` is never doubled. Controls are removed LAST. Every escape is a complete
+ * two-character token by then, so deleting a character from between two tokens cannot fuse them
+ * into a different one.
+ */
 export function escapeIcsText(value: string): string {
-  return value
-    .replace(/\\/g, '\\\\')
-    .replace(/;/g, '\\;')
-    .replace(/,/g, '\\,')
-    .replace(/\r?\n/g, '\\n');
+  const escaped = value.replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,');
+  return stripControlChars(replaceLineBreaks(escaped, '\\n'));
+}
+
+/**
+ * A property PARAMETER value (RFC 5545 §3.2), such as the `CN` in `ORGANIZER;CN=…:MAILTO:…`.
+ *
+ * ── NOT TEXT, SO `escapeIcsText` WAS THE WRONG FUNCTION HERE. ────────────────────────────────
+ * Parameter values have no backslash escaping at all. The per-event route passed the organiser
+ * through `escapeIcsText`, which
+ *   (a) let a lone CR through, the same injection as TEXT had
+ *   (b) turned `Kafka, Flink` into `CN=Kafka\, Flink`. The comma separates multi-valued
+ *       parameters, so a parser reads two values: `Kafka\` and ` Flink`.
+ *   (c) did nothing about a colon. `CN=Tech: Bengaluru` ends the parameters at the colon, and the
+ *       rest of the name becomes the property VALUE, i.e. the organiser's calendar address.
+ * The grammar's own answer is quoting. A value containing `:`, `;` or `,` MUST be a quoted-string,
+ * and a quoted-string may hold anything except controls and DQUOTE. So:
+ *   · a line break becomes a space. A parameter cannot carry one, and RFC 6868's `^n` shows as a
+ *     literal `^n` in every client that does not implement it.
+ *   · every other control is removed
+ *   · DQUOTE becomes `'`, since a quoted-string cannot contain it in any form
+ *   · the value is quoted when it contains `:`, `;` or `,`
+ *
+ * `^` is left alone. A 6868-aware client decodes `^n` and `^'` INSIDE the already-parsed value, so
+ * it can reshape how a name displays but cannot start a content line.
+ */
+export function icsParamValue(value: string): string {
+  const cleaned = stripControlChars(replaceLineBreaks(value, ' ')).replace(/"/g, "'").trim();
+  return /[:;,]/.test(cleaned) ? `"${cleaned}"` : cleaned;
+}
+
+/**
+ * A URI value (RFC 5545 §3.3.13) such as `URL:`, or null when there is nothing safe to emit.
+ *
+ * ── URI VALUES ARE NOT TEXT-ESCAPED, SO NOTHING STOOD IN FRONT OF THIS ONE. ──────────────────
+ * Both producers wrote `URL:${raw}`. Skipping TEXT escaping there was correct, since a backslash
+ * means nothing in a URI, but it left the raw string with no protection at all. The security
+ * panel's exploit puts CRs in a scraped `sourceUrl`: `https://example.com/x` CR `END:VEVENT` CR
+ * `BEGIN:VEVENT` CR `UID:other@pulseblr`. The per-event download wrote that string onto this line
+ * untouched, and there even a plain CRLF would have worked.
+ *
+ * So a URL is emitted only when it IS one:
+ *   · trimmed
+ *   · free of every control and line break
+ *   · parsed by WHATWG `URL`, with an http or https scheme
+ *   · written out as the parsed `href`
+ * The serialiser percent-encodes C0, DEL, space and all non-ASCII, and the final check asserts that
+ * rather than trusting it.
+ *
+ * A control INSIDE the value is refused, not repaired. WHATWG parsing silently deletes CR, LF and
+ * TAB (measured: the exploit above parses to `https://example.com/xEND:VEVENT`), which hands back a
+ * "valid" URL that is really the attack with its line breaks filed off. Refusing costs one
+ * convenience line, and the description still carries the link as escaped text. Surrounding
+ * whitespace IS trimmed first, because a trailing newline on a scraped value is an ordinary
+ * artefact, not an attack.
+ */
+export function icsUri(value: string | null | undefined): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!trimmed || hasControlChars(trimmed)) return null;
+  let url: URL;
+  try {
+    url = new URL(trimmed);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
+  return hasControlChars(url.href) ? null : url.href;
 }
 
 /** UTC timestamp in the basic format ICS expects: 20260822T103000Z */
@@ -289,12 +398,18 @@ export function buildCalendarFeed(input: CalendarFeedInput): string {
     if (event.organizer) descriptionParts.push(`Host: ${event.organizer}`);
     if (event.onlineLink) descriptionParts.push(`Join: ${event.onlineLink}`);
     if (event.eventUrl) descriptionParts.push(`Details: ${event.eventUrl}`);
-    if (event.sourceUrl) descriptionParts.push(`Source: ${event.sourceUrl}`);
+    // A hand-added event with no link stores the PLACEHOLDER_SOURCE_URL; it is not a real page, so
+    // neither the description nor the URL property may point a calendar at it.
+    const sourceUrl = isPlaceholderSourceUrl(event.sourceUrl) ? undefined : event.sourceUrl;
+    if (sourceUrl) descriptionParts.push(`Source: ${sourceUrl}`);
 
     lines.push(
       'BEGIN:VEVENT',
       // See the header: identical to the per-event route so the two merge rather than duplicate.
-      `UID:${event.id}@pulseblr`,
+      // UID is a TEXT value, so it is escaped like one. An ObjectId passes through unchanged, so
+      // this is the same string it always was. The escape matters only if a caller ever passes
+      // something that is not an ObjectId.
+      `UID:${escapeIcsText(event.id)}@pulseblr`,
       `DTSTAMP:${stamp}`,
       `LAST-MODIFIED:${stamp}`,
       `DTSTART:${toIcsUtc(start)}`,
@@ -305,10 +420,11 @@ export function buildCalendarFeed(input: CalendarFeedInput): string {
       lines.push(`DESCRIPTION:${escapeIcsText(descriptionParts.join('\n\n'))}`);
     }
     if (location) lines.push(`LOCATION:${escapeIcsText(location)}`);
-    // A URI value is not TEXT, so it is NOT escaped — same as the per-event route.
-    if (event.eventUrl || event.sourceUrl) {
-      lines.push(`URL:${event.eventUrl || event.sourceUrl}`);
-    }
+    // A URI value is not TEXT, so it is not TEXT-escaped. It is VALIDATED instead, which is what
+    // stops a CR in a scraped `sourceUrl` becoming a line of its own. See `icsUri`. The first one
+    // that validates wins, so a bad `eventUrl` can no longer hide a good `sourceUrl`.
+    const url = icsUri(event.eventUrl) ?? icsUri(sourceUrl);
+    if (url) lines.push(`URL:${url}`);
     lines.push(
       'STATUS:CONFIRMED',
       'BEGIN:VALARM',
@@ -325,6 +441,89 @@ export function buildCalendarFeed(input: CalendarFeedInput): string {
   // Trailing CRLF: RFC 5545 makes every content line CRLF-TERMINATED rather than
   // CRLF-separated, and a few strict parsers drop an unterminated final line.
   return `${lines.map(foldLine).join(ICS_CRLF)}${ICS_CRLF}`;
+}
+
+/* ── The per-event download ──────────────────────────────────────────────────────────────────── */
+
+/** One event as the per-event download needs it: `FeedEvent` minus the subscription-only fields. */
+export type DownloadEvent = Omit<FeedEvent, 'eventUrl' | 'updatedAt'>;
+
+/**
+ * The single-event `.ics` behind `GET /api/events/[id]/ics`.
+ *
+ * ── WHY THIS MOVED OUT OF THE ROUTE ──────────────────────────────────────────────────────────
+ * The route built its content lines inline, and three of the injection sinks were among them: a
+ * raw `URL:${sourceUrl}`, the organiser TEXT-escaped inside a parameter, and the TEXT lines. None
+ * could be tested there (the route needs mongoose and a session), so a fix in place would have
+ * been checked by reading it. Here `tests/calendar-ics.test.ts` runs the same hostile inputs
+ * through this and `buildCalendarFeed` alike.
+ *
+ * For ordinary input the move changes no bytes. That was checked by diffing this against a
+ * verbatim copy of the route's inline code, over clean events, before the route was switched over.
+ * "Ordinary" means no control characters, an organiser without `:` `;` `,` or `"`, and a
+ * `sourceUrl` already in canonical form. The deliberate differences:
+ *   · `URL:` is the parsed href, or absent when there is no usable http(s) URL
+ *   · a `CN` containing `:`, `;` or `,` is quoted, where before every parser split or truncated it
+ *   · `Source:` is left out when there is no `sourceUrl`, instead of printing "undefined". The
+ *     schema requires the field, so only a caller outside the route can see this.
+ *
+ * `now` is passed in rather than read, so the output depends only on the arguments. The route
+ * passes `new Date()`, so DTSTAMP is still the download time. That suits a one-shot message, and
+ * it is why this body, unlike the feed's, has no ETag to keep stable. `METHOD:PUBLISH` is here and
+ * absent from the feed on purpose; see `buildCalendarFeed`. There is NO trailing CRLF, unlike the
+ * feed. The route never emitted one, and this move was meant to be byte-identical.
+ */
+export function buildEventIcs(event: DownloadEvent, now: Date): string {
+  const start = asDate(event.startDateTime);
+  // No end time published: assume two hours, the typical meetup length. Emitting a zero-length
+  // event makes it render as a sliver users can't click.
+  const end = event.endDateTime
+    ? asDate(event.endDateTime)
+    : new Date(start.getTime() + DEFAULT_DURATION_MS);
+
+  const location = [event.venue, event.address, event.area, event.city]
+    .filter(Boolean)
+    .join(', ');
+
+  const descriptionParts = [event.description];
+  if (event.organizer) descriptionParts.push(`Host: ${event.organizer}`);
+  if (event.onlineLink) descriptionParts.push(`Join: ${event.onlineLink}`);
+  const sourceUrl = isPlaceholderSourceUrl(event.sourceUrl) ? undefined : event.sourceUrl;
+  if (sourceUrl) descriptionParts.push(`Source: ${sourceUrl}`);
+
+  // A URI value and a parameter value, each through the function for ITS type. See the header.
+  const url = icsUri(sourceUrl);
+  const organizer = event.organizer ? icsParamValue(event.organizer) : '';
+
+  return [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//PulseBLR//Bengaluru Events//EN',
+    'CALSCALE:GREGORIAN',
+    'METHOD:PUBLISH',
+    'BEGIN:VEVENT',
+    // The same UID string as the feed, so a user who subscribes AND downloads gets one event.
+    `UID:${escapeIcsText(event.id)}@pulseblr`,
+    `DTSTAMP:${toIcsUtc(now)}`,
+    `DTSTART:${toIcsUtc(start)}`,
+    `DTEND:${toIcsUtc(end)}`,
+    `SUMMARY:${escapeIcsText(event.title)}`,
+    `DESCRIPTION:${escapeIcsText(descriptionParts.join('\n\n'))}`,
+    location ? `LOCATION:${escapeIcsText(location)}` : '',
+    url ? `URL:${url}` : '',
+    organizer ? `ORGANIZER;CN=${organizer}:MAILTO:noreply@pulseblr.local` : '',
+    'STATUS:CONFIRMED',
+    'BEGIN:VALARM',
+    `TRIGGER:${ALARM_TRIGGER}`,
+    'ACTION:DISPLAY',
+    `DESCRIPTION:${escapeIcsText(event.title)} starts in 2 hours`,
+    'END:VALARM',
+    'END:VEVENT',
+    'END:VCALENDAR',
+  ]
+    .filter(Boolean)
+    .map(foldLine)
+    .join(ICS_CRLF);
 }
 
 /**

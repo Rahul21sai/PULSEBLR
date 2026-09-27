@@ -286,12 +286,22 @@ describe('parseExtraction — the registration link is an href, so it is treated
     ['data:', 'data:text/html,<script>fetch("//evil")</script>'],
     ['a relative path', '/register'],
     ['a bare word', 'register'],
+    // CWE-93: `new URL()` strips CR/LF, so the old code parsed these fine and returned the RAW
+    // string, break included, into the ICS feed. Refused, never repaired.
+    ['a CRLF inside the link', 'https://x.test/a\r\nEND:VEVENT'],
+    ['a bare LF inside the link', 'https://x.test/a\nUID:other'],
+    ['a U+2028 inside the link', 'https://x.test/a\u2028b'],
   ])('refuses %s', (_label, registrationUrl) => {
     // Refused rather than dropped: the reviewer is the first person who clicks this, and a page
     // whose register link the model turned into a scheme like this is a page it read badly.
     const out = parse([validRow({ registrationUrl })]);
     expect(out.events).toEqual([]);
     expect(out.rejected[0]?.reason).toBe('bad-registration-url');
+  });
+
+  it('stores the PARSED href, not the text the model wrote', () => {
+    const out = parse([validRow({ registrationUrl: 'HTTPS://Developersummit.com/register' })]);
+    expect(out.events[0].registrationUrl).toBe('https://developersummit.com/register');
   });
 
   it('accepts an absent link', () => {

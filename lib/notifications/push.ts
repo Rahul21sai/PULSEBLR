@@ -44,6 +44,7 @@ import PushSubscription from '../models/PushSubscription';
 import ReminderLog from '../models/ReminderLog';
 import TrackerEntry from '../models/TrackerEntry';
 import User from '../models/User';
+import { toLogLine } from '../security/control-chars';
 import { assertSafeUrl } from '../security/safe-fetch';
 import {
   applyReminderCaps,
@@ -168,7 +169,7 @@ function isDuplicateKey(error: unknown): boolean {
  * optional by design.
  */
 let vapidReady = false;
-function configureWebPush(): void {
+export function configureWebPush(): void {
   if (vapidReady) return;
   webpush.setVapidDetails(
     process.env.VAPID_SUBJECT as string,
@@ -193,7 +194,7 @@ function configureWebPush(): void {
  * threshold on `failureCount` would silently unsubscribe every device during one push-service
  * outage, which is why `failureCount` records and does not decide.
  */
-function isGoneForever(status: number): boolean {
+export function isGoneForever(status: number): boolean {
   return status === 404 || status === 410;
 }
 
@@ -201,7 +202,10 @@ export interface DeviceSendResult {
   endpoint: string;
   ok: boolean;
   status?: number;
-  /** The push service said this endpoint is gone; the row has been deleted. */
+  /**
+   * The push service said this endpoint is gone. `sendToDevice` only REPORTS this; the row is
+   * deleted when the caller passes the results to `pruneGoneEndpoints`.
+   */
   gone?: boolean;
   error?: string;
 }
@@ -227,8 +231,21 @@ export interface DeviceSendResult {
  * A failed check is treated as a per-DEVICE failure, not a run failure. A transient DNS hiccup must
  * not abort everybody's reminders, and it must not delete a row either — nothing has been proven
  * about the subscription.
+ *
+ * ── EVERY `error` STRING BELOW GOES THROUGH `toLogLine`, AND THE BODY IS WHY (CWE-117). ──────
+ * The same caller-chosen endpoint means the "push service" answering a non-2xx can be a server the
+ * caller runs, and `WebPushError.body` is its response text verbatim. That string travels into
+ * `ReminderLog.error`, the run report, and the operator's terminal via
+ * `scripts/send-push-reminders.ts`. It used to go in as a bare `.slice(0, 200)`, which bounded its
+ * length and nothing else: a CR or LF forged whole report lines, ESC drove the terminal (colours,
+ * cursor moves, OSC title and clipboard sequences), and a leading `::`, or `##[` anywhere, is a
+ * GitHub Actions workflow command the moment this runs in CI. Sanitised HERE, where the text enters,
+ * so every consumer of `DeviceSendResult` inherits it, including callers outside this file. The
+ * other two messages carry no attacker text today (fixed `UnsafeUrlError` wording, Node socket
+ * errors) and go through the same function anyway, so "every `error` is inert" is one rule rather
+ * than three cases somebody has to re-audit.
  */
-async function sendToDevice(
+export async function sendToDevice(
   device: { endpoint: string; p256dh: string; auth: string },
   payload: string,
   topic: string
@@ -239,7 +256,7 @@ async function sendToDevice(
     return {
       endpoint: device.endpoint,
       ok: false,
-      error: `endpoint failed the SSRF check: ${(error as Error).message}`.slice(0, 300),
+      error: toLogLine(`endpoint failed the SSRF check: ${(error as Error).message}`, 300),
     };
   }
 
@@ -274,12 +291,31 @@ async function sendToDevice(
         ok: false,
         status: error.statusCode,
         gone: isGoneForever(error.statusCode),
-        // The body is the push service's own wording, not ours, and is never shown to a user.
-        error: `${error.statusCode} ${String(error.body ?? '').slice(0, 200)}`,
+        // The body is the push service's own wording, not ours, and is never shown to a user. It is
+        // also the one attacker-controlled string that reaches an `error`. See the header above.
+        error: `${error.statusCode} ${toLogLine(error.body, 200)}`,
       };
     }
-    return { endpoint: device.endpoint, ok: false, error: String((error as Error).message).slice(0, 300) };
+    return { endpoint: device.endpoint, ok: false, error: toLogLine((error as Error).message, 300) };
   }
+}
+
+/**
+ * Delete every subscription the push service said is gone (404/410) and return how many rows went.
+ *
+ * A HARD DELETE, deliberately — the opposite of the soft delete events get. A stale event row is a
+ * listing nobody clicks; a stale push endpoint is a row the sender retries forever, and 410 is the
+ * push service telling us definitively that the user withdrew it. Keeping it would mean holding a
+ * consent record for consent that has been revoked.
+ *
+ * One function so the daily run and any other sender (a "send me a test notification" route)
+ * prune identically. No `gone` results means no query at all, and 0.
+ */
+export async function pruneGoneEndpoints(results: DeviceSendResult[]): Promise<number> {
+  const goneEndpoints = results.filter(r => r.gone).map(r => r.endpoint);
+  if (goneEndpoints.length === 0) return 0;
+  const removed = await PushSubscription.deleteMany({ endpoint: { $in: goneEndpoints } });
+  return removed.deletedCount ?? 0;
 }
 
 /**
@@ -566,18 +602,12 @@ export async function sendPushReminders(
         )
       );
 
+      // The hard delete and its reasoning live in `pruneGoneEndpoints`. The list is still needed
+      // here, for dropping those devices from the rest of this run below.
       const goneEndpoints = results.filter(r => r.gone).map(r => r.endpoint);
-      if (goneEndpoints.length > 0) {
-        /*
-         * A HARD DELETE, deliberately — the opposite of the soft delete events get. A stale event row
-         * is a listing nobody clicks; a stale push endpoint is a row the sender retries forever, and
-         * 410 is the push service telling us definitively that the user withdrew it. Keeping it would
-         * mean holding a consent record for consent that has been revoked.
-         */
-        const removed = await PushSubscription.deleteMany({ endpoint: { $in: goneEndpoints } });
-        perUser.pruned += removed.deletedCount ?? 0;
-        report.endpointsPruned += removed.deletedCount ?? 0;
-      }
+      const prunedNow = await pruneGoneEndpoints(results);
+      perUser.pruned += prunedNow;
+      report.endpointsPruned += prunedNow;
 
       const liveFailures = results.filter(r => !r.ok && !r.gone);
       const okResults = results.filter(r => r.ok);

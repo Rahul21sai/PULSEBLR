@@ -4,7 +4,7 @@ import connectDB from '@/lib/mongodb';
 import Event from '@/lib/models/Event';
 import { getCurrentUserId } from '@/lib/auth-helpers';
 import { canViewEvent } from '@/lib/events/visibility';
-import { escapeIcsText, foldLine, toIcsUtc } from '@/lib/calendar/ics';
+import { buildEventIcs } from '@/lib/calendar/ics';
 
 /**
  * GET /api/events/[id]/ics — download the event as a calendar file.
@@ -34,10 +34,20 @@ import { escapeIcsText, foldLine, toIcsUtc } from '@/lib/calendar/ics';
  * into two lone halves that become U+FFFD on the wire. Both were live in this route, since event
  * titles are scraped from third-party pages. See that module's header for the measurements.
  *
- * `METHOD:PUBLISH` below STAYS. It marks the body as an iTIP message (RFC 5546), which is exactly
+ * `METHOD:PUBLISH` STAYS. It marks the body as an iTIP message (RFC 5546), which is exactly
  * right for a one-shot download — and exactly wrong for the feed, where Outlook then offers to
  * import once rather than treating the URL as a living calendar. The feed omits it deliberately.
  * The `UID` shape is shared, so a user who both subscribes and downloads gets a merge.
+ *
+ * ── THE CONTENT LINES NOW COME FROM `buildEventIcs` IN THE SAME MODULE (CWE-93). ─────────────
+ * They were built inline here, and three line-injection sinks were among them. `URL:${sourceUrl}`
+ * was raw, so a scraped source URL carrying CR or LF began new content lines, up to and including a
+ * second VEVENT. The organiser went into `ORGANIZER;CN=` through TEXT escaping, which is the wrong
+ * rule for a parameter: it let a lone CR through, split a name at every comma, and ended the
+ * parameter at a colon. And `escapeIcsText` itself stopped at `\r?\n`. None of that could be
+ * tested here, because this route needs mongoose and a session. So the lines moved to a pure
+ * function, and `tests/calendar-ics.test.ts` feeds hostile input through both producers. This file
+ * keeps what really is the route's: the lookup, the visibility guard and the headers.
  */
 
 export async function GET(
@@ -64,50 +74,25 @@ export async function GET(
     }
     const isPublic = !event.visibility || event.visibility === 'public';
 
-    const start = new Date(event.startDateTime);
-    // No end time published: assume two hours, the typical meetup length. Emitting
-    // a zero-length event makes it render as a sliver users can't click.
-    const end = event.endDateTime
-      ? new Date(event.endDateTime)
-      : new Date(start.getTime() + 2 * 3600 * 1000);
-
-    const location = [event.venue, event.address, event.area, event.city]
-      .filter(Boolean)
-      .join(', ');
-
-    const descriptionParts = [event.description];
-    if (event.organizer) descriptionParts.push(`Host: ${event.organizer}`);
-    if (event.onlineLink) descriptionParts.push(`Join: ${event.onlineLink}`);
-    descriptionParts.push(`Source: ${event.sourceUrl}`);
-
-    const lines = [
-      'BEGIN:VCALENDAR',
-      'VERSION:2.0',
-      'PRODID:-//PulseBLR//Bengaluru Events//EN',
-      'CALSCALE:GREGORIAN',
-      'METHOD:PUBLISH',
-      'BEGIN:VEVENT',
-      `UID:${String(event._id)}@pulseblr`,
-      `DTSTAMP:${toIcsUtc(new Date())}`,
-      `DTSTART:${toIcsUtc(start)}`,
-      `DTEND:${toIcsUtc(end)}`,
-      `SUMMARY:${escapeIcsText(event.title)}`,
-      `DESCRIPTION:${escapeIcsText(descriptionParts.join('\n\n'))}`,
-      location ? `LOCATION:${escapeIcsText(location)}` : '',
-      `URL:${event.sourceUrl}`,
-      event.organizer ? `ORGANIZER;CN=${escapeIcsText(event.organizer)}:MAILTO:noreply@pulseblr.local` : '',
-      'STATUS:CONFIRMED',
-      'BEGIN:VALARM',
-      'TRIGGER:-PT2H',
-      'ACTION:DISPLAY',
-      `DESCRIPTION:${escapeIcsText(event.title)} starts in 2 hours`,
-      'END:VALARM',
-      'END:VEVENT',
-      'END:VCALENDAR',
-    ]
-      .filter(Boolean)
-      .map(foldLine)
-      .join('\r\n');
+    // Every content line, and every sanitiser that guards one, lives in `buildEventIcs`. See the
+    // header. `new Date()` is the DTSTAMP: this is a one-shot download, not a feed with an ETag.
+    const lines = buildEventIcs(
+      {
+        id: String(event._id),
+        title: event.title,
+        description: event.description,
+        startDateTime: event.startDateTime,
+        endDateTime: event.endDateTime,
+        venue: event.venue,
+        address: event.address,
+        area: event.area,
+        city: event.city,
+        organizer: event.organizer,
+        onlineLink: event.onlineLink,
+        sourceUrl: event.sourceUrl,
+      },
+      new Date()
+    );
 
     const filename = `${(event.slug || 'event').slice(0, 60)}.ics`;
 

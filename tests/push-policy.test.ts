@@ -14,6 +14,7 @@ import {
   validatePushSubscriptionInput,
   type ReminderEventView,
 } from '@/lib/notifications/reminder-policy';
+import { toLogLine } from '@/lib/security/control-chars';
 
 /**
  * The web push rules.
@@ -329,6 +330,81 @@ describe('formatPushPayload — the contract with public/sw.js', () => {
 });
 
 /*
+ * ── THE PUSH SERVICE'S RESPONSE BODY IS ATTACKER TEXT (CWE-117) ──────────────────────────────
+ *
+ * Any signed-in user can register an https endpoint on a server they run (`POST /api/me/push`). When
+ * the reminder run POSTs to it and gets a non-2xx, `web-push` hands back that server's response body
+ * verbatim. It used to reach `ReminderLog.error`, the run report and the operator's terminal as a bare
+ * `.slice(0, 200)`, which bounded its length and nothing else.
+ *
+ * MUTATION-CHECKED against that old expression, `String(body ?? '').slice(0, 200)`. Every hostile row
+ * below failed, and so did the 10 KB row (a newline and `##[` inside the first 200 characters) and the
+ * never-throws row. The bound was checked separately, by removing the clip, which fails the 10 KB row
+ * on length alone. The row marked "(control)" passes either way.
+ */
+describe('toLogLine: one bounded, inert line, whatever the push service sends', () => {
+  /** Nothing a terminal acts on: no C0 (tab included), DEL, C1, LS/PS or bidi control. */
+  const INERT = /^[^\x00-\x1f\x7f-\x9f\u{2028}\u{2029}\u{202a}-\u{202e}\u{2066}-\u{2069}]*$/u;
+
+  const hostile: [string, string][] = [
+    [
+      'an ANSI colour, a screen clear and an OSC 52 clipboard write',
+      '\x1b[31mred\x1b[0m\x1b[2J \x1b]52;c;ZXZpbA==\x07 done',
+    ],
+    ['a lone CR, which returns the cursor and overprints the line', 'ok\r  sent             victim@example.com'],
+    ['an LF that forges a whole report line', 'boom\n  sent             admin@example.com   delivered 9'],
+    ['U+2028', 'boom\u{2028}  sent             forged'],
+    ['a workflow command at the start of the body', '::add-mask::secret'],
+    // actions/runner's TryParseV2 does TrimStart() before StartsWith("::"), so a space is no defence.
+    ['a workflow command behind leading whitespace', '   ::add-mask::secret'],
+    ['a workflow command after a forged newline', 'x\n::error::forged annotation'],
+    // TryParse finds the legacy prefix with IndexOf("##["), i.e. anywhere, mid-line included.
+    ['the legacy workflow command form, mid-line', 'x ##[add-mask]secret'],
+    ['the legacy form assembled around a control that gets removed', 'x #\x1b#[error]forged'],
+    ['8-bit CSI, the one-code-point form of ESC [', '\x9b31mred'],
+    ['a bidi override that draws the line backwards', 'status \u{202e}deliver\u{202c} ok'],
+  ];
+
+  for (const [label, body] of hostile) {
+    it(`renders ${label} as one inert line`, () => {
+      const line = toLogLine(body, 200);
+      expect(line).toMatch(INERT);
+      expect(line.trimStart().startsWith('::')).toBe(false);
+      expect(line).not.toContain('##[');
+    });
+  }
+
+  it('bounds a 10 KB body to one line of at most the limit, ellipsis included', () => {
+    // Every hazard at once, repeated past 10 KB. The server chooses the length.
+    const body = 'row\r\n\x1b[2J::x ##['.repeat(640);
+    expect(body.length).toBeGreaterThanOrEqual(10_000);
+    const line = toLogLine(body, 200);
+    expect([...line].length).toBeLessThanOrEqual(200);
+    expect(line).toMatch(INERT);
+    expect(line).not.toContain('##[');
+    expect(line.endsWith('…')).toBe(true);
+  });
+
+  it('leaves an ordinary push service answer exactly as it was (control)', () => {
+    // FCM's real 410 wording, as measured in `isGoneForever`'s header.
+    const body = 'push subscription has unsubscribed or expired.';
+    expect(toLogLine(body, 200)).toBe(body);
+  });
+
+  it('never throws, whatever it is handed, because it runs inside catch blocks', () => {
+    const throwsOnString = {
+      toString(): string {
+        throw new Error('no');
+      },
+    };
+    for (const value of [null, undefined, 42, {}, throwsOnString, Symbol('x')]) {
+      expect(() => toLogLine(value, 200)).not.toThrow();
+    }
+    expect(toLogLine(undefined, 200)).toBe('');
+  });
+});
+
+/*
  * ── STRUCTURAL ASSERTIONS ────────────────────────────────────────────────────────────────────
  *
  * The two things below cannot be executed by this suite — one is a mongoose query and the other is a
@@ -389,5 +465,37 @@ describe('the daily frequency cap is scoped by kind on BOTH channels', () => {
     const call = source.slice(source.indexOf("ReminderLog.distinct('batchId'"));
     const filter = call.slice(0, call.indexOf('});') + 3);
     expect(filter).toContain('kind: PUSH_REMINDER_KIND');
+  });
+});
+
+describe('the push-service body is sanitised where it ENTERS and where it is PRINTED', () => {
+  /*
+   * `toLogLine` is pinned above. These pin that it is actually called, which no test of the function
+   * can show. `sendToDevice` POSTs to a network endpoint and the script is a side-effecting CLI, so
+   * the source is the only instrument. Same reasoning as the two describes above.
+   * Mutation-checked: restoring either old expression fails the matching assertion.
+   */
+  // CRLF-normalised: a Windows checkout has CRLF, and the slice below looks for the closing `\n}\n`.
+  const read = (file: string) => fs.readFileSync(path.join(REPO, file), 'utf8').replace(/\r\n/g, '\n');
+
+  it('routes every `error` that sendToDevice returns through toLogLine', () => {
+    const source = read('lib/notifications/push.ts');
+    const start = source.indexOf('export async function sendToDevice(');
+    expect(start).toBeGreaterThan(-1);
+    const fn = source.slice(start, source.indexOf('\n}\n', start));
+    // Three failure exits: the SSRF refusal, a WebPushError (the one carrying the body), and anything else.
+    const assignments = fn.match(/\berror: [^\n]+/g) ?? [];
+    expect(assignments).toHaveLength(3);
+    for (const assignment of assignments) expect(assignment).toContain('toLogLine(');
+    expect(fn).toContain('toLogLine(error.body, 200)');
+  });
+
+  it('sanitises again at print time in scripts/send-push-reminders.ts', () => {
+    // Defence in depth: `row.error` is only as clean as every path that ever writes it, and this is
+    // the last stop before a terminal, or before Actions parses the log for workflow commands.
+    const source = read('scripts/send-push-reminders.ts');
+    expect(source).toMatch(/toLogLine\(row\.error, \d+\)/);
+    expect(source).toMatch(/toLogLine\(row\.email, \d+\)/);
+    expect(source).not.toMatch(/\$\{row\.(error|email)\b/);
   });
 });

@@ -47,6 +47,7 @@
 // ═════════════════════════════════════════════════════════════════════════════════════════════
 
 import { isRateLimited, retryAfterMs, BATCH_BACKOFF_CAP_MS } from './throttle';
+import { hasControlChars } from '@/lib/security/control-chars';
 
 /**
  * One event as the model returned it, after validation.
@@ -288,9 +289,14 @@ function str(value: unknown, max: number): string | undefined {
 function httpUrl(value: unknown): string | undefined {
   const raw = str(value, 2000);
   if (!raw) return undefined;
+  // A control character inside a link is refused, not repaired: `new URL()` silently strips tab,
+  // CR and LF, so a link carrying a CRLF plus `END:VEVENT` would pass the parse while `raw` still
+  // carried the break into whatever renders it next (the ICS feed was the measured sink). Return
+  // the PARSED href.
+  if (hasControlChars(raw)) return undefined;
   try {
     const url = new URL(raw);
-    return url.protocol === 'http:' || url.protocol === 'https:' ? raw : undefined;
+    return url.protocol === 'http:' || url.protocol === 'https:' ? url.href : undefined;
   } catch {
     return undefined;
   }
