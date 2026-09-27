@@ -1,4 +1,5 @@
 'use client';
+import type React from 'react';
 import Link from 'next/link';
 
 import { FeedEvent } from '@/lib/event-types';
@@ -11,6 +12,7 @@ import {
   isHappeningNow,
 } from '@/lib/format';
 import SaveButton from './SaveButton';
+import { displayOrganizer } from '@/lib/events/organizer-display';
 
 /**
  * One row of the feed — an EDITORIAL LIST ROW, not a card.
@@ -77,6 +79,7 @@ import SaveButton from './SaveButton';
 export default function EventRow({
   event,
   showDate = false,
+  footer,
 }: {
   event: FeedEvent;
   /**
@@ -92,6 +95,12 @@ export default function EventRow({
    * whether the top event was tonight or in three weeks.
    */
   showDate?: boolean;
+  /**
+   * Extra content INSIDE the row, under the title column — e.g. a recurring series' "+3 more
+   * dates". Inside the article so it sits above the row's bottom rule and reads as part of this
+   * event, and indented by the gutter + gap so it lines up with the title, not the clock.
+   */
+  footer?: React.ReactNode;
 }) {
   const live = isHappeningNow(event.startDateTime, event.endDateTime);
   const href = `/events/${event._id}`;
@@ -193,6 +202,11 @@ export default function EventRow({
             other's band — the failure the scan sheet records. */}
         <SaveButton eventId={event._id} initiallySaved={event.tracked} />
       </div>
+      {footer && (
+        <div className="-mt-[var(--s-2)] pb-[var(--s-3)] pl-[calc(54px+var(--s-3))] md:pl-[calc(68px+var(--s-4))]">
+          {footer}
+        </div>
+      )}
     </article>
   );
 }
@@ -264,7 +278,7 @@ export function EventFactsLine({ event, className = '' }: { event: FeedEvent; cl
   // product is actually about — "CNCF Bangalore is running this" is why you would go. The avatar
   // that used to sit beside it is gone: a 16px third-party image is decoration at that size, and it
   // was the row's only network request once the cover went.
-  if (event.organizer) facts.push(event.organizer);
+  if (event.organizer) facts.push(displayOrganizer(event.organizer));
   if (typeof event.attendeeCount === 'number' && event.attendeeCount > 0) {
     facts.push(`${event.attendeeCount} going`);
   }
