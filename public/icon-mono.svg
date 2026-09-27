@@ -1,0 +1,22 @@
+<svg width="96" height="96" viewBox="0 0 96 96" xmlns="http://www.w3.org/2000/svg">
+  <!--
+    PulseBLR notification BADGE: the pulse trace alone, white on transparent.
+
+    Android draws a notification badge from the ALPHA CHANNEL ONLY, tinted by the system. The
+    full-colour tile (icon-96.png) is opaque in every pixel, so it rendered as a solid grey square.
+    Here only the trace carries alpha, so the silhouette IS the mark.
+
+    The path is copied verbatim from icon-512.svg, not redrawn. The transform centres its ink
+    (path plus the 2.1-unit round caps and joins: 20.6 x 12.0 units, centred at 11.05,12.45) in
+    the 96 box at scale 3.26, so the trace spans ~70% of the width: 67.2px of 96. No background rect,
+    deliberately; that is the whole point.
+
+    Rendered to badge-72.png and badge-96.png (24dp at xxhdpi and xxxhdpi) by
+    scripts/generate-icons.js.
+  -->
+  <g transform="translate(11.977 7.413) scale(3.26)"
+     fill="none" stroke="#ffffff" stroke-width="2.1"
+     stroke-linecap="round" stroke-linejoin="round">
+    <path d="M1.8 14.1h4.1l2.2-6.6 3.1 9.9 2.3-5.2 1.7 1.9h5.1"/>
+  </g>
+</svg>

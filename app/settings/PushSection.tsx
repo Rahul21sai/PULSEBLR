@@ -1,7 +1,74 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { TAP_44 } from '../components/scan/ContactFields';
 import { Banner, Button } from '../components/ui';
+
+type Tone = 'ok' | 'error' | 'warn';
+
+/**
+ * What to tell somebody after `POST /api/me/push/test`, from the status and the counts alone.
+ *
+ * PURE AND EXPORTED so it can be pinned without a browser. The server answers 200 whenever it made
+ * the attempt, and whether a push service accepted it is carried in `{ sent, failed, pruned }`, so
+ * `res.ok` is NOT success here: a 200 with `sent: 0` is a failure the user has to hear about.
+ *
+ * `deviceGone` is set when THIS device's subscription turned out to be dead (the push service said
+ * 404/410 and the server deleted the row). The caller then drops the browser's local copy too.
+ * Otherwise the self-heal on the next visit would re-POST the dead endpoint and resurrect a row that
+ * can never deliver.
+ */
+export function describePushTestOutcome(
+  status: number,
+  body: { sent?: unknown; failed?: unknown; pruned?: unknown; error?: unknown } | null,
+  retryAfter: string | null
+): { tone: Tone; text: string; deviceGone?: boolean } {
+  if (status === 200 && body && typeof body.sent === 'number') {
+    if (body.sent > 0) {
+      return {
+        tone: 'ok',
+        text:
+          'Sent. It should appear on this device within a few seconds. If it does not, check that ' +
+          'notifications for this browser are not silenced in your phone or computer settings.',
+      };
+    }
+    if (typeof body.pruned === 'number' && body.pruned > 0 && body.failed === 0) {
+      return {
+        tone: 'warn',
+        text:
+          'This device’s notification subscription had expired, so it has been removed. Turn ' +
+          'notifications on again to get a fresh one.',
+        deviceGone: true,
+      };
+    }
+    return {
+      tone: 'error',
+      text: 'The notification service did not accept the test, so nothing arrived. Try again later.',
+    };
+  }
+  if (status === 429) {
+    const seconds = Number(retryAfter);
+    return {
+      tone: 'warn',
+      text:
+        Number.isFinite(seconds) && seconds > 0
+          ? `That is a lot of tests. Try again in ${Math.ceil(seconds)} seconds.`
+          : 'That is a lot of tests. Wait a moment and try again.',
+    };
+  }
+  if (status === 404) {
+    // The server no longer has this device. Same repair as an expired subscription.
+    return {
+      tone: 'warn',
+      text: 'This device is not registered for notifications any more. Turn them on again.',
+      deviceGone: true,
+    };
+  }
+  if (status === 503) {
+    return { tone: 'warn', text: 'Notifications are not fully set up on this server yet, so no test can be sent.' };
+  }
+  return { tone: 'error', text: 'Could not send a test notification. Nothing was changed — try again.' };
+}
 
 /**
  * Turn on notifications that arrive when the app is closed.
@@ -108,7 +175,8 @@ export default function PushSection() {
   const [deviceCount, setDeviceCount] = useState<number | null>(null);
   const [subscribedHere, setSubscribedHere] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [status, setStatus] = useState<{ tone: 'ok' | 'error' | 'warn'; text: string } | null>(null);
+  const [testing, setTesting] = useState(false);
+  const [status, setStatus] = useState<{ tone: Tone; text: string } | null>(null);
 
   /** POST whatever subscription this browser currently holds. Idempotent; never prompts. */
   const syncSubscription = useCallback(async (subscription: PushSubscription) => {
@@ -271,6 +339,45 @@ export default function PushSection() {
     }
   }
 
+  /**
+   * Send the fixed test notification to THIS device only.
+   *
+   * The endpoint is read fresh from the browser rather than remembered, and sent in the BODY, not the
+   * query string: the full endpoint is a capability, and a URL ends up in request logs.
+   */
+  async function sendTest() {
+    setTesting(true);
+    setStatus(null);
+    try {
+      const registration = await navigator.serviceWorker.ready;
+      const subscription = await registration.pushManager.getSubscription();
+      if (!subscription) {
+        setSubscribedHere(false);
+        setStatus({ tone: 'warn', text: 'This browser dropped its subscription. Turn notifications on again to test.' });
+        return;
+      }
+      const res = await fetch('/api/me/push/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ endpoint: subscription.endpoint }),
+      });
+      const body = (await res.json().catch(() => null)) as Parameters<typeof describePushTestOutcome>[1];
+      const outcome = describePushTestOutcome(res.status, body, res.headers.get('Retry-After'));
+      if (outcome.deviceGone) {
+        // Drop the dead local copy so the mount-time self-heal cannot re-register it.
+        await subscription.unsubscribe().catch(() => undefined);
+        setSubscribedHere(false);
+        setDeviceCount(count => (count === null ? null : Math.max(0, count - 1)));
+      }
+      setStatus({ tone: outcome.tone, text: outcome.text });
+    } catch (error) {
+      setStatus({ tone: 'error', text: 'Could not reach the server. Nothing was sent — try again.' });
+      console.error('Push test failed:', error);
+    } finally {
+      setTesting(false);
+    }
+  }
+
   const otherDevices = Math.max(0, (deviceCount ?? 0) - (subscribedHere ? 1 : 0));
 
   return (
@@ -316,7 +423,7 @@ export default function PushSection() {
         <>
           <div className="mt-4 flex flex-wrap items-center gap-3">
             {subscribedHere ? (
-              <Button tone="quiet" size="md" onClick={() => void disable()} disabled={busy}>
+              <Button tone="quiet" size="md" onClick={() => void disable()} disabled={busy || testing}>
                 {busy ? 'Working…' : 'Turn off on this device'}
               </Button>
             ) : (
@@ -340,6 +447,25 @@ export default function PushSection() {
                   : 'Off.'}
             </span>
           </div>
+
+          {/* Only when THIS device is subscribed: there is nothing here to test otherwise. Its own row,
+              so the on/off status text stays beside the control it describes. Painted 40px like its
+              neighbour, with TAP_44 growing the hit area to the 44px floor; the 12px gap above clears
+              the 2px overhang. */}
+          {subscribedHere && (
+            <div className="mt-3">
+              <Button
+                tone="quiet"
+                size="md"
+                className={TAP_44}
+                onClick={() => void sendTest()}
+                disabled={busy || testing}
+                aria-busy={testing}
+              >
+                {testing ? 'Sending…' : 'Send a test notification'}
+              </Button>
+            </div>
+          )}
 
           {permission === 'denied' && !status && (
             <Banner tone="warn" className="mt-3">

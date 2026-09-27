@@ -52,6 +52,17 @@ const APP_DIR = path.join(ROOT, 'app');
 const SOURCE_SVG = path.join(PUBLIC_DIR, 'icon-512.svg');
 
 /**
+ * The notification BADGE source: the same trace, white on TRANSPARENT (see its own comment).
+ *
+ * WHY IT IS THE ONE OUTPUT THAT MUST HAVE ALPHA. Android draws a badge from the alpha channel alone.
+ * Every tile above is opaque by design, so pointed at as a badge it rendered as a solid grey square.
+ * 72 and 96 are 24dp, the status-bar icon size, at xxhdpi and xxxhdpi. Rendering at those sizes
+ * directly means nothing is resampled on the devices that matter.
+ */
+const BADGE_SVG = path.join(PUBLIC_DIR, 'icon-mono.svg');
+const BADGE_SIZES = [72, 96];
+
+/**
  * Play listing artwork. Deliberately NOT under `public/` — it is not a web asset, so serving it
  * would publish 26 KB nobody requests and hand `sw.js` one more thing to cache-first for free.
  */
@@ -112,6 +123,24 @@ async function toRgba(png) {
   return sharp(png).ensureAlpha().png().toBuffer();
 }
 
+/**
+ * Refuse to write a badge that would render as a square. The failure this file exists to fix is
+ * invisible until a phone shows it, so it is checked here rather than trusted: 4 channels, a fully
+ * transparent corner, and some fully opaque ink.
+ */
+async function assertTransparentBadge(png, label) {
+  const sharp = require('sharp');
+  const { data, info } = await sharp(png).raw().toBuffer({ resolveWithObject: true });
+  let maxAlpha = 0;
+  for (let i = 3; i < data.length; i += info.channels) maxAlpha = Math.max(maxAlpha, data[i]);
+  if (info.channels !== 4 || data[3] !== 0 || maxAlpha !== 255) {
+    throw new Error(
+      `${label} is not a transparent badge (channels ${info.channels}, corner alpha ${data[3]}, ` +
+        `max alpha ${maxAlpha}). Android would draw it as a solid square.`
+    );
+  }
+}
+
 function readSource() {
   if (!fs.existsSync(SOURCE_SVG)) {
     throw new Error(`Source tile missing: ${SOURCE_SVG}`);
@@ -123,10 +152,18 @@ function readSource() {
  * Return the source SVG resized to `size`, by rewriting only the root width/height and leaving
  * `viewBox` alone so the drawing scales rather than being cropped.
  */
-function svgAtSize(source, size) {
-  let svg = source
+function resizeSvg(source, size) {
+  return source
     .replace(/(<svg[^>]*?)\bwidth="\d+"/, `$1width="${size}"`)
     .replace(/(<svg[^>]*?)\bheight="\d+"/, `$1height="${size}"`);
+}
+
+/**
+ * `resizeSvg` plus `TRACE_SCALE`. The badge does NOT go through this: `TRACE_SCALE` scales about the
+ * 512-space centre, which means nothing in the badge's 96 box, and the badge has its own ~70% rule.
+ */
+function svgAtSize(source, size) {
+  let svg = resizeSvg(source, size);
 
   if (TRACE_SCALE !== 1.0) {
     // Scale about the 512-space centre: translate in, scale, translate back.
@@ -258,13 +295,17 @@ async function main() {
      * 24-bit is what iOS wants for `apple-icon` (it composites alpha onto BLACK) and what Play
      * requires for the feature graphic, so it is the right default rather than a limitation.
      */
-    async function renderPng(svgSource, size) {
-      const svg = svgAtSize(svgSource, size);
+    async function renderPng(svgSource, size, { transparent = false } = {}) {
+      // Only the badge asks for `transparent`, and it skips TRACE_SCALE; every existing call takes
+      // the original path unchanged, so their bytes do not move.
+      const svg = transparent ? resizeSvg(svgSource, size) : svgAtSize(svgSource, size);
       await page.setViewportSize({ width: size, height: size });
       await page.setContent(pageFor(svg, size, size), { waitUntil: 'load' });
       return page.screenshot({
         clip: { x: 0, y: 0, width: size, height: size },
-        omitBackground: false,
+        // Without this Chromium paints its default WHITE page behind the SVG, and a white trace on
+        // white is an opaque square: exactly the grey-square badge this output replaces.
+        omitBackground: transparent,
       });
     }
 
@@ -328,6 +369,20 @@ async function main() {
       });
       fs.writeFileSync(path.join(STORE_DIR, 'feature-graphic.png'), data);
       written.push(['store-assets/feature-graphic.png', data.length]);
+    }
+
+    // 7. Notification badges: white trace, TRANSPARENT ground, 32-bit RGBA. Chromium already emits
+    //    RGBA when there is real transparency; `toRgba` makes that a guarantee rather than an
+    //    encoder's choice, and the assertion refuses to write a badge that would be a square.
+    {
+      if (!fs.existsSync(BADGE_SVG)) throw new Error(`Badge source missing: ${BADGE_SVG}`);
+      const badgeSource = fs.readFileSync(BADGE_SVG, 'utf8');
+      for (const size of BADGE_SIZES) {
+        const data = await toRgba(await renderPng(badgeSource, size, { transparent: true }));
+        await assertTransparentBadge(data, `badge-${size}.png`);
+        fs.writeFileSync(path.join(PUBLIC_DIR, `badge-${size}.png`), data);
+        written.push([`public/badge-${size}.png`, data.length]);
+      }
     }
   } finally {
     await browser.close();

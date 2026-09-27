@@ -1,0 +1,288 @@
+name: Daily Push Reminders
+
+# Sends a WEB PUSH notification about each event a user saved that is about to happen, by running
+# scripts/send-push-reminders.ts. Until this file existed nothing ran that script: the sender and
+# the subscription side both shipped, and no schedule ever called them, so every subscribed phone
+# was waiting on a cron that did not exist.
+#
+# WHY THIS IS ITS OWN WORKFLOW rather than a second job in daily-reminders.yml. That file's own
+# header gives the reason for splitting reminders from the digest ("different failure meanings and
+# must not share an exit code"), and it applies again between email and push, plus three more:
+#
+#   1. A MANUAL TEST MUST NOT FIRE THE OTHER CHANNEL. `workflow_dispatch` runs every job in a
+#      workflow, so with push as a second job there, a non-dry dispatch restricted to your own
+#      address to check push would also send you real reminder EMAILS. Separate files mean separate
+#      buttons.
+#   2. LEAST PRIVILEGE. The push sender reads exactly four variables: MONGODB_URI and the three
+#      VAPID ones. It needs no RESEND_API_KEY, and no NEXTAUTH_* at all, because the payload's `url`
+#      is a PATH resolved by the service worker, not a link built from NEXTAUTH_URL (see
+#      `PushPayload.url` in lib/notifications/reminder-policy.ts). The email job never sees the
+#      VAPID private key and this one never sees the key that signs session JWTs.
+#   3. THE CHANNELS CANNOT INTERFERE, so there is nothing to serialise. They write ReminderLog rows
+#      under different `kind`s and the daily cap is scoped by kind (see the header of
+#      scripts/send-push-reminders.ts), so one concurrency group for both would buy nothing.
+#
+# It runs like the other crons, directly on the runner via `tsx`, NOT by calling an API route: no
+# shared secret to leak, no serverless timeout to fight.
+#
+# THIS IS INERT UNTIL IT IS ON THE DEFAULT BRANCH. GitHub runs `schedule` triggers only from the
+# default branch, so while this file sits on a feature branch no push reminder is sent by it.
+#
+# SAFE TO RE-RUN AND SAFE TO OVERLAP. The script claims a ReminderLog row per event BEFORE sending,
+# under a unique index, so a second run the same day (or a manual dispatch beside the schedule)
+# finds every event already claimed and sends nothing.
+
+on:
+  # 09:00 IST (03:30 UTC). Later than the 07:00 email, on purpose:
+  #   - This wakes a PHONE. The sender asks for `urgency: 'high'` (lib/notifications/push.ts), which
+  #     tells the push service to wake the device rather than batch, so the hour has to be a civil
+  #     one. An inbox can wait until it is opened; a lock screen cannot.
+  #   - It runs AFTER daily-scrape.yml (08:00 IST, normally 5-10 minutes), so a notification quotes
+  #     this morning's start time and venue for the event rather than yesterday's.
+  #   - :30, not :00. GitHub documents the start of every hour as when scheduled runs are most
+  #     often delayed.
+  # The 36-hour lead window (DEFAULT_LEAD_HOURS) was reasoned for a morning run and still holds:
+  # from 09:00 it reaches 21:00 tomorrow, which covers tomorrow evening's events.
+  schedule:
+    - cron: '30 3 * * *'
+
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Decide and report only: write nothing, send nothing'
+        type: boolean
+        default: true
+      only_email:
+        description: 'Restrict the run to one account, by its email (optional)'
+        type: string
+        required: false
+      # Exposed because the script's own failure message says "run with --retry-failed once you
+      # have decided", and without this input the only way to do that is to put the production
+      # VAPID private key on a laptop. A failed row is NOT retried automatically (a client-side
+      # failure does not prove non-delivery), so this is the deliberate way out.
+      retry_failed:
+        description: 'Re-attempt reminders that previously FAILED for events still due'
+        type: boolean
+        default: false
+
+# One push run at a time. Two concurrent runs cannot double-send (the unique index prevents it),
+# but they would race for the daily cap and make the logs hard to read.
+concurrency:
+  group: daily-push-reminders
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  send-push-reminders:
+    runs-on: ubuntu-latest
+    # `web-push` sets no socket timeout of its own, so one push service that accepts a connection
+    # and never answers could otherwise hold a runner for GitHub's default six hours.
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # ── WHY THIS STEP EXISTS, AND WHY "UNCONFIGURED" IS NOT ONE ANSWER. ───────────────────────
+      #
+      # scripts/send-push-reminders.ts EXITS 0 when any VAPID variable is unset. That is the right
+      # default for the script, and it is exactly the shape of the failure daily-digest.yml measured:
+      # nine green mornings, each spending 1-2 seconds in the send step, with nothing sent to a
+      # subscriber who was due. This step decides what an unset secret MEANS before the script gets
+      # the chance to be quiet about it:
+      #
+      #   PARTLY set (one or two of the three) -> FAIL. Somebody set out to configure push and missed
+      #     one. VAPID_SUBJECT is the one that gets dropped, and without it the script sends to
+      #     nobody at all.
+      #   ALL THREE unset -> it depends on CONSENT, which for push is the EXISTENCE of a
+      #     PushSubscription row (see the header of lib/notifications/push.ts):
+      #       - somebody has subscribed -> FAIL. They turned notifications on in the deployed app,
+      #         which only works when the DEPLOYMENT has a public key, so the keys exist and were
+      #         never copied here. That is the nine-green-mornings bug again, on a lock screen.
+      #       - nobody has subscribed -> WARN and skip. Nothing is lost, and a red cron every
+      #         morning for a feature nobody has switched on is the "cries wolf" failure the scripts'
+      #         headers describe: it gets muted, and then the real failure goes unnoticed.
+      #     This is the email workflows' own rule ("once someone IS opted in, could not send must be
+      #     louder than nothing to send") with push's definition of opted in. The count comes from
+      #     the script's own --dry, which needs no keys at all; lib/notifications/push.ts says that
+      #     is what the dry run is for ("what lets CI reason about the run without them").
+      #   ALL THREE set -> check their SHAPE. `setVapidDetails` throws on a malformed value, but it
+      #     does so after the run has started and with a stack trace. Worse, a pair that parses but
+      #     does not MATCH fails on the push service, and a failed ReminderLog row is never retried,
+      #     so one bad morning spends every reminder that was due that day. The pair check below
+      #     derives the public key from the private one, so a half-rotated pair fails here first.
+      #     What cannot be checked offline is whether this public key equals the deployment's
+      #     NEXT_PUBLIC_VAPID_PUBLIC_KEY. A mismatch there is a 403 on every send, which the
+      #     script reports by exiting 1, so it is loud, just not early.
+      #
+      # A DRY RUN IS EXEMPT from the key checks, because it sends nothing and needs no keys. The
+      # dispatch default is a dry run, and refusing to show what WOULD be sent because the keys are
+      # missing would hide the report that tells you whether anybody is waiting on them.
+      - name: Verify push is configured, or that nobody has subscribed
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          VAPID_SUBJECT: ${{ secrets.VAPID_SUBJECT }}
+          VAPID_PUBLIC_KEY: ${{ secrets.VAPID_PUBLIC_KEY }}
+          VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+        run: |
+          # Needed on every path, the dry run included. Without it lib/mongodb.ts falls back to
+          # mongodb://localhost:27017 and the run dies in a confusing ~30 s connection timeout.
+          if [ -z "$MONGODB_URI" ]; then
+            echo "::error::MONGODB_URI repository secret is not set, so nobody's subscriptions can be read."
+            echo "::error::Add it under Settings → Secrets and variables → Actions → New repository secret."
+            exit 1
+          fi
+
+          missing=()
+          for name in VAPID_SUBJECT VAPID_PUBLIC_KEY VAPID_PRIVATE_KEY; do
+            [ -n "${!name}" ] || missing+=("$name")
+          done
+
+          if [ "$DRY_RUN" = "true" ]; then
+            if [ "${#missing[@]}" -gt 0 ]; then
+              echo "::warning::Dry run, so not enforced: ${missing[*]} unset. A real run needs all three."
+            fi
+            echo "Dry run: push configuration not enforced ✓"
+            exit 0
+          fi
+
+          if [ "${#missing[@]}" -eq 3 ]; then
+            # The count, from the sender's own dry run. Captured, not streamed, because a dry run
+            # prints one row per account and this step only needs the total.
+            if ! dry_output=$(npx tsx scripts/send-push-reminders.ts --dry 2>&1); then
+              printf '%s\n' "$dry_output"
+              echo "::error::Push is not configured, and the dry run that would say whether anybody is"
+              echo "::error::waiting on it FAILED, so skipping cannot be shown to be safe."
+              exit 1
+            fi
+            # First match only, via a second `sed` that reads to the end. `head -n1` would close the
+            # pipe early, and under pipefail the resulting SIGPIPE fails the whole assignment.
+            subscribers=$(printf '%s\n' "$dry_output" \
+              | sed -nE 's/^accounts with a subscription[[:space:]]+([0-9]+)[[:space:]]*$/\1/p' \
+              | sed -n '1p')
+            # FAIL CLOSED on an unreadable count. The label is printed by summarise() in
+            # scripts/send-push-reminders.ts; if it is ever reworded, this must go red rather than
+            # read "no count" as "nobody". The pattern check also has to come BEFORE `-gt`: on a
+            # non-number `[` exits 2, `if` reads that as false, and the step would skip, open.
+            if ! [[ "$subscribers" =~ ^[0-9]+$ ]]; then
+              printf '%s\n' "$dry_output"
+              echo "::error::Could not read 'accounts with a subscription' from the dry run, so skipping"
+              echo "::error::cannot be shown to be safe. Has that line in scripts/send-push-reminders.ts changed?"
+              exit 1
+            fi
+            if [ "$subscribers" -gt 0 ]; then
+              echo "::error::$subscribers account(s) have turned on push notifications, but VAPID_SUBJECT,"
+              echo "::error::VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY are all unset here, so every one of them"
+              echo "::error::would silently get nothing. Add the SAME values the deployment uses under"
+              echo "::error::Settings → Secrets and variables → Actions. VAPID_PUBLIC_KEY must equal the"
+              echo "::error::deployment's NEXT_PUBLIC_VAPID_PUBLIC_KEY; a fresh pair would orphan every subscription."
+              exit 1
+            fi
+            echo "::warning::Push is not configured and no account has subscribed yet, so there is nobody to"
+            echo "::warning::notify. Skipping. This turns into a failure the day somebody subscribes."
+            exit 0
+          fi
+
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "::error::Push is only PARTLY configured: ${missing[*]} unset. The sender treats any"
+            echo "::error::missing one as 'not configured' and sends to nobody. VAPID_SUBJECT is required by"
+            echo "::error::RFC 8292, and Mozilla rejects a VAPID JWT without it."
+            exit 1
+          fi
+
+          bad=0
+          # web-push accepts only an https: URL or a mailto: address here, and throws on anything else.
+          case "$VAPID_SUBJECT" in
+            *[[:space:]]*)
+              echo "::error::VAPID_SUBJECT contains whitespace. It must be exactly mailto:you@example.com or https://…"
+              bad=1
+              ;;
+            mailto:?*@?*|https://?*) ;;
+            *)
+              echo "::error::VAPID_SUBJECT must be a mailto: address or an https: URL (web-push rejects anything else)."
+              bad=1
+              ;;
+          esac
+
+          # The exact rules `setVapidDetails` enforces: URL-safe base64 with no padding, decoding to
+          # a 65-byte uncompressed P-256 point (0x04 first, so always 'B', 87 chars) and a 32-byte
+          # scalar (43 chars). Checked here so a paste error reads as a sentence, not a stack trace.
+          public_ok=0
+          private_ok=0
+          [[ "$VAPID_PUBLIC_KEY" =~ ^B[A-Za-z0-9_-]{86}$ ]] && public_ok=1
+          [[ "$VAPID_PRIVATE_KEY" =~ ^[A-Za-z0-9_-]{43}$ ]] && private_ok=1
+          if [ "$public_ok" = 0 ] && [ "$private_ok" = 0 ] &&
+            [[ "$VAPID_PUBLIC_KEY" =~ ^[A-Za-z0-9_-]{43}$ ]] &&
+            [[ "$VAPID_PRIVATE_KEY" =~ ^B[A-Za-z0-9_-]{86}$ ]]; then
+            echo "::error::VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY look SWAPPED: the public key is the 87-character one."
+            bad=1
+          else
+            if [ "$public_ok" = 0 ]; then
+              echo "::error::VAPID_PUBLIC_KEY is not an 87-character URL-safe base64 P-256 public key starting with 'B'."
+              bad=1
+            fi
+            if [ "$private_ok" = 0 ]; then
+              echo "::error::VAPID_PRIVATE_KEY is not a 43-character URL-safe base64 P-256 private key."
+              bad=1
+            fi
+          fi
+
+          # Both well-formed, but are they ONE pair? Derived locally, with no network. Keys go in
+          # through the environment, never argv, which any process on the runner can read.
+          if [ "$public_ok" = 1 ] && [ "$private_ok" = 1 ]; then
+            if ! node -e '
+              const crypto = require("crypto");
+              try {
+                const ecdh = crypto.createECDH("prime256v1");
+                ecdh.setPrivateKey(Buffer.from(process.env.VAPID_PRIVATE_KEY, "base64url"));
+                const derived = ecdh.getPublicKey();
+                process.exit(derived.equals(Buffer.from(process.env.VAPID_PUBLIC_KEY, "base64url")) ? 0 : 1);
+              } catch {
+                process.exit(1);
+              }
+            '; then
+              echo "::error::VAPID_PRIVATE_KEY does not belong to VAPID_PUBLIC_KEY. They are halves of two different"
+              echo "::error::pairs, so every push service would refuse every notification, and a failed reminder is"
+              echo "::error::never retried automatically."
+              bad=1
+            fi
+          fi
+
+          if [ "$bad" = 1 ]; then
+            echo "::error::Copy the pair the DEPLOYMENT uses rather than minting a new one: rotating the keys"
+            echo "::error::orphans every existing subscription (see scripts/generate-vapid-keys.ts)."
+            exit 1
+          fi
+          echo "Push secrets present and well-formed ✓"
+
+      - name: Send push reminders
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          VAPID_SUBJECT: ${{ secrets.VAPID_SUBJECT }}
+          VAPID_PUBLIC_KEY: ${{ secrets.VAPID_PUBLIC_KEY }}
+          VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
+          # Dispatch inputs reach the shell through the ENVIRONMENT, never pasted into the command
+          # with ${{ }}. Interpolated, `only_email` is text the shell would parse, so a value like
+          # `x; curl …` would run as a command in a step holding the VAPID private key. As an
+          # environment variable it is only ever data.
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+          RETRY_FAILED: ${{ github.event_name == 'workflow_dispatch' && inputs.retry_failed }}
+          ONLY_EMAIL: ${{ github.event_name == 'workflow_dispatch' && inputs.only_email || '' }}
+        run: |
+          args=()
+          if [ "$DRY_RUN" = "true" ]; then args+=(--dry); fi
+          if [ "$RETRY_FAILED" = "true" ]; then args+=(--retry-failed); fi
+          if [ -n "$ONLY_EMAIL" ]; then args+=("--only=$ONLY_EMAIL"); fi
+          npx tsx scripts/send-push-reminders.ts "${args[@]}"
