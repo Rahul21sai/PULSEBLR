@@ -74,6 +74,28 @@ describe('isProtectedPath: PUBLIC pages that must never be gated', () => {
   });
 });
 
+/**
+ * `/my-events` — a user's own hand-added events. PRIVATE, and one word away from the most public page
+ * in the app, `/events/<id>`, which every shared link opens with no account. Both directions pinned.
+ */
+describe('isProtectedPath: /my-events', () => {
+  it('gates /my-events, its children and its query string', () => {
+    expect(isProtectedPath('/my-events')).toBe(true);
+    expect(isProtectedPath('/my-events/6a8c75ac1d13c5f121502f3c')).toBe(true);
+    expect(isProtectedPath('/my-events?tab=past')).toBe(true);
+  });
+
+  it('does NOT gate the public event page or a same-prefix look-alike', () => {
+    expect(isProtectedPath('/events/6a8c75ac1d13c5f121502f3c')).toBe(false);
+    expect(isProtectedPath('/events')).toBe(false);
+    expect(isProtectedPath('/my-events-guide')).toBe(false);
+  });
+
+  it('is signed-in only, not admin-only — any user can add, and so manage, their own events', () => {
+    expect(isAdminOnlyPath('/my-events')).toBe(false);
+  });
+});
+
 describe('isAdminOnlyPath: the operator-only pages', () => {
   /**
    * `/add-event` IS NO LONGER ADMIN-ONLY, and this assertion is inverted on purpose.

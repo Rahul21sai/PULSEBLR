@@ -58,6 +58,16 @@ export const PROTECTED_PATHS = [
    * Safe against the prefix trap above: no public route begins with `/onboarding`.
    */
   '/onboarding',
+  /**
+   * The events YOU added by hand, with their review status and Edit / Delete. Every read and write
+   * behind it is `requireUser()` (`GET /api/me/events`, `PATCH`/`DELETE /api/events/[id]`), so an
+   * anonymous visitor would only ever see an empty list that 401s.
+   *
+   * Safe against the prefix trap above, checked from BOTH sides: it cannot capture the public
+   * `/events/<id>` (`'/events/x'` does not start with `/my-events`), and no public route begins
+   * with `/my-events`.
+   */
+  '/my-events',
 ] as const;
 
 /** Does this path require a signed-in user? */

@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireUser } from '@/lib/api-auth';
 import { safeFetch, UnsafeUrlError } from '@/lib/security/safe-fetch';
+/**
+ * The SAME date rule the validator applies, not a copy of it. See the note at the JSON-LD dates
+ * below for why this route and `validateManualEvent` must read dates identically.
+ */
+import { toFormDateTime } from '@/lib/events/manual-input';
 
 /**
  * POST /api/scrape-url
@@ -160,9 +165,29 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Date — try JSON-LD startDate, then og meta, then text heuristic
+    /**
+     * Dates — JSON-LD `startDate` / `endDate` first, then `<time datetime>`.
+     *
+     * RETURNED AS IST WALL-CLOCK TEXT (`YYYY-MM-DDTHH:mm`), which is what the form's datetime-local
+     * inputs hold and what the person reads as Bengaluru time.
+     *
+     * THIS USED TO BE `new Date(node.startDate).toISOString().slice(0, 16)` — the UTC wall clock
+     * with its zone cut off — so a 19:00 IST event arrived in the form as 13:30. On the UTC
+     * production host it then "worked", because `validateManualEvent` read the zone-less text in
+     * the server's zone (UTC) and the two errors cancelled. Fixing the validator alone would have
+     * moved every imported event 5.5 hours, so both now go through `parseEventDateTime` in
+     * `lib/events/manual-input.ts`: an explicit zone is that instant, a zone-less value is IST, and
+     * the round trip back to the same instant is pinned by `tests/manual-event-time.test.ts`.
+     *
+     * A DATE WITH NO TIME (`"startDate": "2026-11-12"`, common on conference pages) yields nothing:
+     * prefilling midnight would present a time the page never published. It still counts as the
+     * markup having answered, so the `<time>` heuristic below does not then override proper Event
+     * markup with whatever `<time>` happens to come first — that ordering is the heuristic's own
+     * safety argument. (An unreadable value such as "TBA" does NOT count, exactly as before.)
+     */
     let startDateTime: string | undefined;
     let endDateTime: string | undefined;
+    let jsonLdDateOnly = false;
 
     if (jsonLdMatch) {
       try {
@@ -170,19 +195,12 @@ export async function POST(request: NextRequest) {
         const ldArr = Array.isArray(ld) ? ld : [ld];
         for (const node of ldArr) {
           if (node['@type'] === 'Event' || node['@type'] === 'SocialEvent') {
-            if (node.startDate) {
-              // Normalise to datetime-local format (YYYY-MM-DDTHH:mm)
-              const d = new Date(node.startDate);
-              if (!isNaN(d.getTime())) {
-                startDateTime = d.toISOString().slice(0, 16);
-              }
-            }
-            if (node.endDate) {
-              const d = new Date(node.endDate);
-              if (!isNaN(d.getTime())) {
-                endDateTime = d.toISOString().slice(0, 16);
-              }
-            }
+            startDateTime = toFormDateTime(node.startDate);
+            endDateTime = toFormDateTime(node.endDate);
+            jsonLdDateOnly =
+              !startDateTime &&
+              typeof node.startDate === 'string' &&
+              /^\d{4}-\d{2}-\d{2}$/.test(node.startDate.trim());
             break;
           }
         }
@@ -209,17 +227,18 @@ export async function POST(request: NextRequest) {
      * document order for an event's own times. A page whose first <time> is a post date
      * would mislead this, so it only ever runs when JSON-LD produced nothing — a page with
      * proper Event markup is always trusted over a heuristic.
+     *
+     * Unzoned values were already read as IST here (`${value}+05:30`) — and then emitted as UTC
+     * wall-clock text by the same `toISOString().slice(0, 16)` as above, so the one path that
+     * got the zone right on the way in lost it on the way out. `toFormDateTime` is that same IST
+     * rule end to end. It also SKIPS a date-only `<time datetime="2026-08-01">`, which on a real
+     * page is far more often a publication date than an event's start.
      */
-    if (!startDateTime) {
+    if (!startDateTime && !jsonLdDateOnly) {
       const times: string[] = [];
       for (const m of html.matchAll(/<time[^>]*datetime=["']([^"']+)["']/gi)) {
-        const value = m[1].trim();
-        // A bare local string is read in the SERVER's zone, which would shift a Bengaluru
-        // evening event by 5.5 hours on a UTC host. Treat unzoned values as IST, matching
-        // every other date path in this project.
-        const unzoned = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/.test(value);
-        const parsed = new Date(unzoned ? `${value}+05:30` : value);
-        if (!Number.isNaN(parsed.getTime())) times.push(parsed.toISOString().slice(0, 16));
+        const value = toFormDateTime(m[1]);
+        if (value) times.push(value);
         if (times.length >= 2) break;
       }
       if (times[0]) startDateTime = times[0];
@@ -258,9 +277,25 @@ export async function POST(request: NextRequest) {
       format = 'online';
     }
 
-    // sourceUrl — canonicalise
-    const canonical =
-      html.match(/<link[^>]+rel=["']canonical["'][^>]+href=["']([^"']+)["']/i)?.[1] ?? url;
+    /*
+     * sourceUrl — the page's canonical link, RESOLVED against the page and kept only if http(s).
+     *
+     * It used to be the raw attribute text. A relative canonical (`/events/123`) is legal HTML and
+     * common, and `validateManualEvent` drops anything that is not an absolute http(s) URL — so the
+     * import filled "Event URL" with a value the save then silently threw away, and the event was
+     * stored pointing at the `https://pulseblr.local/manual` placeholder. `&amp;` is decoded because
+     * this is attribute text, not a URL: the browser would decode it before following the link.
+     */
+    let canonical = url;
+    const canonicalHref = html.match(/<link[^>]+rel=["']canonical["'][^>]+href=["']([^"']+)["']/i)?.[1];
+    if (canonicalHref) {
+      try {
+        const resolved = new URL(canonicalHref.replace(/&amp;/g, '&'), url);
+        if (resolved.protocol === 'http:' || resolved.protocol === 'https:') canonical = resolved.href;
+      } catch {
+        // an unparseable canonical is ignored; the URL the person gave is still a fine source link
+      }
+    }
 
     const event = {
       title: stripHtml(title).slice(0, 200),

@@ -592,6 +592,52 @@ export const FEED_FIELDS = [
 /** `FEED_FIELDS` as a space-separated string, for `Query.select()`. */
 export const FEED_SELECT = FEED_FIELDS.join(' ');
 
+/**
+ * What ONE event's detail — `GET /api/events/[id]`, the `/events/[id]` page, `GET /api/me/events` —
+ * may send to a client. An inclusion allowlist, like `FEED_FIELDS`, and a superset of it.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────────────────────
+ * WHY THIS EXISTS. The detail paths used to return the WHOLE document (`findById().lean()` straight
+ * into the response and into the page's client props). That shipped, to every anonymous visitor:
+ *
+ *   · `createdByUserId` — the submitter's Google `sub`. Approval keeps it on the row (it is what
+ *     keeps a user event out of `pruneStale()`), so every APPROVED submission published its author's
+ *     account id to the internet.
+ *   · `clusterKey` — which for an owned event is `user:<ownerId>|…`, the same id a second time.
+ *   · `dedupHash`, `tagConfidence`, `lastSeenAt`, `sourceEventId`, `visibility`, `deletedAt` —
+ *     identity, provenance and moderation state no reader needs.
+ *
+ * `serialize.ts` used to call this "parity, not a new leak" and to recommend narrowing it "with a
+ * `.select()` at the query, which fixes both paths at once". This is that, as a named list so the
+ * API and the page cannot select differently.
+ *
+ * ADDED OVER THE FEED: `description`, `address`, `timezone`, `agenda`, `speakers` — per-event depth
+ * the feed omits for size. `seenInSources` stays (it is already in the feed) because the provenance
+ * line renders it; it names public platforms, not people.
+ *
+ * `app/admin/EditEventModal.tsx` reads this endpoint to fill its form, so every field it edits must
+ * be here. `tests/event-detail-dto.test.ts` reads that file and asserts it, so a field added to the
+ * modal fails the suite instead of silently blanking on the admin's next save.
+ * ─────────────────────────────────────────────────────────────────────────────────────────────
+ */
+export const DETAIL_FIELDS = [
+  ...FEED_FIELDS,
+  'description', 'address', 'timezone', 'agenda', 'speakers',
+] as const;
+
+/**
+ * Fields the detail QUERY must fetch but the DTO must never SEND.
+ *
+ * `canViewEvent` reads exactly these three, and every check in it treats absence as permissive —
+ * so a projection that omits one does not throw, it silently admits every private or deleted event.
+ * `POST /api/folders` shipped that bug once. Fetched for the access decision and the owner check;
+ * `toEventDetail` never copies them out.
+ */
+export const ACCESS_FIELDS = ['visibility', 'createdByUserId', 'deletedAt'] as const;
+
+/** For `Query.select()` on every detail read: what may be sent, plus what the access check needs. */
+export const DETAIL_SELECT = [...DETAIL_FIELDS, ...ACCESS_FIELDS].join(' ');
+
 /** `FEED_FIELDS` as an aggregation `$project` inclusion document. `_id` is included implicitly. */
 export function feedProjection(): Record<string, 1> {
   return Object.fromEntries(FEED_FIELDS.map(field => [field, 1])) as Record<string, 1>;

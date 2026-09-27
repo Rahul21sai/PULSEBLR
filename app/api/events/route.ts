@@ -16,6 +16,7 @@ import { readPreferences, hasRankingPreferences, type RelevanceContext } from '@
 import { requireAdmin, requireUser } from '@/lib/api-auth';
 import { isTechFromCategories } from '@/lib/event-types';
 import { validateManualEvent, manualEventError } from '@/lib/events/manual-input';
+import { PLACEHOLDER_SOURCE_URL } from '@/lib/events/placeholder';
 import { connectionScore } from '@/lib/events/connection-score';
 /**
  * The KEYWORD FLOOR only — never `tagEvents()`. This is the create path for one event with a person
@@ -421,7 +422,7 @@ export async function POST(request: NextRequest) {
       // title, and the spread would otherwise put the empty array back.
       category,
       source: 'manual' as const,
-      sourceUrl: fields.sourceUrl ?? 'https://pulseblr.local/manual',
+      sourceUrl: fields.sourceUrl ?? PLACEHOLDER_SOURCE_URL,
       lastSeenAt: new Date(),
       seenInSources: ['manual'],
       /**

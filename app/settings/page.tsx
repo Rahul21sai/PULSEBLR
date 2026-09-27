@@ -8,6 +8,7 @@ import MyCardSection from './MyCardSection';
 import CalendarFeedSection from './CalendarFeedSection';
 import PushSection from './PushSection';
 import AccountDeletionSection from './AccountDeletionSection';
+import { loginHref } from '@/lib/auth-callback-url';
 
 /**
  * /settings — the USER's surface: their account, their digest, what the app is.
@@ -190,7 +191,7 @@ export default function SettingsPage() {
                 </button>
               ) : (
                 <Link
-                  href="/login"
+                  href={loginHref('/settings')}
                   className="shrink-0 px-4 py-2 rounded-full text-[12.5px] font-semibold text-[var(--accent-ink)] bg-[var(--accent)] hover:bg-[var(--accent)] transition-colors"
                 >
                   Sign in
@@ -228,6 +229,28 @@ export default function SettingsPage() {
                   className="pressable inline-flex h-10 shrink-0 items-center rounded-full bg-[var(--ink)] px-5 text-[13px] font-semibold text-[var(--accent-ink)] hover:bg-[var(--ink)]"
                 >
                   Edit preferences
+                </Link>
+              </div>
+            </section>
+          )}
+
+          {/* ── Events you added ────────────────────────────────────────────
+              /my-events is the only place an owner can edit or delete an event they typed in
+              without first finding it in the feed, and nothing else links to it. */}
+          {session?.user && (
+            <section className="rounded-[var(--r-flat)] border border-[var(--rule)] p-5">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <h2 className="text-[16px] font-bold text-[var(--ink)]">Events you added</h2>
+                  <p className="mt-0.5 text-[13px] leading-relaxed text-[var(--ink-2)]">
+                    Edit, delete or check the review status of events you entered yourself.
+                  </p>
+                </div>
+                <Link
+                  href="/my-events"
+                  className="pressable inline-flex h-11 shrink-0 items-center rounded-full border border-[var(--rule)] px-5 text-[13px] font-semibold text-[var(--ink)]"
+                >
+                  My events
                 </Link>
               </div>
             </section>

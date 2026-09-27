@@ -33,6 +33,7 @@ import {
   timeIST,
 } from '../format';
 import { truncate } from '../scrapers/core/text';
+import { isPlaceholderSourceUrl } from '../events/placeholder';
 
 /** How much of a description `get_event` will return. */
 const DESCRIPTION_CHARS = 1200;
@@ -216,7 +217,12 @@ export function toMcpEventRow(event: StoredEvent): McpEventRow {
   const register = text(event.applyLink) ?? text(event.onlineLink);
   if (register) row.registerUrl = register;
   if (text(event.source)) row.source = text(event.source);
-  if (text(event.sourceUrl)) row.sourceUrl = text(event.sourceUrl);
+  // NOT the placeholder. A hand-added event with no link stores `https://pulseblr.local/manual` to
+  // satisfy the schema; handing that to an assistant as "the source" sends a reader to a host that
+  // cannot exist. Absent is the honest answer, and `url` above is always the real page anyway.
+  if (text(event.sourceUrl) && !isPlaceholderSourceUrl(event.sourceUrl)) {
+    row.sourceUrl = text(event.sourceUrl);
+  }
 
   return row;
 }

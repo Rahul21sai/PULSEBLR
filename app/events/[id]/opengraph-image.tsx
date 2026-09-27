@@ -77,12 +77,17 @@ async function loadCardEvent(id: string): Promise<CardEvent | null> {
 
   await connectDB();
   const doc = await Event.findById(id)
-    .select('title startDateTime venue area city format organizer isFree visibility')
+    .select('title startDateTime venue area city format organizer isFree visibility deletedAt')
     .lean();
   if (!doc) return null;
 
   // The gate. Same predicate as the page's `robots` and JSON-LD; see the header.
-  if (!isIndexableEvent(doc)) return null;
+  //
+  // `deletedAt` TOO, which this used to miss: the select did not fetch it and `isIndexableEvent`
+  // reads only `visibility`, so a soft-deleted public event — whose page 404s — kept rendering its
+  // title, date and venue on the share card. Owners can soft-delete their public events now, so that
+  // is the ordinary path rather than a rare admin action.
+  if (doc.deletedAt || !isIndexableEvent(doc)) return null;
 
   return {
     title: doc.title,

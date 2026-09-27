@@ -8,8 +8,10 @@ import connectDB from '@/lib/mongodb';
 import Event from '@/lib/models/Event';
 import { getCurrentUserId } from '@/lib/auth-helpers';
 import { canViewEvent } from '@/lib/events/visibility';
-import { publicEventScope } from '@/lib/events/query';
-import { toFeedEvent, toFeedEvents } from '@/lib/events/serialize';
+import { DETAIL_SELECT, publicEventScope } from '@/lib/events/query';
+import { toEventDetail, toFeedEvents, type EventDetail } from '@/lib/events/serialize';
+import { loadViewerStates } from '@/lib/events/viewer-state';
+import { usableLink } from '@/lib/events/placeholder';
 import {
   buildEventJsonLd,
   eventSeoDescription,
@@ -29,6 +31,7 @@ import { FeedEvent } from '@/lib/event-types';
 import { DesktopNav, MobileBottomNav } from '../../components/NavBar';
 import EventCover from '../../components/EventCover';
 import EventActions from './EventDetailClient';
+import OwnerControls from './OwnerControls';
 import Description from './Description';
 import { loadSpeakerMatches } from './load-speaker-matches';
 import {
@@ -156,8 +159,15 @@ import {
  */
 
 interface LoadedEvent {
-  event: FeedEvent;
-  /** Kept beside the client shape because `FeedEvent` has no `visibility` — SEO needs it. */
+  /**
+   * The detail DTO as an ANONYMOUS viewer would get it — no owner block, no `tracked`. It is what
+   * metadata reads; the page rebuilds it with the viewer's state (see below), so nothing per-viewer
+   * is computed for a share card.
+   */
+  event: EventDetail;
+  /** The projected lean row, server-only, so the page can build the viewer's DTO without re-reading. */
+  doc: Record<string, unknown>;
+  /** Kept beside the client shape because the DTO only carries `visibility` for the owner — SEO needs it always. */
   visibility: string | null;
   related: FeedEvent[];
   /**
@@ -180,14 +190,17 @@ const loadEvent = cache(async (id: string): Promise<LoadedEvent | null> => {
 
   await connectDB();
   /*
-   * NO `.select()` HERE, DELIBERATELY. `canViewEvent` reads THREE fields — `visibility`,
-   * `createdByUserId` and `deletedAt` — and every check in it treats absence as permissive,
-   * because absence genuinely is the common case for the ~1500 scraped rows that predate those
-   * fields. So a projection that forgets one does not throw and does not deny: it silently
-   * returns true for everything. `POST /api/folders` shipped exactly that bug with `visibility`.
-   * An unprojected read cannot have it.
+   * `DETAIL_SELECT`, THE SAME PROJECTION `GET /api/events/[id]` USES.
+   *
+   * This read was unprojected on purpose, and the reason was sound: `canViewEvent` reads THREE fields
+   * — `visibility`, `createdByUserId`, `deletedAt` — and treats each as permissive when absent, so a
+   * projection that forgets one silently admits every private event (`POST /api/folders` shipped
+   * exactly that). But unprojected also meant the whole document reached this page's client props:
+   * every visitor to an approved user event received the author's Google `sub`. `DETAIL_SELECT` is
+   * `DETAIL_FIELDS` plus `ACCESS_FIELDS`, and `tests/event-detail-dto.test.ts` pins that it carries
+   * all three access fields — so the guard sees them and `toEventDetail` never passes them on.
    */
-  const doc = await Event.findById(id).lean();
+  const doc = await Event.findById(id).select(DETAIL_SELECT).lean();
   if (!doc) return null;
 
   const viewerId = await getCurrentUserId();
@@ -214,7 +227,8 @@ const loadEvent = cache(async (id: string): Promise<LoadedEvent | null> => {
     .lean();
 
   return {
-    event: toFeedEvent(doc),
+    event: toEventDetail(doc, null),
+    doc: doc as unknown as Record<string, unknown>,
     visibility: doc.visibility ?? null,
     related: toFeedEvents(related),
     viewerId,
@@ -306,7 +320,19 @@ export default async function EventDetailPage({ params }: { params: Promise<{ id
   // else's private one, with an identical response for all three.
   if (!loaded) notFound();
 
-  const { event, related } = loaded;
+  const { related } = loaded;
+
+  /*
+   * THE VIEWER'S DTO: saved state for anyone signed in, and the owner block for the author. Looked
+   * up here rather than in the cached loader so `generateMetadata` never pays for a per-viewer query
+   * (the same discipline as the speaker lookup below). One call for both, from the module the API
+   * route and `/my-events` use, so all three agree on "saved by others" and on what Delete does.
+   */
+  const viewer = await loadViewerStates(
+    [loaded.doc as { _id: unknown; createdByUserId?: string | null; visibility?: string | null }],
+    loaded.viewerId
+  );
+  const event = toEventDetail(loaded.doc, loaded.viewerId, viewer.get(String(loaded.doc._id)));
   const jsonLd = buildEventJsonLd(seoInput(loaded), absoluteUrl(`/events/${event._id}`));
 
   /*
@@ -424,6 +450,10 @@ export default async function EventDetailPage({ params }: { params: Promise<{ id
                 rather than here so the scale has one definition. The hero of the page: nothing above
                 it now competes, which is what removing the category row bought. */}
             <h1 className="mt-[var(--s-4)] ty-h1 text-[var(--ink)]">{event.title}</h1>
+            {/* `isOwner` is decided in `toEventDetail` from the stored owner id, which never leaves
+                the server. Drawing the controls is a courtesy; the owner-scoped query in
+                PATCH/DELETE /api/events/[id] is the boundary. */}
+            {event.isOwner && <OwnerControls event={event} />}
           </header>
 
           {/* ── Decide: the verdict, the facts, the action ───────────────────
@@ -728,7 +758,7 @@ function WorthGoing({ event }: { event: FeedEvent }) {
  * `registrationDeadline` **0** — so that last row is correct, guarded and currently dormant on the
  * whole tech corpus, which is worth knowing before debugging it as a bug.
  */
-function EventFacts({ event, isPast }: { event: FeedEvent; isPast: boolean }) {
+function EventFacts({ event, isPast }: { event: EventDetail; isPast: boolean }) {
   const mapsQuery = encodeURIComponent(
     [event.venue, event.address, event.area, 'Bengaluru'].filter(Boolean).join(', ')
   );
@@ -884,10 +914,12 @@ function vocabLabel(value: string): string {
 function Provenance({ event }: { event: FeedEvent }) {
   const isManual = event.source === 'manual';
   const others = (event.seenInSources || []).filter(source => source !== event.source);
-  // Only an http(s) URL is rendered as a link. `sourceUrl` on a hand-entered event is whatever the
-  // submitter typed, and this string reaches an `href` — the same reason `manual-input.ts` refuses
-  // a `javascript:` URL on `applyLink`.
-  const linkable = /^https?:\/\//i.test(event.sourceUrl || '');
+  // Only an http(s) URL is rendered as a link — `sourceUrl` on a hand-entered event is whatever the
+  // submitter typed, and this string reaches an `href`. AND NOT THE PLACEHOLDER: a hand-added event
+  // with no link stores `https://pulseblr.local/manual`, which passed the old `^https?://` test and
+  // rendered an "Organiser's page" link to a host that cannot exist. `usableLink` refuses both.
+  const sourceHref = usableLink(event.sourceUrl);
+  const linkable = Boolean(sourceHref);
 
   return (
     <p className="mt-9 border-t border-[color:var(--hairline)] pt-7 text-[12.5px] leading-[1.5] text-[color:var(--ink-3)]">
@@ -898,7 +930,7 @@ function Provenance({ event }: { event: FeedEvent }) {
             <>
               {' '}
               <a
-                href={event.sourceUrl}
+                href={sourceHref}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="font-semibold text-[color:var(--blue)] hover:underline"
@@ -913,7 +945,7 @@ function Provenance({ event }: { event: FeedEvent }) {
           Listed on{' '}
           {linkable ? (
             <a
-              href={event.sourceUrl}
+              href={sourceHref}
               target="_blank"
               rel="noopener noreferrer"
               className="font-semibold text-[color:var(--blue)] hover:underline capitalize"

@@ -2,7 +2,8 @@
 
 import { useState } from 'react';
 import SaveButton from '../../components/SaveButton';
-import type { FeedEvent } from '@/lib/event-types';
+import { registrationUrl } from '@/lib/events/placeholder';
+import type { EventDetail } from '@/lib/events/serialize';
 
 /**
  * The interactive island on an otherwise server-rendered event page.
@@ -49,7 +50,7 @@ export default function EventActions({
   variant = 'rail',
   isPast = false,
 }: {
-  event: FeedEvent;
+  event: EventDetail;
   variant?: 'rail' | 'bar';
   /** Decided on the SERVER — see the note above the component. Never recomputed here. */
   isPast?: boolean;
@@ -78,7 +79,33 @@ export default function EventActions({
     }
   }
 
-  const registerLabel = event.soldOut ? `View on ${event.source}` : 'Register';
+  /*
+   * WHERE REGISTER GOES, OR THAT IT GOES NOWHERE.
+   *
+   * This was `event.applyLink || event.sourceUrl`. A hand-added event with no link stores the
+   * placeholder `https://pulseblr.local/manual` in `sourceUrl` (the schema requires one), so the
+   * button pointed at a host that cannot exist — a dead Register on exactly the events whose author
+   * is most likely to be looking. `registrationUrl` skips the placeholder and anything not http(s).
+   * `null` renders a sentence, never a disabled button: a greyed-out Register reads as an offer that
+   * failed — the same reason the ended state is a sentence.
+   */
+  const registerHref = registrationUrl(event);
+  const platform = event.source ? event.source.charAt(0).toUpperCase() + event.source.slice(1) : '';
+  const registerLabel = event.soldOut
+    ? event.source === 'manual' || !platform
+      ? "View organiser's page"
+      : `View on ${platform}`
+    : 'Register';
+  const noLinkLine = event.isOwner
+    ? 'No registration link yet. Add one with Edit.'
+    : 'No registration link has been added.';
+
+  /*
+   * `initiallySaved` WAS NEVER PASSED HERE. The page knew nothing about the viewer's tracker, so an
+   * already-saved event showed "Save"; tapping it POSTed, got a 409 and only then flipped to "Saved".
+   * The page now looks it up, and `tracked` arrives on the DTO.
+   */
+  const saved = Boolean(event.tracked);
 
   if (variant === 'bar') {
     return (
@@ -104,17 +131,21 @@ export default function EventActions({
             <p className="flex-1 min-h-[48px] flex items-center ty-meta font-semibold text-[color:var(--live)]">
               This event has ended
             </p>
-          ) : (
+          ) : registerHref ? (
             <a
-              href={event.applyLink || event.sourceUrl}
+              href={registerHref}
               target="_blank"
               rel="noopener noreferrer"
               className="pressable r-touch flex-1 min-h-[48px] flex items-center justify-center bg-[var(--accent)] text-[var(--accent-ink)] text-[15px] font-semibold"
             >
               {registerLabel}
             </a>
+          ) : (
+            <p className="flex-1 min-h-[48px] flex items-center ty-meta font-semibold">
+              No registration link
+            </p>
           )}
-          <SaveButton eventId={event._id} variant="full" />
+          <SaveButton eventId={event._id} variant="full" initiallySaved={saved} />
         </div>
       </div>
     );
@@ -124,9 +155,11 @@ export default function EventActions({
     <div className="flex flex-col gap-2 pt-1">
       {isPast ? (
         <p className="ty-meta font-semibold text-[color:var(--live)] py-3">This event has ended</p>
+      ) : !registerHref ? (
+        <p className="ty-meta py-3">{noLinkLine}</p>
       ) : (
         <a
-          href={event.applyLink || event.sourceUrl}
+          href={registerHref}
           target="_blank"
           rel="noopener noreferrer"
           /* `.pressable` rather than a hand-rolled `active:scale-[0.98]`: one curve and one scale for
@@ -137,7 +170,7 @@ export default function EventActions({
         </a>
       )}
       <div className="flex gap-2">
-        <SaveButton eventId={event._id} variant="full" />
+        <SaveButton eventId={event._id} variant="full" initiallySaved={saved} />
         {/* Both 44px PAINTED, so no 44px overlay is needed and the two cannot contest each other's
             tap band — the failure mode a smaller painted control with an overlay produces. */}
         <a
