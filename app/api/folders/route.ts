@@ -5,6 +5,8 @@ import Event from '@/lib/models/Event';
 import { requireUser } from '@/lib/api-auth';
 import { listFolders, folderToDTO, isValidId } from '@/lib/contacts/service';
 import { canViewEvent } from '@/lib/events/visibility';
+import { duplicateKeyFields, errorLogLine, routeFailure } from '@/lib/http/errors';
+import { FOLDER_FIELDS } from '@/lib/contacts/folder-fields';
 
 /**
  * GET  /api/folders — every folder the signed-in user owns, with counts.
@@ -24,8 +26,9 @@ export async function GET(request: NextRequest) {
     const folders = await listFolders(gate.userId, includeArchived);
     return NextResponse.json({ folders });
   } catch (error) {
-    console.error('Error listing folders:', error);
-    return NextResponse.json({ error: 'Failed to list folders' }, { status: 500 });
+    console.error('Error listing folders:', errorLogLine(error));
+    const failure = routeFailure(error, 'Failed to list folders');
+    return NextResponse.json(failure.body, { status: failure.status });
   }
 }
 
@@ -110,7 +113,6 @@ export async function POST(request: NextRequest) {
     const folder = await Folder.create(doc);
     return NextResponse.json({ folder: folderToDTO(folder.toObject()) }, { status: 201 });
   } catch (error) {
-    const err = error as { code?: number; message?: string; keyPattern?: Record<string, unknown> };
     /*
      * CHECK WHICH INDEX COLLIDED. This used to assume every 11000 was the { userId, slug }
      * name clash and answer "You already have a folder with that name" — so when the
@@ -119,26 +121,18 @@ export async function POST(request: NextRequest) {
      * all) stayed hidden behind a plausible sentence. A duplicate-key handler that guesses
      * its own cause turns a schema bug into a user-error message.
      */
-    if (err.code === 11000) {
-      if (err.keyPattern && 'slug' in err.keyPattern) {
-        // The genuine name clash. Returning the existing folder lets the client simply
-        // navigate to it, which is what the user wanted anyway.
-        const existing = await Folder.findOne({
-          userId: gate.userId,
-          slug: folderSlug(String(body.name ?? '')),
-        }).lean();
-        return NextResponse.json(
-          {
-            error: 'You already have a folder with that name',
-            folder: existing ? folderToDTO(existing) : undefined,
-          },
-          { status: 409 }
-        );
-      }
-      // Any other unique index: report it as the conflict it is rather than mislabelling it.
-      console.error('Error creating folder — unexpected duplicate key:', err.keyPattern, err.message);
+    if (duplicateKeyFields(error)?.includes('slug')) {
+      // The genuine name clash. Returning the existing folder lets the client simply
+      // navigate to it, which is what the user wanted anyway.
+      const existing = await Folder.findOne({
+        userId: gate.userId,
+        slug: folderSlug(String(body.name ?? '')),
+      }).lean();
       return NextResponse.json(
-        { error: 'Could not create that folder. Please try again.' },
+        {
+          error: 'You already have a folder with that name',
+          folder: existing ? folderToDTO(existing) : undefined,
+        },
         { status: 409 }
       );
     }
@@ -147,13 +141,18 @@ export async function POST(request: NextRequest) {
      * naming the model and the schema path. It stays in the log, which is where the real wording
      * belongs; see the same removal on the tracker write paths.
      *
-     * The duplicate-key branch ABOVE deliberately keeps branching on `err.keyPattern`. That is a
-     * different thing from this leak: it is how a genuine name clash gets reported as a name
-     * clash. A handler that guesses its own cause once reported a schema bug (every user capped
-     * at one folder) as "You already have a folder with that name" — the only thing that was not
-     * wrong. Do not collapse the two branches.
+     * ANY OTHER COLLISION IS NOW A 500. It used to be a 409 ("Could not create that folder. Please
+     * try again.") — a client-error code for what can only be a schema bug, since a create sets no
+     * `clientId` and no `intakeToken`. That is the exact failure the paragraph above describes, one
+     * step removed: a 4xx tells the caller the fault is theirs. The index is in the log line.
+     *
+     * A SCHEMA REFUSAL IS A 400 NAMING THE FIELD, and on this route it is reachable: `name` has
+     * `maxlength: 120` and `note` 2000, and nothing above checks either. The offline outbox posts
+     * folders here, and to its `classifyStatus` the 500 this used to be is `transient` — so a folder
+     * queued with a long name was retried for ever. A 400 is `permanent`, and it says why.
      */
-    console.error('Error creating folder:', error);
-    return NextResponse.json({ error: 'Failed to create folder' }, { status: 500 });
+    console.error('Error creating folder:', errorLogLine(error));
+    const failure = routeFailure(error, 'Failed to create folder', FOLDER_FIELDS);
+    return NextResponse.json(failure.body, { status: failure.status });
   }
 }

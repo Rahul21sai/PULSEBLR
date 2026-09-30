@@ -3,6 +3,7 @@ import { clientKey, rateLimit } from '@/lib/security/rate-limit';
 import { escapeHtml } from '@/lib/notifications/html';
 import { verifyUnsubscribeToken } from '@/lib/notifications/reminder-policy';
 import { disableRemindersFor } from '@/lib/notifications/reminders';
+import { errorLogLine } from '@/lib/http/errors';
 
 /**
  * PUBLIC — get off the reminder list, with no session.
@@ -166,7 +167,9 @@ export async function POST(request: NextRequest) {
     // anyway — either way, they are not going to be emailed.
     await disableRemindersFor(verdict.userId);
   } catch (error) {
-    console.error('Failed to unsubscribe from reminders:', error);
+    // The only input is a verified signature, so this is always the server's fault: the 500 page
+    // below stays, and the error goes to the log as one inert line.
+    console.error('Failed to unsubscribe from reminders:', errorLogLine(error));
     return page({
       status: 500,
       title: 'That did not save',

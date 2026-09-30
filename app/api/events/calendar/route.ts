@@ -4,6 +4,7 @@ import Event from '@/lib/models/Event';
 import { IST } from '@/lib/format';
 import { buildEventFilter, SPAN_FLOOR_DAYS } from '@/lib/events/query';
 import { getCurrentUserId } from '@/lib/auth-helpers';
+import { errorLogLine, routeFailure } from '@/lib/http/errors';
 
 /**
  * The most days one event may occupy, and the `+ 1` is not a fudge — it is measured.
@@ -232,7 +233,8 @@ export async function GET(request: NextRequest) {
       daysWithEvents: rows.length,
     });
   } catch (error) {
-    console.error('Calendar counts error:', error);
-    return NextResponse.json({ error: 'Failed to load calendar' }, { status: 500 });
+    console.error('Calendar counts error:', errorLogLine(error));
+    const failure = routeFailure(error, 'Failed to load calendar');
+    return NextResponse.json(failure.body, { status: failure.status });
   }
 }

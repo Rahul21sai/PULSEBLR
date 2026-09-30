@@ -3,6 +3,7 @@ import dbConnect from '@/lib/mongodb';
 import Source from '@/lib/models/Source';
 import { requireAdmin } from '@/lib/api-auth';
 import { validateNewSource, sourceValidationError } from '@/lib/sources/admin-validate';
+import { duplicateKeyFields, errorLogLine, routeFailure } from '@/lib/http/errors';
 
 /**
  * GET /api/sources -- the whole scraper inventory. ADMIN ONLY.
@@ -32,7 +33,8 @@ export async function GET() {
 
     return NextResponse.json({ sources });
   } catch (error) {
-    console.error('Error fetching sources:', error);
+    // No input: always the server's fault. Source rows hold upstream text, so the line is inert.
+    console.error('Error fetching sources:', errorLogLine(error));
     return NextResponse.json(
       { error: 'Failed to fetch sources' },
       { status: 500 }
@@ -78,23 +80,23 @@ export async function POST(request: Request) {
     const source = await Source.create(doc);
     return NextResponse.json({ source }, { status: 201 });
   } catch (error) {
-    console.error('Error creating source:', error);
+    console.error('Error creating source:', errorLogLine(error));
     // `{ kind, handle }` is unique, so re-registering a known source is the caller's mistake and
     // must not read as a server fault. Branching on keyPattern rather than assuming which index
     // it was — see the folders E11000 story in CLAUDE.md §9.
-    const err = error as { code?: number; keyPattern?: Record<string, unknown> };
-    if (err.code === 11000) {
-      const onIdentity = err.keyPattern && ('handle' in err.keyPattern || 'kind' in err.keyPattern);
+    const clash = duplicateKeyFields(error);
+    if (clash?.includes('kind') || clash?.includes('handle')) {
       return NextResponse.json(
-        {
-          error: onIdentity
-            ? 'A source with that kind and handle already exists.'
-            : 'That source already exists.',
-        },
+        { error: 'A source with that kind and handle already exists.' },
         { status: 409 }
       );
     }
-    return NextResponse.json({ error: 'Failed to create source' }, { status: 500 });
+    // Any OTHER clash used to be a 409 too ("That source already exists."). The document is built
+    // by `validateNewSource`, so the caller cannot supply `_id` or any other unique path, and a clash
+    // elsewhere can only be a schema bug: the 500 §9 asks for. A schema refusal is a 400 in the
+    // `fields` shape SourcesPanel marks inline.
+    const failure = routeFailure(error, 'Failed to create source', { invalidBody: sourceValidationError });
+    return NextResponse.json(failure.body, { status: failure.status });
   }
 }
 

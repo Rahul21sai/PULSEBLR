@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { runPipeline, PipelineOptions } from '@/lib/scrapers/pipeline';
 import { requireAdmin } from '@/lib/api-auth';
+import { errorLogLine } from '@/lib/http/errors';
 
 /**
  * POST /api/scrape — trigger a scraper run. ADMIN ONLY.
@@ -70,8 +71,12 @@ export async function POST(request: NextRequest) {
      * or an upstream fetch error carrying the full source URL. `result.errors` already reports
      * per-source health to the admin dashboard in the SUCCESS body, which is the right channel
      * for it; the crash wording is in the server log.
+     *
+     * Always a 500, even for a ValidationError: the caller sent three booleans, and whatever the
+     * schema refused came from a scraped page, not from them. That same page text is why the log
+     * line goes through `errorLogLine` — it is third-party text, and it must not forge log lines.
      */
-    console.error('Scraper API error:', error);
+    console.error('Scraper API error:', errorLogLine(error));
     return NextResponse.json({ success: false, error: 'The scrape run failed' }, { status: 500 });
   }
 }

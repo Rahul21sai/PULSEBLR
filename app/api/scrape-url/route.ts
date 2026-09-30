@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireUser } from '@/lib/api-auth';
 import { safeFetch, UnsafeUrlError } from '@/lib/security/safe-fetch';
+import { callerFacingMessage, errorLogLine } from '@/lib/http/errors';
 /**
  * The SAME date rule the validator applies, not a copy of it. See the note at the JSON-LD dates
  * below for why this route and `validateManualEvent` must read dates identically.
@@ -37,8 +38,17 @@ export async function POST(request: NextRequest) {
     try {
       result = await safeFetch(url, { timeoutMs: 8000, accept: 'text/html' });
     } catch (err) {
+      /*
+       * The one error whose wording a caller may read, and WHICH errors qualify is decided in
+       * lib/http/errors.ts (`callerFacingMessage`) rather than by a `.message` read here. That keeps
+       * `tests/api-error-leaks.test.ts` able to hold every route to "no error text in a body" with no
+       * exceptions, and it sends the message as one clean, bounded line.
+       */
       if (err instanceof UnsafeUrlError) {
-        return NextResponse.json({ event: null, error: err.message }, { status: 400 });
+        return NextResponse.json(
+          { event: null, error: callerFacingMessage(err) ?? 'That URL cannot be fetched.' },
+          { status: 400 }
+        );
       }
       throw err;
     }
@@ -323,7 +333,8 @@ export async function POST(request: NextRequest) {
      * that message is written by `lib/security/safe-fetch.ts` for the caller, and it is the only
      * way they learn WHY their URL was refused rather than merely that it was.
      */
-    console.error('scrape-url error:', error);
+    // The URL is the caller's, and a fetch error can quote it: one inert line.
+    console.error('scrape-url error:', errorLogLine(error));
     return NextResponse.json({ event: null, error: 'Could not read that URL' }, { status: 200 });
   }
 }

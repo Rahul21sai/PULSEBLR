@@ -6,6 +6,7 @@ import Event from '@/lib/models/Event';
 import Source from '@/lib/models/Source';
 import { requireAdmin } from '@/lib/api-auth';
 import { recordAudit, undoKind } from '@/lib/admin/audit';
+import { duplicateKeyFields, errorLogLine, routeFailure } from '@/lib/http/errors';
 
 /**
  * POST /api/admin/audit/undo — put it back.
@@ -121,9 +122,12 @@ export async function POST(request: NextRequest) {
             await new Event(snapshot).save();
             outcome = 'restored';
           } catch (err) {
-            if ((err as { code?: number }).code === 11000) {
-              // Genuinely already back: no row under the original `_id`, but a scrape re-created
-              // the event under a new one between the delete and the undo. End state reached.
+            // Only the two indexes that MEAN "already back" count as it: `dedupHash`, when a scrape
+            // re-created the event under a new `_id` between the delete and the undo, and `_id`, when
+            // something restored it in the gap. Any other collision is a schema bug, and answering
+            // `already-present` for it would report a restore that did not happen (CLAUDE.md §9).
+            const clash = duplicateKeyFields(err);
+            if (clash?.includes('dedupHash') || clash?.includes('_id')) {
               outcome = 'already-present';
             } else {
               throw err;
@@ -135,7 +139,9 @@ export async function POST(request: NextRequest) {
           await new Source(snapshot).save();
           outcome = 'restored';
         } catch (err) {
-          if ((err as { code?: number }).code === 11000) outcome = 'already-present';
+          // Back already: under its own `_id`, or re-discovered by a scrape under the same identity.
+          const clash = duplicateKeyFields(err);
+          if (clash?.includes('_id') || clash?.includes('handle')) outcome = 'already-present';
           else throw err;
         }
       }
@@ -194,7 +200,10 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ undone: id, outcome });
   } catch (error) {
-    console.error('Undo failed:', error);
-    return NextResponse.json({ error: 'Failed to undo that change' }, { status: 500 });
+    console.error('Undo failed:', errorLogLine(error));
+    // `id` is the caller's only input and is checked above, so a schema refusal here is the STORED
+    // snapshot failing today's schema: the operator's to read in the log, not the caller's to fix.
+    const failure = routeFailure(error, 'Failed to undo that change', { fields: ['id'] });
+    return NextResponse.json(failure.body, { status: failure.status });
   }
 }

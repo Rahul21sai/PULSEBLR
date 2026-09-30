@@ -93,6 +93,38 @@ const MUST_REFUSE: Case[] = [
   { method: 'GET', path: '/api/me/card', why: 'read a user’s own card, including an unpublished phone number' },
   { method: 'PUT', path: '/api/me/card', body: { enabled: true }, why: 'publish somebody’s card without their say' },
 
+  /*
+   * -- A SCHEMA REFUSAL IS NOW A 400 NAMING THE FIELD (lib/http/errors.ts), so these are probed with
+   * a body the SCHEMA itself refuses. Signed in, each answers 400; signed out, the guard must still
+   * answer first, so a 400 here means the new refusal path runs before `requireUser()`. Over-long
+   * values are the realistic case: `Folder.name` and `User.card.displayName` are `maxlength: 120`,
+   * and neither route checks the length itself, which is why both used to be 500s.
+   */
+  {
+    method: 'POST',
+    path: '/api/folders',
+    body: { name: 'x'.repeat(121) },
+    why: 'a folder name the schema refuses — a 400 here means validation outran the guard',
+  },
+  {
+    method: 'PATCH',
+    path: `/api/folders/${GHOST}`,
+    body: { name: 'x'.repeat(121) },
+    why: 'rename to a name the schema refuses — a 400 here means validation outran the guard',
+  },
+  {
+    method: 'PUT',
+    path: '/api/me/card',
+    body: { displayName: 'x'.repeat(121) },
+    why: 'a card name the schema refuses — a 400 here means validation outran the guard',
+  },
+  {
+    method: 'POST',
+    path: '/api/phase6/follow-ups',
+    body: { trackerEntryId: 'not-an-id', connectionName: 'x' },
+    why: 'an id that casts to nothing — a 400 here means validation outran the guard',
+  },
+
   // ── Tracker & career intelligence ────────────────────────────────────────
   // These were ABSENT from this list until 2026-08-24, despite the docblock above claiming
   // "every mutating endpoint" — so the whole tracker write path, the half of the product that
@@ -379,6 +411,14 @@ const MUST_BE_PUBLIC_404: Case[] = [
     path: '/api/intake/0000000000000000000000',
     body: { name: 'diag' },
     why: 'folder self-registration must accept an anonymous POST, and refuse an unknown token',
+  },
+  {
+    method: 'POST',
+    path: '/api/intake/0000000000000000000000',
+    body: { name: 42, email: { $ne: null } },
+    // The token is judged before the body, so even a body no form could send is a 404 here. A 400
+    // would mean a stranger learns their payload was parsed for a link that does not exist.
+    why: 'an unknown token refuses before any field is judged, whatever the body holds',
   },
   /*
    * UNSUBSCRIBE MUST NOT REQUIRE A SESSION. It is opened from a mail client, on a phone, possibly

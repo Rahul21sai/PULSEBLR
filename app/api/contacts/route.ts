@@ -19,6 +19,23 @@ import {
 } from '@/lib/contacts/query';
 import { ITEM_REFUSALS } from '@/lib/scan/failure';
 import type { ContactDTO, ContactInput } from '@/lib/contacts/types';
+import {
+  duplicateKeyFields,
+  errorLogLine,
+  invalidInputBody,
+  routeFailure,
+  type RejectedField,
+} from '@/lib/http/errors';
+
+/**
+ * A schema refusal on the capture path. It carries the refusal CODE the outbox renders copy from —
+ * the one `POST /api/contacts/sync` already sends for the same condition — plus the named fields.
+ * As a 400 it is `permanent` to `classifyStatus`, so the outbox stops; as the 500 it used to be, it
+ * was `transient`, and a capture the schema will never accept was retried for ever.
+ */
+function captureRefused(rejected: RejectedField[]) {
+  return { ...invalidInputBody(rejected), error: ITEM_REFUSALS['shape-rejected'], refusal: 'shape-rejected' };
+}
 
 /**
  * GET  /api/contacts?folderId=… — list, optionally scoped to one folder.
@@ -121,8 +138,9 @@ export async function GET(request: NextRequest) {
       nextSkip: skip + rows.length,
     });
   } catch (error) {
-    console.error('Error listing contacts:', error);
-    return NextResponse.json({ error: 'Failed to list contacts' }, { status: 500 });
+    console.error('Error listing contacts:', errorLogLine(error));
+    const failure = routeFailure(error, 'Failed to list contacts');
+    return NextResponse.json(failure.body, { status: failure.status });
   }
 }
 
@@ -133,12 +151,14 @@ export async function POST(request: NextRequest) {
   // Read once, into a variable the catch block can see too: `request.clone()` only works before
   // the body has been consumed, so cloning after `await request.json()` throws.
   let body: Record<string, unknown> = {};
+  // Hoisted for the same reason: the replay read-back must look up the TRIMMED id that was stored.
+  let clientId = '';
 
   try {
     await connectDB();
     body = await request.json().catch(() => ({}));
 
-    const clientId = typeof body.clientId === 'string' ? body.clientId.trim() : '';
+    clientId = typeof body.clientId === 'string' ? body.clientId.trim() : '';
     if (!clientId) {
       // Without it there is no idempotency key, and a retry would duplicate the person.
       return NextResponse.json(
@@ -178,24 +198,23 @@ export async function POST(request: NextRequest) {
       { status: created ? 201 : 200 }
     );
   } catch (error) {
-    const err = error as { code?: number; message?: string };
-    if (err.code === 11000) {
-      // Lost a race with a concurrent replay of the same clientId. The unique index did its
-      // job; read the winner back and answer as if this request had been the replay.
-      const existing = await Contact.findOne({
-        userId: gate.userId,
-        clientId: String(body.clientId ?? ''),
-      }).lean();
+    // Lost a race with a concurrent replay of the same clientId. The unique index did its job; read
+    // the winner back and answer as if this request had been the replay. Branched on WHICH index
+    // collided: `{ userId, clientId }` is the only unique one on Contact today, and a clash on any
+    // index added later must not be answered as a replay of a capture it has nothing to do with.
+    if (clientId && duplicateKeyFields(error)?.includes('clientId')) {
+      const existing = await Contact.findOne({ userId: gate.userId, clientId }).lean();
       if (existing) {
         return NextResponse.json({ contact: contactToDTO(existing), created: false });
       }
     }
-    console.error('Error creating contact:', error);
+    console.error('Error creating contact:', errorLogLine(error));
     // No `details`. It carried `err.message`, which on a Mongoose error names the model and the
     // schema path — the leak the tracker write paths had to stop, and this route is on the
-    // capture hot path so the string reaches a phone at an event. `saveContact` never read it
-    // (it reads `error`/`refusal`), and a 500 is classified transient regardless, so nothing
-    // anywhere depended on it. The real wording is in the log line above.
-    return NextResponse.json({ error: 'Failed to save contact' }, { status: 500 });
+    // capture hot path so the string reaches a phone at an event. `saveContact` reads only
+    // `error`/`refusal`. A schema refusal is now the 400 `captureRefused` builds; anything else
+    // stays a 500, which the outbox rightly treats as worth retrying.
+    const failure = routeFailure(error, 'Failed to save contact', { invalidBody: captureRefused });
+    return NextResponse.json(failure.body, { status: failure.status });
   }
 }

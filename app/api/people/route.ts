@@ -16,6 +16,7 @@ import {
   type LeanPerson,
   type PersonDTO,
 } from '@/lib/person-types';
+import { errorLogLine, routeFailure } from '@/lib/http/errors';
 
 /**
  * GET /api/people — one row per HUMAN, with their recent encounters attached.
@@ -198,9 +199,10 @@ export async function GET(request: NextRequest) {
       nextSkip: skip + rows.length,
     });
   } catch (error) {
-    console.error('Error listing people:', error);
+    console.error('Error listing people:', errorLogLine(error));
     // No `details`. On a Mongoose error that string names the model and the schema path, which is
     // the leak the tracker write paths had to stop; the real wording is in the log line above.
-    return NextResponse.json({ error: 'Failed to list people' }, { status: 500 });
+    const failure = routeFailure(error, 'Failed to list people');
+    return NextResponse.json(failure.body, { status: failure.status });
   }
 }

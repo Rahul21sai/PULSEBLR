@@ -7,6 +7,7 @@ import { COMPANIES, companySlug } from '@/lib/companies/registry';
 // in the unmatched-hosts list. The builders live outside this file because Next type-checks a
 // route module's exports against an allow-list, so a helper exported from here breaks the build.
 import { attributedEventsMatch, unmatchedHostsMatch } from '@/lib/companies/directory-scope';
+import { errorLogLine, routeFailure } from '@/lib/http/errors';
 
 /**
  * GET /api/companies — every company with events, plus their counts.
@@ -90,7 +91,8 @@ export async function GET(request: NextRequest) {
       unmatchedHosts: unmatchedHosts.map(h => ({ name: h._id, events: h.n })),
     });
   } catch (error) {
-    console.error('Error fetching companies:', error);
-    return NextResponse.json({ error: 'Failed to fetch companies' }, { status: 500 });
+    console.error('Error fetching companies:', errorLogLine(error));
+    const failure = routeFailure(error, 'Failed to fetch companies');
+    return NextResponse.json(failure.body, { status: failure.status });
   }
 }

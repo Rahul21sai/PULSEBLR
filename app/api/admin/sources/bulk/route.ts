@@ -4,6 +4,7 @@ import connectDB from '@/lib/mongodb';
 import Source from '@/lib/models/Source';
 import { requireAdmin } from '@/lib/api-auth';
 import { recordAudit } from '@/lib/admin/audit';
+import { errorLogLine, routeFailure } from '@/lib/http/errors';
 
 /**
  * POST /api/admin/sources/bulk — switch a named set of sources on or off in one action.
@@ -125,7 +126,12 @@ export async function POST(request: NextRequest) {
       auditId,
     });
   } catch (error) {
-    console.error('Bulk source update failed:', error);
-    return NextResponse.json({ error: 'Failed to update those sources' }, { status: 500 });
+    console.error('Bulk source update failed:', errorLogLine(error));
+    // `ids` and `enabled` are the caller's (and checked above); the audit row is ours.
+    const failure = routeFailure(error, 'Failed to update those sources', {
+      rename: { _id: 'ids' },
+      fields: ['ids', 'enabled'],
+    });
+    return NextResponse.json(failure.body, { status: failure.status });
   }
 }

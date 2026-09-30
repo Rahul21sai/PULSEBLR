@@ -14,6 +14,17 @@ import {
   resolveIntakeClientId,
   type IntakeAccepted,
 } from '@/lib/contacts/intake-key';
+import { errorLogLine, routeFailure } from '@/lib/http/errors';
+
+/**
+ * The form's own fields: the only ones a refusal may name to a SUBMITTER. Everything else on the
+ * Contact row is the folder owner's, and a stranger on an unauthenticated endpoint is told nothing
+ * about it. `linkedinSlug` is derived from the `linkedin` they typed.
+ */
+const INTAKE_FORM_FIELDS = {
+  rename: { linkedinSlug: 'linkedin' },
+  fields: ['name', 'company', 'role', 'email', 'phone', 'linkedin', 'note'],
+};
 
 /**
  * PUBLIC — somebody standing in front of you adds THEMSELVES to your folder.
@@ -177,8 +188,13 @@ export function createIntakeHandler(deps: IntakeDeps) {
         const exists = await deps.contactExists(ownerId, clientId).catch(() => false);
         if (exists) return accepted(intakeAccepted(name, false));
       }
-      console.error('Error accepting folder intake:', error);
-      return NextResponse.json({ error: 'Could not save that. Try again.' }, { status: 500 });
+      // The one UNAUTHENTICATED write: whatever a stranger typed can be quoted by this error, so it
+      // reaches the log as one inert line, never raw (a newline or ESC in a name would forge lines).
+      console.error('Error accepting folder intake:', errorLogLine(error));
+      // A refusal of what they typed is a 400 naming the form field, which "Try again" would never
+      // fix. Anything else, including a refusal of the owner's own fields, stays the 500 it was.
+      const failure = routeFailure(error, 'Could not save that. Try again.', INTAKE_FORM_FIELDS);
+      return NextResponse.json(failure.body, { status: failure.status });
     }
   };
 }

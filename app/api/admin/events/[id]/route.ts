@@ -6,6 +6,7 @@ import { requireAdmin } from '@/lib/api-auth';
 import { validateEventUpdate, eventValidationError } from '@/lib/events/admin-validate';
 import { diffFields, recordAudit, redactSnapshot, type AuditAction } from '@/lib/admin/audit';
 import { fetchEventImpacts } from '@/lib/admin/impact';
+import { errorLogLine, routeFailure } from '@/lib/http/errors';
 
 /**
  * The AUDITED event mutation path, for the control room.
@@ -132,13 +133,12 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       auditId,
     });
   } catch (error) {
-    console.error('Admin event update failed:', error);
-    if (error instanceof mongoose.Error.ValidationError || error instanceof mongoose.Error.CastError) {
-      // 400, and with no `details`: the message carries the model name and the schema path, which is
-      // free reconnaissance on the internal shape of the data. The real wording is in the log.
-      return NextResponse.json({ error: 'Invalid event' }, { status: 400 });
-    }
-    return NextResponse.json({ error: 'Failed to update event' }, { status: 500 });
+    console.error('Admin event update failed:', errorLogLine(error));
+    // 400 naming the FIELD, in the `fields` shape EditEventModal reads to mark that input, and never
+    // the Mongoose message, which carries the model, the schema path and the value. `runValidators`
+    // on a `$set` checks only the patched paths, so a refusal here is always one the admin sent.
+    const failure = routeFailure(error, 'Failed to update event', { invalidBody: eventValidationError });
+    return NextResponse.json(failure.body, { status: failure.status });
   }
 }
 
@@ -217,7 +217,8 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
       snapshotTruncated: snapshot.truncated,
     });
   } catch (error) {
-    console.error('Admin event delete failed:', error);
-    return NextResponse.json({ error: 'Failed to delete event' }, { status: 500 });
+    console.error('Admin event delete failed:', errorLogLine(error));
+    const failure = routeFailure(error, 'Failed to delete event');
+    return NextResponse.json(failure.body, { status: failure.status });
   }
 }

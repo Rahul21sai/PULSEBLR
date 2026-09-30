@@ -8,6 +8,7 @@ import {
   followUpNudgesEnabled,
   parseNudgePreferenceBody,
 } from '@/lib/notifications/followup-nudge-policy';
+import { errorLogLine, routeFailure } from '@/lib/http/errors';
 
 /**
  * GET /api/me/follow-up-nudges — is the morning-after follow-up push on for me?
@@ -33,7 +34,7 @@ export async function GET() {
     // No row reads as the default, which is on. Reading must not create one.
     return json({ enabled: followUpNudgesEnabled(user) }, 200);
   } catch (error) {
-    console.error('Error reading follow-up nudge preference:', error);
+    console.error('Error reading follow-up nudge preference:', errorLogLine(error));
     return json({ error: 'Could not read your follow-up notification setting.' }, 500);
   }
 }
@@ -57,7 +58,13 @@ export async function PUT(request: NextRequest) {
     await User.updateOne({ googleId: gate.userId }, { $set: { pushFollowUpNudges: parsed.enabled } });
     return json({ enabled: parsed.enabled }, 200);
   } catch (error) {
-    console.error('Error saving follow-up nudge preference:', error);
-    return json({ error: 'Could not save your follow-up notification setting.' }, 500);
+    console.error('Error saving follow-up nudge preference:', errorLogLine(error));
+    // `enabled` is the caller's one field, stored as `pushFollowUpNudges`. A refusal of anything else
+    // (`ensureUser` writing the session's own email) is our data, so it stays the 500.
+    const failure = routeFailure(error, 'Could not save your follow-up notification setting.', {
+      rename: { pushFollowUpNudges: 'enabled' },
+      fields: ['enabled'],
+    });
+    return json(failure.body, failure.status);
   }
 }

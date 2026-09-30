@@ -14,6 +14,13 @@ import {
   SUBMISSION_EDIT_FIELDS,
 } from '@/lib/events/submission-edit';
 import { diffFields, recordAudit } from '@/lib/admin/audit';
+import {
+  errorLogLine,
+  isSchemaRejection,
+  routeFailure,
+  type FailureOptions,
+  type RejectedField,
+} from '@/lib/http/errors';
 
 /**
  * The review queue for events users have submitted to the shared feed.
@@ -150,8 +157,9 @@ export async function GET(request: NextRequest) {
       })),
     });
   } catch (error) {
-    console.error('Error listing submissions:', error);
-    return NextResponse.json({ error: 'Failed to list submissions' }, { status: 500 });
+    console.error('Error listing submissions:', errorLogLine(error));
+    const failure = routeFailure(error, 'Failed to list submissions');
+    return NextResponse.json(failure.body, { status: failure.status });
   }
 }
 
@@ -299,16 +307,12 @@ export async function PATCH(request: NextRequest) {
 
     return NextResponse.json({ id: String(event._id), decision: body.decision, auditId });
   } catch (error) {
-    console.error('Submission update failed:', error);
-    if (error instanceof mongoose.Error.ValidationError || error instanceof mongoose.Error.CastError) {
-      // 400, because a schema rejection is not a server fault and retrying cannot help. A 5xx here
-      // would tell the panel "retry" for something that will never succeed, and would hide a real
-      // fault behind the same code as a typo.
-      return NextResponse.json({ error: SCHEMA_REFUSED }, { status: 400 });
-    }
-    // No `details`. The only thing it ever carried was a Mongoose message naming the model and the
-    // schema path, which is free reconnaissance on the shape of the data; the wording is in the log.
-    return NextResponse.json({ error: 'Failed to update that submission' }, { status: 500 });
+    console.error('Submission update failed:', errorLogLine(error));
+    // A schema rejection is a 400, because it is not a server fault and retrying cannot help: a 5xx
+    // would tell the panel "retry" for something that will never succeed, and would hide a real
+    // fault behind the same code as a typo. No `details`, ever — see `schemaRefused` below.
+    const failure = routeFailure(error, 'Failed to update that submission', SCHEMA_REFUSAL);
+    return NextResponse.json(failure.body, { status: failure.status });
   }
 }
 
@@ -318,11 +322,27 @@ export async function PATCH(request: NextRequest) {
  * It does NOT blame their edit, deliberately. `.save()` validates the WHOLE document, so a value
  * that was already on the row — a retired category on a submission written before the 32 → 22
  * consolidation, say — fails a save that only touched the title. Telling the reviewer their title is
- * invalid would send them to correct the one thing that was right. It names no field because the
- * Mongoose message carries the model name and the schema path; that belongs in the log.
+ * invalid would send them to correct the one thing that was right.
+ *
+ * It NAMES the field now, and that does not contradict the paragraph above: `rejectedFields`
+ * reports which field the schema refused and what is wrong with its VALUE ("is not one of the
+ * allowed values"), never which edit caused it, so a retired category is named as the category and
+ * not as the title. What stays out is what always had to: the model, the schema path and the stored
+ * value, which is everything the Mongoose message carried. This used to say "the field is named in
+ * the server log" — and the correction path below returned it without logging anything at all.
+ *
+ * In the `fields` shape SubmissionsPanel reads to mark the input.
  */
-const SCHEMA_REFUSED =
-  'Saving was refused: this submission holds a value the feed cannot store. The field is named in the server log.';
+function schemaRefused(rejected: RejectedField[]) {
+  const named = rejected.map(({ field, message }) => `${field} ${message}`).join('; ');
+  return {
+    error: `Saving was refused: this submission holds a value the feed cannot store (${named}).`,
+    fields: rejected,
+  };
+}
+
+/** The category picker edits `category` as ONE input, so an element is named by its array. */
+const SCHEMA_REFUSAL: FailureOptions = { invalidBody: schemaRefused, collapseIndices: true };
 
 /**
  * Correct a pending submission's fields.
@@ -415,11 +435,13 @@ async function applyEdit(
   try {
     await event.save();
   } catch (err) {
-    if (err instanceof mongoose.Error.ValidationError || err instanceof mongoose.Error.CastError) {
+    if (isSchemaRejection(err)) {
       // Answered HERE as well as in the caller's catch, because the caller cannot tell an edit from a
       // decision by the time it has an error in hand, and "Failed to record that decision" is the
       // wrong sentence to show somebody who was correcting a title.
-      return NextResponse.json({ error: SCHEMA_REFUSED }, { status: 400 });
+      console.error('Submission correction refused by the schema:', errorLogLine(err));
+      const failure = routeFailure(err, 'Failed to save that correction', SCHEMA_REFUSAL);
+      return NextResponse.json(failure.body, { status: failure.status });
     }
     throw err;
   }

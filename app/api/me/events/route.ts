@@ -5,6 +5,7 @@ import { requireUser } from '@/lib/api-auth';
 import { DETAIL_SELECT, notDeletedClause } from '@/lib/events/query';
 import { toEventDetail } from '@/lib/events/serialize';
 import { loadViewerStates } from '@/lib/events/viewer-state';
+import { errorLogLine } from '@/lib/http/errors';
 
 /**
  * GET /api/me/events — the events the signed-in user added by hand, for `/my-events`.
@@ -40,7 +41,8 @@ export async function GET() {
       { headers: { 'Cache-Control': 'private, no-store' } }
     );
   } catch (error) {
-    console.error('Error listing own events:', error);
+    // No input: always the server's fault. Titles are user text, so the log line is kept inert.
+    console.error('Error listing own events:', errorLogLine(error));
     return NextResponse.json({ error: 'Failed to load your events' }, { status: 500 });
   }
 }

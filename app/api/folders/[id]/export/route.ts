@@ -6,6 +6,7 @@ import { findOwnedFolder } from '@/lib/contacts/service';
 import { toCsv, exportFilename } from '@/lib/scan/csv';
 import { CONTACT_CSV_COLUMNS } from '@/lib/contacts/export-columns';
 import { buildVCardFile } from '@/lib/contacts/vcf';
+import { errorLogLine, routeFailure } from '@/lib/http/errors';
 
 /**
  * Export one folder — "the sheet".
@@ -71,7 +72,8 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       },
     });
   } catch (error) {
-    console.error('Error exporting folder:', error);
-    return NextResponse.json({ error: 'Failed to export folder' }, { status: 500 });
+    console.error('Error exporting folder:', errorLogLine(error));
+    const failure = routeFailure(error, 'Failed to export folder');
+    return NextResponse.json(failure.body, { status: failure.status });
   }
 }

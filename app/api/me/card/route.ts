@@ -8,6 +8,20 @@ import { cardUrl } from '@/lib/canonical-origin';
 import { coerceLinkedInInput } from '@/lib/scan/linkedin';
 import type { MyCardDTO } from '@/lib/contacts/types';
 import type { IUserCard } from '@/lib/models/User';
+import { errorLogLine, routeFailure } from '@/lib/http/errors';
+
+/**
+ * The card fields a PUT may set, which are the only ones a refusal may name. They are stored under
+ * `card.*` on the User row, so the prefix is stripped: the caller sent `displayName`, not
+ * `card.displayName`, and nothing else on their User document is theirs to be told about.
+ */
+const CARD_FIELDS = {
+  prefix: 'card.',
+  fields: [
+    'displayName', 'headline', 'company', 'role', 'linkedin', 'x', 'github',
+    'website', 'email', 'phone', 'revealPhone', 'enabled',
+  ],
+};
 
 /**
  * The signed-in user's own shareable card — the thing OTHER people scan.
@@ -76,7 +90,8 @@ export async function GET() {
 
     return NextResponse.json({ card: toDTO(user.card, session?.user?.name) });
   } catch (error) {
-    console.error('Error reading card:', error);
+    // No input: always the server's fault, and the error is logged as one inert line.
+    console.error('Error reading card:', errorLogLine(error));
     return NextResponse.json({ error: 'Failed to read your card' }, { status: 500 });
   }
 }
@@ -130,11 +145,15 @@ export async function PUT(request: NextRequest) {
     /*
      * NO `details` ON THE 500. The message here is a Mongoose ValidationError naming the User
      * model and a `card.*` schema path, an E11000 quoting the `card.token` index, or a
-     * `cardUrl()` throw quoting NEXTAUTH_URL. All three describe the deployment or the schema
-     * rather than the caller's mistake, and the GET sibling has always returned a bare message.
-     * The real wording is in the server log.
+     * `cardUrl()` throw quoting NEXTAUTH_URL. The real wording is in the server log.
+     *
+     * The ValidationError is NOT always the deployment's, as this used to say. `displayName`,
+     * `company` and `role` have `maxlength: 120` and `headline` 200 (lib/models/User.ts), and
+     * nothing above checks them, so a long headline was a caller's mistake reported as a server
+     * fault. It is a 400 naming the field now. The token clash and the URL throw stay 500s.
      */
-    console.error('Error updating card:', error);
-    return NextResponse.json({ error: 'Failed to update your card' }, { status: 500 });
+    console.error('Error updating card:', errorLogLine(error));
+    const failure = routeFailure(error, 'Failed to update your card', CARD_FIELDS);
+    return NextResponse.json(failure.body, { status: failure.status });
   }
 }

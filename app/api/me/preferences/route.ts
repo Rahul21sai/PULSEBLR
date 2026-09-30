@@ -10,6 +10,7 @@ import {
   hasRankingPreferences,
   type UserPreferences,
 } from '@/lib/events/relevance';
+import { errorLogLine, routeFailure } from '@/lib/http/errors';
 
 /**
  * The signed-in user's feed and notification preferences.
@@ -69,7 +70,7 @@ export async function GET() {
       preferences: toDTO(readPreferences(stored), stored?.onboardedAt ?? null),
     });
   } catch (error) {
-    console.error('Error reading preferences:', error);
+    console.error('Error reading preferences:', errorLogLine(error));
     return NextResponse.json({ error: 'Failed to read your preferences' }, { status: 500 });
   }
 }
@@ -123,7 +124,11 @@ export async function PUT(request: NextRequest) {
 
     return NextResponse.json({ preferences: toDTO(preferences, onboardedAt) });
   } catch (error) {
-    console.error('Error saving preferences:', error);
-    return NextResponse.json({ error: 'Failed to save your preferences' }, { status: 500 });
+    console.error('Error saving preferences:', errorLogLine(error));
+    // Unreachable while `mergePreferences` and the schema agree. If they drift, a 400 in the same
+    // `{ error, issues }` shape `preferenceError` answers with, naming the preference (stored under
+    // `preferences.`), and never another field of the User row.
+    const failure = routeFailure(error, 'Failed to save your preferences', { prefix: 'preferences.' });
+    return NextResponse.json(failure.body, { status: failure.status });
   }
 }

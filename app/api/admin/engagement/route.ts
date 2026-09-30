@@ -7,6 +7,7 @@ import Folder from '@/lib/models/Folder';
 import Event from '@/lib/models/Event';
 import { requireAdmin } from '@/lib/api-auth';
 import { IST } from '@/lib/format';
+import { errorLogLine } from '@/lib/http/errors';
 
 /**
  * GET /api/admin/engagement — did anyone use this yesterday.
@@ -237,7 +238,9 @@ export async function GET(request: NextRequest) {
         .sort((x, y) => (y.lastActiveAt?.getTime() ?? 0) - (x.lastActiveAt?.getTime() ?? 0)),
     });
   } catch (error) {
-    console.error('Engagement stats failed:', error);
+    // Nothing the caller sends reaches a query (`days` is clamped to a number first), so a failure
+    // here is always the server's: a plain 500, and the real error in one inert log line.
+    console.error('Engagement stats failed:', errorLogLine(error));
     return NextResponse.json({ error: 'Failed to load engagement stats' }, { status: 500 });
   }
 }

@@ -26,6 +26,8 @@ import { connectionScore } from '@/lib/events/connection-score';
  */
 import { keywordTagging } from '@/lib/llm/tagger';
 import { getCurrentUserId } from '@/lib/auth-helpers';
+import { duplicateKeyFields, errorLogLine, routeFailure } from '@/lib/http/errors';
+import { toEventDetail } from '@/lib/events/serialize';
 
 /**
  * GET /api/events — the feed.
@@ -172,8 +174,9 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error) {
-    console.error('Error fetching events:', error);
-    return NextResponse.json({ error: 'Failed to fetch events' }, { status: 500 });
+    console.error('Error fetching events:', errorLogLine(error));
+    const failure = routeFailure(error, 'Failed to fetch events');
+    return NextResponse.json(failure.body, { status: failure.status });
   }
 }
 
@@ -202,7 +205,7 @@ async function loadFollowedCompanies(userId: string | null): Promise<string[]> {
       .lean<{ targetCompanies?: string[] } | null>();
     return user?.targetCompanies ?? [];
   } catch (error) {
-    console.error('Could not load followed companies:', error);
+    console.error('Could not load followed companies:', errorLogLine(error));
     return [];
   }
 }
@@ -244,7 +247,7 @@ async function loadRelevanceContext(userId: string | null): Promise<RelevanceCon
     if (!hasRankingPreferences(preferences)) return null;
     return { preferences, targetCompanies: user.targetCompanies ?? [] };
   } catch (error) {
-    console.error('Could not load preferences for the personalised feed:', error);
+    console.error('Could not load preferences for the personalised feed:', errorLogLine(error));
     return null;
   }
 }
@@ -286,7 +289,7 @@ async function attachTracked<T extends { _id: unknown }>(
     const tracked = new Set(trackedIds.map(String));
     return events.map(event => ({ ...event, tracked: tracked.has(String(event._id)) }));
   } catch (error) {
-    console.error('Could not resolve tracked events for the feed:', error);
+    console.error('Could not resolve tracked events for the feed:', errorLogLine(error));
     return events;
   }
 }
@@ -471,21 +474,31 @@ export async function POST(request: NextRequest) {
     };
 
     const event = await Event.create(doc);
-    return NextResponse.json(event, { status: 201 });
+    // Through the detail DTO, never the raw document: that carried `createdByUserId` (the Google id)
+    // and `clusterKey`/`dedupHash`, which embed it. Nothing reads this body today (`/add-event` only
+    // checks the status), which is exactly when a leak like this survives unnoticed.
+    return NextResponse.json(toEventDetail(event.toObject(), gate.userId), { status: 201 });
   } catch (error) {
-    const err = error as { code?: number; message?: string };
-    console.error('Error creating event:', error);
-    if (err.code === 11000) {
-      // With the owner folded into `dedupHash`, this now means the SAME user adding the same event
-      // twice — not a clash with somebody else's row, which is what it used to mean and which
-      // handed the second user the first one's document.
+    console.error('Error creating event:', errorLogLine(error));
+    // With the owner folded into `dedupHash`, a clash ON IT now means the SAME user adding the same
+    // event twice — not a clash with somebody else's row, which is what it used to mean and which
+    // handed the second user the first one's document. Branched on which index collided: any other
+    // unique index added later is a schema bug, not "you have already added this" (CLAUDE.md §9).
+    if (duplicateKeyFields(error)?.includes('dedupHash')) {
       return NextResponse.json(
         { error: 'You have already added this event.' },
         { status: 409 }
       );
     }
     // No `details`. It carried `err.message`, which on a Mongoose error names the model and the
-    // schema path — the leak the tracker write paths had to stop.
-    return NextResponse.json({ error: 'Failed to create event' }, { status: 500 });
+    // schema path — the leak the tracker write paths had to stop. A schema refusal is a 400 naming
+    // one of the fields the CALLER sent (the validated `fields`, which is the whole of their input
+    // after the allowlist); the server's own derived fields are never named. `category` is one
+    // picker on /add-event, so an element is named by its array.
+    const failure = routeFailure(error, 'Failed to create event', {
+      fields: Object.keys(fields),
+      collapseIndices: true,
+    });
+    return NextResponse.json(failure.body, { status: failure.status });
   }
 }

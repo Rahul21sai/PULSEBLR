@@ -3,6 +3,7 @@ import connectDB from '@/lib/mongodb';
 import Event from '@/lib/models/Event';
 import { parseEventParams, buildEventFilter } from '@/lib/events/query';
 import { getCurrentUserId } from '@/lib/auth-helpers';
+import { errorLogLine, routeFailure } from '@/lib/http/errors';
 
 /**
  * GET /api/events/facets — counts for every filter option, under the CURRENT
@@ -156,7 +157,8 @@ export async function GET(request: NextRequest) {
         : { total: 0, free: 0, withFood: 0, tech: 0 },
     });
   } catch (error) {
-    console.error('Error computing facets:', error);
-    return NextResponse.json({ error: 'Failed to compute facets' }, { status: 500 });
+    console.error('Error computing facets:', errorLogLine(error));
+    const failure = routeFailure(error, 'Failed to compute facets');
+    return NextResponse.json(failure.body, { status: failure.status });
   }
 }

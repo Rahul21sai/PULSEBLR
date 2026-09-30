@@ -4,6 +4,7 @@ import User from '@/lib/models/User';
 import { rateLimit, clientKey } from '@/lib/security/rate-limit';
 import { buildVCard } from '@/lib/contacts/vcf';
 import type { PublicCardDTO } from '@/lib/contacts/types';
+import { errorLogLine, routeFailure } from '@/lib/http/errors';
 
 /**
  * PUBLIC — resolve a card token into the details its owner chose to publish.
@@ -98,7 +99,10 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       { headers: { 'Cache-Control': 'no-store' } }
     );
   } catch (error) {
-    console.error('Error resolving card token:', error);
-    return NextResponse.json({ error: 'Failed to load that card' }, { status: 500 });
+    // PUBLIC, so whatever a stranger put in the token reaches this log: one inert line, never raw.
+    console.error('Error resolving card token:', errorLogLine(error));
+    // The only input is the token, stored at `card.token`: name nothing else on the User document.
+    const failure = routeFailure(error, 'Failed to load that card', { prefix: 'card.', fields: ['token'] });
+    return NextResponse.json(failure.body, { status: failure.status });
   }
 }

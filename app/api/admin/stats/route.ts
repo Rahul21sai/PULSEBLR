@@ -9,6 +9,7 @@ import { requireAdmin } from '@/lib/api-auth';
 // tests/admin-stats-scope.test.ts reads this file and fails if one does not. See the module for
 // why "Next up" must never list a user's private event, even to an admin.
 import { corpusFilter, userEventsFilter } from '@/lib/admin/stats-scope';
+import { errorLogLine } from '@/lib/http/errors';
 
 /**
  * GET /api/admin/stats — everything the admin dashboard needs, in one round trip.
@@ -202,7 +203,8 @@ export async function GET() {
       admin: { email: gate.email },
     });
   } catch (error) {
-    console.error('Admin stats error:', error);
+    // No input reaches a query, so this is always the server's fault; logged as one inert line.
+    console.error('Admin stats error:', errorLogLine(error));
     return NextResponse.json({ error: 'Failed to load admin stats' }, { status: 500 });
   }
 }

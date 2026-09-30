@@ -19,6 +19,8 @@ import {
   type DraftMaterial,
   type MaterialProblem,
 } from '@/lib/llm/draft-followup';
+import { errorLogLine } from '@/lib/http/errors';
+import { toLogLine } from '@/lib/security/control-chars';
 
 /**
  * GET  /api/people/[id]/draft — what a draft WOULD be written from. No model call, no cost.
@@ -285,7 +287,9 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
       200
     );
   } catch (error) {
-    console.error('Error reading draft material:', error);
+    // The id is refused above before any query, so this is always the server's fault: the 500 and
+    // its `code` stay, and the error — which can quote the user's notes — is logged as one inert line.
+    console.error('Error reading draft material:', errorLogLine(error));
     return json({ error: 'Could not read what a draft would use.', code: 'server-error' }, 500);
   }
 }
@@ -374,8 +378,9 @@ export async function POST(_request: NextRequest, { params }: { params: Promise<
 
     // The detail line names a provider body or an env var; it goes to the server log and never to a
     // client. That is the `details: err.message` defect CLAUDE.md records being fixed on the tracker
-    // routes — a 5xx body must not hand back the internals that produced it.
-    console.error('[draft] failed for person', id, '—', result.detail);
+    // routes — a 5xx body must not hand back the internals that produced it. Through `toLogLine`,
+    // because a provider body and a rejected model reply are text this app did not write.
+    console.error('[draft] failed for person', id, '—', toLogLine(result.detail, 500));
 
     if (result.failure === 'no-material') {
       return json(noMaterialBody(result.problem ?? 'no-note', material.notes), 409);
@@ -412,7 +417,7 @@ export async function POST(_request: NextRequest, { params }: { params: Promise<
   } catch (error) {
     // No `details`. The only thing it ever carried was the message this omission exists to stop
     // leaking, and the real wording is in the server log above.
-    console.error('Error drafting follow-up:', error);
+    console.error('Error drafting follow-up:', errorLogLine(error));
     return json({ error: 'Could not draft a follow-up.', code: 'server-error' }, 500);
   }
 }

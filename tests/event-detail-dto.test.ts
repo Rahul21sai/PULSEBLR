@@ -163,3 +163,11 @@ describe('the projection and the guard together', () => {
     expect(canViewEvent(projected, OWNER)).toBe(true);
   });
 });
+
+describe('POST /api/events answers through the DTO', () => {
+  it('never returns the raw created document (it carries createdByUserId, clusterKey, dedupHash)', () => {
+    const route = readFileSync(path.join(process.cwd(), 'app/api/events/route.ts'), 'utf8');
+    expect(route).toMatch(/NextResponse\.json\(toEventDetail\(event\.toObject\(\), gate\.userId\), \{ status: 201 \}\)/);
+    expect(route).not.toMatch(/NextResponse\.json\(event,/);
+  });
+});

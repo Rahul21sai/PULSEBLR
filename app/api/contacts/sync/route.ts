@@ -3,7 +3,8 @@ import connectDB from '@/lib/mongodb';
 import Folder, { folderSlug } from '@/lib/models/Folder';
 import { requireUser } from '@/lib/api-auth';
 import { contactToDTO, findOwnedFolder, upsertContact } from '@/lib/contacts/service';
-import { isSchemaRejection } from '@/lib/tracker/validate';
+import { errorLogLine, isSchemaRejection, routeFailure } from '@/lib/http/errors';
+import { toLogLine } from '@/lib/security/control-chars';
 import { ITEM_REFUSALS, type ItemRefusal } from '@/lib/scan/failure';
 import type { ContactInput } from '@/lib/contacts/types';
 
@@ -81,7 +82,9 @@ function refuse(clientId: string, refusal: ItemRefusal): ItemResult {
  * The real wording goes to the server log, where it is useful and not published.
  */
 function fromThrown(clientId: string, error: unknown, context: string): ItemResult {
-  console.error(`[contacts/sync] ${context} ${clientId} failed:`, error);
+  // `clientId` is whatever the queued record carried, so it goes through `toLogLine` like the error:
+  // interpolated raw, a newline in it would start a forged line of this log.
+  console.error(`[contacts/sync] ${context} failed:`, toLogLine(clientId, 80), errorLogLine(error));
   // A shape rejection gets a real refusal CODE, so the client can render specific copy and offer
   // more than Discard. It was previously the one permanent path with prose and no code, which is
   // exactly the drift `ITEM_REFUSALS` exists to prevent.
@@ -258,9 +261,11 @@ export async function POST(request: NextRequest) {
       blocked: all.filter(r => !r.ok && r.permanent === true).length,
     });
   } catch (error) {
-    console.error('Error syncing contacts:', error);
+    console.error('Error syncing contacts:', errorLogLine(error));
     // No `details`. The only thing it ever carried was the Mongoose wording this endpoint now
-    // deliberately keeps server-side; the real message is in the log line above.
-    return NextResponse.json({ error: 'Failed to sync' }, { status: 500 });
+    // deliberately keeps server-side; the real message is in the log line above. Per-record schema
+    // refusals never reach here (`fromThrown` answers each one), so this is the batch-level fault.
+    const failure = routeFailure(error, 'Failed to sync');
+    return NextResponse.json(failure.body, { status: failure.status });
   }
 }

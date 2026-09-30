@@ -8,6 +8,7 @@ import {
   isValidId,
   updateOwnedContact,
 } from '@/lib/contacts/service';
+import { errorLogLine, routeFailure } from '@/lib/http/errors';
 
 /** Edit or delete one contact. Ownership is enforced by putting `userId` in the filter. */
 
@@ -56,7 +57,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         const { recomputePerson } = await import('@/lib/people/service');
         await recomputePerson(gate.userId, contact.personId);
       } catch (err) {
-        console.error('Contact updated but the person spine was not recomputed:', err);
+        console.error('Contact updated but the person spine was not recomputed:', errorLogLine(err));
       }
     }
 
@@ -71,10 +72,14 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
      * The real message is in the server log, which is where it is useful.
      *
      * A malformed `id` is already a 404 rather than a crash — `updateOwnedContact` and the
-     * folder-move branch both run `isValidId` first — so this branch is a genuine fault.
+     * folder-move branch both run `isValidId` first. What can still land here is a schema refusal:
+     * the folder move `.save()`s the WHOLE document, so a value stored before a `maxlength` existed
+     * refuses a save that only moved it. That is a 400 naming the field (its VALUE is what is wrong,
+     * and retrying cannot fix it); anything else is the genuine fault it looks like.
      */
-    console.error('Error updating contact:', error);
-    return NextResponse.json({ error: 'Failed to update contact' }, { status: 500 });
+    console.error('Error updating contact:', errorLogLine(error));
+    const failure = routeFailure(error, 'Failed to update contact');
+    return NextResponse.json(failure.body, { status: failure.status });
   }
 }
 
@@ -111,12 +116,13 @@ export async function DELETE(
       const { onContactDeleted } = await import('@/lib/people/service');
       await onContactDeleted(gate.userId, contact.personId, contact._id);
     } catch (err) {
-      console.error('Contact deleted but the person spine was not updated:', err);
+      console.error('Contact deleted but the person spine was not updated:', errorLogLine(err));
     }
 
     return NextResponse.json({ message: 'Deleted' });
   } catch (error) {
-    console.error('Error deleting contact:', error);
-    return NextResponse.json({ error: 'Failed to delete contact' }, { status: 500 });
+    console.error('Error deleting contact:', errorLogLine(error));
+    const failure = routeFailure(error, 'Failed to delete contact');
+    return NextResponse.json(failure.body, { status: failure.status });
   }
 }

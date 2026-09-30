@@ -6,6 +6,7 @@ import { ensureUser } from '@/lib/user-record';
 import { auth } from '@/auth';
 import { absoluteUrl } from '@/lib/canonical-origin';
 import { calendarFeedPath, toWebcalUrl } from '@/lib/calendar/ics';
+import { errorLogLine } from '@/lib/http/errors';
 
 /**
  * The signed-in user's own calendar subscription — reveal it, switch it on or off, rotate it.
@@ -84,7 +85,7 @@ export async function GET() {
 
     return NextResponse.json({ feed: toDTO(user.calendarFeed) });
   } catch (error) {
-    console.error('Error reading calendar feed:', error);
+    console.error('Error reading calendar feed:', errorLogLine(error));
     return NextResponse.json({ error: 'Failed to read your calendar feed' }, { status: 500 });
   }
 }
@@ -148,8 +149,12 @@ export async function PUT(request: NextRequest) {
      * model and a `calendarFeed.*` path, an E11000 quoting the `calendarFeed.token` index, or an
      * `absoluteUrl()` throw quoting NEXTAUTH_URL — all of which describe the deployment or the
      * schema rather than the caller's mistake. The real wording is in the server log.
+     *
+     * So it stays a 500 even for a schema refusal, deliberately, unlike the routes that answer one
+     * with a 400: the caller's only inputs are two booleans checked above, and `user.save()`
+     * re-validates the WHOLE User row, so anything it refuses is our data, not their request.
      */
-    console.error('Error updating calendar feed:', error);
+    console.error('Error updating calendar feed:', errorLogLine(error));
     return NextResponse.json({ error: 'Failed to update your calendar feed' }, { status: 500 });
   }
 }

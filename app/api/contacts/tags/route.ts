@@ -9,6 +9,7 @@ import {
   isValidId,
   removeContactTag,
 } from '@/lib/contacts/service';
+import { errorLogLine, routeFailure } from '@/lib/http/errors';
 
 /**
  * The user's tag vocabulary, and bulk application of it.
@@ -41,7 +42,8 @@ export async function GET() {
     await connectDB();
     return NextResponse.json({ tags: await getContactTags(gate.userId) });
   } catch (error) {
-    console.error('Error listing contact tags:', error);
+    // No input, so always the server's fault; logged as one inert line.
+    console.error('Error listing contact tags:', errorLogLine(error));
     return NextResponse.json({ error: 'Failed to list tags' }, { status: 500 });
   }
 }
@@ -102,8 +104,15 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ tags: vocabulary, tagged }, { status: 201 });
   } catch (error) {
-    console.error('Error creating contact tags:', error);
-    return NextResponse.json({ error: 'Failed to save tags' }, { status: 500 });
+    console.error('Error creating contact tags:', errorLogLine(error));
+    // The vocabulary is stored as `User.contactTags` and applied as `Contact.tags`; the ids query
+    // `_id`. Named by what the caller sent, and nothing else on the User row is theirs to be told.
+    const failure = routeFailure(error, 'Failed to save tags', {
+      rename: { contactTags: 'tags', _id: 'contactIds' },
+      fields: ['tags', 'contactIds'],
+      collapseIndices: true,
+    });
+    return NextResponse.json(failure.body, { status: failure.status });
   }
 }
 
@@ -121,7 +130,12 @@ export async function DELETE(request: NextRequest) {
     await removeContactTag(gate.userId, tag);
     return NextResponse.json({ tags: await getContactTags(gate.userId) });
   } catch (error) {
-    console.error('Error removing contact tag:', error);
-    return NextResponse.json({ error: 'Failed to remove tag' }, { status: 500 });
+    console.error('Error removing contact tag:', errorLogLine(error));
+    const failure = routeFailure(error, 'Failed to remove tag', {
+      rename: { contactTags: 'tag', tags: 'tag' },
+      fields: ['tag'],
+      collapseIndices: true,
+    });
+    return NextResponse.json(failure.body, { status: failure.status });
   }
 }

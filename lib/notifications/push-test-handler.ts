@@ -13,6 +13,7 @@ import {
 } from '@/lib/notifications/push';
 import type { PushPayload } from '@/lib/notifications/reminder-policy';
 import { rateLimit, type RateLimitResult } from '@/lib/security/rate-limit';
+import { errorLogLine, routeFailure } from '@/lib/http/errors';
 
 /**
  * POST /api/me/push/test: send ONE fixed notification to the caller's own device(s).
@@ -265,7 +266,7 @@ export function createPushTestHandler(deps: PushTestDependencies) {
       deps.configurePush();
     } catch (error) {
       // web-push's own wording can quote VAPID_SUBJECT back, so it stays in the log.
-      console.error('Test push refused: web-push rejected the VAPID configuration:', (error as Error)?.message);
+      console.error('Test push refused: web-push rejected the VAPID configuration:', errorLogLine(error));
       return reply({ error: 'Push notifications are misconfigured on this server.' }, 503);
     }
 
@@ -329,8 +330,13 @@ export function createPushTestHandler(deps: PushTestDependencies) {
       // service accepted it is the ANSWER, carried in the counts, not a fault in this route.
       return reply(counts, 200);
     } catch (error) {
-      console.error('Test push failed:', error);
-      return reply({ error: 'Could not send a test notification. Try again.' }, 500);
+      // `sendToDevice` never throws (it returns sanitised results), so what lands here is a database
+      // fault from the device load or the prune. One inert line; the endpoint is the only caller input.
+      console.error('Test push failed:', errorLogLine(error));
+      const failure = routeFailure(error, 'Could not send a test notification. Try again.', {
+        fields: ['endpoint'],
+      });
+      return reply(failure.body, failure.status);
     }
   };
 }

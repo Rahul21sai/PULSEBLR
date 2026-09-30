@@ -17,6 +17,7 @@ import {
   type MergeCandidate,
   type MergePair,
 } from '@/lib/person-types';
+import { errorLogLine, invalidInputBody, routeFailure, type RejectedField } from '@/lib/http/errors';
 
 /**
  * GET  /api/people/merge — the duplicates we suspect, as pairs ready for a side-by-side compare.
@@ -115,8 +116,9 @@ export async function GET() {
 
     return NextResponse.json({ pairs: result });
   } catch (error) {
-    console.error('Error listing merge suggestions:', error);
-    return NextResponse.json({ error: 'Failed to load duplicate suggestions' }, { status: 500 });
+    console.error('Error listing merge suggestions:', errorLogLine(error));
+    const failure = routeFailure(error, 'Failed to load duplicate suggestions');
+    return NextResponse.json(failure.body, { status: failure.status });
   }
 }
 
@@ -220,7 +222,14 @@ export async function POST(request: NextRequest) {
       interactionsMoved: result.interactionsMoved,
     });
   } catch (error) {
-    console.error('Error merging people:', error);
-    return NextResponse.json({ error: 'Failed to merge' }, { status: 500 });
+    console.error('Error merging people:', errorLogLine(error));
+    // The ids are checked by `validateMergeRequest`, and everything a merge moves or recomputes is
+    // derived and ours. The one thing the caller writes directly is `overrides`, so only it is named,
+    // in this route's `{ error, field }` shape.
+    const failure = routeFailure(error, 'Failed to merge', {
+      fields: ['overrides'],
+      invalidBody: (rejected: RejectedField[]) => ({ ...invalidInputBody(rejected), field: rejected[0]?.field }),
+    });
+    return NextResponse.json(failure.body, { status: failure.status });
   }
 }

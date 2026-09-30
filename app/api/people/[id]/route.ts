@@ -25,6 +25,19 @@ import {
   type LeanPerson,
 } from '@/lib/person-types';
 import type { ContactDTO } from '@/lib/contacts/types';
+import { errorLogLine, invalidInputBody, routeFailure, type RejectedField } from '@/lib/http/errors';
+
+/**
+ * What a person PATCH may be refused on: the fields `validatePersonPatch` accepts, and nothing
+ * `recomputePerson` derives (`tags`, `nextActionAt`, the counters), which are ours. In this route's
+ * `{ error, field }` shape, beside the full `issues`.
+ */
+const PERSON_PATCH_FIELDS = {
+  rename: { followUpAt: 'followUp' },
+  fields: ['overrides', 'ownTags', 'note', 'followUp', 'messageSent'],
+  collapseIndices: true,
+  invalidBody: (rejected: RejectedField[]) => ({ ...invalidInputBody(rejected), field: rejected[0]?.field }),
+};
 
 /**
  * GET   /api/people/[id] — one human: their fields, their encounters, their timeline, and any
@@ -139,8 +152,9 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
       suggestions,
     });
   } catch (error) {
-    console.error('Error fetching person:', error);
-    return NextResponse.json({ error: 'Failed to fetch person' }, { status: 500 });
+    console.error('Error fetching person:', errorLogLine(error));
+    const failure = routeFailure(error, 'Failed to fetch person');
+    return NextResponse.json(failure.body, { status: failure.status });
   }
 }
 
@@ -316,7 +330,8 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       ),
     });
   } catch (error) {
-    console.error('Error updating person:', error);
-    return NextResponse.json({ error: 'Failed to update person' }, { status: 500 });
+    console.error('Error updating person:', errorLogLine(error));
+    const failure = routeFailure(error, 'Failed to update person', PERSON_PATCH_FIELDS);
+    return NextResponse.json(failure.body, { status: failure.status });
   }
 }

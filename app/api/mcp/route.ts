@@ -7,6 +7,7 @@ import { resolveMcpIdentity } from '@/lib/mcp/auth';
 import type { McpIdentity } from '@/lib/mcp/identity';
 import { clientKey, rateLimit } from '@/lib/security/rate-limit';
 import { absoluteUrl } from '@/lib/canonical-origin';
+import { errorLogLine } from '@/lib/http/errors';
 
 /**
  * `/api/mcp` — PulseBLR's Model Context Protocol endpoint, Streamable HTTP transport.
@@ -312,7 +313,9 @@ export async function POST(request: NextRequest): Promise<Response> {
     }
     return jsonRpc(payload, status);
   } catch (error) {
-    console.error('[mcp] request failed:', error);
+    // A PUBLIC endpoint, so the text that reaches this log can be a stranger's: one inert line. The
+    // reply is a JSON-RPC error with our own wording, per the protocol's 200-with-error convention.
+    console.error('[mcp] request failed:', errorLogLine(error));
     return jsonRpc(
       jsonRpcError(null, JSON_RPC_ERRORS.internal, 'The MCP server could not handle that request.'),
       200

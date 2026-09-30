@@ -5,6 +5,7 @@ import { requireUser } from '@/lib/api-auth';
 import { getContactTags, getTargetCompanies } from '@/lib/contacts/service';
 import { buildPersonFilter, parsePersonQuery } from '@/lib/people/query';
 import type { PersonBucket } from '@/lib/person-types';
+import { errorLogLine, routeFailure } from '@/lib/http/errors';
 
 /**
  * The counts beside every filter on `/people`.
@@ -96,7 +97,8 @@ export async function GET(request: NextRequest) {
       repeatCount,
     });
   } catch (error) {
-    console.error('Error computing person facets:', error);
-    return NextResponse.json({ error: 'Failed to compute facets' }, { status: 500 });
+    console.error('Error computing person facets:', errorLogLine(error));
+    const failure = routeFailure(error, 'Failed to compute facets');
+    return NextResponse.json(failure.body, { status: failure.status });
   }
 }

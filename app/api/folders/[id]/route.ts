@@ -5,6 +5,8 @@ import Event from '@/lib/models/Event';
 import { requireUser } from '@/lib/api-auth';
 import { findOwnedFolder, folderToDTO, contactToDTO, isValidId } from '@/lib/contacts/service';
 import { canViewEvent } from '@/lib/events/visibility';
+import { duplicateKeyFields, errorLogLine, routeFailure } from '@/lib/http/errors';
+import { FOLDER_FIELDS } from '@/lib/contacts/folder-fields';
 
 /**
  * One folder: read it with its contacts, rename it, archive it, or delete it.
@@ -35,8 +37,9 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
       contacts: contacts.map(contactToDTO),
     });
   } catch (error) {
-    console.error('Error fetching folder:', error);
-    return NextResponse.json({ error: 'Failed to fetch folder' }, { status: 500 });
+    console.error('Error fetching folder:', errorLogLine(error));
+    const failure = routeFailure(error, 'Failed to fetch folder');
+    return NextResponse.json(failure.body, { status: failure.status });
   }
 }
 
@@ -99,15 +102,21 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     await folder.save();
     return NextResponse.json({ folder: folderToDTO(folder.toObject()) });
   } catch (error) {
-    const err = error as { code?: number; message?: string };
-    if (err.code === 11000) {
+    // A rename collides on `{ userId, slug }`, the only unique index a PATCH can reach. Branched on
+    // it anyway, as `POST /api/folders` is: any other collision would be a schema bug, and naming the
+    // folder's name for it is the exact mislabel CLAUDE.md §9 records.
+    if (duplicateKeyFields(error)?.includes('slug')) {
       return NextResponse.json(
         { error: 'You already have a folder with that name' },
         { status: 409 }
       );
     }
-    console.error('Error updating folder:', error);
-    return NextResponse.json({ error: 'Failed to update folder' }, { status: 500 });
+    console.error('Error updating folder:', errorLogLine(error));
+    // `name` has `maxlength: 120` and `note` 2000, and nothing above checks either, so a long rename
+    // was a 500. It is a 400 naming the field now. `.save()` also validates what was already stored,
+    // which the same wording describes truthfully: it is about the VALUE, not about this edit.
+    const failure = routeFailure(error, 'Failed to update folder', FOLDER_FIELDS);
+    return NextResponse.json(failure.body, { status: failure.status });
   }
 }
 
@@ -142,7 +151,7 @@ export async function DELETE(
       const { personIdsInFolder } = await import('@/lib/people/service');
       affectedPersonIds = await personIdsInFolder(gate.userId, folder._id);
     } catch (err) {
-      console.error('Could not read the person ids for this folder before deleting it:', err);
+      console.error('Could not read the person ids for this folder before deleting it:', errorLogLine(err));
     }
 
     const removed = await Contact.deleteMany({ userId: gate.userId, folderId: folder._id });
@@ -158,13 +167,14 @@ export async function DELETE(
         const { onFolderDeleted } = await import('@/lib/people/service');
         await onFolderDeleted(gate.userId, affectedPersonIds);
       } catch (err) {
-        console.error('Folder deleted but the person spine was not updated:', err);
+        console.error('Folder deleted but the person spine was not updated:', errorLogLine(err));
       }
     }
 
     return NextResponse.json({ message: 'Deleted', contactsDeleted: removed.deletedCount ?? 0 });
   } catch (error) {
-    console.error('Error deleting folder:', error);
-    return NextResponse.json({ error: 'Failed to delete folder' }, { status: 500 });
+    console.error('Error deleting folder:', errorLogLine(error));
+    const failure = routeFailure(error, 'Failed to delete folder');
+    return NextResponse.json(failure.body, { status: failure.status });
   }
 }

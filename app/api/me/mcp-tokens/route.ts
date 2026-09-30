@@ -10,6 +10,12 @@ import {
   newMcpToken,
   tokenHint,
 } from '@/lib/mcp/identity';
+import { errorLogLine, invalidInputBody, routeFailure, type RejectedField } from '@/lib/http/errors';
+
+/** This route's 400s name one `field`, so a schema refusal does too, beside the full `issues`. */
+function tokenRefused(rejected: RejectedField[]) {
+  return { ...invalidInputBody(rejected), field: rejected[0]?.field };
+}
 
 /**
  * The signed-in user's MCP access tokens: list, mint, revoke.
@@ -101,7 +107,7 @@ export async function GET() {
       { headers: { 'Cache-Control': 'no-store' } }
     );
   } catch (error) {
-    console.error('[mcp-tokens] list failed:', error);
+    console.error('[mcp-tokens] list failed:', errorLogLine(error));
     return NextResponse.json({ error: 'Could not load your access tokens' }, { status: 500 });
   }
 }
@@ -193,9 +199,16 @@ export async function POST(request: NextRequest) {
       { status: 201, headers: { 'Cache-Control': 'no-store' } }
     );
   } catch (error) {
-    console.error('[mcp-tokens] create failed:', error);
+    console.error('[mcp-tokens] create failed:', errorLogLine(error));
     // No `details` — the only thing it would carry is the Mongoose wording this exists to withhold.
-    return NextResponse.json({ error: 'Could not create that access token' }, { status: 500 });
+    // The caller sent `name` and `expiresInDays` (stored as `expiresAt`); a clash on `tokenHash`
+    // would take a broken RNG, so it is the 500 an unhandled duplicate is.
+    const failure = routeFailure(error, 'Could not create that access token', {
+      rename: { expiresAt: 'expiresInDays' },
+      fields: ['name', 'expiresInDays'],
+      invalidBody: tokenRefused,
+    });
+    return NextResponse.json(failure.body, { status: failure.status });
   }
 }
 
@@ -230,7 +243,11 @@ export async function DELETE(request: NextRequest) {
 
     return NextResponse.json({ revoked: true }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
-    console.error('[mcp-tokens] revoke failed:', error);
-    return NextResponse.json({ error: 'Could not revoke that access token' }, { status: 500 });
+    console.error('[mcp-tokens] revoke failed:', errorLogLine(error));
+    const failure = routeFailure(error, 'Could not revoke that access token', {
+      fields: ['id'],
+      invalidBody: tokenRefused,
+    });
+    return NextResponse.json(failure.body, { status: failure.status });
   }
 }

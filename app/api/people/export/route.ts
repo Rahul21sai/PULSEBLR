@@ -10,6 +10,7 @@ import { buildPersonFilter, buildPersonSort, type PersonSort, parsePersonQuery }
 import { PERSON_CSV_COLUMNS, type PersonCsvRow } from '@/lib/contacts/export-columns';
 import { toCsv, exportFilename } from '@/lib/scan/csv';
 import { personToDTO, type LeanPerson } from '@/lib/person-types';
+import { errorLogLine, routeFailure } from '@/lib/http/errors';
 
 /**
  * Export everyone the current filter matches — ONE ROW PER HUMAN.
@@ -199,12 +200,13 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error) {
-    console.error('Error exporting people:', error);
+    console.error('Error exporting people:', errorLogLine(error));
     /**
      * JSON, not an HTML error page, and the client is a fetch rather than a bare `<a>` for exactly
      * this reason. The spec records the folder export's plain anchor as a known defect: a 500 there
      * navigates the browser to a raw error page and the user loses the filtered view they were on.
      */
-    return NextResponse.json({ error: 'Failed to export' }, { status: 500 });
+    const failure = routeFailure(error, 'Failed to export');
+    return NextResponse.json(failure.body, { status: failure.status });
   }
 }

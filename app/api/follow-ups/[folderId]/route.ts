@@ -5,6 +5,7 @@ import Folder from '@/lib/models/Folder';
 import { requireUser } from '@/lib/api-auth';
 import { isObjectIdLike } from '@/lib/person-types';
 import { buildFollowUpLanding } from '@/lib/notifications/followup-landing';
+import { errorLogLine, routeFailure } from '@/lib/http/errors';
 
 /**
  * GET /api/follow-ups/[folderId] — the people to follow up with from one event, for the screen the
@@ -65,7 +66,10 @@ export async function GET(
 
     return json(buildFollowUpLanding(folder, contacts), 200);
   } catch (error) {
-    console.error('Error loading follow-ups:', error);
-    return json({ error: 'Could not load the people from this event.' }, 500);
+    console.error('Error loading follow-ups:', errorLogLine(error));
+    const failure = routeFailure(error, 'Could not load the people from this event.', {
+      rename: { _id: 'folderId' },
+    });
+    return json(failure.body, failure.status);
   }
 }

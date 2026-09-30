@@ -4,6 +4,8 @@ import { newIntakeToken } from '@/lib/models/Folder';
 import { requireUser } from '@/lib/api-auth';
 import { findOwnedFolder, folderToDTO } from '@/lib/contacts/service';
 import { intakeUrl } from '@/lib/canonical-origin';
+import { errorLogLine, routeFailure } from '@/lib/http/errors';
+import { FOLDER_FIELDS } from '@/lib/contacts/folder-fields';
 
 /**
  * Turn a folder's public self-registration QR on or off, or rotate its token.
@@ -65,8 +67,11 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   } catch (error) {
     // NO `details` ON THE 500: on this route the message is a Mongoose save error naming the
     // Folder model and its schema paths, or a `canonicalOrigin()` throw that quotes NEXTAUTH_URL
-    // — deployment configuration, handed to whoever asked. Logged, not returned.
-    console.error('Error updating folder intake:', error);
-    return NextResponse.json({ error: 'Failed to update the folder link' }, { status: 500 });
+    // — deployment configuration, handed to whoever asked. Logged, not returned. `.save()`
+    // re-validates the whole folder, so a name stored before its `maxlength` existed refuses the
+    // save: a 400 naming it (the owner can fix it), never the intake fields, which are ours.
+    console.error('Error updating folder intake:', errorLogLine(error));
+    const failure = routeFailure(error, 'Failed to update the folder link', FOLDER_FIELDS);
+    return NextResponse.json(failure.body, { status: failure.status });
   }
 }

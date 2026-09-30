@@ -9,6 +9,7 @@ import { CONTACT_CSV_COLUMNS } from '@/lib/contacts/export-columns';
 import { toCsv, exportFilename, type CsvColumn } from '@/lib/scan/csv';
 import { buildVCardFile } from '@/lib/contacts/vcf';
 import type { IContact } from '@/lib/models/Contact';
+import { errorLogLine, routeFailure } from '@/lib/http/errors';
 
 /**
  * Export EVERY person the current filter matches, across all folders.
@@ -124,7 +125,8 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error) {
-    console.error('Error exporting contacts:', error);
-    return NextResponse.json({ error: 'Failed to export' }, { status: 500 });
+    console.error('Error exporting contacts:', errorLogLine(error));
+    const failure = routeFailure(error, 'Failed to export');
+    return NextResponse.json(failure.body, { status: failure.status });
   }
 }

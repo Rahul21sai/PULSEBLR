@@ -4,6 +4,7 @@ import Contact from '@/lib/models/Contact';
 import { requireUser } from '@/lib/api-auth';
 import { getContactTags, getTargetCompanies, isValidId, listFolders } from '@/lib/contacts/service';
 import { buildContactFilter, parseContactQuery } from '@/lib/contacts/query';
+import { errorLogLine, routeFailure } from '@/lib/http/errors';
 
 /**
  * The counts beside every filter on the People page.
@@ -140,7 +141,8 @@ export async function GET(request: NextRequest) {
       followUpCount,
     });
   } catch (error) {
-    console.error('Error computing contact facets:', error);
-    return NextResponse.json({ error: 'Failed to compute facets' }, { status: 500 });
+    console.error('Error computing contact facets:', errorLogLine(error));
+    const failure = routeFailure(error, 'Failed to compute facets');
+    return NextResponse.json(failure.body, { status: failure.status });
   }
 }

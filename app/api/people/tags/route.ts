@@ -6,6 +6,7 @@ import { requireUser } from '@/lib/api-auth';
 import { addContactTags, canonicaliseTags } from '@/lib/contacts/service';
 import { derivePersonTags } from '@/lib/people/service';
 import { validateTagBulk } from '@/lib/person-types';
+import { errorLogLine, invalidInputBody, routeFailure, type RejectedField } from '@/lib/http/errors';
 
 /**
  * POST /api/people/tags — add or remove one set of tags across many people at once.
@@ -153,7 +154,16 @@ export async function POST(request: NextRequest) {
       removed: [...removing],
     });
   } catch (error) {
-    console.error('Error bulk-tagging people:', error);
-    return NextResponse.json({ error: 'Failed to apply tags' }, { status: 500 });
+    console.error('Error bulk-tagging people:', errorLogLine(error));
+    // Unreachable while `canonicaliseTags` caps a tag at the schema's 40. If it ever is, the refusal
+    // is named by what the caller sent — the tags land in `ownTags` and the vocabulary, the ids query
+    // `_id` — in this route's `{ error, field }` shape. The recomputed `tags` field is ours.
+    const failure = routeFailure(error, 'Failed to apply tags', {
+      rename: { ownTags: 'add', contactTags: 'add', _id: 'personIds' },
+      fields: ['add', 'personIds'],
+      collapseIndices: true,
+      invalidBody: (rejected: RejectedField[]) => ({ ...invalidInputBody(rejected), field: rejected[0]?.field }),
+    });
+    return NextResponse.json(failure.body, { status: failure.status });
   }
 }

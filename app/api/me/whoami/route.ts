@@ -48,6 +48,7 @@ import { auth } from '@/auth';
 // `auth` is overloaded (it doubles as middleware), so ReturnType<typeof auth> resolves to
 // NextMiddleware rather than the session. Name the session type directly.
 import type { Session } from 'next-auth';
+import { errorLogLine } from '@/lib/http/errors';
 
 const NO_STORE = {
   'Cache-Control': 'no-store, no-cache, must-revalidate',
@@ -77,7 +78,8 @@ export async function GET(request: NextRequest) {
      * callers. It goes to the log instead, which is where an operator can act on it.
      */
     authThrew = true;
-    console.error('whoami: auth() threw', error);
+    // Unguarded by design, and the cookie it failed on is the caller's: one inert line.
+    console.error('whoami: auth() threw', errorLogLine(error));
   }
 
   const userId = session?.user?.id ?? null;

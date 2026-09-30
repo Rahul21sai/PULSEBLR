@@ -6,6 +6,7 @@ import { requireUser } from '@/lib/api-auth';
 import { addContactTags, canonicaliseTags, findOwnedFolder } from '@/lib/contacts/service';
 import { derivePersonTags, deriveNextActionAt } from '@/lib/people/service';
 import { validateContactBulk } from '@/lib/scan/follow-up';
+import { errorLogLine, routeFailure } from '@/lib/http/errors';
 
 /**
  * POST /api/contacts/bulk — tag, re-date or move MANY captures in one request.
@@ -154,13 +155,15 @@ export async function POST(request: NextRequest) {
     const failed = results.length - changed;
 
     if (!changed) {
-      // Every save failed, so this is a genuine server fault rather than a partial result.
+      // Every save failed, so this is not a partial result. It is a server fault unless the schema
+      // refused the change itself — then it is the 400 the catch-all below gives the same refusal,
+      // since retrying a change every row rejects cannot help. The reason is a Mongoose error that
+      // quotes the rows' values, so it is logged as one inert line.
       const [first] = results;
-      console.error(
-        'Bulk contact edit failed for every row:',
-        first && first.status === 'rejected' ? first.reason : 'unknown'
-      );
-      return NextResponse.json({ error: 'Failed to apply that change' }, { status: 500 });
+      const reason: unknown = first && first.status === 'rejected' ? first.reason : undefined;
+      console.error('Bulk contact edit failed for every row:', errorLogLine(reason));
+      const failure = routeFailure(reason, 'Failed to apply that change', { rename: { _id: 'ids' } });
+      return NextResponse.json(failure.body, { status: failure.status });
     }
 
     /**
@@ -188,10 +191,12 @@ export async function POST(request: NextRequest) {
      * NO `details` ON THE 500. The only thing it ever holds is a Mongoose message naming the model
      * and the schema path — the reconnaissance `lib/tracker/validate.ts` exists to stop handing out,
      * and CLAUDE.md counts roughly ten routes still leaking it. This is not the eleventh. The real
-     * wording is in the server log, which is where it is useful.
+     * wording is in the server log, which is where it is useful. A schema refusal of what the
+     * caller sent is a 400 naming the field; the ids they sent query `_id`, so that is `ids`.
      */
-    console.error('Error applying a bulk contact edit:', error);
-    return NextResponse.json({ error: 'Failed to apply that change' }, { status: 500 });
+    console.error('Error applying a bulk contact edit:', errorLogLine(error));
+    const failure = routeFailure(error, 'Failed to apply that change', { rename: { _id: 'ids' } });
+    return NextResponse.json(failure.body, { status: failure.status });
   }
 }
 
@@ -278,7 +283,7 @@ async function refreshPeople(
     const result = await Person.bulkWrite(writes);
     return result.modifiedCount ?? 0;
   } catch (error) {
-    console.error('Bulk contact edit landed but the person spine was not updated:', error);
+    console.error('Bulk contact edit landed but the person spine was not updated:', errorLogLine(error));
     return 0;
   }
 }

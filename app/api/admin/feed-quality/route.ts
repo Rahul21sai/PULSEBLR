@@ -3,6 +3,7 @@ import connectDB from '@/lib/mongodb';
 import Event from '@/lib/models/Event';
 import { requireAdmin } from '@/lib/api-auth';
 import { offCityReason } from '@/lib/scrapers/core/geo';
+import { errorLogLine } from '@/lib/http/errors';
 import {
   courseAdvertSignals,
   groupDuplicateClusters,
@@ -239,7 +240,9 @@ export async function GET() {
       },
     });
   } catch (error) {
-    console.error('Feed quality scan failed:', error);
+    // The scan takes no input, so a failure is always the server's. Its text can quote SCRAPED copy
+    // (a title in a ValidationError), which is third-party text: logged as one inert line.
+    console.error('Feed quality scan failed:', errorLogLine(error));
     return NextResponse.json({ error: 'Failed to scan the corpus' }, { status: 500 });
   }
 }

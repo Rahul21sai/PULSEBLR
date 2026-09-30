@@ -5,6 +5,8 @@ import Source from '@/lib/models/Source';
 import { requireAdmin } from '@/lib/api-auth';
 import { diffFields, recordAudit, redactSnapshot } from '@/lib/admin/audit';
 import { classifySourceDelete } from '@/lib/admin/impact';
+import { sourceValidationError } from '@/lib/sources/admin-validate';
+import { errorLogLine, routeFailure } from '@/lib/http/errors';
 
 /**
  * The AUDITED source mutation path.
@@ -80,8 +82,14 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
     return NextResponse.json({ id, enabled, changed: changes.length > 0, auditId });
   } catch (error) {
-    console.error('Admin source update failed:', error);
-    return NextResponse.json({ error: 'Failed to update source' }, { status: 500 });
+    console.error('Admin source update failed:', errorLogLine(error));
+    // The caller sends `enabled` and the id; the audit row is built here. So only those two are ever
+    // named, in the `fields` shape SourcesPanel reads, and a refusal of the audit row is our 500.
+    const failure = routeFailure(error, 'Failed to update source', {
+      fields: ['enabled', 'id'],
+      invalidBody: sourceValidationError,
+    });
+    return NextResponse.json(failure.body, { status: failure.status });
   }
 }
 
@@ -137,7 +145,11 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
 
     return NextResponse.json({ deleted: id, auditId, undoable: true });
   } catch (error) {
-    console.error('Admin source delete failed:', error);
-    return NextResponse.json({ error: 'Failed to delete source' }, { status: 500 });
+    console.error('Admin source delete failed:', errorLogLine(error));
+    const failure = routeFailure(error, 'Failed to delete source', {
+      fields: ['id'],
+      invalidBody: sourceValidationError,
+    });
+    return NextResponse.json(failure.body, { status: failure.status });
   }
 }

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { sendDailyDigestEmail } from '@/lib/notifications/email';
 import { generateDailyDigest, formatDigestAsText } from '@/lib/notifications/digest';
 import { requireAdmin, requireUser } from '@/lib/api-auth';
+import { errorLogLine } from '@/lib/http/errors';
 
 /**
  * POST /api/notifications/send-digest — send the digest email now. ADMIN ONLY.
@@ -65,8 +66,9 @@ export async function POST() {
      * or quote the provider's response. The 503 branch above is the counter-example worth
      * keeping: `RESEND_API_KEY is not configured` is a deliberate, hand-written sentence about
      * this endpoint's own configuration, not an exception the caller was handed by accident.
+     * The caller sends nothing, so this is always the server's fault: a plain 500.
      */
-    console.error('Digest API error:', error);
+    console.error('Digest API error:', errorLogLine(error));
     return NextResponse.json({ success: false, error: 'Failed to send the digest' }, { status: 500 });
   }
 }
@@ -86,7 +88,22 @@ export async function GET() {
   if ('response' in gate) return gate.response;
 
   try {
-    const digest = await generateDailyDigest(gate.userId);
+    const full = await generateDailyDigest(gate.userId);
+
+    /*
+     * SOURCE HEALTH IS THE OPERATOR'S, NOT THE PREVIEWER'S. `generateDailyDigest` includes every
+     * failing source with its upstream `url` and its raw `lastError` — scraper error text, which is
+     * exactly what the POST's note above says is "a disclosure of scraper internals the moment the
+     * audience is every consenting user". This GET is `requireUser()`, so that audience is anyone
+     * with a Google account, and /settings links every signed-in user here as "only your data". It
+     * is the same disclosure `GET /api/sources` was closed for, one route over.
+     *
+     * So the list goes only to an allowlisted admin, decided by `requireAdmin()` itself rather than
+     * a second copy of the allowlist check; everyone else gets `[]`, and the text preview is built
+     * from the same stripped object so it cannot carry the section either.
+     */
+    const admin = await requireAdmin();
+    const digest = 'response' in admin ? { ...full, unhealthySources: [] } : full;
     const preview = formatDigestAsText(digest);
 
     return NextResponse.json({
@@ -103,7 +120,7 @@ export async function GET() {
     // NO ECHOED MESSAGE — and this was the worst of the eight sites, because `requireUser()`
     // means ANY signed-in Google account could read it, where the POST sibling above is
     // admin-only. Logged, not returned.
-    console.error('Digest preview error:', error);
+    console.error('Digest preview error:', errorLogLine(error));
     return NextResponse.json({ error: 'Failed to build the digest preview' }, { status: 500 });
   }
 }

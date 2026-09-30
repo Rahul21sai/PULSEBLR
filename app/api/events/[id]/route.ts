@@ -9,7 +9,13 @@ import { getCurrentUserId } from '@/lib/auth-helpers';
 import { canViewEvent } from '@/lib/events/visibility';
 import { DETAIL_SELECT, notDeletedClause } from '@/lib/events/query';
 import { validateEventUpdate, eventValidationError } from '@/lib/events/admin-validate';
-import { validateOwnerEdit, resolveOwnerEdit, ownerDeleteMode } from '@/lib/events/owner-edit';
+import {
+  validateOwnerEdit,
+  resolveOwnerEdit,
+  ownerDeleteMode,
+  OWNER_EDIT_FIELDS,
+} from '@/lib/events/owner-edit';
+import { errorLogLine, rejectedFields, routeFailure, type RejectedField } from '@/lib/http/errors';
 import { toEventDetail } from '@/lib/events/serialize';
 import { loadViewerStates } from '@/lib/events/viewer-state';
 /*
@@ -101,8 +107,9 @@ export async function GET(
       { headers: { 'Cache-Control': 'private, no-store' } }
     );
   } catch (error) {
-    console.error('Error fetching event:', error);
-    return NextResponse.json({ error: 'Failed to fetch event' }, { status: 500 });
+    console.error('Error fetching event:', errorLogLine(error));
+    const failure = routeFailure(error, 'Failed to fetch event');
+    return NextResponse.json(failure.body, { status: failure.status });
   }
 }
 
@@ -164,14 +171,16 @@ export async function PUT(
 
     return NextResponse.json({ event });
   } catch (error) {
-    console.error('Error updating event:', error);
+    console.error('Error updating event:', errorLogLine(error));
     // `details` used to carry `error.message`, which handed back the model name and the schema
-    // path — free reconnaissance on the internal shape of the data. Nothing read it; the real
-    // wording is in the server log. Unreachable while the validator and the schema agree.
-    if (error instanceof mongoose.Error.ValidationError || error instanceof mongoose.Error.CastError) {
-      return NextResponse.json({ error: 'Invalid event' }, { status: 400 });
-    }
-    return NextResponse.json({ error: 'Failed to update event' }, { status: 500 });
+    // path — free reconnaissance on the internal shape of the data. Unreachable while the validator
+    // and the schema agree; if they drift, a 400 naming the patched FIELD (`runValidators` on a
+    // `$set` checks only those), in the `fields` shape the admin editor reads.
+    const failure = routeFailure(error, 'Failed to update event', {
+      invalidBody: eventValidationError,
+      collapseIndices: true,
+    });
+    return NextResponse.json(failure.body, { status: failure.status });
   }
 }
 
@@ -256,18 +265,29 @@ export async function PATCH(
       { headers: { 'Cache-Control': 'private, no-store' } }
     );
   } catch (error) {
-    console.error('Owner event update failed:', error);
+    console.error('Owner event update failed:', errorLogLine(error));
     // `.save()` validates the WHOLE document, so a legacy value already on the row (a retired
-    // category, say) can refuse a save that touched only the title. Named in the log, not here —
-    // the Mongoose message carries the model and the schema path.
-    if (error instanceof mongoose.Error.ValidationError || error instanceof mongoose.Error.CastError) {
-      return NextResponse.json(
-        { error: 'This event holds a value that can no longer be saved. Nothing was changed.' },
-        { status: 400 }
-      );
-    }
+    // category, say) can refuse a save that touched only the title — which is why the sentence
+    // describes the EVENT, not the edit, and why it stays a 400 even when the refused field is not
+    // one the author can edit. `null` means this is not a schema refusal at all.
+    const rejected = rejectedFields(error, { fields: OWNER_EDIT_FIELDS, collapseIndices: true });
+    if (rejected) return NextResponse.json(ownerEditRefused(rejected), { status: 400 });
     return NextResponse.json({ error: 'Failed to update event' }, { status: 500 });
   }
+}
+
+/**
+ * The owner's 400 for a schema refusal. It names the field only when it is one of
+ * `OWNER_EDIT_FIELDS`, in the `fields` shape EditEventSheet marks inline: this route is open to any
+ * signed-in author, and every other path on the document is ours, not theirs to be told about. Never
+ * the model, the schema path or the stored value — the Mongoose message carries all three.
+ */
+function ownerEditRefused(rejected: RejectedField[]) {
+  const which = rejected.map(({ field, message }) => `${field} ${message}`).join('; ');
+  return {
+    error: `This event holds a value that can no longer be saved${which ? ` (${which})` : ''}. Nothing was changed.`,
+    ...(rejected.length > 0 ? { fields: rejected } : {}),
+  };
 }
 
 /**
@@ -358,7 +378,8 @@ export async function DELETE(
 
     return NextResponse.json({ message: 'Event deleted successfully' });
   } catch (error) {
-    console.error('Error deleting event:', error);
-    return NextResponse.json({ error: 'Failed to delete event' }, { status: 500 });
+    console.error('Error deleting event:', errorLogLine(error));
+    const failure = routeFailure(error, 'Failed to delete event');
+    return NextResponse.json(failure.body, { status: failure.status });
   }
 }

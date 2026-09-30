@@ -4,6 +4,7 @@ import connectDB from '@/lib/mongodb';
 import Source from '@/lib/models/Source';
 import { requireAdmin } from '@/lib/api-auth';
 import { classifySourceDelete, fetchEventImpacts, summariseBulkImpact } from '@/lib/admin/impact';
+import { errorLogLine, routeFailure } from '@/lib/http/errors';
 
 /**
  * GET /api/admin/impact?type=event&ids=a,b,c — what would happen if I did this.
@@ -85,7 +86,9 @@ export async function GET(request: NextRequest) {
       missing: ids.filter(id => !reports.has(id)),
     });
   } catch (error) {
-    console.error('Impact preview failed:', error);
-    return NextResponse.json({ error: 'Failed to compute impact' }, { status: 500 });
+    console.error('Impact preview failed:', errorLogLine(error));
+    // The ids are the caller's, and they query `_id`: name a refusal there by the param they sent.
+    const failure = routeFailure(error, 'Failed to compute impact', { rename: { _id: 'ids' } });
+    return NextResponse.json(failure.body, { status: failure.status });
   }
 }

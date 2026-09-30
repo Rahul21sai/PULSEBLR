@@ -3,6 +3,7 @@ import connectDB from '@/lib/mongodb';
 import AuditLog from '@/lib/models/AuditLog';
 import { requireAdmin } from '@/lib/api-auth';
 import { actionLabel, isAuditAction, isUndoable } from '@/lib/admin/audit';
+import { errorLogLine, routeFailure } from '@/lib/http/errors';
 
 /**
  * GET /api/admin/audit — the change log.
@@ -117,7 +118,8 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error) {
-    console.error('Audit log read failed:', error);
-    return NextResponse.json({ error: 'Failed to load the audit log' }, { status: 500 });
+    console.error('Audit log read failed:', errorLogLine(error));
+    const failure = routeFailure(error, 'Failed to load the audit log');
+    return NextResponse.json(failure.body, { status: failure.status });
   }
 }

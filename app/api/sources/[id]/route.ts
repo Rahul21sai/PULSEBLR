@@ -3,6 +3,7 @@ import dbConnect from '@/lib/mongodb';
 import Source from '@/lib/models/Source';
 import { requireAdmin } from '@/lib/api-auth';
 import { validateNewSource, sourceValidationError } from '@/lib/sources/admin-validate';
+import { duplicateKeyFields, errorLogLine, routeFailure } from '@/lib/http/errors';
 
 /**
  * A 24-hex-character ObjectId, checked BEFORE it reaches Mongoose.
@@ -47,8 +48,9 @@ export async function GET(
 
     return NextResponse.json({ source });
   } catch (error) {
-    console.error('Error fetching source:', error);
-    return NextResponse.json({ error: 'Failed to fetch source' }, { status: 500 });
+    console.error('Error fetching source:', errorLogLine(error));
+    const failure = routeFailure(error, 'Failed to fetch source');
+    return NextResponse.json(failure.body, { status: failure.status });
   }
 }
 
@@ -178,23 +180,24 @@ export async function PUT(
 
     return NextResponse.json({ source });
   } catch (error) {
-    console.error('Error updating source:', error);
+    console.error('Error updating source:', errorLogLine(error));
     // `{ kind, handle }` is unique, so an edit that collides with an existing row is the
     // caller's mistake, not a server fault. Branch on keyPattern rather than assuming which
     // index it was — see the folders E11000 story in CLAUDE.md §9.
-    const err = error as { code?: number; keyPattern?: Record<string, unknown> };
-    if (err.code === 11000) {
-      const onIdentity = err.keyPattern && ('handle' in err.keyPattern || 'kind' in err.keyPattern);
+    const clash = duplicateKeyFields(error);
+    if (clash?.includes('kind') || clash?.includes('handle')) {
       return NextResponse.json(
-        {
-          error: onIdentity
-            ? 'Another source already has that kind and handle.'
-            : 'That change collides with an existing source.',
-        },
+        { error: 'Another source already has that kind and handle.' },
         { status: 409 }
       );
     }
-    return NextResponse.json({ error: 'Failed to update source' }, { status: 500 });
+    // Any other clash was a 409 as well; `UPDATABLE` reaches no other unique path, so it can only be
+    // a schema bug, and it is the 500 §9 asks for. A schema refusal names one of `UPDATABLE`.
+    const failure = routeFailure(error, 'Failed to update source', {
+      fields: UPDATABLE,
+      invalidBody: sourceValidationError,
+    });
+    return NextResponse.json(failure.body, { status: failure.status });
   }
 }
 
@@ -222,7 +225,8 @@ export async function DELETE(
 
     return NextResponse.json({ message: 'Source deleted successfully' });
   } catch (error) {
-    console.error('Error deleting source:', error);
-    return NextResponse.json({ error: 'Failed to delete source' }, { status: 500 });
+    console.error('Error deleting source:', errorLogLine(error));
+    const failure = routeFailure(error, 'Failed to delete source');
+    return NextResponse.json(failure.body, { status: failure.status });
   }
 }
