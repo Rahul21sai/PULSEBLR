@@ -86,8 +86,9 @@ permissions:
 jobs:
   send-push-reminders:
     runs-on: ubuntu-latest
-    # `web-push` sets no socket timeout of its own, so one push service that accepts a connection
-    # and never answers could otherwise hold a runner for GitHub's default six hours.
+    # A backstop, not the limit: `lib/notifications/push-transport.ts` gives every send a 5 s connect
+    # and 10 s total deadline. Before it, `web-push`'s only timeout reset on every byte, so one push
+    # service that trickled a reply could hold a runner for GitHub's default six hours.
     timeout-minutes: 15
 
     steps:

@@ -37,15 +37,14 @@
  */
 import crypto from 'crypto';
 import type { Types } from 'mongoose';
-import webpush, { WebPushError } from 'web-push';
+import webpush from 'web-push';
 import connectDB from '../mongodb';
 import Event from '../models/Event';
 import PushSubscription from '../models/PushSubscription';
 import ReminderLog from '../models/ReminderLog';
 import TrackerEntry from '../models/TrackerEntry';
 import User from '../models/User';
-import { toLogLine } from '../security/control-chars';
-import { assertSafeUrl } from '../security/safe-fetch';
+import { PRODUCTION_PUSH_TRANSPORT, sendToDeviceVia, type DeviceSendResult } from './push-transport';
 import {
   applyReminderCaps,
   DEFAULT_LEAD_HOURS,
@@ -155,6 +154,7 @@ type EventRow = {
   city?: string | null;
   format?: string | null;
   applyLink?: string | null;
+  source?: string | null;
 };
 
 function isDuplicateKey(error: unknown): boolean {
@@ -180,125 +180,34 @@ export function configureWebPush(): void {
   vapidReady = true;
 }
 
-/**
- * A dead endpoint, as opposed to a transient failure. Both are non-2xx; only these two are final.
- *
- * MEASURED, NOT ASSUMED — and the measurement matters. A well-formed aes128gcm POST to a
- * syntactically valid but nonexistent `fcm.googleapis.com/fcm/send/…` endpoint answers
- * **410 `push subscription has unsubscribed or expired.`**, NOT 404. So an implementation that
- * pruned on 404 alone would treat every dead Chrome endpoint as a transient failure, retry it every
- * morning forever, and leave the row in the database claiming a consent that no longer exists. 410
- * is the canonical spec answer; 404 is kept because it is what other services return and it costs
- * nothing.
- *
- * Everything else — 429, 5xx, a socket timeout — is transient and must NOT delete a row. A
- * threshold on `failureCount` would silently unsubscribe every device during one push-service
- * outage, which is why `failureCount` records and does not decide.
+/*
+ * `isGoneForever` and `DeviceSendResult` live in `./push-transport.ts` now, beside the code that
+ * produces a verdict, so it can be tested without a database. Re-exported so that nothing importing
+ * them from here had to change.
  */
-export function isGoneForever(status: number): boolean {
-  return status === 404 || status === 410;
-}
-
-export interface DeviceSendResult {
-  endpoint: string;
-  ok: boolean;
-  status?: number;
-  /**
-   * The push service said this endpoint is gone. `sendToDevice` only REPORTS this; the row is
-   * deleted when the caller passes the results to `pruneGoneEndpoints`.
-   */
-  gone?: boolean;
-  error?: string;
-}
+export { isGoneForever, type DeviceSendResult } from './push-transport';
 
 /**
  * Send one payload to one device, and translate the outcome into a decision about the row.
  *
- * ── WHY `assertSafeUrl` IS CALLED HERE. ──────────────────────────────────────────────────────
- * `endpoint` is a URL the CALLER supplied to `POST /api/me/push`, and this function POSTs to it from
- * a cron runner with nobody watching — the same shape as the SSRF that `lib/security/safe-fetch.ts`
- * was written to close on `/api/scrape-url`. The structural half (https, no credentials, a real
- * dotted hostname, no IP literal) is already enforced at write time by
- * `validatePushSubscriptionInput`; what needs DNS is the remaining case, a public hostname that
- * RESOLVES to a private or metadata address. That is what this call adds.
+ * The whole exchange is `sendToDeviceVia` in `./push-transport.ts`, and its header is where the
+ * reasoning lives: why it no longer goes through `webpush.sendNotification` (an unbounded response
+ * body, no deadline, and a connection made to a different parse of the URL than the one that was
+ * checked), the push-service allowlist and what it costs, the address pinning that ended the
+ * check-then-use gap `assertSafeUrl` used to leave here, and why every `error` goes through
+ * `toLogLine`.
  *
- * IT IS CHECK-THEN-USE AND SAYS SO. `web-push` makes its own `https.request`, so the connection
- * cannot be pinned to the address that was validated — a DNS record that answers differently between
- * the two is not defended against, exactly as `safe-fetch.ts`'s own header records for the same
- * reason. Stated rather than papered over: the residual exposure is a POST of an encrypted payload
- * with no response body read, which is a far smaller primitive than the proxy that module was
- * written for.
- *
- * A failed check is treated as a per-DEVICE failure, not a run failure. A transient DNS hiccup must
- * not abort everybody's reminders, and it must not delete a row either — nothing has been proven
- * about the subscription.
- *
- * ── EVERY `error` STRING BELOW GOES THROUGH `toLogLine`, AND THE BODY IS WHY (CWE-117). ──────
- * The same caller-chosen endpoint means the "push service" answering a non-2xx can be a server the
- * caller runs, and `WebPushError.body` is its response text verbatim. That string travels into
- * `ReminderLog.error`, the run report, and the operator's terminal via
- * `scripts/send-push-reminders.ts`. It used to go in as a bare `.slice(0, 200)`, which bounded its
- * length and nothing else: a CR or LF forged whole report lines, ESC drove the terminal (colours,
- * cursor moves, OSC title and clipboard sequences), and a leading `::`, or `##[` anywhere, is a
- * GitHub Actions workflow command the moment this runs in CI. Sanitised HERE, where the text enters,
- * so every consumer of `DeviceSendResult` inherits it, including callers outside this file. The
- * other two messages carry no attacker text today (fixed `UnsafeUrlError` wording, Node socket
- * errors) and go through the same function anyway, so "every `error` is inert" is one rule rather
- * than three cases somebody has to re-audit.
+ * This function exists to fix the transport to `PRODUCTION_PUSH_TRANSPORT`, and every caller (the
+ * reminder run, the follow-up nudge and the test-notification route) goes through it. It must stay
+ * the only thing here that sends. `tests/push-policy.test.ts` asserts the delegation, because a
+ * test transport reaching production is the one way the stub seam could become a weakening.
  */
 export async function sendToDevice(
   device: { endpoint: string; p256dh: string; auth: string },
   payload: string,
   topic: string
 ): Promise<DeviceSendResult> {
-  try {
-    await assertSafeUrl(device.endpoint);
-  } catch (error) {
-    return {
-      endpoint: device.endpoint,
-      ok: false,
-      error: toLogLine(`endpoint failed the SSRF check: ${(error as Error).message}`, 300),
-    };
-  }
-
-  try {
-    const result = await webpush.sendNotification(
-      { endpoint: device.endpoint, keys: { p256dh: device.p256dh, auth: device.auth } },
-      payload,
-      {
-        // A reminder is worthless once the event has started, so there is no point in the push
-        // service holding it for the default four weeks. Twelve hours comfortably covers a phone
-        // that is off overnight and expires well before the next day's run.
-        TTL: 12 * 3600,
-        // `high` asks the service to wake the device rather than batch the message with the next
-        // convenient wakeup. This is a time-sensitive notification; that is what the field is for.
-        urgency: 'high',
-        /*
-         * Coalescing at the SERVICE, complementing the `tag` that coalesces at the notification
-         * layer — two different places a repeat can stack up, and both have to be told. `topic`
-         * replaces an UNDELIVERED message still queued for a phone that is off; `tag` replaces an
-         * already-DISPLAYED notification on a phone that is on. Constrained by spec to at most 32
-         * URL-safe base64 characters, which is why the caller passes the bare 24-char ObjectId hex
-         * rather than the `pblr-event-…` tag.
-         */
-        topic,
-      }
-    );
-    return { endpoint: device.endpoint, ok: true, status: result.statusCode };
-  } catch (error) {
-    if (error instanceof WebPushError) {
-      return {
-        endpoint: device.endpoint,
-        ok: false,
-        status: error.statusCode,
-        gone: isGoneForever(error.statusCode),
-        // The body is the push service's own wording, not ours, and is never shown to a user. It is
-        // also the one attacker-controlled string that reaches an `error`. See the header above.
-        error: `${error.statusCode} ${toLogLine(error.body, 200)}`,
-      };
-    }
-    return { endpoint: device.endpoint, ok: false, error: toLogLine((error as Error).message, 300) };
-  }
+  return sendToDeviceVia(PRODUCTION_PUSH_TRANSPORT, device, payload, topic);
 }
 
 /**
@@ -435,7 +344,7 @@ export async function sendPushReminders(
     }
 
     const events = (await Event.find({ _id: { $in: eventIds } })
-      .select('title startDateTime venue area city format applyLink')
+      .select('title source startDateTime venue area city format applyLink')
       .lean()) as unknown as EventRow[];
 
     const due = events
@@ -588,6 +497,7 @@ export async function sendPushReminders(
         city: event.city ?? null,
         format: event.format ?? null,
         applyLink: event.applyLink ?? null,
+        source: event.source ?? null,
       };
       const payload = JSON.stringify(formatPushPayload(view, now));
 

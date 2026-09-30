@@ -46,6 +46,8 @@ import crypto from 'crypto';
 import { dayHeading, dayKeyIST, locationLabel, timeIST } from '../format';
 import { TRACKER_STATUSES, type TrackerStatus } from '../tracker/validate';
 import { escapeHtml } from './html';
+import { TIME_TBA, startTimeKnown } from '@/lib/events/time-known';
+import { isKnownPushServiceHost } from './push-hosts';
 
 /**
  * The `kind` written on every `ReminderLog` row for this feature.
@@ -389,6 +391,8 @@ export interface ReminderEventView {
   format?: string | null;
   /** Where to register, when the event carries one. Falls back to the event page. */
   applyLink?: string | null;
+  /** The adapter that produced it — decides whether the start TIME is real (lib/events/time-known.ts). */
+  source?: string | null;
 }
 
 export interface ReminderEmail {
@@ -404,11 +408,13 @@ export interface ReminderEmail {
  * about which day an event is on. The failure this avoids is an email saying "tomorrow" about
  * something the app lists as today.
  */
-function whenLabel(start: Date | string, now: Date): string {
+function whenLabel(event: { startDateTime: Date | string; source?: string | null }, now: Date): string {
   // `now` is THREADED, not defaulted, and the parameter is required on purpose: this function
   // exists inside a formatter that already takes an explicit clock, and letting it fall back to
   // the ambient one is precisely the bug this signature closes. See the note in `lib/format.ts`.
-  return `${dayHeading(start, now)} · ${timeIST(start)}`;
+  // A date-only source's midnight-UTC start is an invented 05:30; say so rather than print it.
+  const start = event.startDateTime;
+  return `${dayHeading(start, now)} · ${startTimeKnown(event) ? timeIST(start) : TIME_TBA}`;
 }
 
 function whereLabel(event: ReminderEventView): string {
@@ -452,7 +458,7 @@ export function formatReminderEmail(input: {
   const lines: string[] = [lede, ''];
   for (const event of events) {
     lines.push(`• ${event.title}`);
-    lines.push(`  ${whenLabel(event.startDateTime, now)} · ${whereLabel(event)}`);
+    lines.push(`  ${whenLabel(event, now)} · ${whereLabel(event)}`);
     lines.push(`  ${event.applyLink || eventUrl(event)}`);
     lines.push('');
   }
@@ -472,7 +478,7 @@ export function formatReminderEmail(input: {
       <div class="title"><a href="${escapeHtml(eventUrl(event))}">${escapeHtml(
         event.title
       )}</a></div>
-      <div class="meta">${escapeHtml(whenLabel(event.startDateTime, now))}</div>
+      <div class="meta">${escapeHtml(whenLabel(event, now))}</div>
       <div class="meta">${escapeHtml(whereLabel(event))}</div>
     </div>`
     )
@@ -595,6 +601,16 @@ export interface PushSubscriptionInput {
  */
 const MAX_ENDPOINT_CHARS = 1000;
 
+/**
+ * How many push devices one account keeps. `POST /api/me/push` has no other bound, and every send
+ * fans out to every row an account holds, so an account could otherwise point the cron at an
+ * unbounded number of endpoints. Enforced by keeping the MOST RECENTLY SEEN rows rather than by
+ * refusing the next one: a person who reinstalls the app a few times accumulates dead endpoints, and
+ * refusing their new phone would switch notifications off exactly where they are wanted. Ten matches
+ * `MAX_TEST_DEVICES` in the test-send route.
+ */
+export const MAX_PUSH_DEVICES_PER_ACCOUNT = 10;
+
 /** An uncompressed P-256 public point. Exactly 65 bytes, always — 0x04 plus two 32-byte coords. */
 const P256DH_BYTES = 65;
 
@@ -624,15 +640,16 @@ function isIpLiteral(hostname: string): boolean {
  * ── THIS IS HALF OF AN SSRF GUARD, AND SAYING SO IS THE POINT. ────────────────────────────────
  * `endpoint` is a URL supplied by the caller which the server will later POST to, from a cron
  * runner, without a user watching. That is the same shape as `POST /api/scrape-url`, which was a
- * general-purpose in-network proxy until `lib/security/safe-fetch.ts` was written — and unlike that
- * route, the fetch here happens hours later and through `web-push`'s own `https.request`, so
- * `safeFetch` cannot wrap it.
+ * general-purpose in-network proxy until `lib/security/safe-fetch.ts` was written — and the fetch
+ * here happens hours later, from the cron runner.
  *
- * What is enforceable purely, at write time, is the structural half: https only, no embedded
- * credentials, a real dotted hostname rather than an IP literal or `localhost`. That already
- * removes every literal metadata / loopback / private-range address. The remaining vector — a
- * public hostname that RESOLVES to 169.254.169.254 — needs DNS, so it is checked in the send path
- * with `assertSafeUrl()`; see the note there, including the TOCTOU limit it inherits.
+ * What is enforceable purely, at write time: https only, no embedded credentials, a real dotted
+ * hostname rather than an IP literal or `localhost`, and — since 2026-09-30 — a host on the SAME
+ * push-service allowlist the sender enforces (`lib/notifications/push-hosts.ts`), on the default
+ * port. The resolved-address check lives in the send path, `lib/notifications/push-transport.ts`,
+ * which pins the socket to the addresses it checked, so there is no second lookup to race; the old
+ * `assertSafeUrl()` + web-push arrangement had that TOCTOU gap and a URL-parser mismatch
+ * (`%2e` in the host) that let an endpoint reach 169.254.169.254.
  *
  * ── THE KEY LENGTHS ARE CHECKED BECAUSE THE FAILURE OTHERWISE LANDS HOURS LATER. ──────────────
  * `web-push` throws while deriving the aes128gcm content encryption key if `p256dh` is not a valid
@@ -685,6 +702,11 @@ export function validatePushSubscriptionInput(
       const host = url.hostname.toLowerCase();
       if (isIpLiteral(host) || !host.includes('.') || host === 'localhost') {
         issues.push({ field: 'endpoint', message: 'A push endpoint must name a public host.' });
+      } else if (!isKnownPushServiceHost(host) || url.port !== '') {
+        // The same allowlist the sender enforces (lib/notifications/push-hosts.ts). Refused here as a
+        // 400, rather than accepted and then failing at 09:00 every morning. The host is NOT echoed:
+        // an endpoint is a live capability, and no part of it may come back in an error.
+        issues.push({ field: 'endpoint', message: 'A push endpoint must belong to a known push service.' });
       }
     }
   }
@@ -776,7 +798,7 @@ function clamp(value: string, max: number): string {
 export function formatPushPayload(event: ReminderEventView, now: Date = new Date()): PushPayload {
   const payload: PushPayload = {
     title: clamp(event.title || 'A saved event', PUSH_TITLE_MAX_CHARS),
-    body: clamp(`${whenLabel(event.startDateTime, now)} · ${whereLabel(event)}`, PUSH_BODY_MAX_CHARS),
+    body: clamp(`${whenLabel(event, now)} · ${whereLabel(event)}`, PUSH_BODY_MAX_CHARS),
     url: `/events/${event.id}`,
     tag: `pblr-event-${event.id}`,
   };

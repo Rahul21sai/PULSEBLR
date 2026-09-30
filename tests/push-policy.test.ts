@@ -5,6 +5,7 @@ import {
   DEFAULT_MAX_EMAILS_PER_DAY,
   DEFAULT_MAX_EVENTS_PER_PUSH_RUN,
   DEFAULT_MAX_PUSHES_PER_DAY,
+  MAX_PUSH_DEVICES_PER_ACCOUNT,
   formatPushPayload,
   PUSH_PAYLOAD_MAX_BYTES,
   PUSH_REMINDER_KIND,
@@ -234,6 +235,32 @@ describe('validatePushSubscriptionInput — the structural half of an SSRF guard
     expect(joined).not.toContain('x.example');
   });
 
+  it('refuses a host that is not a known push service, at subscribe time', () => {
+    // The sender refuses these anyway (lib/notifications/push-hosts.ts); refusing them here turns a
+    // failure every morning into one 400 when the device subscribes.
+    for (const endpoint of [
+      'https://push.attacker.example/fcm/send/x',
+      'https://fcm.googleapis.com.attacker.example/fcm/send/x',
+      'https://fcm.googleapis.com:8443/fcm/send/x',
+    ]) {
+      const { subscription, issues } = validatePushSubscriptionInput(browserShape({ endpoint }));
+      expect(subscription, endpoint).toBeNull();
+      expect(issues.map(i => i.field), endpoint).toContain('endpoint');
+      expect(JSON.stringify(issues), endpoint).not.toContain('attacker');
+    }
+  });
+
+  it('accepts the real push services (control)', () => {
+    for (const endpoint of [
+      'https://fcm.googleapis.com/fcm/send/abc',
+      'https://updates.push.services.mozilla.com/wpush/v2/abc',
+      'https://web.push.apple.com/QOabc',
+      'https://wns2-par02p.notify.windows.com/w/?token=abc',
+    ]) {
+      expect(validatePushSubscriptionInput(browserShape({ endpoint })).subscription, endpoint).not.toBeNull();
+    }
+  });
+
   it('truncates a userAgent rather than refusing it', () => {
     const { subscription } = validatePushSubscriptionInput(
       browserShape({ userAgent: 'M'.repeat(900) })
@@ -333,9 +360,11 @@ describe('formatPushPayload — the contract with public/sw.js', () => {
  * ── THE PUSH SERVICE'S RESPONSE BODY IS ATTACKER TEXT (CWE-117) ──────────────────────────────
  *
  * Any signed-in user can register an https endpoint on a server they run (`POST /api/me/push`). When
- * the reminder run POSTs to it and gets a non-2xx, `web-push` hands back that server's response body
+ * the reminder run POSTed to it and got a non-2xx, `web-push` handed back that server's response body
  * verbatim. It used to reach `ReminderLog.error`, the run report and the operator's terminal as a bare
- * `.slice(0, 200)`, which bounded its length and nothing else.
+ * `.slice(0, 200)`, which bounded its length and nothing else. (The send path now contacts only known
+ * push services and reads at most 4 KB of a body: see `lib/notifications/push-transport.ts`. The body
+ * is still treated as untrusted text, which is what these rows pin.)
  *
  * MUTATION-CHECKED against that old expression, `String(body ?? '').slice(0, 200)`. Every hostile row
  * below failed, and so did the 10 KB row (a newline and `##[` inside the first 200 characters) and the
@@ -475,23 +504,41 @@ describe('the daily frequency cap is scoped by kind on BOTH channels', () => {
 describe('the push-service body is sanitised where it ENTERS and where it is PRINTED', () => {
   /*
    * `toLogLine` is pinned above. These pin that it is actually called, which no test of the function
-   * can show. `sendToDevice` POSTs to a network endpoint and the script is a side-effecting CLI, so
-   * the source is the only instrument. Same reasoning as the two describes above.
+   * can show. The script is a side-effecting CLI, so for it the source is the only instrument. The
+   * send path is now ALSO driven for real, against a local TLS stub, in `tests/push-transport.test.ts`
+   * (a hostile body comes back as one inert line); this assertion stays because it covers the two
+   * exits that stub cannot make carry hostile text. Same reasoning as the two describes above.
    * Mutation-checked: restoring either old expression fails the matching assertion.
    */
   // CRLF-normalised: a Windows checkout has CRLF, and the slice below looks for the closing `\n}\n`.
   const read = (file: string) => fs.readFileSync(path.join(REPO, file), 'utf8').replace(/\r\n/g, '\n');
 
-  it('routes every `error` that sendToDevice returns through toLogLine', () => {
+  it('routes every `error` that the device sender returns through toLogLine', () => {
+    const source = read('lib/notifications/push-transport.ts');
+    const start = source.indexOf('export async function sendToDeviceVia(');
+    expect(start).toBeGreaterThan(-1);
+    const fn = source.slice(start, source.indexOf('\n}\n', start));
+    // Three failure exits: a refused endpoint, a non-2xx (the one carrying the body), and anything else.
+    const assignments = fn.match(/\berror: [^\n]+/g) ?? [];
+    expect(assignments).toHaveLength(3);
+    for (const assignment of assignments) expect(assignment).toContain('toLogLine(');
+    expect(fn).toContain('toLogLine(response.body, 200)');
+  });
+
+  it('sends production traffic through the production transport, and only that', () => {
+    /*
+     * The transport's policy fields are injectable so a test can reach 127.0.0.1, which makes this
+     * delegation the line between a test seam and a weakening. Every caller (the reminder run, the
+     * follow-up nudge, the test-notification route) reaches the network through `sendToDevice`.
+     */
     const source = read('lib/notifications/push.ts');
     const start = source.indexOf('export async function sendToDevice(');
     expect(start).toBeGreaterThan(-1);
     const fn = source.slice(start, source.indexOf('\n}\n', start));
-    // Three failure exits: the SSRF refusal, a WebPushError (the one carrying the body), and anything else.
-    const assignments = fn.match(/\berror: [^\n]+/g) ?? [];
-    expect(assignments).toHaveLength(3);
-    for (const assignment of assignments) expect(assignment).toContain('toLogLine(');
-    expect(fn).toContain('toLogLine(error.body, 200)');
+    expect(fn).toContain('return sendToDeviceVia(PRODUCTION_PUSH_TRANSPORT, device, payload, topic);');
+    // No other send path in the file, and no hand-built transport either.
+    expect(source.match(/sendToDeviceVia\(/g)).toHaveLength(1);
+    expect(source).not.toMatch(/webpush\.sendNotification\(|sendPushRequest\(/);
   });
 
   it('sanitises again at print time in scripts/send-push-reminders.ts', () => {
@@ -501,5 +548,19 @@ describe('the push-service body is sanitised where it ENTERS and where it is PRI
     expect(source).toMatch(/toLogLine\(row\.error, \d+\)/);
     expect(source).toMatch(/toLogLine\(row\.email, \d+\)/);
     expect(source).not.toMatch(/\$\{row\.(error|email)\b/);
+  });
+});
+
+describe('POST /api/me/push bounds what one account can register', () => {
+  const route = fs.readFileSync(path.join(process.cwd(), 'app/api/me/push/route.ts'), 'utf8');
+
+  it('keeps only the newest MAX_PUSH_DEVICES_PER_ACCOUNT rows, scoped to the caller', () => {
+    expect(MAX_PUSH_DEVICES_PER_ACCOUNT).toBe(10);
+    expect(route).toMatch(/\.skip\(MAX_PUSH_DEVICES_PER_ACCOUNT\)/);
+    expect(route).toMatch(/deleteMany\(\{\s*userId: gate\.userId,\s*_id: \{ \$in:/);
+  });
+
+  it('retries a duplicate-endpoint race once instead of answering 500', () => {
+    expect(route).toMatch(/duplicateKeyFields\(error\)\?\.includes\('endpoint'\)/);
   });
 });

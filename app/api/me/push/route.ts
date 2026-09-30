@@ -2,7 +2,14 @@ import { NextRequest, NextResponse } from 'next/server';
 import connectDB from '@/lib/mongodb';
 import { requireUser } from '@/lib/api-auth';
 import PushSubscription from '@/lib/models/PushSubscription';
-import { validatePushSubscriptionInput } from '@/lib/notifications/reminder-policy';
+import { MAX_PUSH_DEVICES_PER_ACCOUNT, validatePushSubscriptionInput } from '@/lib/notifications/reminder-policy';
+import {
+  duplicateKeyFields,
+  errorLogLine,
+  invalidInputBody,
+  routeFailure,
+  type RejectedField,
+} from '@/lib/http/errors';
 
 /**
  * The signed-in user's push subscriptions — the consent record for web push.
@@ -45,6 +52,12 @@ function invalid(issues: { field: string; message: string }[]) {
   return NextResponse.json({ error: 'Invalid subscription', issues }, { status: 400 });
 }
 
+/** A schema refusal, in the same shape as `invalid()`, naming only what the caller sent. */
+const SUBSCRIPTION_FIELDS = {
+  fields: ['endpoint', 'p256dh', 'auth', 'userAgent'],
+  invalidBody: (rejected: RejectedField[]) => ({ ...invalidInputBody(rejected), error: 'Invalid subscription' }),
+};
+
 export async function GET() {
   const gate = await requireUser();
   if ('response' in gate) return gate.response;
@@ -75,7 +88,7 @@ export async function GET() {
       { headers: { 'Cache-Control': 'no-store' } }
     );
   } catch (error) {
-    console.error('Error reading push subscriptions:', error);
+    console.error('Error reading push subscriptions:', errorLogLine(error));
     return NextResponse.json({ error: 'Failed to read your notification devices' }, { status: 500 });
   }
 }
@@ -107,20 +120,46 @@ export async function POST(request: NextRequest) {
      * `failureCount: 0` is SET rather than set-on-insert: a device coming back after failures is
      * demonstrably alive again, and leaving a stale count would misreport it to an operator forever.
      */
-    const row = await PushSubscription.findOneAndUpdate(
-      { endpoint: subscription.endpoint },
-      {
-        $set: {
-          userId: gate.userId,
-          p256dh: subscription.p256dh,
-          auth: subscription.auth,
-          userAgent: subscription.userAgent,
-          lastSeenAt: new Date(),
-          failureCount: 0,
+    const upsert = () =>
+      PushSubscription.findOneAndUpdate(
+        { endpoint: subscription.endpoint },
+        {
+          $set: {
+            userId: gate.userId,
+            p256dh: subscription.p256dh,
+            auth: subscription.auth,
+            userAgent: subscription.userAgent,
+            lastSeenAt: new Date(),
+            failureCount: 0,
+          },
         },
-      },
-      { upsert: true, new: true, setDefaultsOnInsert: true }
-    );
+        { upsert: true, new: true, setDefaultsOnInsert: true }
+      );
+
+    /*
+     * Two registrations of one endpoint in flight at once (a double tap, the mount-time self-heal
+     * racing the button) both miss and both try to INSERT; the unique index refuses the second with
+     * E11000. That is not a failure of the request: the row it wanted now exists, so the retry is an
+     * ordinary update. Retried once only, and only for the endpoint index.
+     */
+    let row;
+    try {
+      row = await upsert();
+    } catch (error) {
+      if (!duplicateKeyFields(error)?.includes('endpoint')) throw error;
+      row = await upsert();
+    }
+
+    // Keep the newest MAX_PUSH_DEVICES_PER_ACCOUNT devices; see the constant for why this evicts
+    // rather than refuses. Scoped by userId in both queries.
+    const stale = await PushSubscription.find({ userId: gate.userId })
+      .sort({ lastSeenAt: -1, _id: -1 })
+      .skip(MAX_PUSH_DEVICES_PER_ACCOUNT)
+      .select('_id')
+      .lean();
+    if (stale.length > 0) {
+      await PushSubscription.deleteMany({ userId: gate.userId, _id: { $in: stale.map(s => s._id) } });
+    }
 
     const count = await PushSubscription.countDocuments({ userId: gate.userId });
     return NextResponse.json(
@@ -128,8 +167,10 @@ export async function POST(request: NextRequest) {
       { headers: { 'Cache-Control': 'no-store' } }
     );
   } catch (error) {
-    console.error('Error saving push subscription:', error);
-    return NextResponse.json({ error: 'Failed to turn on notifications' }, { status: 500 });
+    // The endpoint is a URL any signed-in user chooses, so this line is kept inert.
+    console.error('Error saving push subscription:', errorLogLine(error));
+    const failure = routeFailure(error, 'Failed to turn on notifications', SUBSCRIPTION_FIELDS);
+    return NextResponse.json(failure.body, { status: failure.status });
   }
 }
 
@@ -172,7 +213,8 @@ export async function DELETE(request: NextRequest) {
       { headers: { 'Cache-Control': 'no-store' } }
     );
   } catch (error) {
-    console.error('Error deleting push subscription:', error);
-    return NextResponse.json({ error: 'Failed to turn off notifications' }, { status: 500 });
+    console.error('Error deleting push subscription:', errorLogLine(error));
+    const failure = routeFailure(error, 'Failed to turn off notifications', SUBSCRIPTION_FIELDS);
+    return NextResponse.json(failure.body, { status: failure.status });
   }
 }
