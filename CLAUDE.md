@@ -881,6 +881,17 @@ NextAuth v5 (Auth.js) config lives in the root `auth.ts`, imported as `@/auth`. 
 > **The same `details: err.message` shape is still on ~10 other routes** — `POST /api/events`
 > (whose `category` enum is the identical defect), `/api/contacts`, `/api/contacts/sync`,
 > `/api/folders`, `/api/me/card` and others. Not fixed here; the pattern to copy is above.
+>
+> **UPDATE 2026-09-30 — CLOSED, and the list above had gone stale before it was.** Measured on
+> `feat/mobile-app`: every route it names already omitted `details`; the one remaining body leak was
+> `scrape-url`. The real residue was wrong status codes, 11000s handled without `keyPattern`, and raw
+> Mongoose errors in `console.error` (their messages carry the caller's values). All of it now goes
+> through `lib/http/errors.ts` (`rejectedFields`, `routeFailure`, `duplicateKeyFields`,
+> `errorLogLine`), which re-exports this section's `isSchemaRejection` so there is still one
+> definition. `tests/api-error-leaks.test.ts` is a TypeScript-AST scanner over 66 route and handler
+> files that fails on any `.message`/`.stack`/`keyValue`/`details` or caught-error value reaching a
+> response body. It also found a leak this list never named: `GET /api/notifications/send-digest`
+> gave ANY signed-in user every failing source's URL and raw `lastError`; sources are now admin-only.
 
 **Two guard tiers** live in `lib/api-auth.ts`:
 
@@ -2217,7 +2228,52 @@ one is current** — in particular `public/sw.js` is **v6**, not v3/v4/v5.
 
 **Still open:** the Android build is verified only as an UNSIGNED debug AAB — production serves stale
 `main` (its icons 404), so Digital Asset Links, Play App Signing and a signed release are unexercised.
-`android/twa-manifest.json` has no `monochromeIconUrl`, so the Android notification small icon is the
-opaque tile; `public/icon-maskable-512.png` is byte-identical to `icon-512.png`, so adaptive masks may
-crop it. Offline drain runs only on `/scan` and `/folders`, which is why the offline banner promises
-"kept on this device" rather than "will sync".
+The committed debug bundle predates the notification-icon fix below and must be regenerated
+(`npm run android:generate -- --local-debug`, then `npm run android:bundle:debug`; needs ~2 GB free).
+
+> **CORRECTED 2026-09-30.** This paragraph said the notification icon was the opaque tile (true then,
+> fixed now: `monochromeIconUrl` points at `/badge-96.png`, and the contract, verifier and local-debug
+> rewrite all require it), that the maskable icon "may crop" (FALSE — measured, every mark pixel is
+> within 33.81% of the size from centre at 512 and 34.01% at 192, inside even Bubblewrap's stricter
+> 36.3% never-cropped circle; `tests/maskable-icon.test.ts` now pins it), and that offline drain runs
+> only on `/scan` and `/folders` (fixed: it is app-wide for a signed-in user, once, via
+> `createAutoDrain`; the banner says "uploads when you're back online" only while that is true).
+
+### 19. What landed 2026-09-27 → 2026-09-30 — trust, correctness and the follow-up
+
+Five rounds after §18, each closed with tsc, the full suite, lint and `next build`. Commits carry
+the measurements; this is the map plus the traps.
+
+| Area | Where | The one thing to know |
+| --- | --- | --- |
+| Similar events | `lib/events/related.ts` | Matched on ANY category incl. `Networking/Meetup`: 5 of 6 were comedy and board games. Now `isTechEvent` + a shared TECH topic, ranked by `connectionScore`, one per series. |
+| Recurring series | `lib/events/series.ts`, `SeriesRow.tsx` | Presentation only: `comingUp` is untouched, so counts, paging and subtractions still see events. Key is title + HOST, so two hosts' "Python Meetup" stay separate. |
+| Host names | `lib/events/organizer-display.ts` | 34 of 102 organisers were Meetup slugs. Display only — the stored organiser is what company attribution matches on. Only all-lowercase names are re-cased. |
+| GIDS duplicate | `lib/scrapers/core/event-match.ts`, `ingestion.ts` | `devevents` is date-only (9583/9583 values at 00:00Z) AND the company JSON-LD's zoneless time was read as UTC. Near-twin merge at ingest; zoneless JSON-LD read as IST. `cleanup-near-twins.ts --apply` must run AFTER merge to `main`, or the cron re-creates the pairs. |
+| Time TBA | `lib/events/time-known.ts` | Derived at render from source + midnight-UTC, no field. Every start-time printer asks first (feed, grid, calendar, event page, both ICS producers as all-day `VALUE=DATE`, reminder email/push, digest, MCP, share image) — `tests/time-known.test.ts` lists them. |
+| Scanner | `lib/scan/not-a-person.ts` | A Quick Share QR carries the file-decryption key in `#key=`; it used to be saved as a contact's website. Group invites, meeting links, forms, app-store, Bharat QR and Aadhaar are refused too. |
+| Legal | `app/terms`, `app/cookies`, `app/privacy` | No cookie banner: all four cookies are strictly necessary and a test pins the list against `@auth/core`. Grievance-officer name, response times and 18+ are OWNER facts — nothing was invented. |
+| Accessibility | `tests/a11y-static.test.ts`, `useModalDialog.ts` | `outline-none` cannot remove the focus ring here (the global `:focus-visible` rule is unlayered and wins); the test pins that it stays unlayered. Input borders (`--rule`, 1.23:1) are an open design decision. |
+| Follow-ups | `lib/notifications/followup-nudge*.ts`, `app/follow-ups/` | One push the morning after, per event, inside the shared 3-a-day push budget; the payload carries a name and a count, never a contact. Hand-made folders count. |
+| Push transport | `lib/notifications/push-transport.ts`, `push-hosts.ts` | web-push read error bodies unbounded and its `timeout` reset per byte. A `%2e` in the host made `new URL` and web-push's `url.parse` disagree, reaching 169.254.169.254. Now: allowlisted push hosts, pinned lookup, 5 s/10 s deadlines, 4 KB cap, subscribe-time refusal, 10 devices per account (newest kept). |
+| Route exports | `tests/route-exports.test.ts` | Four helpers exported from route/page files passed tsc and broke `next build`. The allowlist check now runs in the ordinary suite. |
+
+> **`app/tracker/page.tsx` IMPORTS `lib/notifications/reminder-policy.ts`**, so that module must stay
+> free of node-only code. That is why the push allowlist lives in `push-hosts.ts` (pure) and
+> `push-transport.ts` (node:dns, node:https, web-push) re-exports it — importing the transport from
+> the validator would have put node modules in the browser bundle.
+
+> **THE TOPIC PAGES WERE A PUBLIC-CACHE LEAK.** `/topics/[slug]` had no `.select()`, so whole
+> documents — including an approved submission's `createdByUserId` and the owner-namespaced
+> `clusterKey` — went into a page cached for an hour and served to everyone. Now `FEED_SELECT`, and
+> saved state is fetched client-side after load so the cached HTML is identical for every viewer.
+
+> **OPEN DECISION: next-auth may sign a user out when the app regains focus offline.** Read from
+> `next-auth@5.0.0-beta.32` `react.js` (`fetchData`) and `sw.js`'s offline 503: the refetch fails,
+> is stored as a null session, and is not retried until reload — so `/scan` at a signal-less venue
+> would show the sign-in wall. Inferred from code, NOT observed on a device; the fix belongs in the
+> `SessionProvider` config or `ProtectedRouteGate` and changes session behaviour, so it was not made.
+
+**Verified as a whole:** see the commit for the round's figures. The security scan of the whole
+repository was prepared twice and did not start both times because its cost confirmation went
+unanswered; it needs the owner's acknowledgement in words.
