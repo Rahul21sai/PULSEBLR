@@ -5,7 +5,7 @@ import type { Metadata } from 'next';
 
 import Event from '@/lib/models/Event';
 import connectDB from '@/lib/mongodb';
-import { buildEventFilter, buildSort } from '@/lib/events/query';
+import { buildEventFilter, buildSort, FEED_SELECT } from '@/lib/events/query';
 import { publishedTopics } from '@/lib/events/topic-counts';
 import {
   describeRhythm,
@@ -22,7 +22,7 @@ import { absoluteUrl, canonicalOrigin } from '@/lib/canonical-origin';
 import type { FeedEvent } from '@/lib/event-types';
 
 import AppShell from '../../components/AppShell';
-import EventRow from '../../components/EventRow';
+import ViewerEventRows from '../ViewerEventRows';
 
 /**
  * A topic landing page — `/topics/ai-ml`, `/topics/in-koramangala`.
@@ -52,6 +52,12 @@ import EventRow from '../../components/EventRow';
  * is applied at render, which means a slug that is thin at build time is prerendered as a 404 and
  * becomes a real page on a later revalidation when supply arrives — the correct behaviour for a set
  * that changes daily.
+ *
+ * NOTHING HERE KNOWS WHO IS READING. The HTML is cached for an hour and served to everyone, so the
+ * loader queries as an anonymous viewer (`buildEventFilter(…, null)`) and never reads a session. The
+ * one per-reader fact a row shows — whether you already saved it — is filled in by the browser after
+ * hydration, for a signed-in reader only (`../ViewerEventRows.tsx`). Putting it in the loader would
+ * cache the first visitor's saved events into every other visitor's page.
  * ─────────────────────────────────────────────────────────────────────────────────────────────
  */
 
@@ -150,6 +156,17 @@ const readTopic = async (topic: Topic): Promise<LoadedTopic | null> => {
 
   const [events, rhythmRows] = await Promise.all([
     Event.find(filter)
+      /*
+       * THE FEED'S OWN PROJECTION, AND THIS LINE IS A LEAK FIX, not tidiness. These rows are handed to
+       * a client component, so every field fetched here is serialised into the page's payload — and
+       * with no `.select()` that was the WHOLE document: `createdByUserId` (an approved submission's
+       * author's Google `sub`), `clusterKey` (the same id again, `user:<ownerId>|…`), `dedupHash`,
+       * `tagConfidence`, `lastSeenAt`, `sourceEventId` and the full 6 KB `description`. That is the
+       * leak `DETAIL_FIELDS` in lib/events/query.ts records closing on the detail paths, still open
+       * here on a page cached for everyone. `FEED_SELECT` is exactly what `EventRow` renders from on
+       * the feed, so the rows read the same.
+       */
+      .select(FEED_SELECT)
       // The feed's own default ordering, through the feed's own sort builder. A topic page ranked
       // chronologically would put the online 07:00 webinars first — measured on the default feed as
       // 15 of the first 20 rows online before the ranking changed.
@@ -270,11 +287,9 @@ export default async function TopicPage({ params }: { params: Promise<{ slug: st
             events with a real venue come first.
           </p>
           <div className="flex flex-col gap-2">
-            {events.map(event => (
-              // showDate is ON because this list is RANKED and has no day headings: without it the
-              // rail shows a clock time and the date appears nowhere on the row.
-              <EventRow key={event._id} event={event} showDate />
-            ))}
+            {/* showDate is ON because this list is RANKED and has no day headings: without it the
+                rail shows a clock time and the date appears nowhere on the row. */}
+            <ViewerEventRows events={events} showDate />
           </div>
           {count > events.length && (
             <Link

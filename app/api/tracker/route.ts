@@ -12,7 +12,7 @@ import {
 import { canViewEvent } from '@/lib/events/visibility';
 import {
   TRACKER_EVENT_SELECT,
-  orphanedEventIds,
+  TRACKER_FOLDER_SELECT,
   shapeTrackerEntries,
   shapeTrackerEntry,
 } from '@/lib/tracker/entry-view';
@@ -24,7 +24,12 @@ import {
  * its name. `populate` replaces a missing ref with `null` and the id goes with it; here the raw id is
  * still in hand, so an entry whose event is gone can be matched to the user's own folder for that
  * event, which remembers the title (`lastKnown`). Same two queries `populate` issues underneath, plus
- * one more — user-scoped, and only when some entry's event can no longer be shown.
+ * one more for the user's folders.
+ *
+ * THE FOLDER QUERY COVERS EVERY ENTRY, not only the ones whose event is gone, because each entry with
+ * a folder now carries `folderId` — what an Attended card links "Follow up" to. Still ONE query for
+ * the whole list, never one per entry, and user-scoped in the filter (with `shapeTrackerEntries`
+ * checking `userId` again behind it).
  *
  * Every event goes out through `shapeTrackerEntries`: nine fields, visibility re-decided on this read,
  * `createdByUserId` never sent. See lib/tracker/entry-view.ts.
@@ -48,10 +53,9 @@ export async function GET(request: NextRequest) {
       ? await Event.find({ _id: { $in: eventIds } }).select(TRACKER_EVENT_SELECT).lean()
       : [];
 
-    const orphanIds = orphanedEventIds(entries, events, userId);
-    const folders = orphanIds.length
-      ? await Folder.find({ userId, eventId: { $in: orphanIds } })
-          .select('_id userId eventId name eventDate')
+    const folders = eventIds.length
+      ? await Folder.find({ userId, eventId: { $in: eventIds } })
+          .select(TRACKER_FOLDER_SELECT)
           .sort({ updatedAt: -1 })
           .lean()
       : [];

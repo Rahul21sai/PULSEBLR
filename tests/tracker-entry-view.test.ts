@@ -3,10 +3,11 @@ import {
   TRACKER_EVENT_FIELDS,
   TRACKER_EVENT_GUARD_FIELDS,
   TRACKER_EVENT_SELECT,
+  TRACKER_FOLDER_SELECT,
   lastKnownFromFolder,
-  orphanedEventIds,
   shapeTrackerEntries,
   toTrackerEvent,
+  trackedEventIds,
 } from '@/lib/tracker/entry-view';
 
 /**
@@ -23,6 +24,9 @@ import {
  *      work — `canViewEvent` treats an unfetched field as permissive, so a short select fails OPEN.
  *   3. An entry whose event was gone was dropped by the page. The shaping layer keeps it, with its
  *      status, notes and people, and names it from the user's OWN folder where one exists.
+ *
+ * And one thing it adds: `folderId`, which an Attended card links "Follow up" through. It is the id
+ * of the viewer's OWN folder and nothing else of it, and it is ABSENT when there is no folder.
  * ─────────────────────────────────────────────────────────────────────────────────────────────
  */
 
@@ -210,10 +214,104 @@ describe('shapeTrackerEntries — the listing the board draws', () => {
   });
 });
 
-describe('orphanedEventIds — the events the list route fetches folders for', () => {
-  it('is every missing and every hidden event, once each, and never a listed one', () => {
-    const entries = [{ eventId: 'e1' }, { eventId: 'gone' }, { eventId: 'gone' }, { eventId: 'hid' }];
-    const events = [stored(), stored({ _id: 'hid', visibility: 'private', createdByUserId: THEM })];
-    expect(orphanedEventIds(entries, events, ME).sort()).toEqual(['gone', 'hid']);
+describe('TRACKER_FOLDER_SELECT — the list route’s one folder query', () => {
+  it('fetches every field the shaping reads — `userId` above all, or every folder is refused', () => {
+    const selected = TRACKER_FOLDER_SELECT.split(' ');
+    for (const field of ['_id', 'userId', 'eventId', 'name', 'eventDate']) {
+      expect(selected).toContain(field);
+    }
+  });
+});
+
+describe('folderId — what an Attended card links "Follow up" through', () => {
+  const mine = (overrides: Record<string, unknown> = {}) => ({
+    _id: 'f1',
+    userId: ME,
+    eventId: 'e1',
+    name: 'Rust folder',
+    eventDate: WHEN,
+    ...overrides,
+  });
+
+  it("carries the viewer's own folder id on a listed event — the id and nothing else of the folder's", () => {
+    const [shaped] = shapeTrackerEntries([entry('t1', 'e1')], [stored()], [mine()], ME);
+    expect(shaped.folderId).toBe('f1');
+    expect(shaped).not.toHaveProperty('lastKnown');
+    expect(JSON.stringify(shaped)).not.toContain('Rust folder');
+  });
+
+  it('carries it on an entry whose event is gone too, naming the same folder lastKnown does', () => {
+    const [shaped] = shapeTrackerEntries(
+      [entry('t1', 'gone')],
+      [],
+      [mine({ eventId: 'gone', name: 'Rust Bangalore #41' })],
+      ME
+    );
+    expect(shaped.folderId).toBe('f1');
+    expect(shaped.lastKnown?.folderId).toBe(shaped.folderId);
+  });
+
+  it("never takes one from another user's folder", () => {
+    const [shaped] = shapeTrackerEntries([entry('t1', 'e1')], [stored()], [mine({ userId: THEM })], ME);
+    expect(shaped).not.toHaveProperty('folderId');
+    expect(JSON.stringify(shaped)).not.toContain('f1');
+  });
+
+  it('is ABSENT when there is no folder — not null, not empty, and not on the wire', () => {
+    const [shaped] = shapeTrackerEntries([entry('t1', 'e1')], [stored()], [], ME);
+    expect('folderId' in shaped).toBe(false);
+    expect(JSON.stringify(shaped)).not.toContain('folderId');
+  });
+
+  it("attaches to the entry for that folder's event and no other", () => {
+    const shaped = shapeTrackerEntries(
+      [entry('t1', 'e1'), entry('t2', 'e2')],
+      [stored(), stored({ _id: 'e2', title: 'Kafka Summit' })],
+      [mine({ _id: 'f2', eventId: 'e2' })],
+      ME
+    );
+    expect(shaped.map(s => s.folderId)).toEqual([undefined, 'f2']);
+  });
+
+  it('the first folder wins when there are several for one event (the route sorts newest first)', () => {
+    const [shaped] = shapeTrackerEntries(
+      [entry('t1', 'e1')],
+      [stored()],
+      [mine({ _id: 'new' }), mine({ _id: 'old' })],
+      ME
+    );
+    expect(shaped.folderId).toBe('new');
+  });
+
+  it('meets ObjectIds on both sides and always sends a string', () => {
+    const [shaped] = shapeTrackerEntries(
+      [entry('t1', new FakeObjectId('e1'))],
+      [stored({ _id: new FakeObjectId('e1') })],
+      [mine({ _id: new FakeObjectId('f1'), eventId: new FakeObjectId('e1') })],
+      ME
+    );
+    expect(shaped.folderId).toBe('f1');
+  });
+});
+
+describe('trackedEventIds — the saved set a topic or digest page reads in the browser', () => {
+  it("is exactly the listing's viewable events, read back from what the route actually sends", () => {
+    const listing = shapeTrackerEntries(
+      [entry('t1', 'e1'), entry('t2', 'gone'), entry('t3', 'hid')],
+      [stored(), stored({ _id: 'hid', visibility: 'private', createdByUserId: THEM })],
+      [],
+      ME
+    );
+    // Through JSON, because a network response is what the page reads.
+    const ids = trackedEventIds(JSON.parse(JSON.stringify(listing)));
+    expect([...ids]).toEqual(['e1']);
+  });
+
+  it('reads anything without throwing, and finds nothing in what is not a listing', () => {
+    expect(trackedEventIds(undefined).size).toBe(0);
+    expect(trackedEventIds({ entries: [] }).size).toBe(0);
+    expect([...trackedEventIds([null, { eventId: null }, { eventId: {} }, { eventId: { _id: 'e9' } }])]).toEqual([
+      'e9',
+    ]);
   });
 });

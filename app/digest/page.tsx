@@ -2,8 +2,9 @@ import Link from 'next/link';
 import type { Metadata } from 'next';
 
 import AppShell from '../components/AppShell';
-import EventRow from '../components/EventRow';
 import { Card, PageHeader, Stat } from '../components/ui';
+// Shared with /topics/[slug], the other public list whose HTML must not know its reader.
+import ViewerEventRows from '../topics/ViewerEventRows';
 import RetryButton from './RetryButton';
 import { getPublicDigestWeek, type PublicDigestWeek } from '@/lib/notifications/digest';
 import { WEEKLY_WINDOW_DAYS } from '@/lib/notifications/digest-schedule';
@@ -28,6 +29,12 @@ import { absoluteUrl, canonicalOrigin } from '@/lib/canonical-origin';
  * here reads a session, and there is deliberately no `getCurrentUserId()` in the chain — a page that
  * personalised itself would be uncacheable, unshareable and one refactor away from putting somebody's
  * private submission in Google's index.
+ *
+ * THE ONE PER-READER FACT ON IT ARRIVES LATER, IN THE BROWSER. Each row's Save button should say
+ * whether the reader already saved that event, and it used to say "not saved" to everyone, because
+ * nothing set `tracked`. It is not set here either — that would be exactly the personalisation this
+ * page refuses. `ViewerEventRows` asks `GET /api/tracker` after hydration, for a signed-in reader
+ * only, and the HTML every visitor receives is unchanged.
  *
  * A FAILURE MUST NOT RENDER A CONFIDENT CLAIM. "No events this week" is a factual statement about
  * Bengaluru, and printing it because a database query threw is the exact defect CLAUDE.md records for
@@ -182,9 +189,7 @@ export default async function DigestPage() {
                   a company host beats a webinar happening sooner.
                 </p>
                 <div className="rounded-[var(--r-flat)] border border-[var(--rule)] overflow-hidden">
-                  {week.events.map(event => (
-                    <EventRow key={event._id} event={event} showDate />
-                  ))}
+                  <ViewerEventRows events={week.events} showDate />
                 </div>
                 {week.total > week.events.length && (
                   <p className="mt-3 text-[12.5px] text-[var(--ink-2)]">

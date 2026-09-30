@@ -65,6 +65,11 @@ interface TrackerEntry {
   eventId: TrackedEvent | null;
   /** Only on an entry whose `eventId` is null, and only when the user has a folder for that event. */
   lastKnown?: LastKnownEvent;
+  /**
+   * The user's own folder for this entry's event — listed or not — and ABSENT when there is none.
+   * From `GET /api/tracker`, or from the PUT that just moved the entry into a folder-making column.
+   */
+  folderId?: string;
   status: string;
   notes?: string;
   appliedAt?: string;
@@ -144,6 +149,27 @@ function orphanMeta(entry: TrackerEntry): string {
 /** For sentences like "Met at …". */
 function eventName(entry: TrackerEntry): string {
   return entry.eventId?.title ?? entry.lastKnown?.title ?? 'an event that is no longer listed';
+}
+
+/** The column whose cards offer "Follow up". */
+const FOLLOW_UP_COLUMN = 'Attended';
+
+/**
+ * Where an entry's "Follow up" goes — the morning-after screen for its folder — or null when there is
+ * nothing to offer.
+ *
+ * ATTENDED ONLY, AND ONLY WITH A FOLDER. That screen lists the people in the folder (and in its
+ * siblings for the same event), so with no folder there is nobody to follow up with, and before the
+ * event there is nobody yet. Offered for an entry whose event is no longer listed too: the folder,
+ * and the people in it, outlive the listing.
+ *
+ * The same path `followUpLandingPath()` builds for the push notification, `encodeURIComponent`
+ * included. Not imported from there, because `lib/notifications/followup-nudge-policy.ts` imports
+ * `reminder-policy.ts`, which imports Node's `crypto`, and this is a client component.
+ */
+function followUpHref(entry: TrackerEntry): string | null {
+  if (entry.status !== FOLLOW_UP_COLUMN || !entry.folderId) return null;
+  return `/follow-ups/${encodeURIComponent(entry.folderId)}`;
 }
 
 type ViewMode = 'board' | 'list';
@@ -303,6 +329,18 @@ export default function TrackerPage() {
         // The route returns `folder` only when it ensured one — Confirmed or Attended, and
         // `outcome: 'linked'` means it already existed, which is not news worth a banner.
         const data = await res.json().catch(() => null);
+        /*
+         * THE FOLDER'S ID GOES ONTO THE ENTRY, whatever the outcome. Otherwise a card moved into
+         * Attended would arrive without the "Follow up" it is meant to have until the next full
+         * reload: `folderId` is otherwise only ever set by `GET /api/tracker`. `linked` counts here
+         * even though it earns no banner — an existing folder is still the one to follow up from.
+         */
+        const folderId = data?.folder?._id ? String(data.folder._id) : null;
+        if (folderId) {
+          setEntries(current =>
+            current.map(entry => (entry._id === entryId ? { ...entry, folderId } : entry))
+          );
+        }
         if (data?.folder && data.folder.outcome !== 'linked') {
           setFolderNote({
             id: String(data.folder._id),
@@ -963,6 +1001,7 @@ function TrackerCard({
   const currentIndex = COLUMN_IDS.indexOf(entry.status);
   const next = currentIndex >= 0 ? COLUMNS[currentIndex + 1] : undefined;
   const isPast = new Date(event.startDateTime).getTime() < now;
+  const followUp = followUpHref(entry);
 
   return (
     /*
@@ -977,6 +1016,10 @@ function TrackerCard({
       The mouse behaviour is unchanged: the card is still the drag source and a click anywhere on
       it (bar the move button, which stops propagation) still opens the entry. Only the keyboard
       and accessibility-tree target moved inward, beside the move button rather than around it.
+
+      "Follow up", on an Attended card with a folder, is the THIRD sibling of the same kind: a direct
+      child of the card, after the opener and before "Move to", and never inside the opener. It is
+      an `<a>`, so `revealEntry`'s `:scope > button` still lands focus on "Move to" after a move.
     */
     <div
       draggable
@@ -1034,6 +1077,8 @@ function TrackerCard({
       <EntryTraces entry={entry} />
       </div>
 
+      {followUp && <FollowUpCardLink href={followUp} title={eventName(entry)} />}
+
       {next && (
         <button
           type="button"
@@ -1078,6 +1123,46 @@ function EntryTraces({ entry }: { entry: TrackerEntry }) {
   );
 }
 
+/**
+ * "Follow up" on a board card — see `followUpHref` for when it is offered.
+ *
+ * THE SAME 44px ROW AS "Move to", for the reason given there: `min-h-11` paints the height instead of
+ * growing the target with an `::after` overlay, because the CARD carries the "open" click and an
+ * overlay reaching into its padding would silently turn "open this entry" taps into navigation.
+ * `stopPropagation` so the tap navigates without also opening the sheet behind it; `draggable={false}`
+ * so pressing here and dragging moves the card, not a copy of the URL. The visually hidden tail names
+ * the event, because a board can hold several identical "Follow up" links and a screen reader's links
+ * list shows each one out of context.
+ */
+function FollowUpCardLink({ href, title }: { href: string; title: string }) {
+  return (
+    <Link
+      href={href}
+      draggable={false}
+      onClick={e => e.stopPropagation()}
+      className="flex w-full items-start min-h-11 mt-2.5 pt-2.5 border-t border-[var(--rule)] text-[11.5px] font-semibold text-[var(--accent)] hover:underline"
+    >
+      Follow up<span className="sr-only"> with the people you met at {title}</span>
+    </Link>
+  );
+}
+
+/**
+ * "Follow up" in a list row: a sibling of the row's opener, never inside it. `min-h-11` paints the
+ * 44px height for the same reason the status select beside it does, so neither grows an overlay into
+ * the 12px gap between them and neither can take the other's tap.
+ */
+function FollowUpRowLink({ href, title }: { href: string; title: string }) {
+  return (
+    <Link
+      href={href}
+      className="inline-flex min-h-11 shrink-0 items-center r-touch px-1 text-[12px] font-semibold text-[var(--accent)] hover:underline"
+    >
+      Follow up<span className="sr-only"> with the people you met at {title}</span>
+    </Link>
+  );
+}
+
 /** Where the cover would be, for an event that is no longer listed. The dashed edge reads as "absent". */
 function GoneTile({ className }: { className: string }) {
   return (
@@ -1097,6 +1182,12 @@ function GoneTile({ className }: { className: string }) {
  * category accent, and no "Move to" shortcut, since with no event behind it the next pipeline step is
  * rarely the thing to do. It is still the same size of target, still draggable between columns, and
  * still opens the detail sheet, which is where its notes and people are read and where it is removed.
+ *
+ * THE OPENER IS AN INNER ELEMENT, exactly as on `TrackerCard`, because an Attended card here can carry
+ * "Follow up" — its folder, and the people in it, outlive the listing. The whole card used to be the
+ * `role="button"`, which is fine while it holds nothing else and is the nesting defect `TrackerCard`
+ * records the moment it holds a link: one "button" announced with the link's words inside it, and the
+ * card's Enter handler catching the link's keydown on its way up.
  */
 function OrphanCard({
   entry,
@@ -1111,6 +1202,7 @@ function OrphanCard({
   onDragEnd: () => void;
   onOpen: () => void;
 }) {
+  const followUp = followUpHref(entry);
   return (
     <div
       draggable
@@ -1118,26 +1210,30 @@ function OrphanCard({
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
       onClick={onOpen}
-      onKeyDown={e => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          onOpen();
-        }
-      }}
-      role="button"
-      tabIndex={0}
       className="kanban-card bg-[var(--surface)] rounded-[var(--r-flat)] p-3 shadow-[inset_0_0_0_1px_var(--rule)] border-l-[3px] border-l-[var(--rule)]"
     >
-      <div className="flex gap-2.5">
-        <GoneTile className="w-11 h-11" />
-        <div className="min-w-0 flex-1">
-          <p className="text-[13px] font-semibold leading-snug text-[var(--ink)] line-clamp-2">
-            {orphanTitle(entry)}
-          </p>
-          <p className="text-[11.5px] tnum mt-0.5 text-[var(--ink-2)]">{orphanMeta(entry)}</p>
+      <div
+        role="button"
+        tabIndex={0}
+        onKeyDown={e => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onOpen();
+          }
+        }}
+      >
+        <div className="flex gap-2.5">
+          <GoneTile className="w-11 h-11" />
+          <div className="min-w-0 flex-1">
+            <p className="text-[13px] font-semibold leading-snug text-[var(--ink)] line-clamp-2">
+              {orphanTitle(entry)}
+            </p>
+            <p className="text-[11.5px] tnum mt-0.5 text-[var(--ink-2)]">{orphanMeta(entry)}</p>
+          </div>
         </div>
+        <EntryTraces entry={entry} />
       </div>
-      <EntryTraces entry={entry} />
+      {followUp && <FollowUpCardLink href={followUp} title={eventName(entry)} />}
     </div>
   );
 }
@@ -1147,7 +1243,8 @@ function OrphanCard({
  *
  * ONE target: the whole row opens the detail sheet (44px tall, `--r-touch` for its focus ring). The
  * status is shown as text rather than as the select a normal row carries — it can still be changed
- * from the sheet, and a row that is mostly a record should not lead with a control.
+ * from the sheet, and a row that is mostly a record should not lead with a control. The one addition
+ * is "Follow up" on an Attended entry with a folder, as a sibling of that opener rather than inside it.
  */
 function OrphanRow({
   entry,
@@ -1159,6 +1256,7 @@ function OrphanRow({
   onOpen: () => void;
 }) {
   const column = COLUMNS.find(c => c.id === entry.status);
+  const followUp = followUpHref(entry);
   const people = entry.connections.length;
   const traces = [
     people > 0 ? `${people} ${people === 1 ? 'person' : 'people'}` : null,
@@ -1182,6 +1280,7 @@ function OrphanRow({
           {column?.label ?? entry.status}
         </span>
       </button>
+      {followUp && <FollowUpRowLink href={followUp} title={eventName(entry)} />}
     </div>
   );
 }
@@ -1208,6 +1307,7 @@ function ListView({
           );
         }
         const column = COLUMNS.find(c => c.id === entry.status);
+        const followUp = followUpHref(entry);
         return (
           <div
             key={entry._id}
@@ -1267,6 +1367,9 @@ function ListView({
                 ))}
               </select>
             </label>
+            {/* After the select, so below `sm` it joins the select on the second line (already
+                indented to the text) instead of needing an indent of its own. */}
+            {followUp && <FollowUpRowLink href={followUp} title={eventName(entry)} />}
           </div>
         );
       })}

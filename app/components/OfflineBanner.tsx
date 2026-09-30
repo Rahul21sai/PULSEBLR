@@ -2,6 +2,8 @@
 
 import { useSyncExternalStore } from 'react';
 
+import { autoDrainArmed, subscribe as subscribeOutbox } from '@/lib/scan/outbox';
+
 /**
  * "You're offline" — the one thing the app never said.
  *
@@ -11,12 +13,22 @@ import { useSyncExternalStore } from 'react';
  * listened for connectivity (only `lib/scan/outbox.ts` does, to decide when to drain), so those
  * failures read as the app being broken rather than the phone being offline.
  *
- * THE COPY CLAIMS NO MORE THAN THE CODE DOES. The outbox writes every capture to IndexedDB first and
- * removes a record only when the server confirms it, so "kept on this device until it uploads" is
- * true in every case, including a record the server refuses. The tempting "will sync when you're
- * back online" is NOT always true: `startAutoDrain()` is mounted only by `/scan`, `/folders` and
- * `/folders/[id]`, so reconnecting while on the feed uploads nothing until one of those pages is
- * opened. A reassurance that is wrong on the most-visited page is worse than a precise one.
+ * THE COPY CLAIMS NO MORE THAN THE CODE DOES, and there are two claims because there are two states.
+ * The outbox writes every capture to IndexedDB first and removes a record only when the server
+ * confirms it, so "kept on this device until it uploads" is true in every case, including a record
+ * the server refuses. "Uploads when you're back online" is stronger, and it is printed only while
+ * `autoDrainArmed()` says it is true: an account is signed in AND the drain's `online` trigger is
+ * attached. That used to be false on most pages — the drain was mounted only by `/scan`, `/folders`
+ * and `/folders/[id]`, so reconnecting on the feed uploaded nothing — which is why this banner said
+ * the weaker thing everywhere. `<OutboxOwner />` now holds the drain on every page for a signed-in
+ * account, so the promise is kept wherever it is made.
+ *
+ * WHY IT STILL CHECKS RATHER THAN ALWAYS PROMISING. The banner is shown to signed-out visitors too,
+ * and a signed-in one can become signed out WHILE offline without touching anything: `next-auth`
+ * refetches the session when the page becomes visible again, the fetch fails with no network, and it
+ * stores that failure as a null session. The outbox owner goes null, the drain has nobody to upload
+ * as, and nothing moves until the session is back. The banner hears that through the outbox's own
+ * notifications and falls back to the claim that is still true.
  *
  * CONNECTIVITY IS EXTERNAL STATE, read through `useSyncExternalStore` for the reasons
  * `InstallPrompt.tsx` sets out: the server snapshot is "online", so the server renders nothing and
@@ -97,27 +109,47 @@ function WifiOffIcon() {
 }
 
 /**
+ * What the banner says about a capture made now — see the header for why there are two sentences.
+ *
+ * `uploadsOnReconnect` is `autoDrainArmed()`: pass `true` only when a capture queued now really will
+ * upload by itself once the `online` event fires.
+ */
+export function offlineNoticeCopy(uploadsOnReconnect: boolean): string {
+  return uploadsOnReconnect
+    ? 'Anything you scan is saved on this device and uploads when you’re back online.'
+    : 'Anything you scan is kept on this device until it uploads.';
+}
+
+/**
  * The strip itself. `--surface` with a bottom `--rule`, which is exactly the treatment of the other
  * bars that sit under the header (`/people`'s and `/folders/[id]`'s sticky toolbars), so it reads as
  * part of the chrome rather than as content. `--ink-2`, not `--live`: `--live` means urgent or
  * destructive, and nothing is being lost.
  */
-function OfflineNotice() {
+export function OfflineNotice({ uploadsOnReconnect }: { uploadsOnReconnect: boolean }) {
   return (
     <div className="r-flat rule-b bg-[var(--surface)]">
       <div className="mx-auto flex max-w-[1240px] items-start gap-[var(--s-2)] px-[var(--s-4)] py-[var(--s-2)] text-[var(--ink-2)] md:px-8">
         <WifiOffIcon />
         <p className="ty-meta">
-          <span className="font-semibold text-[var(--ink)]">You’re offline.</span> Anything you scan
-          is kept on this device until it uploads.
+          <span className="font-semibold text-[var(--ink)]">You’re offline.</span>{' '}
+          {offlineNoticeCopy(uploadsOnReconnect)}
         </p>
       </div>
     </div>
   );
 }
 
+/** The server knows nothing about this browser's outbox, so it promises nothing. */
+function noUploadClaim(): boolean {
+  return false;
+}
+
 export default function OfflineBanner() {
   const online = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+  // A second, separate store: the outbox notifies when the owner changes and when the drain's
+  // triggers attach or detach, which are the two things the stronger sentence depends on.
+  const uploadsOnReconnect = useSyncExternalStore(subscribeOutbox, autoDrainArmed, noUploadClaim);
 
   return (
     /*
@@ -143,7 +175,7 @@ export default function OfflineBanner() {
       className="fixed inset-x-0 z-[45]"
       style={{ top: 'calc(var(--topbar-h) + env(safe-area-inset-top, 0px))' }}
     >
-      {online ? null : <OfflineNotice />}
+      {online ? null : <OfflineNotice uploadsOnReconnect={uploadsOnReconnect} />}
     </div>
   );
 }

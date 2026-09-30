@@ -1223,50 +1223,225 @@ function notify(): void {
   }
 }
 
-/**
- * Wire the foreground drain triggers.
- *
- * These ARE the sync mechanism, not a fallback: Background Sync is Chromium-only and is not
- * wired in this app. Returns a teardown function.
- */
-export function startAutoDrain(): () => void {
-  if (typeof window === 'undefined') return () => {};
+/* ────────────────────────────── the automatic drain ────────────────────────────── */
 
-  /**
-   * A lapsed session backs the automatic path off for this long.
-   *
-   * Without it, a token that expires mid-event means one doomed POST on every
-   * `visibilitychange` — so every glance at another app and back — forever, all 401, while the
-   * banner keeps promising the upload. The banner now reads `authExpired()` and offers a sign-in
-   * link, so the retries were achieving nothing but noise. `online` still fires through, because
-   * a network change is genuinely new information.
-   */
-  const AUTH_BACKOFF_MS = 5 * 60_000;
+/**
+ * How long after a holder starts before the first drain, so it never competes with first paint.
+ */
+const AUTO_DRAIN_KICK_MS = 1200;
+
+/**
+ * A lapsed session backs the automatic path off for this long.
+ *
+ * Without it, a token that expires mid-event means one doomed POST on every `visibilitychange` —
+ * so every glance at another app and back — forever, all 401, while the banner keeps promising the
+ * upload. The banner now reads `authExpired()` and offers a sign-in link, so the retries were
+ * achieving nothing but noise. `online` still fires through, because a network change is genuinely
+ * new information.
+ */
+const AUTH_BACKOFF_MS = 5 * 60_000;
+
+/**
+ * Everything the automatic drain needs from its surroundings — injected, so the once-only rule
+ * below is a pure function of what it is handed and `tests/outbox-auto-drain.test.ts` can pin it
+ * with no DOM, no timers and no IndexedDB.
+ */
+export interface AutoDrainEnv {
+  /** Attach the foreground triggers. Returns the function that detaches them. */
+  listen(triggers: { online: () => void; visible: () => void }): () => void;
+  /** Run `run` once after `ms`. Returns the function that cancels it. */
+  defer(run: () => void, ms: number): () => void;
+  drain(): Promise<Pick<DrainResult, 'authExpired'>>;
+  /** Is an account signed in? An automatic drain never uploads on nobody's behalf. */
+  signedIn(): boolean;
+  authExpired(): boolean;
+  now(): number;
+  /** Told after the triggers are attached or detached, for anything whose claim depends on them. */
+  armedChanged?(): void;
+}
+
+export interface AutoDrain {
+  /** Hold the triggers. Returns an idempotent release. */
+  start(): () => void;
+  /** Are the triggers attached right now? */
+  armed(): boolean;
+}
+
+/**
+ * The foreground drain triggers, held by COUNT, so there is exactly one set however many screens
+ * ask for them.
+ *
+ * These ARE the sync mechanism, not a fallback: Background Sync is Chromium-only and is not wired
+ * in this app.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────────────────────────
+ * WHY IT IS COUNTED. The triggers used to be wired per CALL, and only `/scan`, `/folders` and
+ * `/folders/[id]` called — so a person who scanned offline at a venue and later opened only the feed
+ * uploaded nothing, however long they stayed online. `<OutboxOwner />` now holds them on every page
+ * for a signed-in account, and those three screens still take their own hold. Wired per call, that
+ * is two listener sets on `/scan`: two `drain()` calls per event (the second only saved by the
+ * in-flight latch), two boot drains that can land back to back, and two closures each with its own
+ * `lastAuthSkip` — which quietly let a doomed 401 retry through the backoff on alternate glances.
+ *
+ * So: the FIRST holder attaches the listeners and the LAST release detaches them; every other
+ * holder only moves the count. One closure, one backoff clock, one set of listeners.
+ *
+ * EACH HOLDER STILL ASKS FOR ONE DRAIN, COALESCED. A screen opening is a real "try now" — the
+ * folder page is where you land after "Save & close", and its own comment records captures sitting
+ * there under a `local` chip while signal was available. But the request is coalesced: while a
+ * drain is already scheduled, another holder joins it rather than scheduling a second, so a hard
+ * load of `/scan` (the page's hold and the session's, a few hundred milliseconds apart) is one
+ * drain, not two back to back.
+ *
+ * AND NEVER FOR NOBODY. Every trigger checks `signedIn()` first. The session gate in
+ * `<OutboxOwner />` keeps a signed-out visitor from holding the triggers at all, but a screen can
+ * take its hold while the session is still loading, and a drain fired then would find no owner.
+ * The session's own hold, taken the moment it resolves, asks for the drain that matters.
+ * ─────────────────────────────────────────────────────────────────────────────────────────────────
+ */
+export function createAutoDrain(env: AutoDrainEnv): AutoDrain {
+  let holders = 0;
+  let detach: (() => void) | null = null;
+  let cancelKick: (() => void) | null = null;
   let lastAuthSkip = 0;
 
   // Not `force`: an automatic trigger declines to re-post a queue that is entirely blocked.
   // See the note in `drain()` — the user's own "Sync now" passes `{ force: true }` and always
   // goes, because a person pressing a button is evidence that something may have changed.
-  const run = (ignoreAuthBackoff = false) => {
-    if (!ignoreAuthBackoff && authExpired() && Date.now() - lastAuthSkip < AUTH_BACKOFF_MS) return;
-    void drain().then(result => {
-      if (result.authExpired) lastAuthSkip = Date.now();
-    });
+  const run = (ignoreAuthBackoff: boolean) => {
+    if (!env.signedIn()) return;
+    if (!ignoreAuthBackoff && env.authExpired() && env.now() - lastAuthSkip < AUTH_BACKOFF_MS) return;
+    void env.drain().then(
+      result => {
+        if (result.authExpired) lastAuthSkip = env.now();
+      },
+      // `drain()` resolves on every path it has; this only keeps a surprise from becoming an
+      // unhandled rejection on a trigger nobody is awaiting.
+      () => {}
+    );
   };
 
-  const onOnline = () => run(true);
-  const onVisible = () => {
-    if (document.visibilityState === 'visible') run();
+  const kick = () => {
+    if (cancelKick) return;
+    cancelKick = env.defer(() => {
+      cancelKick = null;
+      run(true);
+    }, AUTO_DRAIN_KICK_MS);
   };
 
-  window.addEventListener('online', onOnline);
-  document.addEventListener('visibilitychange', onVisible);
-  // Once on boot, deferred so it never competes with the first paint.
-  const timer = setTimeout(() => run(true), 1200);
+  return {
+    start() {
+      holders += 1;
+      const attached = holders === 1;
+      if (attached) {
+        detach = env.listen({ online: () => run(true), visible: () => run(false) });
+      }
+      kick();
+      if (attached) env.armedChanged?.();
 
-  return () => {
-    window.removeEventListener('online', onOnline);
-    document.removeEventListener('visibilitychange', onVisible);
-    clearTimeout(timer);
+      let released = false;
+      return () => {
+        // A release called twice must not spend a second holder's share of the count.
+        if (released) return;
+        released = true;
+        holders -= 1;
+        if (holders > 0) return;
+        detach?.();
+        detach = null;
+        // A drain still scheduled when the last holder leaves — a sign-out inside the boot delay —
+        // must not fire for the account that just left.
+        cancelKick?.();
+        cancelKick = null;
+        env.armedChanged?.();
+      };
+    },
+    armed: () => holders > 0,
   };
+}
+
+/**
+ * Might anything be queued on this device — answered WITHOUT creating the queue to find out?
+ *
+ * `drain()` opens the database to read the queue, and opening an IndexedDB database that does not
+ * exist CREATES it. While only the scan screens drained, that was invisible. Now that the drain runs
+ * on every page for a signed-in account, it would create `pulseblr-outbox` on the device of everyone
+ * who ever signs in — and `/cookies` (`app/cookies/inventory.ts`) tells the reader that store is set
+ * "when you scan or add a contact, or create a folder". So the automatic path looks before it opens:
+ * no database means nothing was ever queued here, and there is nothing to upload.
+ *
+ * Already opened in this page means it exists. `indexedDB.databases()` is Chromium 71+, Safari 14+
+ * and Firefox 126+; where it is missing or throws, the answer is "yes, look", which is the behaviour
+ * this replaced — refusing to upload a real capture would be the worse failure.
+ */
+async function outboxMayHoldRecords(): Promise<boolean> {
+  if (dbPromise) return true;
+  if (typeof indexedDB === 'undefined') return false;
+  if (typeof indexedDB.databases !== 'function') return true;
+  try {
+    const known = await indexedDB.databases();
+    return known.some(info => info.name === DB_NAME);
+  } catch {
+    return true;
+  }
+}
+
+let autoDrain: AutoDrain | null = null;
+
+/** THE one controller for this page — every `startAutoDrain()` call holds this same instance. */
+function browserAutoDrain(): AutoDrain {
+  if (autoDrain) return autoDrain;
+  const created = createAutoDrain({
+    listen({ online, visible }) {
+      const onVisible = () => {
+        if (document.visibilityState === 'visible') visible();
+      };
+      window.addEventListener('online', online);
+      document.addEventListener('visibilitychange', onVisible);
+      return () => {
+        window.removeEventListener('online', online);
+        document.removeEventListener('visibilitychange', onVisible);
+      };
+    },
+    defer(run, ms) {
+      const timer = setTimeout(run, ms);
+      return () => clearTimeout(timer);
+    },
+    // An automatic trigger on a device that never queued anything must not create the queue.
+    drain: async () => ((await outboxMayHoldRecords()) ? drain() : {}),
+    signedIn: () => owner !== null,
+    authExpired,
+    now: () => Date.now(),
+    // Only news when somebody is signed in: `autoDrainArmed()` is false without an owner whatever
+    // the triggers are doing, so a screen taking its hold before the session resolves changes
+    // nothing a subscriber can see — and `/folders` reloads its grid on every notification.
+    armedChanged: () => {
+      if (owner !== null) notify();
+    },
+  });
+  autoDrain = created;
+  return created;
+}
+
+/**
+ * Take a hold on the automatic drain triggers. Returns the release.
+ *
+ * Safe to call from as many screens as you like: see `createAutoDrain` for why a second call adds
+ * no second listener set.
+ */
+export function startAutoDrain(): () => void {
+  if (typeof window === 'undefined') return () => {};
+  return browserAutoDrain().start();
+}
+
+/**
+ * Will a capture queued now upload by itself when the network comes back?
+ *
+ * TRUE ONLY WHILE BOTH HALVES HOLD: the triggers are attached, and an account is signed in for
+ * them to upload as. It is what lets `OfflineBanner` promise an upload rather than only a safe
+ * keeping — and it goes false the moment either half does, which matters: a session refetch that
+ * fails offline reads as signed out (`next-auth` stores the failed fetch as a null session), the
+ * owner goes null, and from then on nothing uploads until the session is back.
+ */
+export function autoDrainArmed(): boolean {
+  return owner !== null && autoDrain !== null && autoDrain.armed();
 }

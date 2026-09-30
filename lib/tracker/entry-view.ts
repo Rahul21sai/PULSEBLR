@@ -28,6 +28,13 @@
  *      entry carries that as `lastKnown`, so the row can still say WHICH event it was. Measured when
  *      this was written: 12 of 16 tracker entries pointed at a deleted event, and 9 of those 12 had a
  *      folder that still knew its name.
+ *
+ * AND ONE THING IT ADDS: `folderId`, on every entry whose event the viewer has a folder for — listed
+ * or not. The board had no way to reach the morning-after screen (`/follow-ups/<folderId>`) from an
+ * Attended card, because nothing it received named the folder. It is the folder's id and nothing
+ * else of the folder's, and it comes from the SAME user-scoped folder rows `lastKnown` is built from,
+ * picked by the same first-wins rule — so "Open folder" and "Follow up" can never point at two
+ * different folders for one entry.
  * ─────────────────────────────────────────────────────────────────────────────────────────────
  */
 import { canViewEvent, type ViewableEvent } from '../events/visibility';
@@ -67,7 +74,7 @@ export interface LastKnownEvent {
   folderId: string;
 }
 
-/** The folder fields `lastKnown` is built from. The route must select `userId` too — see below. */
+/** The folder fields `lastKnown` and `folderId` are built from. The route must select `userId` too. */
 export interface FolderForEntry {
   _id: unknown;
   userId?: unknown;
@@ -75,6 +82,16 @@ export interface FolderForEntry {
   name?: unknown;
   eventDate?: unknown;
 }
+
+/**
+ * The projection for the list route's ONE folder query — every field of `FolderForEntry`.
+ *
+ * `userId` is the one a trim would cost silently: `shapeTrackerEntries` refuses a folder whose
+ * `userId` is not the viewer's (the second lock behind the route's own filter), and an unfetched
+ * `userId` is `undefined`, so dropping it from here would not leak anything — it would quietly
+ * refuse EVERY folder, and every "Follow up" and every `lastKnown` name would vanish with no error.
+ */
+export const TRACKER_FOLDER_SELECT = '_id userId eventId name eventDate';
 
 /**
  * The client's view of one event, or `null` when the viewer may no longer see it.
@@ -108,6 +125,11 @@ export function lastKnownFromFolder(folder: FolderForEntry | null | undefined): 
 export type ShapedTrackerEntry<E> = Omit<E, 'eventId'> & {
   eventId: TrackerEventView | null;
   lastKnown?: LastKnownEvent;
+  /**
+   * The viewer's own folder for this entry's event, when there is one — listed event or not. ABSENT
+   * (not null, not '') otherwise, so a client test of `entry.folderId` means "there is a folder".
+   */
+  folderId?: string;
 };
 
 /**
@@ -128,33 +150,17 @@ export function shapeTrackerEntry<E extends object>(
 }
 
 /**
- * The event ids behind `entries` that the viewer can no longer be shown — missing from `events`, or
- * present and not viewable. Deduplicated. The list route asks for folders for exactly these.
- */
-export function orphanedEventIds(
-  entries: readonly { eventId?: unknown }[],
-  events: readonly object[],
-  viewerId: string
-): string[] {
-  const viewable = new Set<string>();
-  for (const event of events) {
-    if (toTrackerEvent(event, viewerId)) viewable.add(String((event as { _id?: unknown })._id));
-  }
-  const out = new Set<string>();
-  for (const entry of entries) {
-    const id = String(entry.eventId);
-    if (!viewable.has(id)) out.add(id);
-  }
-  return [...out];
-}
-
-/**
  * Shape a whole listing.
+ *
+ * `folders` is the viewer's folders for ANY of these entries' events — one query in the route, over
+ * every event id in the listing — and it serves both folder-derived fields: `folderId` on every entry
+ * that has a folder, and `lastKnown` on the ones whose event is gone. (It used to be fetched for the
+ * gone ones only, through an `orphanedEventIds` helper that went with that narrower query.)
  *
  * A folder only contributes when its `userId` is the viewer's. The route already scopes its query
  * that way; this is the second lock, because `lastKnown` puts a folder's name on screen and a folder
- * name is somebody's own label for an event. When a user has several folders for one event the FIRST
- * wins, and the route sorts newest first.
+ * name is somebody's own label for an event — and `folderId` is a link somebody would follow. When a
+ * user has several folders for one event the FIRST wins, and the route sorts newest first.
  */
 export function shapeTrackerEntries<E extends { eventId?: unknown }>(
   entries: readonly E[],
@@ -174,11 +180,39 @@ export function shapeTrackerEntries<E extends { eventId?: unknown }>(
 
   return entries.map(entry => {
     const key = String(entry.eventId);
-    return shapeTrackerEntry(
-      entry,
-      eventById.get(key) ?? null,
-      viewerId,
-      lastKnownFromFolder(folderByEvent.get(key))
-    );
+    const folder = folderByEvent.get(key);
+    const shaped = shapeTrackerEntry(entry, eventById.get(key) ?? null, viewerId, lastKnownFromFolder(folder));
+    // The id and nothing else: the folder's name reaches the client only as `lastKnown`, and only for
+    // an entry whose event is gone.
+    if (folder) shaped.folderId = String(folder._id);
+    return shaped;
   });
+}
+
+/**
+ * Which events a `GET /api/tracker` listing says the viewer has saved — read on the CLIENT.
+ *
+ * FOR THE TWO SURFACES THAT CANNOT ASK THE SERVER THE USUAL WAY. `/topics/[slug]` is ISR and
+ * `/digest` deliberately reads no session, so neither can run `loadViewerStates` or the feed's
+ * `attachTracked` while it renders: the first would put one visitor's saved state into HTML cached for
+ * everybody, the second would break the promise that page is built on. Their `EventRow`s therefore
+ * arrived with no `tracked`, and every Save button said "not saved" whatever the reader had saved.
+ * The browser asks after hydration instead, for a signed-in reader only, and this reads the answer.
+ *
+ * IT IS THE SAME FACT, NOT A NEW RULE. Both server definitions ask whether a `TrackerEntry` exists for
+ * `(viewer, event)`; this listing IS those entries, so its event ids are that set. The one difference
+ * is an entry whose event the viewer may no longer see, which arrives with `eventId: null` and so
+ * contributes nothing — and such an event cannot be on either page, which lists public events only.
+ *
+ * Tolerant of anything, because it reads a network response: a non-array, a null row, or a row with
+ * no event id is skipped rather than thrown on.
+ */
+export function trackedEventIds(entries: unknown): Set<string> {
+  const ids = new Set<string>();
+  if (!Array.isArray(entries)) return ids;
+  for (const entry of entries) {
+    const event = (entry as { eventId?: unknown } | null)?.eventId as { _id?: unknown } | null | undefined;
+    if (event && typeof event === 'object' && event._id != null) ids.add(String(event._id));
+  }
+  return ids;
 }
