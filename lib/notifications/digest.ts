@@ -601,6 +601,7 @@ function toDigestEventView(doc: Record<string, unknown>): DigestEventView {
     organizer: (doc.organizer as string) ?? null,
     isFree: (doc.isFree as boolean) ?? null,
     applyLink: (doc.applyLink as string) ?? null,
+    source: (doc.source as string) ?? null,
   };
 }
 

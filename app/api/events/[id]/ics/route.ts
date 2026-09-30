@@ -81,6 +81,9 @@ export async function GET(
         id: String(event._id),
         title: event.title,
         description: event.description,
+        // Decides whether the start is a real time or only a date, which is then an all-day
+        // event. Absent reads as "real", so dropping this line fails silently. See `FeedEvent`.
+        source: event.source,
         startDateTime: event.startDateTime,
         endDateTime: event.endDateTime,
         venue: event.venue,

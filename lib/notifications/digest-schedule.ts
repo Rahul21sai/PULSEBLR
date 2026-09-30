@@ -35,6 +35,7 @@ import { DIGEST_FREQUENCIES, type DigestFrequency } from '../events/relevance';
 // about consent is the worst possible way for this to go wrong, and it would go wrong silently.
 import { hasBeenAsked, istDayStart, type UserPreferencesLike } from './reminder-policy';
 import { escapeHtml } from './html';
+import { TIME_TBA, startTimeKnown } from '@/lib/events/time-known';
 
 export { istDayStart };
 export type { DigestFrequency };
@@ -396,6 +397,8 @@ export interface DigestEventView {
   isFree?: boolean | null;
   /** Where to register, when the event carries one. Falls back to the event page. */
   applyLink?: string | null;
+  /** The adapter that produced it — decides whether the start TIME is real (lib/events/time-known.ts). */
+  source?: string | null;
 }
 
 export interface DigestEmail {
@@ -418,8 +421,9 @@ export function digestWhyLine(frequency: DigestFrequency): string {
 }
 
 /** "Tomorrow · 18:30", in IST, through the same helpers the feed uses. */
-function whenLabel(start: Date | string): string {
-  return `${dayHeading(start)} · ${timeIST(start)}`;
+function whenLabel(event: { startDateTime: Date | string; source?: string | null }): string {
+  const start = event.startDateTime;
+  return `${dayHeading(start)} · ${startTimeKnown(event) ? timeIST(start) : TIME_TBA}`;
 }
 
 function whereLabel(event: DigestEventView): string {
@@ -473,7 +477,7 @@ export function formatDigestEmail(input: {
   const lines: string[] = [lede, ''];
   for (const event of events) {
     lines.push(`• ${event.title}`);
-    lines.push(`  ${whenLabel(event.startDateTime)} · ${whereLabel(event)}`);
+    lines.push(`  ${whenLabel(event)} · ${whereLabel(event)}`);
     if (event.organizer) lines.push(`  Hosted by ${event.organizer}`);
     lines.push(`  ${event.applyLink || eventUrl(event)}`);
     lines.push('');
@@ -494,7 +498,7 @@ export function formatDigestEmail(input: {
       <div class="title"><a href="${escapeHtml(eventUrl(event))}">${escapeHtml(
         event.title
       )}</a></div>
-      <div class="meta">${escapeHtml(whenLabel(event.startDateTime))}</div>
+      <div class="meta">${escapeHtml(whenLabel(event))}</div>
       <div class="meta">${escapeHtml(whereLabel(event))}${
         event.isFree ? ' · Free' : ''
       }</div>${

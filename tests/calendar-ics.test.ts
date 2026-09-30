@@ -1,4 +1,6 @@
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import ICAL from 'ical.js';
 import { PLACEHOLDER_SOURCE_URL } from '../lib/events/placeholder';
 import {
@@ -732,5 +734,304 @@ describe('the manual-event placeholder never reaches a calendar', () => {
 
   it('a real source link is still printed (control)', () => {
     expect(unfold(buildEventIcs(baseDownload, NOW))).toContain(`Source: ${baseDownload.sourceUrl}`);
+  });
+});
+
+/* ── Date-only starts become all-day events, and a timed event does not change by a byte ───── */
+
+/**
+ * A CLEAN TIMED EVENT, AS BOTH PRODUCERS WROTE IT BEFORE DATE-ONLY STARTS BECAME ALL-DAY EVENTS.
+ * Captured by running the pre-change `lib/calendar/ics.ts` on `baseEvent` and pasted here. It is
+ * not regenerated from the current code, which would make the comparison circular.
+ *
+ * WHY A WHOLE-BODY GOLDEN RATHER THAN A FEW `toContain`s. The feed's ETag is a hash of the entire
+ * body, so ANY changed byte in a timed event turns every subscriber's next poll into a 200 with a
+ * new ETag instead of a free 304. That includes innocent changes like reordering two properties.
+ * Only a whole-body comparison can say "nothing changed". If you are changing it on purpose, every
+ * subscribed calendar re-downloads once: update the literal in the same commit, and say so.
+ */
+const TIMED_FEED_BEFORE = [
+  'BEGIN:VCALENDAR',
+  'VERSION:2.0',
+  'PRODID:-//PulseBLR//Bengaluru Events//EN',
+  'CALSCALE:GREGORIAN',
+  'NAME:PulseBLR — saved events',
+  'X-WR-CALNAME:PulseBLR — saved events',
+  'X-WR-CALDESC:Events you saved in PulseBLR.',
+  'X-WR-TIMEZONE:Asia/Kolkata',
+  'REFRESH-INTERVAL;VALUE=DURATION:PT4H',
+  'X-PUBLISHED-TTL:PT4H',
+  'BEGIN:VEVENT',
+  'UID:68a1b2c3d4e5f60718293a4b@pulseblr',
+  'DTSTAMP:20260901T050000Z',
+  'LAST-MODIFIED:20260901T050000Z',
+  'DTSTART:20260920T133000Z',
+  'DTEND:20260920T160000Z',
+  'SUMMARY:React Bengaluru Meetup #108',
+  'DESCRIPTION:Talks and pizza.\\n\\nHost: React Bangalore\\n\\nDetails: https://p',
+  ' ulseblr.example.com/events/68a1b2c3d4e5f60718293a4b\\n\\nSource: https://mee',
+  ' tup.com/reactbangalore/events/1',
+  'LOCATION:Razorpay HQ\\, Koramangala\\, Bengaluru',
+  'URL:https://pulseblr.example.com/events/68a1b2c3d4e5f60718293a4b',
+  'STATUS:CONFIRMED',
+  'BEGIN:VALARM',
+  'TRIGGER:-PT2H',
+  'ACTION:DISPLAY',
+  'DESCRIPTION:React Bengaluru Meetup #108 starts in 2 hours',
+  'END:VALARM',
+  'END:VEVENT',
+  'END:VCALENDAR',
+  '',
+].join(ICS_CRLF);
+
+/** The same event through the per-event download at `NOW`. That body never had a trailing CRLF. */
+const TIMED_DOWNLOAD_BEFORE = [
+  'BEGIN:VCALENDAR',
+  'VERSION:2.0',
+  'PRODID:-//PulseBLR//Bengaluru Events//EN',
+  'CALSCALE:GREGORIAN',
+  'METHOD:PUBLISH',
+  'BEGIN:VEVENT',
+  'UID:68a1b2c3d4e5f60718293a4b@pulseblr',
+  'DTSTAMP:20260927T060000Z',
+  'DTSTART:20260920T133000Z',
+  'DTEND:20260920T160000Z',
+  'SUMMARY:React Bengaluru Meetup #108',
+  'DESCRIPTION:Talks and pizza.\\n\\nHost: React Bangalore\\n\\nSource: https://me',
+  ' etup.com/reactbangalore/events/1',
+  'LOCATION:Razorpay HQ\\, Koramangala\\, Bengaluru',
+  'URL:https://meetup.com/reactbangalore/events/1',
+  'ORGANIZER;CN=React Bangalore:MAILTO:noreply@pulseblr.local',
+  'STATUS:CONFIRMED',
+  'BEGIN:VALARM',
+  'TRIGGER:-PT2H',
+  'ACTION:DISPLAY',
+  'DESCRIPTION:React Bengaluru Meetup #108 starts in 2 hours',
+  'END:VALARM',
+  'END:VEVENT',
+  'END:VCALENDAR',
+].join(ICS_CRLF);
+
+/** `icsEtag` of that feed body: the validator a subscriber's calendar is holding right now. */
+const TIMED_FEED_ETAG_BEFORE = '"xMCVNU2rsYG8UTShID9MVshlrff"';
+
+/**
+ * GIDS as developers.events publishes it: 27-30 Apr 2027, dates only, which ingest stores as
+ * midnight UTC. Before this change both producers wrote `DTSTART:20270427T000000Z` and
+ * `DTEND:20270430T000000Z`, which is 05:30 IST to 05:30 IST.
+ */
+const GIDS_DATES: Pick<FeedEvent, 'source' | 'startDateTime' | 'endDateTime'> = {
+  source: 'devevents',
+  startDateTime: new Date('2027-04-27T00:00:00.000Z'),
+  endDateTime: new Date('2027-04-30T00:00:00.000Z'),
+};
+
+/** One set of timing fields through BOTH producers, since the rule must hold in each. */
+const bothProducers = (timing: Partial<FeedEvent>) => [
+  { producer: 'buildCalendarFeed', body: feedOf([{ ...baseEvent, ...timing }]) },
+  { producer: 'buildEventIcs', body: buildEventIcs({ ...baseDownload, ...timing }, NOW) },
+];
+
+/** Every DTSTART and DTEND line exactly as written, after unfolding. */
+const dateLines = (body: string) =>
+  unfold(body)
+    .split(ICS_CRLF)
+    .filter(line => /^DT(START|END)[;:]/.test(line));
+
+/** The body's only VEVENT, as a real parser reads it. */
+const parsedEvent = (body: string) => {
+  const vevents = new ICAL.Component(ICAL.parse(body)).getAllSubcomponents('vevent');
+  expect(vevents).toHaveLength(1);
+  return new ICAL.Event(vevents[0]);
+};
+
+/** The DTEND a date-only GIDS start gets for a given end, through the feed. */
+const dtendFor = (endDateTime: Date | null) =>
+  dateLines(feedOf([{ ...baseEvent, ...GIDS_DATES, endDateTime }])).find(line =>
+    line.startsWith('DTEND')
+  );
+
+describe('a timed event is byte-identical to the output before date-only starts changed', () => {
+  it('the feed body, and so the ETag every subscriber holds', () => {
+    // A failure here is not cosmetic. Every subscribed calendar would get a fresh 200 on its next
+    // poll, and a feed that looked unchanged would be re-downloaded by every device for nothing.
+    expect(feedOf([baseEvent])).toBe(TIMED_FEED_BEFORE);
+    expect(icsEtag(feedOf([baseEvent]))).toBe(TIMED_FEED_ETAG_BEFORE);
+  });
+
+  it('the per-event download', () => {
+    expect(buildEventIcs(baseDownload, NOW)).toBe(TIMED_DOWNLOAD_BEFORE);
+  });
+
+  it('is unchanged by passing `source`, including developers.events with a real time', () => {
+    // A devevents row whose start was upgraded to a precise time at ingest (`preciseTimingUpgrade`)
+    // is a timed event like any other. `source` is only read, never written into the calendar.
+    for (const source of ['meetup', 'devevents', null]) {
+      expect(feedOf([{ ...baseEvent, source }]), String(source)).toBe(TIMED_FEED_BEFORE);
+      expect(buildEventIcs({ ...baseDownload, source }, NOW), String(source)).toBe(
+        TIMED_DOWNLOAD_BEFORE
+      );
+    }
+  });
+
+  it('and a real parser still reads it as the same UTC instants, not a date', () => {
+    for (const { producer, body } of bothProducers({})) {
+      const event = parsedEvent(body);
+      expect(event.startDate.isDate, producer).toBe(false);
+      expect(event.startDate.toJSDate().toISOString(), producer).toBe('2026-09-20T13:30:00.000Z');
+      expect(event.endDate.toJSDate().toISOString(), producer).toBe('2026-09-20T16:00:00.000Z');
+    }
+  });
+
+  it('keeps a midnight-UTC start from a source that publishes times (a 05:30 IST start is real)', () => {
+    // The source is half of the test, and this is the half that stops "midnight UTC" alone from
+    // turning a real 05:30 IST run or hackathon kick-off into an all-day event.
+    const timing = {
+      source: 'meetup',
+      startDateTime: new Date('2026-10-10T00:00:00.000Z'),
+      endDateTime: null,
+    };
+    for (const { producer, body } of bothProducers(timing)) {
+      expect(dateLines(body), producer).toEqual(['DTSTART:20261010T000000Z', 'DTEND:20261010T020000Z']);
+      expect(parsedEvent(body).startDate.isDate, producer).toBe(false);
+      expect(body, producer).toContain('TRIGGER:-PT2H');
+    }
+  });
+});
+
+describe('a date-only start is an ALL-DAY event on its IST day', () => {
+  it('emits DATE values in both producers, and no trace of the invented 05:30', () => {
+    // Before: `DTSTART:20270427T000000Z` and `DTEND:20270430T000000Z`, 05:30 IST to 05:30 IST.
+    for (const { producer, body } of bothProducers(GIDS_DATES)) {
+      expect(dateLines(body), producer).toEqual([
+        'DTSTART;VALUE=DATE:20270427',
+        'DTEND;VALUE=DATE:20270501',
+      ]);
+    }
+  });
+
+  it('parses as a date, not a time, on the right day, with a real parser', () => {
+    for (const { producer, body } of bothProducers(GIDS_DATES)) {
+      const event = parsedEvent(body);
+      expect(event.startDate.isDate, producer).toBe(true);
+      expect(event.startDate.toString(), producer).toBe('2027-04-27');
+      expect(event.endDate.isDate, producer).toBe(true);
+      // Four days: 27, 28, 29 and 30 April.
+      expect(event.duration.toSeconds(), producer).toBe(4 * 86_400);
+    }
+  });
+
+  it('treats DTEND as EXCLUSIVE: the last day is inside the event and the day after is not', () => {
+    // RFC 5545 §3.6.1 makes DTEND "the non-inclusive end of the event". An inclusive DTEND of
+    // 20270430 would silently drop the conference's final day from every calendar.
+    const event = parsedEvent(feedOf([{ ...baseEvent, ...GIDS_DATES }]));
+    const days = ['2027-04-26', '2027-04-27', '2027-04-28', '2027-04-29', '2027-04-30', '2027-05-01'];
+    const inside = days.map(day => {
+      const time = ICAL.Time.fromDateString(day);
+      return time.compare(event.startDate) >= 0 && time.compare(event.endDate) < 0;
+    });
+    expect(inside).toEqual([false, true, true, true, true, false]);
+  });
+
+  it('with no end, is exactly one day in both producers', () => {
+    for (const { producer, body } of bothProducers({ ...GIDS_DATES, endDateTime: null })) {
+      expect(dateLines(body), producer).toEqual([
+        'DTSTART;VALUE=DATE:20270427',
+        'DTEND;VALUE=DATE:20270428',
+      ]);
+      expect(parsedEvent(body).duration.toSeconds(), producer).toBe(86_400);
+    }
+  });
+
+  it('with an end on the same date (a one-day listing), is one day, not zero', () => {
+    expect(dtendFor(new Date('2027-04-27T00:00:00.000Z'))).toBe('DTEND;VALUE=DATE:20270428');
+  });
+
+  it('closes on the date of an end at midnight UTC, which is 05:30 IST on that same date', () => {
+    // developers.events stores the END as midnight UTC too, so this is the ordinary multi-day case.
+    expect(dtendFor(new Date('2027-04-30T00:00:00.000Z'))).toBe('DTEND;VALUE=DATE:20270501');
+  });
+
+  it('reads the last day in IST, not UTC, on either side of IST midnight', () => {
+    // A date-only START cannot show the difference: midnight UTC is 05:30 IST on the same date. An
+    // END can, because ingest may gap-fill a precise one from another source. Both instants below
+    // are 30 April in UTC, so a UTC day would give 20270501 for both.
+    expect(dtendFor(new Date('2027-04-30T18:29:59.999Z'))).toBe('DTEND;VALUE=DATE:20270501');
+    expect(dtendFor(new Date('2027-04-30T18:30:00.000Z'))).toBe('DTEND;VALUE=DATE:20270502');
+  });
+
+  it('never ends before it starts, when a gap-filled end sits on the previous IST day', () => {
+    // `isNearTwin` accepts a twin one IST day early for a date-only sighting, and ingest fills a
+    // missing end from it. RFC 5545 §3.8.2.2 requires DTEND to be later than DTSTART, and
+    // DTEND = DTSTART would be a zero-length event.
+    const early = new Date('2027-04-26T12:30:00.000Z');
+    for (const { producer, body } of bothProducers({ ...GIDS_DATES, endDateTime: early })) {
+      expect(dateLines(body), producer).toEqual([
+        'DTSTART;VALUE=DATE:20270427',
+        'DTEND;VALUE=DATE:20270428',
+      ]);
+      expect(parsedEvent(body).duration.toSeconds(), producer).toBe(86_400);
+    }
+  });
+
+  it('carries no alarm in either producer, because there is no start to count back from', () => {
+    // See "AND AN ALL-DAY EVENT CARRIES NO ALARM" in `lib/calendar/ics.ts`. A relative trigger on a
+    // DATE resolves against local midnight, so `-PT2H` would fire at 22:00 the night before.
+    for (const { producer, body } of bothProducers(GIDS_DATES)) {
+      expect(body, producer).not.toContain('BEGIN:VALARM');
+      expect(body, producer).not.toContain('starts in 2 hours');
+      const vevent = new ICAL.Component(ICAL.parse(body)).getFirstSubcomponent('vevent');
+      expect(vevent?.getAllSubcomponents('valarm'), producer).toHaveLength(0);
+    }
+  });
+
+  it('leaves a timed neighbour in the same feed exactly as it is alone', () => {
+    const gids: FeedEvent = {
+      ...baseEvent,
+      ...GIDS_DATES,
+      id: '68a1b2c3d4e5f60718293a4d',
+      title: 'GIDS',
+    };
+    const mixed = feedOf([gids, baseEvent]);
+
+    // The timed event's VEVENT, byte for byte, is the one in the solo golden.
+    const block = (body: string, id: string) =>
+      body
+        .split(`BEGIN:VEVENT${ICS_CRLF}`)
+        .find(chunk => chunk.startsWith(`UID:${id}@pulseblr`))
+        ?.split('END:VEVENT')[0];
+    expect(block(mixed, baseEvent.id)).toBeDefined();
+    expect(block(mixed, baseEvent.id)).toBe(block(TIMED_FEED_BEFORE, baseEvent.id));
+
+    const vevents = new ICAL.Component(ICAL.parse(mixed)).getAllSubcomponents('vevent');
+    const byUid = (uid: string) => vevents.find(vevent => vevent.getFirstPropertyValue('uid') === uid);
+    const timed = byUid(`${baseEvent.id}@pulseblr`);
+    const allDay = byUid(`${gids.id}@pulseblr`);
+    expect(timed && new ICAL.Event(timed).startDate.isDate).toBe(false);
+    expect(timed?.getAllSubcomponents('valarm')).toHaveLength(1);
+    expect(allDay && new ICAL.Event(allDay).startDate.isDate).toBe(true);
+    expect(allDay?.getAllSubcomponents('valarm')).toHaveLength(0);
+  });
+});
+
+describe('both routes hand the producers `source`, which fails OPEN when it is dropped', () => {
+  // The routes need mongoose and a request, so they cannot be run here. Their failure mode is why
+  // they are read instead: without `source`, `startTimeKnown` reads every start as a real time, and
+  // the calendar quietly goes back to 05:30 with every test above still green.
+  const read = (file: string) => readFileSync(path.join(process.cwd(), file), 'utf8');
+
+  it('the per-event download passes it', () => {
+    expect(read('app/api/events/[id]/ics/route.ts')).toMatch(/^\s*source: event\.source,$/m);
+  });
+
+  it('the feed selects it in the populate, and passes it', () => {
+    const route = read('app/api/calendar/[token]/feed.ics/route.ts');
+    // The select is concatenated single-quoted literals. A populate that omits a field gives
+    // `undefined`, not an error, which is the same trap the route's `canViewEvent` note records.
+    const select = /select:\s*((?:'[^']*'\s*\+?\s*)+)/.exec(route);
+    expect(select, 'no populate select found in the feed route').not.toBeNull();
+    const fields = select![1].replace(/'\s*\+\s*'/g, '').replace(/'/g, '').trim().split(/\s+/);
+    expect(fields).toContain('source');
+    expect(route).toMatch(/^\s*source: event\.source \?\? null,$/m);
   });
 });

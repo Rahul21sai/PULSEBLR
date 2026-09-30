@@ -34,6 +34,7 @@ import {
 } from '../format';
 import { truncate } from '../scrapers/core/text';
 import { isPlaceholderSourceUrl } from '../events/placeholder';
+import { startTimeKnown } from '@/lib/events/time-known';
 
 /** How much of a description `get_event` will return. */
 const DESCRIPTION_CHARS = 1200;
@@ -183,7 +184,9 @@ export function toMcpEventRow(event: StoredEvent): McpEventRow {
     startsAtIST:
       spanned > 0
         ? `${dayLabelIST(event.startDateTime)} onward (IST)`
-        : `${dayLabelIST(event.startDateTime)} · ${timeIST(event.startDateTime)} IST`,
+        : startTimeKnown(event)
+          ? `${dayLabelIST(event.startDateTime)} · ${timeIST(event.startDateTime)} IST`
+          : `${dayLabelIST(event.startDateTime)} · time TBA`,
     format: event.format,
     isOnline: event.format === 'online',
     city: text(event.city) ?? 'Bengaluru',

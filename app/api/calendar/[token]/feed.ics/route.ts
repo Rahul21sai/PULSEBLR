@@ -132,11 +132,15 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
        * across the ~1600 scraped rows — so a projection that omits a field it reads does not throw
        * and does not deny, it silently returns true for everything. `POST /api/folders` shipped
        * exactly that bug. Adding a field to the guard means adding it here.
+       *
+       * `source` fails open the same way. `startTimeKnown` reads an absent source as "this start
+       * is a real time", so without it every date-only developers.events row would silently go
+       * back to a confident 05:30 start instead of an all-day event. See `FeedEvent.source`.
        */
       .populate({
         path: 'eventId',
         select:
-          'title description startDateTime endDateTime venue address area city organizer ' +
+          'title description source startDateTime endDateTime venue address area city organizer ' +
           'onlineLink sourceUrl updatedAt visibility createdByUserId deletedAt',
       })
       .lean();
@@ -149,6 +153,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
             _id: unknown;
             title?: string;
             description?: string;
+            source?: string;
             startDateTime?: Date;
             endDateTime?: Date;
             venue?: string;
@@ -181,6 +186,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         id,
         title: event.title,
         description: event.description ?? null,
+        source: event.source ?? null,
         startDateTime: start,
         endDateTime: event.endDateTime ?? null,
         venue: event.venue ?? null,

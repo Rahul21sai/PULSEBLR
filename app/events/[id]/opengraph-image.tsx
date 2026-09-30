@@ -6,6 +6,7 @@ import Event from '@/lib/models/Event';
 import { isIndexableEvent } from '@/lib/events/seo';
 import { fullDateIST, timeIST } from '@/lib/format';
 import { displayOrganizer } from '@/lib/events/organizer-display';
+import { startTimeKnown } from '@/lib/events/time-known';
 
 /**
  * The share card for an event — GENERATED, never the scraped cover.
@@ -64,6 +65,7 @@ const BLUE = '#12513C';
 
 interface CardEvent {
   title: string;
+  source?: string | null;
   startDateTime: Date;
   venue?: string | null;
   area?: string | null;
@@ -78,7 +80,7 @@ async function loadCardEvent(id: string): Promise<CardEvent | null> {
 
   await connectDB();
   const doc = await Event.findById(id)
-    .select('title startDateTime venue area city format organizer isFree visibility deletedAt')
+    .select('title source startDateTime venue area city format organizer isFree visibility deletedAt')
     .lean();
   if (!doc) return null;
 
@@ -92,6 +94,7 @@ async function loadCardEvent(id: string): Promise<CardEvent | null> {
 
   return {
     title: doc.title,
+    source: doc.source ?? null,
     startDateTime: doc.startDateTime,
     venue: doc.venue ?? null,
     area: doc.area ?? null,
@@ -186,7 +189,9 @@ function EventCard({ event }: { event: CardEvent }) {
   const title = clamp(event.title, 96);
   const titleSize = title.length > 62 ? 56 : title.length > 40 ? 66 : 76;
 
-  const when = `${fullDateIST(event.startDateTime).toUpperCase()} · ${timeIST(event.startDateTime)} IST`;
+  const when = startTimeKnown(event)
+    ? `${fullDateIST(event.startDateTime).toUpperCase()} · ${timeIST(event.startDateTime)} IST`
+    : `${fullDateIST(event.startDateTime).toUpperCase()} · TIME TBA`;
   const footer = [clamp(where, 40), event.organizer ? clamp(displayOrganizer(event.organizer), 34) : null]
     .filter(Boolean)
     .join('  ·  ');

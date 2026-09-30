@@ -134,6 +134,7 @@ type EventRow = {
   city?: string | null;
   format?: string | null;
   applyLink?: string | null;
+  source?: string | null;
 };
 
 function isDuplicateKey(error: unknown): boolean {
@@ -260,7 +261,7 @@ export async function sendEventReminders(
     }
 
     const events = (await Event.find({ _id: { $in: eventIds } })
-      .select('title startDateTime venue area city format applyLink')
+      .select('title source startDateTime venue area city format applyLink')
       .lean()) as unknown as EventRow[];
 
     const due = events
@@ -404,6 +405,7 @@ export async function sendEventReminders(
       city: event.city ?? null,
       format: event.format ?? null,
       applyLink: event.applyLink ?? null,
+      source: event.source ?? null,
     }));
 
     const unsubscribeUrl = buildUnsubscribeUrl(APP_URL, userId, secret);

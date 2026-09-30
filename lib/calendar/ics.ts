@@ -68,10 +68,58 @@
  * 5545 cares about. An emoji ZWJ sequence or a combining accent can still be split across a fold
  * and will render as its parts — cosmetic, on a line no human reads, and the alternative is
  * shipping a segmenter to a calendar file.
+ *
+ * ── A DATE-ONLY START IS AN ALL-DAY EVENT, NOT A 05:30 ONE ───────────────────────────────────
+ * developers.events publishes a DATE, and it is stored as midnight UTC (all 9583 of its date values,
+ * measured 2026-09-27; see `lib/events/time-known.ts`). Both producers wrote that instant as a time.
+ * For GIDS, 27-30 Apr 2027, the output was `DTSTART:20270427T000000Z` and `DTEND:20270430T000000Z`,
+ * which every client shows as 05:30 IST to 05:30 IST: an invented start, a final day cut to five
+ * and a half hours, and a two-hour alarm at 03:30 IST on the first morning announcing a start time
+ * nobody published.
+ *
+ * So when `startTimeKnown` says the start is not a real time (the same predicate that prints "Time
+ * TBA" in the app, so the calendar and the app cannot disagree), `eventTiming` emits RFC 5545
+ * all-day values:
+ *   · `DTSTART;VALUE=DATE:` the IST calendar day of the start
+ *   · `DTEND;VALUE=DATE:` the day AFTER the last IST day. §3.6.1 makes DTEND "the non-inclusive
+ *     end of the event", so 27-30 Apr ends `20270501`. With no end, the event is one day, and
+ *     DTEND is still written rather than left to §3.6.1's one-day default.
+ * IST days through `dayKeyIST`, never the UTC day. For a midnight-UTC start the two agree, so the
+ * rule only shows at the END: `endDateTime` is gap-filled at ingest from another source's sighting
+ * (`numericFillIfEmpty` in `mergeInto`), and a precise end at or after 18:30Z is the next IST day.
+ *
+ * That gap-fill is also why the last day may never precede the first. `isNearTwin` accepts a twin
+ * one IST day either side of a date-only sighting, and GIDS's two sources really do disagree by a
+ * day, so a filled end can land BEFORE the start. §3.8.2.2 requires DTEND to be later in time than
+ * DTSTART, and an equal pair would be a zero-length event, so such an event is its first day alone.
+ *
+ * A TIMED EVENT IS UNCHANGED, BYTE FOR BYTE. The feed's ETag is a hash of the body, so any change
+ * to a timed event would re-download every subscriber's calendar on the next poll for nothing.
+ * `tests/calendar-ics.test.ts` pins a clean timed event's full output from both producers, and
+ * the feed's ETag, as they were before this change.
+ *
+ * ── AND AN ALL-DAY EVENT CARRIES NO ALARM ────────────────────────────────────────────────────
+ * The alarm's only content is "<title> starts in 2 hours", a claim computed from a start time,
+ * which is the one thing a date-only event does not have. Porting the trigger is worse than
+ * dropping it: §3.8.6.3 resolves a relative trigger on a DATE event "relative to 00:00:00 of the
+ * user's configured time zone", so `-PT2H` would fire at 22:00 the night before and say the event
+ * starts at midnight. The two replacements considered, and why neither was taken:
+ *   · MORNING OF (`PT8H`, say). It can fire after the doors open, because the start is exactly the
+ *     unknown. That moves the invented 05:30 from the calendar grid to the lock screen.
+ *   · THE DAY BEFORE (`-PT15H`, 09:00). The only trigger certain to come first, and PulseBLR's own
+ *     reminder already fires then. The reminder cron runs at 08:00 IST, and `isReminderDue` takes a
+ *     36-hour lead, strictly in the future, so it reaches a date-only start (stored as 05:30 IST) on
+ *     the morning before. For anyone with reminders on, this would be a second notice of the same
+ *     thing.
+ * The cost: someone who relies on the calendar alone gets no alert for these events. The all-day
+ * block on every day of the event is the reminder. `alarmLines` holds the decision for BOTH
+ * producers, so the download and the feed cannot disagree about which events carry one.
  */
 import crypto from 'crypto';
 import { hasControlChars, replaceLineBreaks, stripControlChars } from '../security/control-chars';
 import { isPlaceholderSourceUrl } from '../events/placeholder';
+import { startTimeKnown } from '../events/time-known';
+import { dayKeyIST, dayKeyOffsetIST } from '../format';
 
 /** RFC 5545 §3.1: "Lines of text SHOULD NOT be longer than 75 octets, excluding the line break." */
 const MAX_LINE_OCTETS = 75;
@@ -247,6 +295,16 @@ export interface FeedEvent {
   id: string;
   title: string;
   description?: string | null;
+  /**
+   * The platform the row came from. Read only to ask `startTimeKnown` whether `startDateTime` is a
+   * real time, and never written into the calendar.
+   *
+   * ⚠ ABSENT MEANS "THE TIME IS REAL", SO A CALLER THAT DROPS IT FAILS SILENTLY. Every
+   * developers.events row would go back to a confident 05:30 start, with no error anywhere. That is
+   * the same fail-open shape as the `canViewEvent` projection note in the feed route. Both routes
+   * pass it, and `tests/calendar-ics.test.ts` reads the two route files to check that they do.
+   */
+  source?: string | null;
   startDateTime: Date | string;
   endDateTime?: Date | string | null;
   venue?: string | null;
@@ -280,10 +338,13 @@ export interface CalendarFeedInput {
 /** How often a client is asked to re-poll. Advisory — see the honesty note in the settings UI. */
 const REFRESH_DURATION = 'PT4H';
 
-/** Lead time on the alarm, matching the per-event download so a merge does not double up. */
+/**
+ * Lead time on the alarm. Both producers emit it through `alarmLines`, so a merge does not double
+ * up, and neither emits it on an all-day event (see the header).
+ */
 const ALARM_TRIGGER = '-PT2H';
 
-/** No published end time: assume two hours, as the per-event route does. */
+/** A TIMED event with no published end: assume two hours. An all-day one is a whole day instead. */
 const DEFAULT_DURATION_MS = 2 * 3600 * 1000;
 
 /**
@@ -333,6 +394,68 @@ function truncateProse(value: string): string {
   return `${cut.trimEnd()}…`;
 }
 
+/** A `YYYY-MM-DD` IST day key in RFC 5545's basic DATE form (§3.3.4): `20270427`. */
+function toIcsDate(dayKey: string): string {
+  return dayKey.replace(/-/g, '');
+}
+
+/** An event's DTSTART and DTEND content lines, and whether they are an all-day (DATE) pair. */
+interface EventTiming {
+  dtstart: string;
+  dtend: string;
+  allDay: boolean;
+}
+
+/**
+ * DTSTART and DTEND for one event, shared by both producers.
+ *
+ * A real start time gives exactly the lines both producers always wrote, and the golden test in
+ * `tests/calendar-ics.test.ts` holds them to that. A date-only start gives an all-day pair. See "A
+ * DATE-ONLY START IS AN ALL-DAY EVENT" in the header for the rule, the IST day and the clamp.
+ */
+function eventTiming(event: Pick<FeedEvent, 'source' | 'startDateTime' | 'endDateTime'>): EventTiming {
+  const start = asDate(event.startDateTime);
+
+  if (startTimeKnown(event)) {
+    // No end time published: assume two hours, the typical meetup length. Emitting a zero-length
+    // event makes it render as a sliver users can't click.
+    const end = event.endDateTime
+      ? asDate(event.endDateTime)
+      : new Date(start.getTime() + DEFAULT_DURATION_MS);
+    return { dtstart: `DTSTART:${toIcsUtc(start)}`, dtend: `DTEND:${toIcsUtc(end)}`, allDay: false };
+  }
+
+  const firstDay = dayKeyIST(start);
+  const end = event.endDateTime ? asDate(event.endDateTime) : null;
+  // The last IST day is the end's, unless there is no usable end or it falls before the first day.
+  // Day keys are YYYY-MM-DD, so comparing them as strings compares the dates.
+  const lastDay =
+    end !== null && !Number.isNaN(end.getTime()) && dayKeyIST(end) > firstDay ? end : start;
+  return {
+    dtstart: `DTSTART;VALUE=DATE:${toIcsDate(firstDay)}`,
+    // Exclusive: the IST day after the last one. IST has no DST, so +24h is always the next day.
+    dtend: `DTEND;VALUE=DATE:${toIcsDate(dayKeyOffsetIST(1, lastDay))}`,
+    allDay: true,
+  };
+}
+
+/**
+ * The two-hour VALARM, or no lines at all for an all-day event.
+ *
+ * One function for both producers, so the download and the feed cannot disagree about which events
+ * carry an alarm. See "AND AN ALL-DAY EVENT CARRIES NO ALARM" in the header for why.
+ */
+function alarmLines(title: string, timing: EventTiming): string[] {
+  if (timing.allDay) return [];
+  return [
+    'BEGIN:VALARM',
+    `TRIGGER:${ALARM_TRIGGER}`,
+    'ACTION:DISPLAY',
+    `DESCRIPTION:${escapeIcsText(title)} starts in 2 hours`,
+    'END:VALARM',
+  ];
+}
+
 /**
  * The whole feed as one VCALENDAR.
  *
@@ -371,19 +494,18 @@ export function buildCalendarFeed(input: CalendarFeedInput): string {
     `NAME:${escapeIcsText(calendarName)}`,
     `X-WR-CALNAME:${escapeIcsText(calendarName)}`,
     `X-WR-CALDESC:${escapeIcsText(calendarDescription)}`,
-    // Every DTSTART below is a UTC instant, so this changes no event's time. It tells the client
-    // which zone to PRESENT a floating value in and which zone the calendar is "about", which is
-    // what stops a subscriber in another zone seeing a Bengaluru evening on the wrong day.
+    // Every timed DTSTART below is a UTC instant, and an all-day one is a DATE, which carries no
+    // time of day at all, so this changes no event's time. It tells the client which zone to
+    // PRESENT a floating value in and which zone the calendar is "about", which is what stops a
+    // subscriber in another zone seeing a Bengaluru evening on the wrong day.
     'X-WR-TIMEZONE:Asia/Kolkata',
     `REFRESH-INTERVAL;VALUE=DURATION:${REFRESH_DURATION}`,
     `X-PUBLISHED-TTL:${REFRESH_DURATION}`,
   ];
 
   for (const event of events) {
-    const start = asDate(event.startDateTime);
-    const end = event.endDateTime
-      ? asDate(event.endDateTime)
-      : new Date(start.getTime() + DEFAULT_DURATION_MS);
+    // Timed, or all-day when the start is only a date. See the header.
+    const timing = eventTiming(event);
     const stamp = toIcsUtc(asDate(event.updatedAt));
 
     const location = [event.venue, event.address, event.area, event.city]
@@ -412,8 +534,8 @@ export function buildCalendarFeed(input: CalendarFeedInput): string {
       `UID:${escapeIcsText(event.id)}@pulseblr`,
       `DTSTAMP:${stamp}`,
       `LAST-MODIFIED:${stamp}`,
-      `DTSTART:${toIcsUtc(start)}`,
-      `DTEND:${toIcsUtc(end)}`,
+      timing.dtstart,
+      timing.dtend,
       `SUMMARY:${escapeIcsText(event.title)}`
     );
     if (descriptionParts.length) {
@@ -425,15 +547,7 @@ export function buildCalendarFeed(input: CalendarFeedInput): string {
     // that validates wins, so a bad `eventUrl` can no longer hide a good `sourceUrl`.
     const url = icsUri(event.eventUrl) ?? icsUri(sourceUrl);
     if (url) lines.push(`URL:${url}`);
-    lines.push(
-      'STATUS:CONFIRMED',
-      'BEGIN:VALARM',
-      `TRIGGER:${ALARM_TRIGGER}`,
-      'ACTION:DISPLAY',
-      `DESCRIPTION:${escapeIcsText(event.title)} starts in 2 hours`,
-      'END:VALARM',
-      'END:VEVENT'
-    );
+    lines.push('STATUS:CONFIRMED', ...alarmLines(event.title, timing), 'END:VEVENT');
   }
 
   lines.push('END:VCALENDAR');
@@ -472,14 +586,14 @@ export type DownloadEvent = Omit<FeedEvent, 'eventUrl' | 'updatedAt'>;
  * it is why this body, unlike the feed's, has no ETag to keep stable. `METHOD:PUBLISH` is here and
  * absent from the feed on purpose; see `buildCalendarFeed`. There is NO trailing CRLF, unlike the
  * feed. The route never emitted one, and this move was meant to be byte-identical.
+ *
+ * DTSTART, DTEND and the alarm come from `eventTiming` and `alarmLines`, the same two functions the
+ * feed uses. So a date-only event is all-day and alarm-free here too, and a download merged with a
+ * subscription by UID agrees with it on both.
  */
 export function buildEventIcs(event: DownloadEvent, now: Date): string {
-  const start = asDate(event.startDateTime);
-  // No end time published: assume two hours, the typical meetup length. Emitting a zero-length
-  // event makes it render as a sliver users can't click.
-  const end = event.endDateTime
-    ? asDate(event.endDateTime)
-    : new Date(start.getTime() + DEFAULT_DURATION_MS);
+  // Timed, or all-day when the start is only a date. See the header.
+  const timing = eventTiming(event);
 
   const location = [event.venue, event.address, event.area, event.city]
     .filter(Boolean)
@@ -505,19 +619,15 @@ export function buildEventIcs(event: DownloadEvent, now: Date): string {
     // The same UID string as the feed, so a user who subscribes AND downloads gets one event.
     `UID:${escapeIcsText(event.id)}@pulseblr`,
     `DTSTAMP:${toIcsUtc(now)}`,
-    `DTSTART:${toIcsUtc(start)}`,
-    `DTEND:${toIcsUtc(end)}`,
+    timing.dtstart,
+    timing.dtend,
     `SUMMARY:${escapeIcsText(event.title)}`,
     `DESCRIPTION:${escapeIcsText(descriptionParts.join('\n\n'))}`,
     location ? `LOCATION:${escapeIcsText(location)}` : '',
     url ? `URL:${url}` : '',
     organizer ? `ORGANIZER;CN=${organizer}:MAILTO:noreply@pulseblr.local` : '',
     'STATUS:CONFIRMED',
-    'BEGIN:VALARM',
-    `TRIGGER:${ALARM_TRIGGER}`,
-    'ACTION:DISPLAY',
-    `DESCRIPTION:${escapeIcsText(event.title)} starts in 2 hours`,
-    'END:VALARM',
+    ...alarmLines(event.title, timing),
     'END:VEVENT',
     'END:VCALENDAR',
   ]
