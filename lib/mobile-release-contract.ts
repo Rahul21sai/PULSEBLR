@@ -35,6 +35,7 @@ type TwaManifest = {
   appVersion?: string;
   iconUrl?: string;
   maskableIconUrl?: string;
+  monochromeIconUrl?: string;
   shortcuts?: unknown;
   shareTarget?: unknown;
 };
@@ -43,6 +44,13 @@ const REQUIRED_SHORTCUT_PATHS = ['/scan', '/card', '/', '/tracker', '/calendar']
 const PRODUCTION_URL = new URL(PRODUCTION_ORIGIN);
 const CANONICAL_ICON_URL = `${PRODUCTION_ORIGIN}/icon-512.png`;
 const CANONICAL_MASKABLE_ICON_URL = `${PRODUCTION_ORIGIN}/icon-maskable-512.png`;
+/**
+ * The Android notification small icon. Bubblewrap 1.25.0 renders it from `monochromeIconUrl ||
+ * iconUrl` (TwaGenerator.js), and Android draws a small icon from its ALPHA CHANNEL ONLY, so
+ * falling back to the opaque iconUrl tile put a solid grey square on every notification. This is
+ * the transparent badge rendered from public/icon-mono.svg, the same file sw.js uses for web push.
+ */
+const CANONICAL_MONOCHROME_ICON_URL = `${PRODUCTION_ORIGIN}/badge-96.png`;
 const CANONICAL_SHORTCUT_ICON_URL = `${PRODUCTION_ORIGIN}/icon-192.png`;
 
 type ResolvedUrl = { href: string; origin: string; pathname: string };
@@ -195,6 +203,11 @@ export function validateWebAndTwaParity(web: WebManifest, twa: TwaManifest): Rel
   );
   add(twa.iconUrl === CANONICAL_ICON_URL, 'icon-url', 'Android icon URL must use the permanent origin');
   add(twa.maskableIconUrl === CANONICAL_MASKABLE_ICON_URL, 'maskable-icon-url', 'Android maskable icon URL must use the permanent origin');
+  add(
+    twa.monochromeIconUrl === CANONICAL_MONOCHROME_ICON_URL,
+    'monochrome-icon-url',
+    `Android monochromeIconUrl must be ${CANONICAL_MONOCHROME_ICON_URL}; without it the notification icon is rendered from the opaque iconUrl tile`,
+  );
 
   return issues;
 }

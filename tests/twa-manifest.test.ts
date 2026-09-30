@@ -47,6 +47,21 @@ describe('PulseBLR mobile release contract', () => {
     });
     expect(twa.iconUrl).toBe('https://pulseblr-u9f1.vercel.app/icon-512.png');
     expect(twa.maskableIconUrl).toBe('https://pulseblr-u9f1.vercel.app/icon-maskable-512.png');
+    expect(twa.monochromeIconUrl).toBe('https://pulseblr-u9f1.vercel.app/badge-96.png');
+  });
+
+  it.each([
+    ['missing (Bubblewrap falls back to the opaque iconUrl tile)', undefined],
+    ['the opaque launcher tile', 'https://pulseblr-u9f1.vercel.app/icon-512.png'],
+    ['the badge on another origin', 'https://cdn.example/badge-96.png'],
+  ])('reports a notification icon that is %s', (_label, value) => {
+    // Android draws the notification small icon from alpha alone, so anything but the transparent
+    // badge is a grey square on every notification.
+    const web = read<Record<string, unknown>>('public/manifest.json');
+    const twa = structuredClone(read<Record<string, unknown>>('android/twa-manifest.json'));
+    if (value === undefined) delete twa.monochromeIconUrl;
+    else twa.monochromeIconUrl = value;
+    expect(validateWebAndTwaParity(web, twa)).toContainEqual(expect.objectContaining({ code: 'monochrome-icon-url' }));
   });
 
   it('reports a missing Calendar shortcut as a user-visible integration break', () => {

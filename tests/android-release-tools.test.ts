@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { copyFileSync, existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import sharp from 'sharp';
 import { afterEach, describe, expect, it } from 'vitest';
 import { preflightProductionOrigin } from '../scripts/android-preflight';
 import {
@@ -33,6 +34,7 @@ import {
   GRADLE_DISTRIBUTION_SHA256,
   LOCAL_DEBUG_MARKER,
   RELEASE_CONTEXT_VARIABLES,
+  bubblewrapIconRenderer,
   expectedEmbeddedWebManifest,
   parseAndroidVerifyArgs,
   parseGeneratedProject,
@@ -321,7 +323,7 @@ describe('Android production-origin preflight', () => {
     const requests: Array<{ url: string; init?: RequestInit }> = [];
 
     await expect(preflightProductionOrigin({ expectedReleaseId, fetchImpl: successfulFetch(requests) })).resolves.toEqual({
-      checked: 13,
+      checked: 14,
       urls: [
         'https://pulseblr-u9f1.vercel.app/api/release-identity',
         'https://pulseblr-u9f1.vercel.app/manifest.json',
@@ -333,9 +335,11 @@ describe('Android production-origin preflight', () => {
         'https://pulseblr-u9f1.vercel.app/add-event',
         'https://pulseblr-u9f1.vercel.app/privacy',
         'https://pulseblr-u9f1.vercel.app/delete-account',
-        'https://pulseblr-u9f1.vercel.app/icon-192.png',
         'https://pulseblr-u9f1.vercel.app/icon-512.png',
+        'https://pulseblr-u9f1.vercel.app/icon-192.png',
         'https://pulseblr-u9f1.vercel.app/icon-maskable-512.png',
+        // The notification small icon: Bubblewrap embeds it, so the deployed bytes are checked too.
+        'https://pulseblr-u9f1.vercel.app/badge-96.png',
       ],
     });
     expect(requests.every(request => request.init?.redirect === 'manual')).toBe(true);
@@ -1088,10 +1092,11 @@ describe('local-debug generation', () => {
     const twa = readJson('android/twa-manifest.json');
     const local = localDebugTwaManifest(twa, 'http://127.0.0.1:5555');
     expect(changedJsonPaths(twa, local).sort()).toEqual([
-      'iconUrl', 'maskableIconUrl', 'shortcuts.0.chosenIconUrl', 'shortcuts.1.chosenIconUrl',
+      'iconUrl', 'maskableIconUrl', 'monochromeIconUrl', 'shortcuts.0.chosenIconUrl', 'shortcuts.1.chosenIconUrl',
       'shortcuts.2.chosenIconUrl', 'shortcuts.3.chosenIconUrl', 'shortcuts.4.chosenIconUrl', 'webManifestUrl',
     ]);
     expect(local.iconUrl).toBe('http://127.0.0.1:5555/icon-512.png');
+    expect(local.monochromeIconUrl).toBe('http://127.0.0.1:5555/badge-96.png');
     for (const field of ['host', 'packageId', 'startUrl', 'fullScopeUrl', 'shareTarget', 'appVersionCode']) {
       expect(local[field]).toEqual(twa[field]);
     }
@@ -1104,7 +1109,24 @@ describe('local-debug generation', () => {
     expect(() => localDebugTwaManifest(twa, 'https://evil.example')).toThrow(/127\.0\.0\.1/);
     expect(() => localDebugTwaManifest({ ...twa, iconUrl: 'https://pulseblr-u9f1.vercel.app/icon-96.png' }, 'http://127.0.0.1:5555')).toThrow(/served asset/);
     expect(() => localDebugTwaManifest({ ...twa, iconUrl: 'https://other.example/icon-512.png' }, 'http://127.0.0.1:5555')).toThrow(/served asset/);
-    expect(() => localDebugTwaManifest({ ...twa, monochromeIconUrl: 'https://pulseblr-u9f1.vercel.app/icon-512.png' }, 'http://127.0.0.1:5555')).toThrow(/monochromeIconUrl/);
+  });
+
+  it('accounts for every field Bubblewrap fetches: monochromeIconUrl is rewritten, never passed through or dropped', () => {
+    // A fetched URL the rewrite skipped would be downloaded from PRODUCTION, where the loopback
+    // server cannot see it, so each one is either rewritten or refused. Nothing slips through.
+    const twa = readJson('android/twa-manifest.json');
+    const origin = 'http://127.0.0.1:5555';
+    const withoutMonochrome = structuredClone(twa);
+    delete withoutMonochrome.monochromeIconUrl;
+    expect(() => localDebugTwaManifest(withoutMonochrome, origin)).toThrow(/monochromeIconUrl must be a URL string/);
+    expect(() => localDebugTwaManifest({ ...twa, monochromeIconUrl: 'https://pulseblr-u9f1.vercel.app/icon-96.png' }, origin)).toThrow(/monochromeIconUrl .*served asset/);
+    expect(() => localDebugTwaManifest({ ...twa, monochromeIconUrl: 'https://other.example/badge-96.png' }, origin)).toThrow(/monochromeIconUrl .*served asset/);
+    // The shortcut icon variants are still outside the asset table, so they are still refused.
+    for (const variant of ['chosenMaskableIconUrl', 'chosenMonochromeIconUrl']) {
+      const withVariant = structuredClone(twa);
+      (withVariant.shortcuts as Array<Record<string, unknown>>)[2][variant] = 'https://pulseblr-u9f1.vercel.app/badge-96.png';
+      expect(() => localDebugTwaManifest(withVariant, origin)).toThrow(/shortcut 2 icon variants/);
+    }
   });
 
   it('serves exactly the checked-in bytes on 127.0.0.1 and records every other request', async () => {
@@ -1132,7 +1154,7 @@ describe('local-debug generation', () => {
 
   async function fakeBubblewrap(args: readonly string[], extraPath?: string, skip?: string): Promise<{ status: number }> {
     const manifest = JSON.parse(readFileSync(args[args.indexOf('--manifest') + 1], 'utf8')) as Record<string, unknown>;
-    const urls = [manifest.iconUrl, manifest.maskableIconUrl, manifest.webManifestUrl,
+    const urls = [manifest.iconUrl, manifest.maskableIconUrl, manifest.monochromeIconUrl, manifest.webManifestUrl,
       ...(manifest.shortcuts as Array<{ chosenIconUrl: string }>).map(s => s.chosenIconUrl)] as string[];
     for (const url of urls.filter(url => !skip || !url.endsWith(skip))) await (await fetch(url)).arrayBuffer();
     if (extraPath) await (await fetch(new URL(extraPath, String(manifest.iconUrl)))).arrayBuffer();
@@ -1202,8 +1224,10 @@ describe('origin asset bytes before deployed-origin generation', () => {
   }
 
   it('accepts origin bytes equal to the checked-in files (manifest compared as git stores it, LF)', async () => {
-    expect(await verifyOriginAssets({ repositoryRoot: root, fetchImpl: originFetch() })).toHaveLength(4);
-    expect(await verifyOriginAssets({ repositoryRoot: root, fetchImpl: originFetch(undefined, true) })).toHaveLength(4);
+    const routes = (checks: Array<{ url: string }>) => checks.map(check => new URL(check.url).pathname);
+    const expected = ['/icon-512.png', '/icon-192.png', '/icon-maskable-512.png', '/badge-96.png', '/manifest.json'];
+    expect(routes(await verifyOriginAssets({ repositoryRoot: root, fetchImpl: originFetch() }))).toEqual(expected);
+    expect(routes(await verifyOriginAssets({ repositoryRoot: root, fetchImpl: originFetch(undefined, true) }))).toEqual(expected);
   });
 
   it.each([
@@ -1288,6 +1312,60 @@ describe('generated project build integrity and embedded bytes', () => {
     writeFileSync(path.join(projectRoot, 'app/src/main/res/drawable-mdpi/unexpected.png'), 'x');
     await expect(verifyGeneratedIcons(projectRoot, repositoryRoot, { renderIcon: fakeRender })).rejects.toThrow(/unexpected\.png/);
   });
+});
+
+describe('Android notification small icon', () => {
+  // Android draws a small icon from its ALPHA CHANNEL ONLY. Bubblewrap renders it from
+  // `monochromeIconUrl || iconUrl`, and with no monochromeIconUrl that was the opaque launcher tile:
+  // a solid grey square on every notification.
+  const notificationRenders = BUBBLEWRAP_ICON_RENDERS.filter(render =>
+    render.outputs.some(([file]) => file.endsWith('/ic_notification_icon.png')));
+
+  it('is verified as a rendering of the badge that twa-manifest.json names, never of the iconUrl tile', () => {
+    expect(notificationRenders).toHaveLength(1);
+    const [render] = notificationRenders;
+    expect(render.route).toBe('/badge-96.png');
+    expect(render.outputs.map(([, size]) => size)).toEqual([24, 36, 48, 72, 96]);
+    expect(render.outputs.every(([file]) => file.endsWith('/ic_notification_icon.png'))).toBe(true);
+    const twa = readJson('android/twa-manifest.json');
+    expect(twa.monochromeIconUrl).toBe(`https://pulseblr-u9f1.vercel.app${render.route}`);
+    expect(BUBBLEWRAP_ASSETS.find(asset => asset.route === render.route)?.file).toBe('public/badge-96.png');
+  });
+
+  async function alphaOf(png: Buffer) {
+    const { data, info } = await sharp(png).raw().toBuffer({ resolveWithObject: true });
+    expect(info.channels).toBe(4);
+    const alpha = (x: number, y: number) => data[(y * info.width + x) * 4 + 3];
+    let transparent = 0;
+    let opaque = 0;
+    for (let index = 3; index < data.length; index += 4) {
+      if (data[index] === 0) transparent += 1;
+      if (data[index] === 255) opaque += 1;
+    }
+    const pixels = info.width * info.height;
+    return {
+      corners: [alpha(0, 0), alpha(info.width - 1, 0), alpha(0, info.height - 1), alpha(info.width - 1, info.height - 1)],
+      transparent: transparent / pixels,
+      opaque: opaque / pixels,
+    };
+  }
+
+  // Bubblewrap's OWN renderer, the one verify-generated compares against. Its first load in a
+  // process was measured at 21 s on the dev machine (Defender scanning Jimp); warm it is ~1 s.
+  it('keeps a transparent ground through Bubblewrap\'s own renderer at every density, where the tile renders opaque', async () => {
+    const render = bubblewrapIconRenderer(root);
+    const badge = readFileSync(path.join(root, 'public', 'badge-96.png'));
+    const tile = readFileSync(path.join(root, 'public', 'icon-512.png'));
+    for (const [, size] of notificationRenders[0].outputs) {
+      const fromBadge = await alphaOf(await render(badge, size, undefined));
+      expect(fromBadge.corners, `${size}px corners`).toEqual([0, 0, 0, 0]);
+      // Measured 85-91% transparent, 3.6-7.1% fully opaque: a trace on nothing.
+      expect(fromBadge.transparent, `${size}px transparent share`).toBeGreaterThan(0.8);
+      expect(fromBadge.opaque, `${size}px opaque share`).toBeGreaterThan(0);
+      // The control: the source this replaced has no transparent pixel at all, i.e. a square.
+      expect((await alphaOf(await render(tile, size, undefined))).transparent, `${size}px tile`).toBe(0);
+    }
+  }, 180_000);
 });
 
 describe('Gradle runner memory bounds and local-debug refusal', () => {

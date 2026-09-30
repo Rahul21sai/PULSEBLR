@@ -34,11 +34,17 @@
  *
  * MASKABLE vs ANY — deliberately the same artwork, and that is a decision rather than an
  * oversight. `public/icon-512.svg` is authored full-bleed with the trace spanning ~60% of the
- * width, comfortably inside the maskable safe zone (the central 80% circle). Used as `any` it
- * simply reads as an app icon with generous padding, which is normal. Emitting a second, tighter
- * variant would mean redesigning someone's mark to save 12% of margin, so the manifest points
- * both purposes at these files. If a tighter `any` is ever wanted, `TRACE_SCALE` below is the
- * one knob: it rescales the trace about the tile centre and nothing else.
+ * width, inside the maskable safe zone. Used as `any` it simply reads as an app icon with generous
+ * padding, which is normal. Emitting a second, tighter variant would mean redesigning someone's
+ * mark to save margin it does not need, so the manifest points both purposes at these files. If a
+ * tighter `any` is ever wanted, `TRACE_SCALE` below is the one knob: it rescales the trace about
+ * the tile centre and nothing else.
+ *
+ * "Inside the safe zone" is MEASURED, not eyeballed, and it was once doubted: CLAUDE.md §18 listed
+ * the byte-identical maskable as "adaptive masks may crop it". Measured 2026-09-30, the farthest
+ * non-ground pixel is 33.8% of the size from the centre at 512 and 34.0% at 192, against the web's
+ * 40% circle and Android's tighter 36.3% (see MASKABLE_SAFE_RADIUS). `assertMaskableSafeZone`
+ * now refuses to write a maskable that is not, and tests/maskable-icon.test.ts measures the files.
  *
  * Run with `npm run icons`. NOT wired to `postinstall` — `copy-wasm.js` owns that hook, and
  * these outputs are committed artefacts rather than per-install state.
@@ -81,6 +87,15 @@ const ICON_SIZES = [48, 72, 96, 128, 144, 152, 192, 256, 384, 512];
 
 /** Sizes that also get a `-maskable` copy, matching the manifest's maskable entries. */
 const MASKABLE_SIZES = [192, 512];
+
+/**
+ * How far from the centre a maskable icon's mark may reach, as a fraction of the icon's size. The
+ * web manifest's safe zone is a circle of radius 0.40, but the binding limit is Android's as
+ * Bubblewrap lays the file out: its adaptive-icon template draws ic_maskable inset 8.5dp inside the
+ * 108dp layer, so the 91dp image carries Android's 66dp never-clipped circle at 33/91 = 0.363 of its
+ * size. tests/maskable-icon.test.ts derives the same bound from the pinned template.
+ */
+const MASKABLE_SAFE_RADIUS = 33 / 91;
 
 /** iOS home screen. 180 is the only size worth shipping; iOS downscales the rest itself. */
 const APPLE_ICON_SIZE = 180;
@@ -137,6 +152,46 @@ async function assertTransparentBadge(png, label) {
     throw new Error(
       `${label} is not a transparent badge (channels ${info.channels}, corner alpha ${data[3]}, ` +
         `max alpha ${maxAlpha}). Android would draw it as a solid square.`
+    );
+  }
+}
+
+/**
+ * Refuse to write a maskable icon a launcher could crop: every pixel must be opaque, the corners
+ * the source's own ground colour, and no non-ground pixel may reach past MASKABLE_SAFE_RADIUS of
+ * the size from the centre (measured to the far corner of each pixel, so an edge cannot round in).
+ */
+async function assertMaskableSafeZone(png, size, groundHex, label) {
+  const sharp = require('sharp');
+  const { data, info } = await sharp(png).raw().toBuffer({ resolveWithObject: true });
+  const ground = [1, 3, 5].map((offset) => parseInt(groundHex.slice(offset, offset + 2), 16));
+  const at = (x, y) => (y * info.width + x) * info.channels;
+  const isGround = (i) =>
+    data[i] === ground[0] && data[i + 1] === ground[1] && data[i + 2] === ground[2] &&
+    (info.channels < 4 || data[i + 3] === 255);
+  const corners = [[0, 0], [size - 1, 0], [0, size - 1], [size - 1, size - 1]];
+  if (info.width !== size || info.height !== size || !corners.every(([x, y]) => isGround(at(x, y)))) {
+    throw new Error(`${label} is not a ${size}px tile with ${groundHex} in every corner.`);
+  }
+  const centre = size / 2;
+  let farthest = 0;
+  for (let y = 0; y < size; y += 1) {
+    for (let x = 0; x < size; x += 1) {
+      const i = at(x, y);
+      if (info.channels === 4 && data[i + 3] !== 255) {
+        throw new Error(`${label} has a transparent pixel at ${x},${y}; a maskable icon must be full-bleed.`);
+      }
+      if (isGround(i)) continue;
+      const dx = Math.max(Math.abs(x - centre), Math.abs(x + 1 - centre));
+      const dy = Math.max(Math.abs(y - centre), Math.abs(y + 1 - centre));
+      farthest = Math.max(farthest, Math.hypot(dx, dy) / size);
+    }
+  }
+  if (farthest > MASKABLE_SAFE_RADIUS) {
+    throw new Error(
+      `${label}: the mark reaches ${(farthest * 100).toFixed(1)}% of the size from the centre, past ` +
+        `the ${(MASKABLE_SAFE_RADIUS * 100).toFixed(1)}% a launcher never crops. The maskable render needs ` +
+        `the trace scaled by at most ${(MASKABLE_SAFE_RADIUS / farthest).toFixed(3)} about the centre.`
     );
   }
 }
@@ -317,9 +372,13 @@ async function main() {
       written.push([`public/icon-${size}.png`, data.length]);
     }
 
-    // 2. Maskable copies. Same artwork; see the header for why.
+    // 2. Maskable copies. Same artwork, and measured to fit the safe zone before it is written;
+    //    see the header for why.
+    const groundHex = source.match(/<rect[^>]*\bfill="(#[0-9A-Fa-f]{6})"/)?.[1];
+    if (!groundHex) throw new Error(`Could not find the ground <rect fill> in ${SOURCE_SVG}`);
     for (const size of MASKABLE_SIZES) {
       const data = await renderPng(source, size);
+      await assertMaskableSafeZone(data, size, groundHex, `icon-maskable-${size}.png`);
       const file = path.join(PUBLIC_DIR, `icon-maskable-${size}.png`);
       fs.writeFileSync(file, data);
       written.push([`public/icon-maskable-${size}.png`, data.length]);

@@ -158,15 +158,18 @@ export const ANDROID_BUILD_TOOLS_VERSION = '36.0.0';
 
 /**
  * Every URL Bubblewrap 1.25.0 fetches during `update`, read from its source rather than guessed:
- * TwaGenerator.createTwaProject fetches iconUrl (launcher, splash, notification), each shortcut's
- * chosenIconUrl, maskableIconUrl, and webManifestUrl (writeWebManifest). cli/cmds/shared.js only
- * validates the iconUrl string; it does not fetch it. twa-manifest.json declares no
- * monochromeIconUrl and no maskable/monochrome shortcut icons, so nothing else is requested.
+ * TwaGenerator.createTwaProject fetches iconUrl (launcher, splash), each shortcut's chosenIconUrl,
+ * maskableIconUrl, `monochromeIconUrl || iconUrl` for the notification small icon (rendered as-is,
+ * with no monochromeFilter - that filter is applied only to shortcut monochrome icons), and
+ * webManifestUrl (writeWebManifest). cli/cmds/shared.js only validates the iconUrl string; it does
+ * not fetch it. twa-manifest.json declares no maskable/monochrome SHORTCUT icons, and local-debug
+ * refuses them, so nothing else is requested.
  */
 export const BUBBLEWRAP_ASSETS = [
   { route: '/icon-512.png', file: 'public/icon-512.png', contentType: 'image/png' },
   { route: '/icon-192.png', file: 'public/icon-192.png', contentType: 'image/png' },
   { route: '/icon-maskable-512.png', file: 'public/icon-maskable-512.png', contentType: 'image/png' },
+  { route: '/badge-96.png', file: 'public/badge-96.png', contentType: 'image/png' },
   { route: '/manifest.json', file: 'public/manifest.json', contentType: 'application/manifest+json' },
 ] as const;
 
@@ -600,7 +603,7 @@ export function verifyGeneratedProject(
 // ---------------------------------------------------------------------------------------------
 
 interface IconRender {
-  route: '/icon-512.png' | '/icon-192.png' | '/icon-maskable-512.png';
+  route: Exclude<BubblewrapAsset['route'], '/manifest.json'>;
   withBackground: boolean;
   outputs: ReadonlyArray<readonly [string, number]>;
 }
@@ -614,6 +617,12 @@ const perDensity = (directory: 'mipmap' | 'drawable', file: string, sizes: reado
  * tables in @bubblewrap/core 1.25.0 dist/lib/TwaGenerator.js. They are not exported, so they are
  * restated here - and the exact-file-set assertion in verifyGeneratedIcons turns any upstream
  * drift into a failure rather than an unchecked PNG.
+ *
+ * The notification icons come from the transparent badge (twa-manifest.json monochromeIconUrl),
+ * NOT the opaque iconUrl tile. Android draws a small icon from its alpha channel alone, so the tile
+ * rendered as a solid grey square. Naming the badge here makes a manifest that lost
+ * monochromeIconUrl fail this check: Bubblewrap would silently fall back to iconUrl, and those
+ * five PNGs would no longer be renderings of badge-96.png.
  */
 export const BUBBLEWRAP_ICON_RENDERS: readonly IconRender[] = [
   {
@@ -628,7 +637,7 @@ export const BUBBLEWRAP_ICON_RENDERS: readonly IconRender[] = [
     outputs: perDensity('drawable', `shortcut_${index}.png`, [48, 72, 96, 144, 192]),
   })),
   { route: '/icon-maskable-512.png', withBackground: false, outputs: perDensity('mipmap', 'ic_maskable.png', [82, 123, 164, 246, 328]) },
-  { route: '/icon-512.png', withBackground: false, outputs: perDensity('drawable', 'ic_notification_icon.png', [24, 36, 48, 72, 96]) },
+  { route: '/badge-96.png', withBackground: false, outputs: perDensity('drawable', 'ic_notification_icon.png', [24, 36, 48, 72, 96]) },
 ];
 
 export type IconRenderer = (source: Buffer, size: number, backgroundColor: string | undefined) => Promise<Buffer>;

@@ -15,6 +15,7 @@
   "startUrl": "/",
   "iconUrl": "https://pulseblr-u9f1.vercel.app/icon-512.png",
   "maskableIconUrl": "https://pulseblr-u9f1.vercel.app/icon-maskable-512.png",
+  "monochromeIconUrl": "https://pulseblr-u9f1.vercel.app/badge-96.png",
   "splashScreenFadeOutDuration": 300,
   "signingKey": {
     "path": "./android.keystore",

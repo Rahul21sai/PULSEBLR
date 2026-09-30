@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { PRODUCTION_ORIGIN, assertWebAndTwaParity } from '../lib/mobile-release-contract';
+import { BUBBLEWRAP_ASSETS } from './android-verify';
 
 const repositoryRoot = path.resolve(import.meta.dirname, '..');
 const requiredHtml = new Map([
@@ -15,7 +16,9 @@ const requiredHtml = new Map([
   ['/privacy', 'privacy'],
   ['/delete-account', 'delete-account'],
 ]);
-const requiredPng = ['/icon-192.png', '/icon-512.png', '/icon-maskable-512.png'];
+// Every PNG Bubblewrap downloads and embeds, from the one table that says so. A hand-kept copy here
+// is how a new asset (the notification badge) gets checked at generation but never at preflight.
+const requiredPng = BUBBLEWRAP_ASSETS.filter(asset => asset.contentType === 'image/png').map(asset => asset.route);
 
 export interface ProductionOriginPreflightResult {
   checked: number;

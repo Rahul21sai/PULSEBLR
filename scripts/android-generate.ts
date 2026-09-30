@@ -13,11 +13,11 @@
  *
  * - local-debug (`npm run android:generate -- --local-debug`). For building a DEBUG bundle before
  *   the mobile branch is deployed (production still serves origin/main, whose PNG icons 404). The
- *   script serves ONLY the four checked-in files Bubblewrap fetches from a 127.0.0.1 server on an
+ *   script serves ONLY the five checked-in files Bubblewrap fetches from a 127.0.0.1 server on an
  *   ephemeral port it starts and stops itself, and hands Bubblewrap a TEMPORARY copy of
- *   twa-manifest.json in which only those four asset URLs point at that server. host, packageId,
- *   startUrl, shortcuts' target URLs, share target, colours and version are untouched, so the app
- *   still opens https://pulseblr-u9f1.vercel.app. The one asset URL Bubblewrap also EMBEDS
+ *   twa-manifest.json in which only the fields naming those assets point at that server. host,
+ *   packageId, startUrl, shortcuts' target URLs, share target, colours and version are untouched,
+ *   so the app still opens https://pulseblr-u9f1.vercel.app. The one asset URL Bubblewrap also EMBEDS
  *   (webManifestUrl, a runtime string resource) is restored to production by the postprocess, and
  *   verify-generated fails on any loopback address left in the generated sources. The output is
  *   marked (android/pulseblr-local-debug.json + a banner) and refused in any release/signing
@@ -434,6 +434,16 @@ export function changedJsonPaths(left: unknown, right: unknown, prefix = ''): st
 const servedRoutes = new Set<string>(BUBBLEWRAP_ASSETS.map(asset => asset.route));
 
 /**
+ * Every top-level twa-manifest.json field Bubblewrap 1.25.0 downloads (see BUBBLEWRAP_ASSETS).
+ * Local-debug must move EACH of them to the loopback server, because a fetched URL left pointing at
+ * production is fetched from production: the local server never sees it, so neither the
+ * unexpected-request nor the never-fetched check could notice. Each is therefore required, and
+ * rewriting one that is absent fails - monochromeIconUrl included, since without it Bubblewrap
+ * renders the notification icon from iconUrl and verify-generated's icon check fails anyway.
+ */
+const LOCAL_DEBUG_REWRITTEN_FIELDS = ['iconUrl', 'maskableIconUrl', 'monochromeIconUrl', 'webManifestUrl'] as const;
+
+/**
  * The temporary manifest Bubblewrap reads in local-debug mode: the checked-in manifest with ONLY
  * its downloadable asset URLs moved to the loopback server. Each original must be a plain
  * production-origin URL for one of the served files, and the result is diffed against the input so
@@ -452,14 +462,9 @@ export function localDebugTwaManifest(twa: Record<string, unknown>, assetOrigin:
     }
     return `${assetOrigin}${url.pathname}`;
   };
-  for (const unsupported of ['monochromeIconUrl']) {
-    if (twa[unsupported] !== undefined) throw new Error(`twa-manifest.json ${unsupported} is not in the local-debug asset table`);
-  }
   const copy = structuredClone(twa);
-  const expectedChanges = ['iconUrl', 'maskableIconUrl', 'webManifestUrl'];
-  copy.iconUrl = rewrite(twa.iconUrl, 'iconUrl');
-  copy.maskableIconUrl = rewrite(twa.maskableIconUrl, 'maskableIconUrl');
-  copy.webManifestUrl = rewrite(twa.webManifestUrl, 'webManifestUrl');
+  const expectedChanges: string[] = [...LOCAL_DEBUG_REWRITTEN_FIELDS];
+  for (const field of LOCAL_DEBUG_REWRITTEN_FIELDS) copy[field] = rewrite(twa[field], field);
   if (!Array.isArray(copy.shortcuts)) throw new Error('twa-manifest.json shortcuts must be an array');
   copy.shortcuts.forEach((shortcut: Record<string, unknown>, index: number) => {
     if (shortcut.chosenMaskableIconUrl !== undefined || shortcut.chosenMonochromeIconUrl !== undefined) {

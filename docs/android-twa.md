@@ -24,8 +24,9 @@ that a deployment, Android build, signing run, Play installation, or store submi
 
 The checked-in contract preserves these values: Android SDK/target SDK 36, minimum SDK 21,
 `standalone`, `portrait-primary`, app version code/name `1`/`1`, the five shortcuts (Scan, My code,
-Feed, Tracker, Calendar), share target `/add-event`, and the warm `#FAF9F5` theme/background. Run it
-without an Android SDK or network access:
+Feed, Tracker, Calendar), share target `/add-event`, the warm `#FAF9F5` theme/background, and the
+three permanent-origin icon URLs (`iconUrl`, `maskableIconUrl`, and `monochromeIconUrl` naming the
+transparent notification badge; see [Icons](#icons)). Run it without an Android SDK or network access:
 
 ```powershell
 npm run android:contract
@@ -44,24 +45,26 @@ Follow this order; each arrow is a stop/go gate, not an assertion that its next 
 3. **Preflight** — set `PULSEBLR_EXPECTED_RELEASE_COMMIT_SHA` to the exact 40-character commit SHA
    approved and deployed, then run `npm run android:preflight`. The gate compares that value with
    `/api/release-identity`, requires a page-specific marker in every route body, and compares the
-   required deployed PNG bytes with the checked-in assets. Do not generate if it fails.
+   deployed bytes of every PNG Bubblewrap embeds (the same table generation uses, so the notification
+   badge is included) with the checked-in assets. Do not generate if it fails.
 4. **Generate** — `npm run android:generate` revalidates the configured JDK 17/SDK 36 paths, writes
    those exact roots to a restrictive one-use Bubblewrap config, passes it with `--config`, and
    removes it on exit. It does not enter Bubblewrap's prompt/bootstrap/download path and has no
-   signing material in scope. **Immediately before Bubblewrap runs** it re-downloads the four assets
+   signing material in scope. **Immediately before Bubblewrap runs** it re-downloads the five assets
    Bubblewrap is about to embed (`icon-512.png`, `icon-192.png`, `icon-maskable-512.png`,
-   `manifest.json`) and requires the SHA-256 of the checked-in `public/` file, refusing redirects,
-   non-200s and wrong media types. `manifest.json` is compared with CRLF folded to LF, because git
-   stores it LF and a Windows checkout has it CRLF; that is the only normalisation.
+   `badge-96.png`, `manifest.json`) and requires the SHA-256 of the checked-in `public/` file,
+   refusing redirects, non-200s and wrong media types. `manifest.json` is compared with CRLF folded to
+   LF, because git stores it LF and a Windows checkout has it CRLF; that is the only normalisation.
 5. **Verify** — `npm run android:verify-generated` proves the generated project retains the package,
    version, shortcuts, and SDK contract, the build-integrity pins below, and the **embedded bytes**:
    `res/raw/web_app_manifest.json` must equal `JSON.stringify` of `public/manifest.json` with
    `start_url` set to the TWA `startUrl` (Bubblewrap re-serialises it, so it is never byte-identical
    to the source, but it is a deterministic function of it), and every one of the 46 launcher,
    splash, shortcut, adaptive and notification PNGs must equal what Bubblewrap's own `ImageHelper`
-   renders from the checked-in source, with no other PNG present. This closes the window a deploy
-   between preflight and generation used to slip through. It also fails on any loopback address in
-   the generated sources and requires the embedded `webManifestUrl` to be the production URL.
+   renders from the checked-in source (the five notification PNGs from `badge-96.png`, not the
+   launcher tile), with no other PNG present. This closes the window a deploy between preflight and
+   generation used to slip through. It also fails on any loopback address in the generated sources
+   and requires the embedded `webManifestUrl` to be the production URL.
 6. **Debug build** — `npm run android:bundle:debug`, then the AAB inspection gate, runs only with
    the installed SDK tooling.
 7. **Signing approval** — the `android-release` GitHub environment approval unlocks owner-provided
@@ -91,19 +94,45 @@ It never receives signing material.
 | Repositories | `google()` + `mavenCentral()` | The template's two `jcenter()` entries are replaced. JCenter is read-only and removed in Gradle 9; the debug build resolved every dependency without it. |
 | Build tools | `buildToolsVersion "36.0.0"` | Without it AGP 8.9.1 picks its own default and downloads it, so `android:toolchain` would be checking a component the build never used. |
 
+## Icons
+
+**Notification small icon: `monochromeIconUrl` is `/badge-96.png`.** Bubblewrap 1.25.0 renders
+`drawable/ic_notification_icon` from `monochromeIconUrl || iconUrl`, and Android draws a small icon
+from its alpha channel alone. With no `monochromeIconUrl` it was rendered from the opaque launcher
+tile, so every notification showed a solid grey square. `badge-96.png` is the white-on-transparent
+trace from `public/icon-mono.svg`, the same badge `sw.js` sends with web push. Measured 2026-09-30
+through Bubblewrap's own renderer: the five notification PNGs (24-96 px) are 85-91% transparent with
+transparent corners, where the tile's renderings had no transparent pixel at all. The contract,
+preflight, pre-generation hash check, local-debug rewrite and verify-generated all name it, so a
+manifest that drops the field fails rather than silently falling back to the tile.
+
+**Maskable icon: byte-identical to `icon-512.png`, and that is correct.** A launcher may crop a
+maskable icon to any shape, so only a centred circle is guaranteed visible. There are two bounds, and
+Android's is the tighter one: the web's safe zone is a circle of radius 40% of the size, but
+Bubblewrap's adaptive-icon template draws `ic_maskable` inset 8.5dp inside the 108dp layer, so
+Android's 66dp never-clipped circle is 33/91 = **36.3%** of the image. `icon-512.svg` was authored
+inside both. Measured 2026-09-30, the farthest non-ground pixel is 33.8% of the size from the centre
+at 512 and 34.0% at 192, and every corner is the solid `#12513C` ground. So nothing was re-rendered.
+`tests/maskable-icon.test.ts` measures both files against both bounds (the Android one derived from
+the pinned template), and `scripts/generate-icons.js` refuses to write a maskable that fails them.
+
 ## Local-debug generation (before the mobile branch is deployed)
 
 `npm run android:generate -- --local-debug` exists for one purpose: building a **debug** bundle while
 the production origin still serves the old build (at the time of writing its PNG icons 404, so a
 normal generation correctly refuses). It:
 
-- serves exactly the four checked-in files above from a server bound to `127.0.0.1` on an ephemeral
+- serves exactly the five checked-in files above from a server bound to `127.0.0.1` on an ephemeral
   port that the script starts and stops. Any other request is a 404/405, is recorded, and fails the
   generation, and so does an asset Bubblewrap never fetched;
 - gives Bubblewrap a **temporary** copy of `twa-manifest.json` via `--manifest`, in which only
-  `iconUrl`, `maskableIconUrl`, `webManifestUrl` and the five `chosenIconUrl`s point at that server.
-  A diff proves nothing else changed. `host`, `packageId`, `startUrl`, the shortcut targets and the
-  share target stay as checked in, so **the app still opens `https://pulseblr-u9f1.vercel.app`**. The
+  `iconUrl`, `maskableIconUrl`, `monochromeIconUrl`, `webManifestUrl` and the five `chosenIconUrl`s
+  point at that server. Every field Bubblewrap downloads is either rewritten or refused (the shortcut
+  `chosenMaskableIconUrl`/`chosenMonochromeIconUrl` variants are refused, and a missing
+  `monochromeIconUrl` fails), because a fetched URL left on production would be downloaded from
+  production where the local server cannot see it. A diff proves nothing else changed. `host`,
+  `packageId`, `startUrl`, the shortcut targets and the share target stay as checked in, so **the app
+  still opens `https://pulseblr-u9f1.vercel.app`**. The
   checked-in `android/twa-manifest.json` is never written;
 - restores the one asset URL Bubblewrap also embeds at runtime (`webManifestUrl`) to production;
 - writes `android/pulseblr-local-debug.json` before Bubblewrap starts and prints a loud banner from
